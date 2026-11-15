@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <button id="fail">"fail"</button>
+    <p id="errors">"first"</p>
+  </main>
+</body>
+-- click #fail
+<body>
+  <main>
+    <button id="fail">"fail"</button>
+    <p id="errors">"first,failed"</p>
+  </main>
+</body>
+-- click #fail
+<body>
+  <main>
+    <button id="fail">"fail"</button>
+    <p id="errors">"first,failed,failed"</p>
+  </main>
+</body>

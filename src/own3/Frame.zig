@@ -6362,8 +6362,14 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
 fn escapeAnswer(f: *Frame, v: Val, use: *const Use) Error!void {
     const n = f.m.loc.layouts.items[use.fnc.layouts[use.fnc.arity]].len;
     const start: u32 = @intCast(f.atoms.items.len);
-    var st: SrcState = .{ .inst = use.site.inst, .whole = true };
-    for (0..n) |ae| try f.answerOf(v, use, @intCast(ae), &st, 0);
+    // Each entry is its own query: the answers in work (`SrcState.seen`) of
+    // one entry are not those of another, and a set shared by every entry
+    // of a wide answer filled up and read the answer as lost (every
+    // argument in sight), though no answer came back to itself.
+    for (0..n) |ae| {
+        var st: SrcState = .{ .inst = use.site.inst, .whole = true };
+        try f.answerOf(v, use, @intCast(ae), &st, 0);
+    }
     try f.noteEscape(start, use.site.inst);
 }
 

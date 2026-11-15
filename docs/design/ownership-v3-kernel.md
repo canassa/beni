@@ -974,7 +974,10 @@ reads the types that the type check made (research report 135 §3).
 
 The other limits fall to the pessimistic side, so they cost precision and never soundness: a `resolve`
 deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`: `outside` and every
-argument in sight); a `partsOf` deeper than 8 claims nothing (the parts are not apart); `isView` deeper
+argument in sight), and so is an answer whose query has more than 24 answers in work (`SrcState.seen`);
+each location of an answer that a holder lets escape is a query of its own (`escapeAnswer`: one query
+for all of them filled the 24 with the answers of a wide message type, and the model of Conduit's
+`updateWith` escaped through `Cmd.map`'s function, research report 143); a `partsOf` deeper than 8 claims nothing (the parts are not apart); `isView` deeper
 than 4 is no view (its answer is kept); an alias of `sender` deeper than 8 is no sender (a message
 sent through it is not a demand, and it is never `own` anyway, rule 13); a frame nested past 200 or a group of local functions past 16
 rounds gives up (§3.3); a group of declarations past 64 rounds is a `limit` line that names the member first by name, and none of its members
