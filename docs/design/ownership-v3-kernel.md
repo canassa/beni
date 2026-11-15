@@ -518,7 +518,13 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     the rendered markup keeps its message until the next render and can send it twice, a message can
     hold a top-level value, and the runtime's commands, subscriptions and platform events make
     messages that no rule of the checker follows; a `send` written in the program is checked where it
-    is written (`callParam`), but it is one source among these. A function that is not a producer
+    is written (`callParam`), but it is one source among these. So a send asks nothing of the sender: its
+    line is accepted, on the entry rule where the cells are not the sender's own, and the test of its cells
+    says only whether the function is handed the message `free` (`finishDemands`). What the sender hands
+    `send` escapes where the function goes to the runtime's default (rule 2, `defaultParams`), and a
+    function that writes a cell after it sent it is refused there (`Fn.rewrites`). *Research report 143:
+    a send of a list the sender did not own was a refusal, so each of Conduit's commands that sends a
+    loaded feed stopped every write of its module, though no write rested on the message.* A function that is not a producer
     handed the model and writes a parameter is refused: the runtime hands it a value it does not own.
     The record's functions escape; the program's value is `unknown` over the record.
 

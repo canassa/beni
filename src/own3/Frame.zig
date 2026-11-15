@@ -2615,6 +2615,20 @@ fn finishDemands(f: *Frame) Error!void {
         if (d.op == .supply) {
             if (d.refused != null and d.draft != none) f.drafts.items[d.draft].free[d.slot] = false;
             if (!d.send) continue;
+            // A send asks nothing of the sender (kernel §6.13): the message
+            // is never `update`'s own, so no write rests on the sender
+            // giving it up, and what the sender hands the runtime escapes
+            // where it is handed (rule 2, `defaultParams`). The test above
+            // says only whether the function is handed the message `free`.
+            // The line is accepted, on the entry rule where the cells are
+            // not the sender's own; a walk that gave up accepts nothing.
+            if (d.refused) |cause| if (cause != .limit) {
+                var line = d.*;
+                line.refused = null;
+                line.detail = "";
+                try f.m.addLine(f, line, .entry);
+                continue;
+            };
         }
         var g: Ground = .fresh;
         for (ws) |a| {

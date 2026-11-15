@@ -1,0 +1,67 @@
+-- The live twin of `SendHeldListLive`: the body pushes onto the list after it sent it,
+-- and `update` keeps that list in the model: in place, the model would see the
+-- push. The write after the send is refused (kernel §6 rules 2 and 13), and so
+-- nothing of the sender: the module's writes stand.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    items : List Int
+    seen : List String
+
+
+type Msg
+    = Add
+    | Fetch
+    | Got (List String)
+
+
+names : List String
+names = [ "ada", "bo" ]
+
+
+type Key
+    = Load
+
+
+update : Msg, Model → Model × Cmd.Cmd Msg
+update msg model =
+    case msg of
+        Add →
+            ( { model | items = List.push model.items (List.length model.items + 1) }, Cmd.none )
+
+        Fetch →
+            ( model
+            , Cmd.keyed Load Cmd.Restart λsend →
+                got = [ "ada" ]
+                send (Got got)
+                kept = List.push got "bo"
+                send (Got [ String.join kept "+" ])
+            )
+
+        Got got →
+            ( { model | seen = got }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="fetch" onClick={Fetch}>fetch</button>
+        <p id="items">{String.join (List.map model.items String.fromInt) ","}</p>
+        <p id="seen">{String.join model.seen ","}</p>
+        <p id="names">{String.join names ","}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { items = [ 1 ], seen = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

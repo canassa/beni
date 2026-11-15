@@ -5261,7 +5261,7 @@ test "ownership v3: the faults of the sixth blind test are refused" {
         .{ .name = "top-rewrite.live", .platform = "node", .accepted = false, .why = "value <call Main.body> is refused: supply: the function keeps a value" },
         .{ .name = "top-rewrite.dead", .platform = "node", .accepted = true },
         .{ .name = "top-rewrite-send", .platform = tea, .accepted = false, .why = "value <call Cmd.perform> is refused: supply: the function changes a value" },
-        .{ .name = "top-rewrite-send.live", .platform = tea, .accepted = false, .why = "send <constructor" },
+        .{ .name = "top-rewrite-send.live", .platform = tea, .accepted = false, .why = "value <call Cmd.perform> is refused: supply: the function changes a value" },
         .{ .name = "top-rewrite-send.dead", .platform = tea, .accepted = true },
     };
     // Every case is run, so a run before the fix names each one it gets wrong.

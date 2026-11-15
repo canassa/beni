@@ -1,0 +1,40 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="fetch">"fetch"</button>
+    <p id="items">"1"</p>
+    <p id="seen">""</p>
+    <p id="names">"ada,bo"</p>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="fetch">"fetch"</button>
+    <p id="items">"1,2"</p>
+    <p id="seen">""</p>
+    <p id="names">"ada,bo"</p>
+  </main>
+</body>
+-- click #fetch
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="fetch">"fetch"</button>
+    <p id="items">"1,2"</p>
+    <p id="seen">"ada+bo"</p>
+    <p id="names">"ada,bo"</p>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="fetch">"fetch"</button>
+    <p id="items">"1,2,3"</p>
+    <p id="seen">"ada+bo"</p>
+    <p id="names">"ada,bo"</p>
+  </main>
+</body>

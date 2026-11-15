@@ -1,0 +1,2 @@
+# The body pushes onto a list after it sent it: the function writes a cell after it handed it to `send`, which the runtime may keep (ownership-v3-kernel.md §6 rules 2 and 13).
+38:15 list_still_used value

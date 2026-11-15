@@ -1,0 +1,1 @@
+browser-tea: a command body sends a message that holds a top-level list, and update pushes a list of the model in place. A send asks nothing of the sender under --ownership=v3, since the message is never update's own (ownership-v3-kernel.md §6 rule 13), so the module's writes stand.
