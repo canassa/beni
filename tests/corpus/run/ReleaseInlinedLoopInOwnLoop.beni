@@ -1,0 +1,35 @@
+-- run: a tail-recursive helper called once, bound inside a tail-recursive
+-- function called twice: under `--release` the outer one stays a function
+-- of its own whose loop names its slots by position, and the inner one is
+-- written as a loop in the outer one's body. The outer loop's jumps after
+-- the inner loop must write the outer loop's own slots, never the inner
+-- one's (#2514).
+import List
+import Node exposing (Program)
+import String
+
+
+inner : Int, List Int → List Int
+inner k a =
+    if k ≤ 0 then
+        a
+    else
+        inner (k - 1) (List.update a 0 λx → x * 2)
+
+
+outer : Int, List Int → List Int
+outer k a =
+    if k ≤ 0 then
+        a
+    else
+        w = inner 2 (List.update a 0 λx → x + 1)
+        outer (k - 1) w
+
+
+main : Program
+main =
+    Node.print
+        (String.fromInt (List.sum (outer 3 [ 1 ]))
+            ++ " "
+            ++ String.fromInt (List.sum (outer 2 [ 5 ]))
+        )
