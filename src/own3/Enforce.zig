@@ -223,7 +223,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     if (kept != null and mi_u < ctx.state.reports.len) {
         var others: std.ArrayList([]const u8) = .empty;
         try others.appendSlice(arena, r.summaries);
-        try others.appendSlice(arena, r.limits);
+        for (r.limits) |l| try others.append(arena, l.text);
         ctx.state.reports[mi_u] = try Report.Kept.of(gpa, .{ .module = mi_u, .lines = lines, .others = others.items, .limits = @intCast(r.limits.len) });
     }
     if (session.graph.modulePackage(m) != .app or !session.enforce_ownership) return;
@@ -239,7 +239,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         });
         try dest.append(gpa, .{ .ownership = true, .code = .list_still_used, .module = m, .region = @fromBackingInt(0), .token = l.token, .message = message });
     }
-    for (r.limits) |o| try dest.append(gpa, .{ .ownership = true, .code = .ownership_limit, .module = m, .region = @fromBackingInt(0), .message = try gpa.dupe(u8, o) });
+    for (r.limits) |o| try dest.append(gpa, .{ .ownership = true, .code = .ownership_limit, .module = m, .region = @fromBackingInt(0), .token = o.token orelse 0, .message = try gpa.dupe(u8, o.text) });
 }
 
 /// The `let`s of module `m` whose values the build's markup lowering keeps

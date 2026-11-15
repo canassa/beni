@@ -5,7 +5,8 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 §6.13 revised again the same day (research report 125); §6.8, §6.9 and §8 revised again the same day
 (research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
 129); §8 revised 2026-11-14 (research report 130); §6.14 and §8 revised again the same day (research
-report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134). The owner
+report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
+revised 2026-11-15 (research report 141). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -341,7 +342,17 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    in a `Ref` or as a command's body.*
 9. **Recursion** (`Check.solveGroup`, `solveCodes`): a group starts from the contract with no flag and no
    source and is walked until no contract changes; contracts only grow (`Contract.join`), so the last
-   round's verdicts stand on the least fixed point. Fresh names of drafts are bounded (§4.2). A member
+   round's verdicts stand on the least fixed point. Each round walks the members callees first
+   (`groupOrder`): a depth-first walk of the group's own calls, from each member in the order of the names,
+   each member after the members it calls, the calls of a body in the order it writes them. The order reads
+   the names and the bodies, never where a declaration stands in the module, so how many rounds a group
+   takes, and whether it settles, does not depend on the order of the declarations. *Research report 141:
+   in the module's order a ring of 40 functions written callers first moved its contract one member a
+   round and did not settle in 64; reversed, it settled in a few.* A function value declared with no parameter,
+   whose body is a lambda of its signature's arity, starts from its signature's bottom contract
+   (`Check.bottom`), as a function does: with no
+   contract at the start, a member walked before it read it as unknown code, and what escaped then stayed.
+   Fresh names of drafts are bounded (§4.2). A member
    whose walk gave up has no contract in that round and after. A group that has not settled after 64
    rounds publishes no contract for any member (§8): a contract of a round before the fixed point says
    less than the group does. The rounds of a member share its one step budget (§8): a member past it
@@ -963,13 +974,18 @@ deeper than 12 or an `answerOfCode` deeper than 8 is a lost answer (`lostAnswer`
 argument in sight); a `partsOf` deeper than 8 claims nothing (the parts are not apart); `isView` deeper
 than 4 is no view (its answer is kept); an alias of `sender` deeper than 8 is no sender (a message
 sent through it is not a demand, and it is never `own` anyway, rule 13); a frame nested past 200 or a group of local functions past 16
-rounds gives up (§3.3); a group of declarations past 64 rounds is a `limit` line, and none of its members
+rounds gives up (§3.3); a group of declarations past 64 rounds is a `limit` line that names the member first by name, and none of its members
 publishes a contract (a round's contract that is not the last says less than the group does, and a limit
-line of a module outside the app is no error, so an importer would read it). A type with more than 4 096
+line of a module outside the app is no error, so an importer would read it). A limit line of a declaration
+points at its name (`Check.declLimit`; research report 141: every limit line pointed at the module's
+first instruction, an unrelated declaration). A type with more than 4 096
 locations (`Loc.max_layout_entries`: a location for each path of labels, so `( x, x )` nested 32 times
 has 2³²) has the layout of one summary location of a type variable; the module then authorises no write,
 publishes no contract and no derived fact, and its report has an `ownership_limit` line naming the limit
-(`Loc.Table.over`, `Check.checkModule`): a loud refusal, never a cut toward "holds nothing". No
+(`Loc.Table.over`, `Check.checkModule`), the first type cut and the declaration that met it, at the
+type's name when the module declares it, else at the declaration's (`Check.overLimit`; the declarations'
+budgets are made in the order of their names, so the declaration does not depend on their order when it
+is the budgets that meet the type): a loud refusal, never a cut toward "holds nothing". No
 other declaration of the module is walked after a type passes the limit (`Mod.stopped`, research
 report 131: 5 000 `==` sites over 5 000 recursive types walked on to the module budget, 6.5 s). A
 principled layout exists — the repeated halves of a type past a bound given one summary location for each

@@ -442,6 +442,40 @@ test "the checker v2's call verdicts and summaries are the same reversed" {
     });
 }
 
+// `ownership-v3-kernel.md` §6 rule 9 (research report 141): each round of a
+// recursive group walks its members callees first, in an order that the call
+// graph and the names give. Walked in the module's order, a ring of functions
+// written callers first moved its contract one member a round and did not
+// settle in 64 rounds, and the same ring reversed settled in a few. Both
+// orders build under v3 with the push in place, and print the same. The ring
+// is written here, not in the corpus: v1 and v2 stop at their own round
+// limits on it, and the corpus compares them on every `run/` program.
+test "ownership v3: a ring of 64 functions settles in either order" {
+    var s = try Scenario.init("a ring of 64 functions under v3, written and reversed");
+    defer s.deinit();
+    const a = s.arena();
+    const n = 64;
+    inline for (.{ .written, .reversed }) |order| {
+        var text: std.ArrayList(u8) = .empty;
+        try text.appendSlice(a, "import Node exposing (Program)\n\n\nshow : List Int → String\nshow xs = String.join (List.map xs String.fromInt) \",\"\n");
+        for (0..n) |k| {
+            // Written, each function above the one it calls; reversed, below.
+            const i = if (order == .written) k else n - 1 - k;
+            try text.print(a, "\n\ns{d} : List Int × List Int × List Int, Int → List Int\ns{d} ( a, b, c ) k =\n    if k == 0 then\n        {s}\n    else\n        s{d} ( c, a, b ) (k - 1)\n", .{ i, i, if (i == n - 1) "a" else "[ 0 ]", (i + 1) % n });
+        }
+        try text.print(a, "\n\nf : List Int → String\nf xs =\n    ys = s0 ( [ 5 ], [ 6 ], xs ) {d}\n    show (List.push ys 9)\n\n\nmain : Program\nmain = Node.print (f [ 1, 2 ])\n", .{n - 1});
+        try s.w.write("Main.beni", text.items);
+        const built = try s.w.runWith(&.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--ownership=v3", "--ownership-everywhere", "--lists-in-place", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (built.exit_code != 0) return s.finish(try s.failed(built));
+        if (try s.w.checkProgram(world.entry_file, .{ .stdout = "5,9\n" })) |program| return s.finish(.{
+            .green = false,
+            .signature = if (order == .written) "written stdout-differs" else "reversed stdout-differs",
+            .detail = program.stdout[0..@min(program.stdout.len, 300)],
+        });
+    }
+    try s.finish(.{ .green = true, .signature = "", .detail = "" });
+}
+
 // `ownership-v2.md` §2.11.3, *A virtual call is an evaluation's* (#2166): the order of a
 // frame's lets is the order of its closures' codes, which decides the round a
 // callee's contract gains a label in. Moving `k2` above `k1` turned a nested

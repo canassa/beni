@@ -138,11 +138,20 @@ pub const Line = struct {
     detail: []const u8 = "",
 };
 
+/// A limit line (kernel §8) and the token it points at: the name of the
+/// declaration or of the type that reached the limit, or `null` for the
+/// module as a whole. Research report 141: the lines pointed at
+/// instruction 0, an unrelated declaration.
+pub const Limit = struct {
+    text: []const u8,
+    token: ?u32,
+};
+
 pub const Result = struct {
     lines: []const Line,
     published: *Contract.Published,
     /// Declarations that the walk gave up on (a nesting too deep, a group that did not settle).
-    limits: []const []const u8,
+    limits: []const Limit,
     /// Each declaration's contract as text, when asked for.
     summaries: []const []const u8,
 };
@@ -284,7 +293,13 @@ pub const Mod = struct {
     readers: []?Contract.Reader = &.{},
     spread_root: std.DynamicBitSetUnmanaged = .{},
     lines: std.ArrayList(Line) = .empty,
-    limits: std.ArrayList([]const u8) = .empty,
+    limits: std.ArrayList(Limit) = .empty,
+    /// The declaration whose budget or walk first met a type past the
+    /// layout limit (`Loc.Table.over`), for the limit line's position.
+    over_decl: ?u32 = null,
+    /// By declaration: its position in the recursive group whose order
+    /// `groupOrder` makes, else `none`.
+    group_pos: []u32 = &.{},
     /// The steps that the declaration in work took so far, over all of its
     /// walks (`Frame.tick`), and whether it passed `max_walk_steps` (kernel
     /// §8). One budget for each declaration: every round of its group, the
@@ -360,6 +375,7 @@ pub const Mod = struct {
     fn endDecl(m: *Mod, di: u32) void {
         m.decl_steps[di] = m.steps;
         m.decl_limit = max_walk_steps;
+        if (m.over_decl == null and m.loc.over.items.len != 0) m.over_decl = di;
     }
 
     /// The budget of declaration `di` (kernel §8): `decl_floor`, what its
@@ -387,6 +403,42 @@ pub const Mod = struct {
     /// Whether instruction `i` is one that a walk evaluates: it earns `inst_units`.
     fn evaluated(m: *const Mod, i: u32) bool {
         return m.inst_earn[i] == inst_units;
+    }
+
+    /// The limit line of a type past the layout limit (`Loc.Table.over`):
+    /// it names the first type cut and the declaration that met it, and
+    /// points at the type's declaration when this module declares it, else
+    /// at the declaration's name.
+    fn overLimit(m: *Mod) Allocator.Error!Limit {
+        const module_name = m.names.module_names[m.in.module];
+        const p = m.loc.over.items[0];
+        var token: ?u32 = if (m.over_decl) |di| m.bir.decls[di].name_token else null;
+        const what: []const u8 = switch (m.places.kind(p)) {
+            .ctor => blk: {
+                const head = m.places.head(p);
+                if (head < m.in.types.entries.len) {
+                    const e = m.in.types.entries[head];
+                    if (e.module.int() == m.in.module) token = m.bir.decls[e.decl.int()].name_token;
+                }
+                break :blk try std.fmt.allocPrint(m.arena, "`{s}`", .{m.names.type_name(m.names.ctx, head)});
+            },
+            .record => "a record",
+            .tuple => "a tuple",
+            .list => "a list",
+            .dict => "a dictionary",
+            .closure => "a function",
+            else => "a type",
+        };
+        const by: []const u8 = if (m.over_decl) |di| try std.fmt.allocPrint(m.arena, ", met by `{s}`", .{m.names.declName(m.in.module, di)}) else "";
+        return .{
+            .text = try std.fmt.allocPrint(m.arena, "limit {s}: a type has more than {d} locations (a location for each path of labels through it): {s}{s}, so the checker judges no write of the module", .{ module_name, Loc.max_layout_entries, what, by }),
+            .token = token,
+        };
+    }
+
+    /// A limit line of declaration `di`, at its name.
+    fn declLimit(m: *Mod, di: u32, text: []const u8) Allocator.Error!void {
+        try m.limits.append(m.arena, .{ .text = text, .token = m.bir.decls[di].name_token });
     }
 
     /// The limit line of declaration `di` past a budget: the declaration's
@@ -1154,7 +1206,18 @@ pub const Mod = struct {
     fn bottom(m: *Mod, di: u32) Allocator.Error!?*const Contract.Contract {
         const d = m.bir.decls[di];
         const sig = (try m.sigOf(di)) orelse return null;
-        if (sig.params.len != d.params) return null;
+        if (sig.params.len != d.params) {
+            // A function value declared with no parameter: its contract is
+            // the lambda's that its body is (`walkDecl`), so its rounds start
+            // where a function of the lambda's parameters does. With no
+            // contract at the start, a member walked before it read it as
+            // unknown code, and contracts only grow: whether a parameter
+            // escaped depended on the order of the walk (research report 141).
+            const body = d.body.unwrap() orelse return null;
+            if (d.params != 0 or m.tags[body.int()] != .lambda) return null;
+            const lparams = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(m.datas[body.int()].lhs)), Bir.Inst.Index);
+            if (lparams.len != sig.params.len) return null;
+        }
         const tys = try m.walk_arena.allocator().alloc(Var.Optional, sig.vars.len);
         for (tys, sig.vars) |*t, v| t.* = v.toOptional();
         return m.bottomContract(sig.params, tys, sig.result);
@@ -1522,13 +1585,13 @@ pub const Mod = struct {
         if (m.steps_over) {
             // A walk past its steps (kernel §8): the declaration gives up, loudly.
             m.module_over = true;
-            try m.limits.append(m.arena, try m.budgetLine(di, ""));
+            try m.declLimit(di, try m.budgetLine(di, ""));
             m.failed_decl[di] = true;
             m.incomplete[di] = true;
             return null;
         }
         if (f.failed) {
-            try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
+            try m.declLimit(di, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
             m.failed_decl[di] = true;
             m.incomplete[di] = true;
             return null;
@@ -1576,9 +1639,9 @@ pub const Mod = struct {
         if (m.steps_over or f.failed) m.incomplete[di] = true;
         if (m.steps_over) m.module_over = true;
         if (m.steps_over) {
-            try m.limits.append(m.arena, try m.budgetLine(di, ""));
+            try m.declLimit(di, try m.budgetLine(di, ""));
         } else if (f.failed) {
-            try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
+            try m.declLimit(di, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
         }
     }
 
@@ -1609,10 +1672,96 @@ pub const Mod = struct {
             m.endDecl(di);
             if (m.steps_over) {
                 m.module_over = true;
-                try m.limits.append(m.arena, try m.budgetLine(di, " of the export"));
-            } else if (f.failed) try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the walk of the export gave up", .{m.names.declName(m.in.module, di)}));
+                try m.declLimit(di, try m.budgetLine(di, " of the export"));
+            } else if (f.failed) try m.declLimit(di, try std.fmt.allocPrint(m.arena, "limit {s}: the walk of the export gave up", .{m.names.declName(m.in.module, di)}));
             _ = m.walk_arena.reset(.retain_capacity);
         }
+    }
+
+    fn nameLess(m: *const Mod, a: u32, b: u32) bool {
+        return std.mem.order(u8, m.names.declName(m.in.module, a), m.names.declName(m.in.module, b)) == .lt;
+    }
+
+    /// The order in which each round of a recursive group walks its
+    /// members (kernel §6 rule 9): callees first. A depth-first walk of the
+    /// group's own calls, started at each member in the order of their
+    /// names, puts each member after the members it calls, the calls of a
+    /// body in the order they are written. It reads the names and the
+    /// bodies alone, never where a declaration stands in the module, so
+    /// the rounds, and whether the group settles within its limit, are the
+    /// same in any order of the declarations. Research report 141: a ring
+    /// of 40 functions walked in the module's order settled in a few rounds
+    /// with the callees written first, and did not settle in 64 with the
+    /// callers first, since a contract then moved one member each round.
+    fn groupOrder(m: *Mod, members: []u32) Allocator.Error!void {
+        std.mem.sort(u32, members, @as(*const Mod, m), nameLess);
+        const n = members.len;
+        // `group_pos`, a column by declaration: each member's position, and
+        // `none` again for each when the order is made.
+        const pos = m.group_pos;
+        for (members, 0..) |di, k| pos[di] = @intCast(k);
+        defer for (members) |di| {
+            pos[di] = none;
+        };
+        // Each member's callees in the group, by position in `members`, in
+        // the order the body writes them, each once.
+        var edges: std.ArrayList(u32) = .empty;
+        defer edges.deinit(m.gpa);
+        const starts = try m.gpa.alloc(u32, n + 1);
+        defer m.gpa.free(starts);
+        const seen = try m.gpa.alloc(u32, n);
+        defer m.gpa.free(seen);
+        @memset(seen, none);
+        for (members, 0..) |di, k| {
+            starts[k] = @intCast(edges.items.len);
+            const d = m.bir.decls[di];
+            for (d.inst_start.int()..d.inst_end.int()) |i| {
+                const target: ?[2]u32 = switch (m.tags[i]) {
+                    .top => .{ m.in.module, m.datas[i].lhs },
+                    .method_call => m.methodTarget(@intCast(i)),
+                    else => null,
+                };
+                const t = target orelse continue;
+                if (t[0] != m.in.module) continue;
+                if (t[1] >= pos.len or pos[t[1]] == none) continue;
+                const to = pos[t[1]];
+                if (seen[to] == k) continue;
+                seen[to] = @intCast(k);
+                try edges.append(m.gpa, to);
+            }
+        }
+        starts[n] = @intCast(edges.items.len);
+        // Postorder, with an explicit stack of (member, next edge).
+        const order = try m.gpa.alloc(u32, n);
+        defer m.gpa.free(order);
+        var done: u32 = 0;
+        const visited = try m.gpa.alloc(bool, n);
+        defer m.gpa.free(visited);
+        @memset(visited, false);
+        var stack: std.ArrayList([2]u32) = .empty;
+        defer stack.deinit(m.gpa);
+        for (0..n) |root| {
+            if (visited[root]) continue;
+            visited[root] = true;
+            try stack.append(m.gpa, .{ @intCast(root), starts[root] });
+            while (stack.items.len != 0) {
+                const top = &stack.items[stack.items.len - 1];
+                if (top[1] < starts[top[0] + 1]) {
+                    const to = edges.items[top[1]];
+                    top[1] += 1;
+                    if (!visited[to]) {
+                        visited[to] = true;
+                        try stack.append(m.gpa, .{ to, starts[to] });
+                    }
+                    continue;
+                }
+                order[done] = members[top[0]];
+                done += 1;
+                _ = stack.pop();
+            }
+        }
+        std.debug.assert(done == n);
+        @memcpy(members, order);
     }
 
     fn solveGroup(m: *Mod, members: []const u32, recursive: bool) Allocator.Error!void {
@@ -1659,7 +1808,15 @@ pub const Mod = struct {
                 break;
             }
             if (rounds > 64) {
-                try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: the group did not settle", .{m.names.declName(m.in.module, members[0])}));
+                // The line names the member first by name: the walk's
+                // order is the call graph's, and neither depends on the
+                // order of the declarations.
+                var first = members[0];
+                for (members[1..]) |di| if (m.nameLess(di, first)) {
+                    first = di;
+                };
+                const text = if (members.len == 1) try std.fmt.allocPrint(m.arena, "limit {s}: the group did not settle", .{m.names.declName(m.in.module, first)}) else try std.fmt.allocPrint(m.arena, "limit {s}: the group of {d} declarations did not settle", .{ m.names.declName(m.in.module, first), members.len });
+                try m.declLimit(first, text);
                 // A contract of a round that is not the last says less than the
                 // group does: no member publishes one (kernel §8). An importer
                 // reads each as unknown code; a limit line of a module that is
@@ -2101,6 +2258,9 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     @memset(m.incomplete, false);
     if (std.debug.runtime_safety) m.walked = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
     defer if (std.debug.runtime_safety) m.walked.deinit(gpa);
+    m.group_pos = try gpa.alloc(u32, nd);
+    defer gpa.free(m.group_pos);
+    @memset(m.group_pos, none);
     m.state = try gpa.alloc(State, nd);
     defer gpa.free(m.state);
     @memset(m.state, .todo);
@@ -2119,11 +2279,24 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     // (kernel §8): the module's budget is the sum, whatever the order.
     // Past the layout limit no declaration is walked, and none needs one.
     // The module's budget is not tested here: whether it stopped the loop
-    // would depend on the order of the declarations.
-    for (bir.decls, 0..) |d, di| {
-        if (m.loc.over.items.len != 0) break;
-        if (!((d.kind == .value and d.body != .none) or d.kind == .schema)) continue;
-        m.decl_budget[di] = try m.declBudget(@intCast(di));
+    // would depend on the order of the declarations. The declarations go
+    // by name, so the one that first meets a type past the layout limit,
+    // which the limit line names, does not depend on their order either.
+    {
+        var by_name: std.ArrayList(u32) = .empty;
+        defer by_name.deinit(gpa);
+        for (bir.decls, 0..) |d, di| {
+            if (!((d.kind == .value and d.body != .none) or d.kind == .schema)) continue;
+            try by_name.append(gpa, @intCast(di));
+        }
+        std.mem.sort(u32, by_name.items, @as(*const Mod, &m), Mod.nameLess);
+        for (by_name.items) |di| {
+            m.decl_budget[di] = try m.declBudget(di);
+            if (m.loc.over.items.len != 0) {
+                m.over_decl = di;
+                break;
+            }
+        }
     }
     var members: std.ArrayList(u32) = .empty;
     defer members.deinit(gpa);
@@ -2135,7 +2308,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
             try members.append(gpa, di);
         }
         if (members.items.len == 0) continue;
-        std.mem.sort(u32, members.items, {}, std.sort.asc(u32));
+        if (m.prepass.recursive[gi] and members.items.len > 1) try m.groupOrder(members.items);
         try m.solveGroup(members.items, m.prepass.recursive[gi]);
     }
     // A worded declaration's contract is its words. Its body is walked for
@@ -2165,7 +2338,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     // no write (`limits`) and publishes no contract. An importer reads each
     // of its declarations as unknown code.
     if (m.loc.over.items.len != 0) {
-        try m.limits.append(m.arena, try std.fmt.allocPrint(m.arena, "limit {s}: a type has more than {d} locations (a location for each path of labels through it), so the checker judges no write of the module", .{ m.names.module_names[in.module], Loc.max_layout_entries }));
+        try m.limits.append(m.arena, try m.overLimit());
         @memset(m.contracts, null);
     }
     // A module past a limit publishes no contract, and so no derived fact.
@@ -2177,7 +2350,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     if (!m.stopped() and m.overBudget()) {
         m.module_over = true;
         derived = &.{};
-        try m.limits.append(m.arena, try moduleLimitText(m.arena, m.names.module_names[in.module], m.module_budget, m.module_size));
+        try m.limits.append(m.arena, .{ .text = try moduleLimitText(m.arena, m.names.module_names[in.module], m.module_budget, m.module_size), .token = null });
     }
     // A module past its budget publishes no contract of a walk, not even of
     // the declarations walked before the one that passed it (kernel §8):
