@@ -1082,7 +1082,10 @@ cells, and an update is a write of some of them.
    answered). A call that writes counts an answered location as another operand all the same (§5, test
    2): one rule for every kind of cell, since a list location the body answers is answered too (and, as
    v3 has judged lists from the start, read). So `g u v = ( { u | a = u.a + 5 }, v )` called as `g q q`
-   is refused at the call, as `g u v = ( List.push u 1, v )` is.
+   is refused at the call, as `g u v = ( List.push u 1, v )` is. A location that is only answered is
+   compared with W where its cells can be W's (`canShare`: a slot of another field, or a list's cell,
+   cannot), so a write of one field does not compare every answered slot of a wide record
+   (`otherReaches`, §8).
 
    *Research report 144: an answered slot had no flag at all, so the call passed test 2, and the
    caller's callers read the answer as the new name of the written cell (§5.1). In place the answer was

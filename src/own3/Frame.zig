@@ -2294,7 +2294,40 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
             if (!found) want = null;
         }
     }
+    // The kinds of cell the targets are (kernel §11). A location the callee
+    // only answers (`flag_a`) is another operand where its cells can be the
+    // targets: a field slot is no list, and the slots of two fields are two
+    // cells (`canShare`), so an answered location of another kind is not
+    // looked at. A target of no layout, or more kinds than the set holds,
+    // can be any cell. A location the callee reads is looked at whatever its
+    // kind, as it was before answers had a flag.
+    var wes: [16]Loc.Entry = undefined;
+    var nwes: usize = 0;
+    const any_kind = for (ws) |x| {
+        const xr = f.roots.items[x.root];
+        if (xr.kind == .outside or xr.kind == .fresh) break true;
+        const xes = f.m.loc.layoutEntries(xr.layout);
+        if (x.e >= xes.len) break true;
+        const xe = xes[x.e];
+        const seen = for (wes[0..nwes]) |we| {
+            if (we.kind == xe.kind and (xe.kind != .field or f.m.loc.loc_label.items[we.loc] == f.m.loc.loc_label.items[xe.loc])) break true;
+        } else false;
+        if (seen) continue;
+        if (nwes == wes.len) break true;
+        wes[nwes] = xe;
+        nwes += 1;
+    } else false;
+    const own_es = f.m.loc.layoutEntries(own_layout);
+    // The scan of the targets is work, and so is each test of an entry against their kinds (kernel §8).
+    if (f.charge(ws.len)) return true;
     for (cov, 0..) |c, k| {
+        if (!any_kind and c < Loc.all and o.flags[c] == flag_a) {
+            if (f.charge(nwes)) return true;
+            const meets = for (wes[0..nwes]) |we| {
+                if (canShare(f.m, own_es[k], we)) break true;
+            } else false;
+            if (!meets) continue;
+        }
         if (c == skip and skip != none) {
             const wl = want orelse continue;
             if (f.m.loc.layoutEntries(own_layout)[k].loc == wl) continue;
