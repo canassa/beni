@@ -126,6 +126,24 @@ const NameCtx = struct {
     }
 };
 
+/// Whether instruction `inst` calls core's `List.update` by its name.
+fn callsListUpdate(session: *const Session, bir: *const Bir, inst: u32) bool {
+    if (inst >= bir.insts.len) return false;
+    const call: Bir.Inst.Index = @fromBackingInt(inst);
+    if (bir.instTag(call) != .call) return false;
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
+    if (bir.instTag(callee) != .ext_value) return false;
+    const d = bir.instData(callee);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+    const interfaces = session.resolution.interfaces;
+    if (module.int() >= interfaces.len) return false;
+    if (session.graph.modulePackage(module) != .core) return false;
+    if (session.graph.moduleName(module) != InternPool.WellKnown.List.symbol()) return false;
+    const iface = &interfaces[module.int()];
+    if (d.rhs >= iface.values.len) return false;
+    return std.mem.eql(u8, session.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]), "update");
+}
+
 /// The Driver's hook: in the worker that checked module `m`, after its type
 /// check and before its interface is published.
 pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocator.Error!void {
@@ -188,7 +206,11 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
             .cause = l.cause,
             .detail = l.detail,
         };
-        try channel.add(arena, l.inst, l.kind, l.refused, Hoists.reliesOnCallers(l.accepted));
+        // `List.update` has no words: its write is `focus`'s, inside core,
+        // so v3 says it at the call (`callsite`). The lowering edits the call
+        // as the writer it is (`backend.md` §4), so the channel names it as one.
+        const kind = if (l.kind == .callsite and callsListUpdate(session, bir, l.inst)) .writer else l.kind;
+        try channel.add(arena, l.inst, kind, l.refused, Hoists.reliesOnCallers(l.accepted));
     }
     var table = try channel.finish(arena, gpa, r.limits.len != 0);
     // Core and the platforms authorise no write of their own.

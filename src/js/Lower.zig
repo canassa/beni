@@ -387,6 +387,11 @@ pub const Input = struct {
     /// reads it (`sanitize_runtime.mjs`). Test-only, development builds
     /// only.
     sanitize_lists: bool = false,
+    /// Under the sanitiser (not the in-place oracle, which shares
+    /// `sanitize_lists`' lowering): `Js.same` in a module outside core is a
+    /// call of the runtime's `same`, the identity trap (research report
+    /// 140). Core's identity compares are judged by hand there.
+    identity_trap: bool = false,
     /// The specifier of `_core/_sanitize.mjs`, relative to this module's
     /// output file: what `sanitize_lists` imports.
     sanitize_runtime: []const u8 = "./_core/_sanitize.mjs",
@@ -3968,6 +3973,22 @@ pub const Lowerer = struct {
                 .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "len"), .tag = JsIr.Name.no_tag }),
                 .local = try l.sanitizerLocal("len"),
             },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "same"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("same"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "start"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("start"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "settle"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("settle"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "front"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("front"),
+            },
         }));
         // The markup runtime: the lowering's exports and the markup
         // primitives this module uses, one binding each (`backend.md` §15.1).
@@ -5444,8 +5465,12 @@ pub const Lowerer = struct {
     /// `inst` is the write's instruction and `first` a spread's first
     /// operand: under v2 the site also says whether the verdict rests on
     /// callers v2 did not all check (§7.3), so that a trap there is told
-    /// from an unsound verdict.
-    fn sanitizedWrite(l: *Lowerer, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32, inst: Inst.Index, first: ?Inst.Index) Allocator.Error!Node.Index {
+    /// from an unsound verdict. A write that may park here (`suspension`)
+    /// is `_sanitize$start(…)` behind the marker, then
+    /// `_sanitize$settle(base, answer, site)` with what it answered, the
+    /// base bound to a temporary first: the answer may come after the fiber
+    /// resumes, past any code `list` could run after the writer.
+    fn sanitizedWrite(l: *Lowerer, out: *StmtList, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32, inst: Inst.Index, first: ?Inst.Index) Allocator.Error!Node.Index {
         if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists() and args.len != 0);
         l.needs.sanitize = true;
         const note: []const u8 = if (l.in.list_writes) |channel| note: {
@@ -5462,7 +5487,37 @@ pub const Lowerer = struct {
         all[0] = try l.stringNode(site, p);
         all[1] = writer;
         @memcpy(all[2..], args);
-        return l.call(try l.ident(try l.sanitizerLocal("list"), p), all, p);
+        if (!(l.suspendable and l.suspendsHere(l.in.dispatch.effectAt(inst).own))) return l.call(try l.ident(try l.sanitizerLocal("list"), p), all, p);
+        const base = try l.fresh(l.well.temp);
+        try l.constDecl(out, base, args[0], p);
+        all[2] = try l.ident(base, p);
+        const answer = try l.suspension(out, inst, try l.call(try l.ident(try l.sanitizerLocal("start"), p), all, p));
+        // The site last: the corpus counts a write's sites by the text that
+        // follows a call's parenthesis (`checkSanitisedSites`).
+        return l.call(try l.ident(try l.sanitizerLocal("settle"), p), &.{ try l.ident(base, p), answer, try l.stringNode(site, p) }, p);
+    }
+
+    /// Whether the call `inst` is a `List.cons` of an item before a
+    /// construction's base whose write is sanitised (`[ x, …xs, y ]` is
+    /// `List.cons x (List.append xs [ y ])`): through any more such items,
+    /// a spread's `List.append` that `sanitizesSpreadAt` wraps.
+    fn frontsSanitisedWrite(l: *Lowerer, inst: Inst.Index) Allocator.Error!bool {
+        if (!l.sanitizesLists()) return false;
+        var tail = l.consTail(inst) orelse return false;
+        while (l.consTail(tail)) |next| tail = next;
+        if (!l.isSpreadAppend(tail) or l.inSanitizeChain(tail)) return false;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(tail).rhs))), Inst.Index);
+        if (args.len == 0) return false;
+        return l.sanitizesSpreadAt(tail, args[0]);
+    }
+
+    /// `_sanitize$front(x, xs, site)`: an item put in front of a written
+    /// base, which the target does in place (`backend.md` §4, *Writes*),
+    /// where `List.cons` copies.
+    fn sanitizedFront(l: *Lowerer, written: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        l.needs.sanitize = true;
+        const site = try std.fmt.allocPrint(l.scratch, "an item put in front of a construction in {s} (at byte {d})", .{ l.interner.slice(l.module_name), p });
+        return l.call(try l.ident(try l.sanitizerLocal("front"), p), &.{ written[0], written[1], try l.stringNode(site, p) }, p);
     }
 
     /// `_sanitize$writer("List.<writer> value in M (at byte p)", value)`: a
@@ -5485,7 +5540,8 @@ pub const Lowerer = struct {
     }
 
     /// `_sanitize$<export>`, one of the sanitiser's exports (`list`,
-    /// `writer`, `len`) as this module names it.
+    /// `writer`, `len`, `same`, `start`, `settle`, `front`) as this module
+    /// names it.
     fn sanitizerLocal(l: *Lowerer, comptime export_name: []const u8) !JsIr.NameIndex {
         return l.name(.{
             .module = (try l.interner.getOrPut(l.gpa, "_sanitize")).toOptional(),
@@ -10234,7 +10290,7 @@ pub const Lowerer = struct {
                 // `xs.push x` is `List.push xs x`, a write of its receiver.
                 if (target == .ext and evidence.len == 0 and l.sanitizesAt(inst)) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
                     const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
-                    return l.suspension(out, inst, try l.sanitizedWrite(callee_name, writer, values, p, inst, null));
+                    return l.sanitizedWrite(out, callee_name, writer, values, p, inst, null);
                 };
                 const called = try l.receiverCall(out, callee_name, evidence, @fromBackingInt(@intCast(d.lhs)), args, p);
                 const value = try l.suspension(out, inst, called);
@@ -10956,7 +11012,7 @@ pub const Lowerer = struct {
             try l.markSanitizeChain(inst, arg_insts);
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const append = try l.coreValue(.List, .append, p);
-            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return .{ .value = try l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p, inst, null)) };
+            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return .{ .value = try l.sanitizedWrite(out, append, "append", values, p, inst, null) };
             return .{ .value = try l.suspension(out, inst, try l.call(append, values, p)) };
         }
         // Under `--release`, a `++` one of whose operands is a string —
@@ -11103,7 +11159,8 @@ pub const Lowerer = struct {
         l.term_choice = saved_choice;
         if (evidence.len == 0) {
             if ((if (arg_insts.len != 0) try l.sanitizesSpreadAt(inst, arg_insts[0]) else l.sanitizesAt(inst)) and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
-                return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p, inst, if (arg_insts.len != 0) arg_insts[0] else null));
+                return l.sanitizedWrite(out, callee, writer, written, p, inst, if (arg_insts.len != 0) arg_insts[0] else null);
+            if (written.len == 2 and try l.frontsSanitisedWrite(inst)) return l.sanitizedFront(written, p);
             return l.suspension(out, inst, try l.call(callee, written, p));
         }
         // How the evidence is passed is the callee's convention
@@ -11719,7 +11776,14 @@ pub const Lowerer = struct {
             W.null => l.nullNode(p),
             W.undefined => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.from, W.to => v[0],
-            W.same => l.binary(.strict_eq, v[0], v[1], p),
+            // Under the sanitiser, outside core, an identity compare goes
+            // through its trap (`sanitize_runtime.mjs`'s `same`, research
+            // report 140): it throws where an in-place write would change
+            // the answer.
+            W.same => if (l.in.identity_trap and l.in.graph.modulePackage(l.in.module) != .core) blk: {
+                l.needs.sanitize = true;
+                break :blk l.call(try l.ident(try l.sanitizerLocal("same"), p), &.{ v[0], v[1] }, p);
+            } else l.binary(.strict_eq, v[0], v[1], p),
             W.isNull => l.binary(.strict_eq, v[0], try l.nullNode(p), p),
             W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
             W.isNullish => l.binary(.loose_eq, v[0], try l.nullNode(p), p),

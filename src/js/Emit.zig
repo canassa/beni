@@ -450,6 +450,10 @@ const derived_runtime_compact = @embedFile("derived_runtime.min.mjs");
 /// when a module written imports it.
 pub const sanitize_runtime_path = core_dir ++ "_sanitize.mjs";
 const sanitize_runtime_source = @embedFile("sanitize_runtime.mjs");
+/// The same path under `--lists-in-place`: the in-place oracle
+/// (`src/js/inplace_runtime.mjs`, research report 140), whose exports are the
+/// sanitiser's, so the lowering is one.
+const inplace_runtime_source = @embedFile("inplace_runtime.mjs");
 
 /// Output directory of the platform package, its siblings and its runtime.
 /// Reserved for `core_dir`'s reason: `Platform.Node` is a legal module name.
@@ -498,6 +502,10 @@ pub const Options = struct {
     /// `--sanitize-lists`, the hidden test-only flag (`src/Cli.zig`,
     /// `Lower.Input.sanitize_lists`, `ownership-v2.md` §7.3).
     sanitize_lists: bool = false,
+    /// `--lists-in-place`, the hidden test-only flag (`src/Cli.zig`): each
+    /// accepted list write edits its base's own array. It is lowered as
+    /// `sanitize_lists` is, with the in-place runtime in its file.
+    lists_in_place: bool = false,
     /// `--schema-shapes`: shapes for every validator run with one (true),
     /// or for none (false), whatever the count; null, the count decides.
     schema_shapes: ?bool = null,
@@ -6821,7 +6829,7 @@ const Emitter = struct {
                 slot.sibling = try e.siblingSpecifier(source_path);
                 slot.worker_descriptors = try e.descriptorsFor(m);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
-                if (e.options.sanitize_lists) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
+                if (e.options.sanitize_lists or e.options.lists_in_place) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
                 if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
                 // With no runtime file the module supplies every export, and
                 // nothing is imported from the file's specifier.
@@ -7024,7 +7032,7 @@ const Emitter = struct {
         } else if (uses_runtime) try e.emitDerivedRuntime();
         // `--sanitize-lists` is refused with `--release` (`Cli`), so its
         // build is never one hoisted file.
-        if (uses_sanitizer) try e.produce(sanitize_runtime_path, sanitize_runtime_source, sanitize_runtime_path);
+        if (uses_sanitizer) try e.produce(sanitize_runtime_path, if (e.options.lists_in_place) inplace_runtime_source else sanitize_runtime_source, sanitize_runtime_path);
     }
 
     /// One module's way from `Bir` to bytes. Written by the one worker that
@@ -7360,8 +7368,9 @@ const Emitter = struct {
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
             // A guarded module must be lowered for this entry, not from the unknown-realm pack.
+            // Under the sanitiser a module's `Js.same` is its trap, which no pack row holds.
             const realm_sensitive = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library) != null and JsIntrinsic.hasEntryWindow(e.graph(), e.session.resolution.interfaces, e.bir(m), &e.session.interner);
-            if (!realm_sensitive and read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+            if (!realm_sensitive and !e.options.sanitize_lists and read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
                 const key = EmitPack.key(e.session.keys.of(m), .{});
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
@@ -7387,7 +7396,7 @@ const Emitter = struct {
                 .birs = e.reach.birs,
                 .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
-                .token_tags = if (e.options.sanitize_lists) e.session.artifacts.spans(file).tags else &.{},
+                .token_tags = if (e.options.sanitize_lists or e.options.lists_in_place) e.session.artifacts.spans(file).tags else &.{},
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
@@ -7421,7 +7430,8 @@ const Emitter = struct {
                 .development = !e.options.release,
                 .test_hooks = e.options.test_hooks,
                 .sanitize_records = e.options.sanitize_records,
-                .sanitize_lists = e.options.sanitize_lists,
+                .sanitize_lists = e.options.sanitize_lists or e.options.lists_in_place,
+                .identity_trap = e.options.sanitize_lists,
                 .sanitize_runtime = slot.sanitize_runtime,
                 .clean_modules = e.clean_modules,
                 .boundary = if (e.boundary) |*b| b else null,

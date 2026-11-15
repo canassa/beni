@@ -8601,6 +8601,88 @@ test "the list sanitiser runs only where ownership is enforced, and writes its r
     for (try w.listFiles("plain")) |rel| try testing.expect(std.mem.indexOf(u8, rel, "_sanitize") == null);
 }
 
+test "the in-place oracle edits an accepted write's own array, where the plain build copies" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Research report 140: under the hidden `--lists-in-place`, each list
+    // write the checker accepted edits its base's array, as `backend.md` §4
+    // (*Every platform edits in place*) lowers it. A test platform keeps the
+    // list behind the checker's back (its words are trusted), so the write is
+    // accepted and the kept list shows whether it was edited in place: the
+    // plain build copies, the oracle does not. The flag needs a build that
+    // enforces, as the sanitiser does.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{ "platform": true, "name": "keeper", "platforms": ["node"], "reexports": ["Node"] }
+        \\
+    );
+    try w.write("platform/Keeper.js",
+        \\let kept = [];
+        \\export const keep = (xs) => {
+        \\  kept = xs;
+        \\  return 0;
+        \\};
+        \\export const last = (_) => kept[kept.length - 1];
+        \\export const first = (_) => kept[0];
+        \\
+    );
+    try w.write("platform/Keeper.beni",
+        \\--| Keeps the list it is lent, a holder the checker cannot see.
+        \\pub foreign pure keep : borrowed List Int → fresh Int
+        \\
+        \\
+        \\--| The last element of the list `keep` kept.
+        \\pub foreign pure last : borrowed Int → fresh Int
+        \\
+        \\
+        \\--| The first element of the list `keep` kept.
+        \\pub foreign pure first : borrowed Int → fresh Int
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Keeper
+        \\import List
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    xs = List.range 1 3
+        \\    k = Keeper.keep xs
+        \\    ys = List.update (List.push xs 4) 0 λx → x + 10
+        \\    zs = [ 0, …ys, 5 ]
+        \\    Node.print (String.fromInt (Keeper.last k) ++ " " ++ String.fromInt (Keeper.first k) ++ " " ++ String.fromInt (List.length zs))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const raw: world.RunOptions = .{ .raw_diagnostics = true };
+    const refused = try w.runWith(&.{ "build", "--platform=platform", "--lists-in-place", "--out=refused", "Main.beni" }, raw);
+    const plain = try w.run(&.{ "build", "--platform=platform", "--out=plain", "Main.beni" });
+    const in_place = try w.run(&.{ "build", "--platform=platform", "--ownership=v3", "--ownership-everywhere", "--lists-in-place", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), refused.exit_code);
+    try testing.expectEqualStrings("beni: --lists-in-place needs a build that enforces ownership: an in-place platform, --ownership-everywhere or --records-in-place\n", refused.stderr);
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqual(@as(u8, 0), in_place.exit_code);
+    try w.expectProgram("plain/_main.mjs", .{ .stdout = "3 1 6\n" });
+    // `push`, `update` and the construction each edit `xs`'s array, its
+    // item in front included (`backend.md` §4, *Writes*).
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "5 0 6\n" });
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY FILES                            │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, try w.read("out/_core/_sanitize.mjs"), "The in-place oracle") != null);
+}
+
 test "the ownership checker v2 runs behind --ownership=v2 in check, build and dump" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

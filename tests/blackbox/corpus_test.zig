@@ -2473,6 +2473,9 @@ const Case = struct {
                     value = true;
                     rest = rest["value ".len..];
                 }
+                // v3 says `List.update`, which has no words, at the call
+                // (`call List.update xs`); the build wraps it as a writer.
+                if (std.mem.eql(u8, checker, "v3") and std.mem.startsWith(u8, rest, "call List.update ")) rest = rest["call ".len..];
                 const op_end = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
                 const op = rest[0..op_end];
                 if (std.mem.indexOf(u8, rest[op_end..], "[*]") != null) continue;

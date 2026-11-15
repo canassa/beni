@@ -18,6 +18,14 @@ node bench/ownership-sweeps/run.mjs --beni=zig-out/safe/bin/beni --checker=v3 --
   `--ownership=<checker> --ownership-everywhere --sanitize-lists`. It runs both outputs and compares them.
   Results go to `<outdir>.<checker>.txt`, one line per program. A rerun skips the programs that already have
   a line.
+- `--mode=inplace` builds the second time with `--lists-in-place` in place of `--sanitize-lists`: each
+  accepted list write edits its base's own array, so the output is what the program prints where lists are
+  edited in place (research report 140). `--mode=both` builds three times, plain, sanitised and in place;
+  its results go to `<outdir>.<checker>-both.txt`. Under `--sanitize-lists`, an identity compare
+  (`Js.same`) outside core whose answer an in-place write would change traps as well.
+- `corpus.mjs <outdir>` writes the corpus's programs as a sweep: `run/`, the `browser/` pages,
+  `browser/inline/`, `browser/prerender/` (compared by the pages the build writes) and, to list their
+  faults, `browser/dom/`, `browser/managed/` and `browser/tea/`.
 - A program with a `PLATFORM` file is built for the platform it names (a directory below the repository root), and one with a `steps` file is run as a page: `tests/browser/driver.mjs` drives it under happy-dom, and its transcript is the output.
 - A generator takes an optional second argument, a filter: only the programs whose name contains it.
 - Use a ReleaseSafe or ReleaseFast beni. A Debug one is several times slower. Point `--tmp` at a disk, not a
@@ -32,6 +40,8 @@ node bench/ownership-sweeps/run.mjs --beni=zig-out/safe/bin/beni --checker=v3 --
 | `LIMIT` | the checker stops at its size limit |
 | **`TRAP`** | the checker accepts, and the in-place build throws: a stale read. **A soundness hole** |
 | **`DIFF`** | the checker accepts, and the output differs. **A soundness hole** |
+| **`IPTRAP`**, **`IPDIFF`** | (`--mode=both`) the sanitised run is `SAME`, and the in-place run throws or prints another output. **A soundness hole** |
+| `TIMEOUT` | the checked build's run passed its 20 s |
 | `CRASH` | the compiler fails |
 | `PLAINFAIL` | the generated program does not build: a fault of the generator, not of the checker |
 | `BOTHFAIL` | both runs fail |

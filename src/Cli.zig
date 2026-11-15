@@ -366,8 +366,17 @@ pub const Build = struct {
     /// stale-read sanitiser for lists (`ownership-v2.md` §7.3,
     /// `Lower.Input.sanitize_lists`): each accepted list write runs on a
     /// copy and poisons the list it wrote. Development builds only, and
-    /// only a build that enforces ownership (`build/Command.zig`).
+    /// only a build that enforces ownership (`build/Command.zig`). It also
+    /// traps an identity compare (`Js.same`) whose answer an in-place write
+    /// would change (research report 140).
     sanitize_lists: bool = false,
+    /// `--lists-in-place` — **hidden**, for `--allow-debug`'s reason: the
+    /// in-place oracle (research report 140). Each list write the checker
+    /// accepted edits its base's own array, so every holder of the list
+    /// sees the write, as the target lowering's would (`backend.md` §4,
+    /// *Every platform edits in place*). Development builds only, only a
+    /// build that enforces ownership, and never with `--sanitize-lists`.
+    lists_in_place: bool = false,
     /// `--records-in-place` — **hidden**, for `--allow-debug`'s reason:
     /// the build enforces the ownership check, as an in-place platform's
     /// does, and so writes the records of every module whose demands were
@@ -918,6 +927,7 @@ const BuildSpecific = struct {
     test_hooks: bool = false,
     sanitize_records: bool = false,
     sanitize_lists: bool = false,
+    lists_in_place: bool = false,
     records_in_place: bool = false,
     schema_shapes: ?bool = null,
     fuzz: bool = false,
@@ -974,6 +984,11 @@ const BuildSpecific = struct {
             // A hidden flag (see `Build.sanitize_lists`).
             if (value != null) return noValue(name);
             self.sanitize_lists = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--lists-in-place")) {
+            // A hidden flag (see `Build.lists_in_place`).
+            if (value != null) return noValue(name);
+            self.lists_in_place = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--records-in-place")) {
             // A hidden flag (see `Build.records_in_place`).
@@ -1056,6 +1071,12 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
     if (s.specific.sanitize_lists and s.specific.release) {
         return .{ .usage = .init("beni: --sanitize-lists is for development builds, not --release", .{}) };
     }
+    if (s.specific.lists_in_place and s.specific.release) {
+        return .{ .usage = .init("beni: --lists-in-place is for development builds, not --release", .{}) };
+    }
+    if (s.specific.lists_in_place and s.specific.sanitize_lists) {
+        return .{ .usage = .init("beni: --lists-in-place and --sanitize-lists are two oracles; give one", .{}) };
+    }
     const platform = s.specific.platform orelse defaults.platform orelse
         return .{ .usage = .init("beni: {s} needs --platform=<name>", .{command}) };
     if (defaults.base) |base| if (!validBase(base)) {
@@ -1081,6 +1102,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .test_hooks = s.specific.test_hooks,
         .sanitize_records = s.specific.sanitize_records,
         .sanitize_lists = s.specific.sanitize_lists,
+        .lists_in_place = s.specific.lists_in_place,
         .records_in_place = s.specific.records_in_place,
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
@@ -1882,6 +1904,13 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try expectUsage("beni: unknown option '--sanitize-lists'; run 'beni help' for usage", &.{ "check", "--sanitize-lists", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "sanitize-lists") == null);
     try testing.expect(std.mem.indexOf(u8, usage, "records-in-place") == null);
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .lists_in_place = true, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--lists-in-place", "src" },
+    );
+    try expectUsage("beni: --lists-in-place is for development builds, not --release", &.{ "build", "--platform=node", "--lists-in-place", "--release", "src" });
+    try expectUsage("beni: --lists-in-place and --sanitize-lists are two oracles; give one", &.{ "build", "--platform=node", "--lists-in-place", "--sanitize-lists", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "lists-in-place") == null);
 }
 
 test "--cache-build-id is check's and build's, hidden, and nobody else's" {

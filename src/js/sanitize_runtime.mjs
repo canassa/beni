@@ -37,6 +37,13 @@
 //   leaves below the root are left alone, since only the root reaches them.
 //   An empty tree (`tc` 0) may be `core/List`'s one shared `noTree`, and
 //   holds nothing, so it is never poisoned.
+//
+// A poisoned list traps where it is read, but `===` reads nothing. So each
+// write also links its base to what it answered, and `same`, which `Js.same`
+// outside core lowers to, traps where the two operands are distinct here and
+// one object in place (research report 140): a value kept from before an
+// in-place write compares equal to the written list there, and the program
+// would decide otherwise.
 
 const stale = (site, what) => {
   throw new Error(`beni: a stale read of a list (${what}), which ${site} changed in place`);
@@ -50,6 +57,19 @@ const trap = (site) =>
 
 // The site that made each poisoned plain array stale, for `len`.
 const staleSites = new WeakMap();
+
+// The identity trap (research report 140). In place, a write answers its
+// base: the old list and the new are one object. Here they are two, so an
+// identity compare of the two answers what no in-place run answers. Each
+// written base that is not a view (a view is never written in place: its
+// write makes a new array) is linked to what its write answered, with the
+// site; `same` follows the links to the list each operand is now, in place.
+const successors = new WeakMap();
+
+const latest = (v) => {
+  while (typeof v === "object" && v !== null && successors.has(v)) v = successors.get(v).next;
+  return v;
+};
 
 const poisonArray = (a, site, n = a.length) => {
   staleSites.set(a, site);
@@ -96,10 +116,28 @@ const fresh = (xs) => {
 
 // `List.<writer>(base, …rest)` under the sanitiser: `site` names the write.
 // A base already poisoned traps here, where the copy reads it.
-export const list = (site, writer, base, ...rest) => {
-  const copy = fresh(base);
-  const result = writer(copy, ...rest);
+export const list = (site, writer, base, ...rest) => settle(base, start(site, writer, base, ...rest), site);
+
+// The first half of a write: the writer runs on a fresh copy. A write that
+// may park (a suspendable twin, `name$s`) is lowered as `start`, the wait,
+// then `settle` with the answer, so the base is poisoned once the writer
+// is done, as an in-place store comes after its callback returns.
+export const start = (site, writer, base, ...rest) => writer(fresh(base), ...rest);
+
+// The second half: the old base poisoned, and linked to the answer.
+export const settle = (base, result, site) => {
+  const view = !Array.isArray(base) && base.o !== undefined;
   poison(base, site, result.length);
+  if (!view) successors.set(base, { next: result, site });
+  return result;
+};
+
+// `[ x, …xs, … ]`: an item before a construction's base. In place it goes
+// in front of the base, so the answer is the base (`backend.md` §4,
+// *Writes*); here it is a new list, linked to the written base's answer.
+export const front = (x, xs, site) => {
+  const result = [x, ...(Array.isArray(xs) ? xs : xs.$plain())];
+  if (Array.isArray(xs) || xs.o === undefined) successors.set(xs, { next: result, site });
   return result;
 };
 
@@ -113,4 +151,17 @@ export const writer = (site, f) => (base, ...rest) => list(site, f, base, ...res
 export const len = (xs) => {
   if (Array.isArray(xs) && staleSites.has(xs)) stale(staleSites.get(xs), "read length");
   return xs.length;
+};
+
+// `Js.same a b` outside core under the sanitiser: `a === b`, or a trap when
+// an in-place run would answer otherwise, which is when the two are
+// distinct here and one list in place: one was kept before a write that
+// answered the other, or both were. A compare whose answer an in-place
+// write cannot change answers as `===` does.
+export const same = (a, b) => {
+  if (a !== b && typeof a === "object" && a !== null && latest(a) === latest(b)) {
+    const kept = successors.has(a) ? a : b;
+    throw new Error(`beni: an identity compare of a list that ${successors.get(kept).site} changed in place since it was kept`);
+  }
+  return a === b;
 };
