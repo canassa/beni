@@ -1,3 +1,5 @@
-# The message function captures the page's errors, and Cmd.map lets its answer escape: the errors are not the model's own (ownership-v3-kernel.md §6 rules 2 and 13).
+# The message function captures the page's errors, and Cmd.map lets its answer escape: the errors are not the model's own (ownership-v3-kernel.md §6 rules 2 and 13). With records judged, the update of the page's record and its entry line are refused too.
 75:61 list_still_used call
+75:61 record_still_used call
+93:5 list_still_used entry
 93:5 list_still_used entry
