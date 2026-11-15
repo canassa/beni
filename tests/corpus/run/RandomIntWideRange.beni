@@ -1,0 +1,84 @@
+-- run: `Random.int` on a range wider than 2³² integers (#1992). Before the
+-- fix the rejection threshold of such a range was 2³², above every 32-bit
+-- output, so the generator looped for ever: this program printed nothing.
+-- Now a range of up to 2³² integers takes one 32-bit output per draw, as
+-- before, so its sequence for a seed is unchanged (the first three lines
+-- are the values the old generator gave); a wider range takes 53 bits, and
+-- a range of 2⁵³ integers or more one bit more. The values themselves are
+-- not fixed by any contract, so the rest prints what holds of them: every
+-- draw is inside its bounds, the two halves of a range get about half
+-- the draws each, and three equal thirds about a third each. The
+-- arithmetic on the draws is in `Float`, as a range can hold more integers
+-- than the largest `Int`.
+import Node exposing (Program)
+import Random.Pcg as Pcg
+
+
+draws : Int, Int, Int → List Int
+draws lo hi n =
+    ( values, _ ) = Pcg.step (Pcg.list (Pcg.int lo hi) n) (Pcg.initialSeed 1992)
+    values
+
+
+yes : Bool → String
+yes b = if b then "yes" else "no"
+
+
+inside : Int, Int → String
+inside lo hi =
+    values = draws lo hi 2000
+    lowest = Basics.min lo hi
+    highest = Basics.max lo hi
+    yes (List.all values λv → v ≥ lowest && v ≤ highest)
+
+
+-- The draws in the lower and the upper half of the range, both many.
+halves : Int, Int → String
+halves lo hi =
+    values = draws lo hi 2000
+    middle = toFloat lo / 2.0 + toFloat hi / 2.0
+    low = List.length (List.filter values λv → toFloat v < middle)
+    yes (low > 800 && low < 1200)
+
+
+-- `lo` to `hi`, three thirds of `third` integers each: each third gets
+-- about a third of 3000 draws.
+thirds : Int, Int, Int → String
+thirds lo hi third =
+    values = draws lo hi 3000
+    part v = floor ((toFloat v - toFloat lo) / toFloat third)
+    count k = List.length (List.filter values λv → part v == k)
+    yes (List.all [ count 0, count 1, count 2 ] λc → c > 900 && c < 1100)
+
+
+main : Program
+main =
+    big = 9007199254740991
+    ( dice, _ ) = Pcg.step (Pcg.list (Pcg.int 1 6) 8) (Pcg.initialSeed 42)
+    ( words, _ ) = Pcg.step (Pcg.list (Pcg.int 0 4294967295) 3) (Pcg.initialSeed 7)
+    ( mixed, _ ) = Pcg.step (Pcg.list (Pcg.int (-2147483648) 2147483647) 3) (Pcg.initialSeed 7)
+
+    Node.printLines
+        [ Debug.toString dice
+        , Debug.toString words
+        , Debug.toString mixed
+        , inside 0 4294967296
+        , inside 0 8589934592
+        , inside (-4294967296) 4294967296
+        , inside 0 (big - 1)
+        , inside 0 big
+        , inside (negate big) big
+        , inside big (negate big)
+        , inside 1 (negate big)
+        , halves 0 4294967296
+        , halves (-4294967296) 4294967296
+        , halves 0 big
+        , halves (negate big) big
+        , halves (negate big) 0
+        , thirds 0 12884901887 4294967296
+        , thirds (-1000) 2999999999998999 1000000000000000
+        , thirds (negate big) (-2) 3002399751580330
+        , thirds (-6000000000000000) 5999999999999999 4000000000000000
+        , Debug.toString (draws big big 3)
+        , Debug.toString (draws (negate big) (negate big) 3)
+        ]

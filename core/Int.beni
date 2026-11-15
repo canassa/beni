@@ -25,7 +25,20 @@ import Js
 pub mod : Int, Int → Int
 mod n k =
     -- `%` takes the sign of the dividend; this answer takes the modulus's.
-    if k == 0 then 0 else Js.rem (Js.rem n k + k) k
+    -- The modulus is added only to a remainder of the other sign, so the
+    -- sum is smaller than the modulus and exact even near 2⁵³ (#1992). A
+    -- zero remainder is `0`, never `-0`.
+    if k == 0 then
+        0
+    else
+        r = Js.rem n k
+
+        if r == 0 then
+            0
+        else if (r < 0) ≠ (k < 0) then
+            r + k
+        else
+            r
 
 
 --| The remainder after dividing the first number by the second. The
