@@ -1768,17 +1768,25 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
             const len = f.m.loc.layouts.items[r.layout].len;
             if (f.charge(len)) return true;
             const res = f.m.loc.layoutEntries(r.layout);
+            // The entries below this part, marked once (a step each, kernel §8):
+            // a record's field slot that is not below it holds no cell of it (kernel §11).
+            var below: std.DynamicBitSetUnmanaged = .{};
+            defer below.deinit(f.gpa);
+            const has_slots = for (res) |e| {
+                if (e.kind == .field) break true;
+            } else false;
+            if (has_slots and p.to_root.len != len) {
+                if (f.charge(p.to_root.len)) return true;
+                below = try std.DynamicBitSetUnmanaged.initEmpty(f.gpa, len);
+                for (p.to_root) |re| if (re != none) below.set(re);
+            }
             for (0..len) |i| {
                 const ent = f.rents.items[r.ent + i];
                 switch (ent.kind) {
                     .own, .taken => continue,
                     .alias, .derived, .version => {},
                 }
-                // A record's field slot that is not below this part holds no cell of it (kernel §11).
-                if (res[i].kind == .field) {
-                    if (f.charge(Loc.scanUnits(p.to_root.len))) return true;
-                    if (std.mem.indexOfScalar(u32, p.to_root, @intCast(i)) == null) continue;
-                }
+                if (res[i].kind == .field and below.bit_length != 0 and !below.isSet(i)) continue;
                 if (try f.runReaches(root, @intCast(i), ent, w)) return true;
             }
         },
