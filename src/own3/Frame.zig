@@ -5742,6 +5742,38 @@ fn answersAt(f: *Frame, ul: u32, ae: u32, fl: u32, k: usize, cv: u32) Error!bool
     return f.locsMeet(ul, ae, fl, @intCast(k));
 }
 
+/// `answersAt` of one entry `ae` of the use's layout `ul` against each entry `k` of the
+/// function's layout `fl`, the entry `k` maps to through `cover(ul, fl)` given:
+/// `locsMeet` reads the two maps for each pair, and here the map the other way is
+/// read once for `ae`. The answer is `answersAt`'s, pair for pair (safe builds check
+/// it for layouts of at most 64 entries).
+const AnswersAt = struct {
+    uls: []const Loc.Entry,
+    fls: []const Loc.Entry,
+    ae: u32,
+    ba: u32,
+
+    fn init(f: *Frame, ul: u32, ae: u32, fl: u32) Error!AnswersAt {
+        const m = f.m;
+        return .{ .uls = m.loc.layoutEntries(ul), .fls = m.loc.layoutEntries(fl), .ae = ae, .ba = (try m.loc.cover(fl, ul))[ae] };
+    }
+
+    fn at(s: AnswersAt, k: usize, cv: u32) bool {
+        if (Loc.hits(cv, s.ae)) return true;
+        const ab_decides = cv < Loc.all and (!s.fls[k].kind.wide() or s.uls[cv].kind.wide());
+        const ba_decides = s.ba < Loc.all and (!s.uls[s.ae].kind.wide() or s.fls[s.ba].kind.wide());
+        if (ab_decides and cv == s.ae) return true;
+        if (ba_decides and s.ba == k) return true;
+        return !(ab_decides or ba_decides);
+    }
+
+    fn check(s: AnswersAt, f: *Frame, ul: u32, fl: u32, k: usize, cv: u32) Error!bool {
+        const got = s.at(k, cv);
+        if (safety and smallLayout(f, ul) and smallLayout(f, fl)) std.debug.assert(got == try f.answersAt(ul, s.ae, fl, k, cv));
+        return got;
+    }
+};
+
 /// What the source `src` of `use`'s contract is in this frame: `sink` gets
 /// each part. `suffix`: only the part at these labels below the source's
 /// entry; `deep`: and each cell below that part (the one that asks is a wide
@@ -6047,8 +6079,9 @@ fn answerOwn(f: *Frame, level: *const Use, e: u32, suffix: []const u64, deep: bo
     if (!deep) if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(rcov[re], e)) {
         exact = true;
     };
+    const meets = try AnswersAt.init(f, fnc.layouts[fnc.arity], e, lc.layouts[lc.arity]);
     for (rcov, 0..) |cv, re| {
-        if (!try f.answersAt(fnc.layouts[fnc.arity], e, lc.layouts[lc.arity], re, cv)) continue;
+        if (!try meets.check(f, fnc.layouts[fnc.arity], lc.layouts[lc.arity], re, cv)) continue;
         if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[re].loc != want.?) continue;
         if (cv >= Loc.all and !try f.anyMeets(fnc.layouts[fnc.arity], lc.layouts[lc.arity], @intCast(re))) continue;
         for (lc.res[re]) |ls| switch (ls.kind) {
@@ -6308,8 +6341,9 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
     };
     var psuffix: std.ArrayList(u64) = .empty;
     defer psuffix.deinit(f.gpa);
+    const meets = try AnswersAt.init(f, fnc.layouts[fnc.arity], ae, lc.layouts[lc.arity]);
     for (cov, 0..) |cv, k| {
-        if (!try f.answersAt(fnc.layouts[fnc.arity], ae, lc.layouts[lc.arity], k, cv)) continue;
+        if (!try meets.check(f, fnc.layouts[fnc.arity], lc.layouts[lc.arity], k, cv)) continue;
         if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc != want.?) continue;
         // The function's type is wider here than the holder's: no cell is there.
         if (cv >= Loc.all and !try f.anyMeets(fnc.layouts[fnc.arity], lc.layouts[lc.arity], @intCast(k))) continue;

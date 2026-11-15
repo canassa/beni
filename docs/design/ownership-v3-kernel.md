@@ -6,7 +6,9 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 (research report 127); §5, §6.9, §6.11, §8 and §9 revised and §6.14 added the same day (research report
 129); §8 revised 2026-11-14 (research report 130); §6.14 and §8 revised again the same day (research
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
-revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and §11 revised again the same day (research report 144). The owner
+revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
+§11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
+(research report 143). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -817,6 +819,11 @@ paths:
   `operandLeaves`, `runsApart`): a pair with an empty location compared nothing and cost nothing,
   and 4 096 empty locations were 8 million such pairs in each walk. Each gives the same answer as
   before.
+  The scan of an answer's map for one location asked (`answerOfCode`, `answerOwn`) reads the map the
+  other way once for that location, not once for each entry of the map (`AnswersAt`, research report
+  143): asked of each location of an answer that escapes, the scan of an answer of 4 096 locations was
+  16 million reads of a map. It gives `locsMeet`'s answer, pair for pair (safe builds check it for
+  layouts of at most 64 entries).
 
   **The duplicate test is about linear in the cells** (`Frame.runsShare`, research report 138). The
   tests of a set of runs for one cell in two of them (§4.4) compared each pair of runs atom by atom: `f
