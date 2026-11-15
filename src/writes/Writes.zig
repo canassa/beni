@@ -3261,6 +3261,13 @@ fn effectIntegerCall(a: *Writes, name: []const u8, args: []const u32) Error!?u32
     if (std.mem.eql(u8, name, "min")) return if (x < y) args[0] else args[1];
     const yes: ?bool = if (std.mem.eql(u8, name, "gt")) x > y else if (std.mem.eql(u8, name, "ge")) x >= y else if (std.mem.eql(u8, name, "lt")) x < y else if (std.mem.eql(u8, name, "le")) x <= y else null;
     if (yes) |v| return try a.mkCon(if (v) a.ctor_true else a.ctor_false, &.{});
+    // `//` as `Basics.idiv` answers it: truncated towards zero, 0 for a zero
+    // divisor. `Duration`'s constructors divide before they multiply (#1992).
+    if (std.mem.eql(u8, name, "idiv")) {
+        const q: i64 = if (y == 0) 0 else @divTrunc(x, y);
+        const bits: u64 = @bitCast(q);
+        return try a.mkLit(lit_int, @truncate(bits), @truncate(bits >> 32));
+    }
     const calculated: i128 = if (std.mem.eql(u8, name, "add")) @as(i128, x) + y else if (std.mem.eql(u8, name, "sub")) @as(i128, x) - y else if (std.mem.eql(u8, name, "mul")) @as(i128, x) * y else return null;
     if (calculated < -9007199254740991 or calculated > 9007199254740991) return null;
     const bits: u64 = @bitCast(@as(i64, @intCast(calculated)));

@@ -5,7 +5,8 @@
 --!     Duration.sum (Duration.seconds 1) (Duration.millis 250)
 --!
 --! An argument no length fits is given the nearest one that does, never a
---! crash: a negative count is `zero`, and `times` rounds to the nearest
+--! crash: a negative count is `zero`, a count or a sum past the longest
+--! duration is the longest duration, and `times` rounds to the nearest
 --! millisecond. Two durations compare as lengths, `==` and `<` included.
 --!
 --! The names are Effect's `Duration` (Elm has none). Effect's also carries
@@ -26,8 +27,9 @@ zero = Duration 0
 
 
 -- The largest whole number a double holds exactly: 2⁵³ − 1 milliseconds,
--- some 285 000 years, is the longest duration, so a product that would be
--- infinite is this instead.
+-- some 285 000 years, is the longest duration, so a product or a sum past
+-- it is this instead. Each function tests its operands before it
+-- multiplies, adds or rounds, so no step leaves the `Int` range (#1992).
 longest : Int
 longest = 9007199254740991
 
@@ -40,19 +42,35 @@ pub millis : Int → Duration
 millis n = if n > 0 then Duration n else zero
 
 
---| `n` seconds; `zero` when `n` is negative.
+--| `n` seconds; `zero` when `n` is negative, the longest duration when
+--| `n` seconds are longer.
 pub seconds : Int → Duration
-seconds n = millis (n * 1000)
+seconds n = scaled n 1000
 
 
---| `n` minutes; `zero` when `n` is negative.
+--| `n` minutes; `zero` when `n` is negative, the longest duration when
+--| `n` minutes are longer.
 pub minutes : Int → Duration
-minutes n = millis (n * 60000)
+minutes n = scaled n 60000
 
 
---| `n` hours; `zero` when `n` is negative.
+--| `n` hours; `zero` when `n` is negative, the longest duration when `n`
+--| hours are longer.
 pub hours : Int → Duration
-hours n = millis (n * 3600000)
+hours n = scaled n 3600000
+
+
+-- `n` units of `unit` milliseconds each. The test comes before the
+-- product: `n * unit` is at most `longest` when `n` is at most
+-- `longest // unit`.
+scaled : Int, Int → Duration
+scaled n unit =
+    if n ≤ 0 then
+        zero
+    else if n > longest // unit then
+        Duration longest
+    else
+        Duration (n * unit)
 
 
 --| How many milliseconds.
@@ -62,11 +80,14 @@ pub toMillis : Duration → Int
 toMillis (Duration n) = n
 
 
---| The two lengths together.
+--| The two lengths together, or the longest duration when they are
+--| longer.
 --|
 --|     sum (seconds 1) (millis 5) == millis 1005
 pub sum : Duration, Duration → Duration
-sum (Duration a) (Duration b) = Duration (a + b)
+sum (Duration a) (Duration b) =
+    -- Neither is negative, so `longest - b` is in range.
+    if a > longest - b then Duration longest else Duration (a + b)
 
 
 --| The length `factor` times over, rounded to the nearest millisecond:
@@ -77,11 +98,12 @@ sum (Duration a) (Duration b) = Duration (a + b)
 --|     times (millis 100) (-2.0) == zero
 pub times : Duration, Float → Duration
 times (Duration n) factor =
-    product = toFloat n * factor
-
-    if isNaN product || product ≤ 0 then
+    -- The factor is tested before the product is made, and the product is
+    -- clamped before it is rounded: no step makes a `NaN`, an infinity or
+    -- an `Int` past the longest duration.
+    if n == 0 || isNaN factor || factor ≤ 0 then
         zero
-    else if isInfinite product then
+    else if factor ≥ toFloat longest / toFloat n then
         Duration longest
     else
-        Duration (Basics.min (round product) longest)
+        Duration (round (Basics.min (toFloat n * factor) (toFloat longest)))
