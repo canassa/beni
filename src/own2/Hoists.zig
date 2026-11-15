@@ -142,9 +142,10 @@ test "a refused or limited module publishes no write; an accepted one its writes
     var t = try b.finish(gpa, gpa, false);
     defer t.deinit(gpa);
     try testing.expect(t.clean);
-    try testing.expectEqual(@as(usize, 2), t.writes.len);
-    try testing.expect(t.accepted(3) and t.accepted(9));
-    try testing.expect(!t.accepted(5) and !t.accepted(4));
+    // A record update is listed too: the v3 oracle reads it (research report 142).
+    try testing.expectEqual(@as(usize, 3), t.writes.len);
+    try testing.expect(t.accepted(3) and t.accepted(9) and t.find(5).?.kind == .update);
+    try testing.expect(!t.accepted(4));
     // One instruction twice: it rests on the callers when either verdict does.
     try testing.expect(t.find(9).?.callers and t.find(3).?.callers);
 

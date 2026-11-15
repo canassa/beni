@@ -3739,7 +3739,8 @@ test "ownership v3: the faults of the review of report 114 are refused" {
             // `q` reads a list of the model, so the root makes it again on each
             // render and keeps none (kernel §6.14): the refusal is the markup's.
             "  28:9 List.push q: rejected later-use: it is read again at 29:5 (<expression>)\n",
-            "total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1\n",
+            // `update` writes the model's `step` in place, which the entry accepts (research report 142).
+            "total 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1\n",
         }) |line| {
             if (std.mem.indexOf(u8, r.stdout, line) == null) {
                 std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -4119,8 +4120,11 @@ test "ownership v3 (the step 0 prototype): the accepted twins of the refused fix
     const twins = [_][]const u8{
         "SanitiserPairCycleFoldApart", "SanitiserPairCycleLoopApart", "SanitiserPairCycleParamApart", "SanitiserPairCrossEdgeFoldApart",
         "SanitiserFoldHandsLabel",     "SanitiserFoldAlternatives",   "SanitiserRecordCallback",      "SanitiserPrependFront",
-        "SanitiserFoldAnswerFed",      "SanitiserFoldAccumulator",    "SanitiserCellCapture",
+        "SanitiserFoldAnswerFed",      "SanitiserFoldAccumulator",
     };
+    // `SanitiserCellCapture` left this list with research report 142: its
+    // `Ref.update` and `Ref.modify` functions update the cell's record, which
+    // is written in place now, and a cell's contents are never `own` (#2518).
     var argv: std.ArrayList([]const u8) = .empty;
     try argv.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node" });
     for (twins) |name| try argv.append(a, try std.fmt.allocPrint(a, "tests/corpus/run/{s}.beni", .{name}));
@@ -6092,8 +6096,11 @@ test "ownership v3: runtime calls into the program, and one step budget per decl
 
 // Research report 130: the budget was per declaration, so declarations
 // that each stayed under it added up without a bound. One module that
-// instantiates a record of 2 040 lists, declared in another module, at 30
-// record types, with a small function and its caller for each: each
+// instantiates a record of 2 040 lists (1 000 since research report 142:
+// each field's slot, and each element's, is a location too, so the record
+// has about 3 000 locations, under the 4 096 of the layout limit), declared
+// in another module, at 30 record types, with a small function and its
+// caller for each: each
 // declaration built and walked layouts of 2 040 locations (about 10 s on an
 // LLVM ReleaseSafe compiler, and over a minute on the gates' one, for 240
 // lines of its own). A module now does at most `Check.moduleBudget` units
@@ -6108,7 +6115,7 @@ test "ownership v3: one budget for each module, in proportion to its size" {
     const a = w.arena.allocator();
     var shared: std.ArrayList(u8) = .empty;
     try shared.appendSlice(a, "pub type alias B a =\n");
-    for (0..2040) |i| try shared.appendSlice(a, try std.fmt.allocPrint(a, "    a{d} : List a\n", .{i}));
+    for (0..1000) |i| try shared.appendSlice(a, try std.fmt.allocPrint(a, "    a{d} : List a\n", .{i}));
     try w.write("Shared.beni", shared.items);
     var main: std.ArrayList(u8) = .empty;
     try main.appendSlice(a, "import Io\nimport List\nimport Node exposing (Program)\nimport Shared exposing (B)\n");
