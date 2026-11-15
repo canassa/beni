@@ -1,0 +1,33 @@
+-- A loop whose state keeps a snapshot of one of its own records: one
+-- iteration stores `acc.cur` at `snap`, the next writes `acc.cur`'s field
+-- (kernel §5 test 2, §11). The loop answers `snap`, so the recursive call
+-- that writes `cur.a` has `snap` as another operand, and the two are one
+-- record. In place the snapshot would see the write: "5 5", where the
+-- copying program prints "5 0". v3 refuses the call.
+import Node exposing (Program)
+
+
+type alias P =
+    a : Int
+    b : Int
+
+
+type alias S =
+    cur : P
+    snap : P
+
+
+loop : Int, S → S
+loop k acc =
+    if k > 2 then
+        acc
+    else if k == 1 then
+        loop (k + 1) { acc | snap = acc.cur }
+    else
+        loop (k + 1) { acc | cur = { (acc.cur) | a = acc.cur.a + 5 } }
+
+
+main : Program
+main =
+    r = loop 1 { cur = { a = 0, b = 0 }, snap = { a = 0, b = 0 } }
+    Node.print "${String.fromInt r.cur.a} ${String.fromInt r.snap.a}"
