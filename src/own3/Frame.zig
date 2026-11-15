@@ -1772,7 +1772,7 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
     // The write in judgement, indexed: only its atoms of this root (`w_ix`).
     const indexed = f.wIndexed(w);
     const targets = if (indexed) f.w_ix.ofRoot(root) else w;
-    if (f.charge(if (indexed) Loc.lookup_units + targets.len else w.len)) return true;
+    if (f.charge(if (indexed) @min(Loc.lookup_units + targets.len, w.len) else w.len)) return true;
     for (targets) |x| {
         if (x.root != root) continue;
         if (f.pathPrefix(path, x.path)) return true;
@@ -1785,7 +1785,8 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
     switch (r.kind) {
         .local => {
             const len = f.m.loc.layouts.items[r.layout].len;
-            if (try f.runEntries(root)) |re| return f.runsReach(root, p, re, w);
+            var made = false;
+            if (try f.runEntries(root, &made)) |re| return f.runsReach(root, p, re, w, made);
             if (f.charge(len)) return true;
             const res = f.m.loc.layoutEntries(r.layout);
             // The entries below this part, marked once (a step each, kernel §8):
@@ -1830,13 +1831,16 @@ const RunEntries = struct { ents: []const u32, has_slots: bool };
 /// at most `w_index_min` entries, which `rootReach` scans as before. A
 /// scan for each part of a record of `n` fields read cost n² (research
 /// report 145).
-fn runEntries(f: *Frame, root: u32) Error!?RunEntries {
+fn runEntries(f: *Frame, root: u32, made: *bool) Error!?RunEntries {
+    made.* = false;
     const r = f.roots.items[root];
     if (r.linear == .undecided) return null;
     const res = f.m.loc.layoutEntries(r.layout);
     if (res.len <= w_index_min) return null;
     const got = try f.run_ents.getOrPut(f.gpa, root);
     if (!got.found_existing) {
+        // The scan that makes the list is the one `rootReach` made each time.
+        made.* = true;
         _ = f.charge(res.len);
         var ents: std.ArrayList(u32) = .empty;
         var has_slots = false;
@@ -1852,7 +1856,7 @@ fn runEntries(f: *Frame, root: u32) Error!?RunEntries {
         }
         got.value_ptr.* = .{ .ents = ents.items, .has_slots = has_slots };
     }
-    if (safety) {
+    if (safety and res.len <= 256) {
         // The entries never change once made.
         var k: usize = 0;
         for (res, 0..) |_, i| {
@@ -1870,10 +1874,13 @@ fn runEntries(f: *Frame, root: u32) Error!?RunEntries {
 /// `rootReach`'s test of the runs of root `root` (a root the frame made)
 /// below the part at path `p`, over its `RunEntries`: the entries the scan
 /// of every entry tests, in the same order.
-fn runsReach(f: *Frame, root: u32, p: Loc.Path, re: RunEntries, w: []const Atom) Error!bool {
+fn runsReach(f: *Frame, root: u32, p: Loc.Path, re: RunEntries, w: []const Atom, made: bool) Error!bool {
     const r = f.roots.items[root];
     const len = f.m.loc.layouts.items[r.layout].len;
-    if (f.charge(1 + re.ents.len)) return true;
+    // The list costs what the scan of every entry cost, where it was made
+    // (`runEntries`), and its own entries after.
+    if (!made and f.charge(@min(1 + re.ents.len, len))) return true;
+    if (made and f.m.steps_over) return true;
     const res = f.m.loc.layoutEntries(r.layout);
     // The entries below this part (a step each, kernel §8): a record's
     // field slot that is not below it holds no cell of it (kernel §11).
@@ -1938,7 +1945,8 @@ fn atomsReachIndexed(f: *Frame, xs: []const Atom) bool {
 /// budget it does.
 fn overlapIndexed(f: *Frame, x: Atom) bool {
     const g = f.w_ix.group(x.root, x.e);
-    if (f.charge(Loc.lookup_units + g.len)) return true;
+    // Never more than the scan of the write costs (`atomsReach`).
+    if (f.charge(@min(Loc.lookup_units + g.len, f.w_ix.of.len + 1))) return true;
     for (g) |y| if (f.overlap(x, y)) return true;
     return false;
 }
@@ -1969,7 +1977,7 @@ const WIndex = struct {
 const w_index_min = 32;
 
 /// Index the write `ws` in judgement (`w_ix`), when it has more than
-/// `w_index_min` atoms. Each atom grouped is a lookup (kernel §8). A write
+/// `w_index_min` atoms. A write
 /// of every field of a record of `n` fields, compared atom by atom with
 /// each later read of a field, cost n² (research report 145).
 fn indexWrite(f: *Frame, ws: []const Atom) Error!void {
@@ -1979,7 +1987,10 @@ fn indexWrite(f: *Frame, ws: []const Atom) Error!void {
     ix.sorted.clearRetainingCapacity();
     ix.by_re.clearRetainingCapacity();
     ix.by_root.clearRetainingCapacity();
-    _ = f.charge(ws.len * Loc.lookup_units);
+    // The index is not counted apart: it is linear in the write's atoms,
+    // each counted where it was made, and each test that reads it costs at
+    // most what the scan it replaces cost, so no budget moves toward a
+    // limit (research report 145's review).
     try ix.sorted.appendSlice(f.gpa, ws);
     std.mem.sort(Atom, ix.sorted.items, {}, struct {
         fn lt(_: void, a: Atom, b: Atom) bool {
@@ -2119,15 +2130,17 @@ const scan_parts = 16;
 fn builtPart(f: *Frame, v: Val, n: Node, s: Step) Error!Val {
     const made = try f.built_parted.getOrPut(f.gpa, v);
     if (!made.found_existing) {
-        _ = f.charge(n.b * Loc.lookup_units);
+        // The first projection costs the scan it replaces, and makes the
+        // index; each later one a lookup. So no projection costs more than
+        // the scan did, and a budget never moves toward a limit.
+        _ = f.charge(n.b);
         for (0..n.b) |ki| {
             const k = f.kids.items[n.a + ki];
             // The first part at a step is the one a scan finds.
             const got = try f.built_parts.getOrPut(f.gpa, .{ v, k.step });
             if (!got.found_existing) got.value_ptr.* = k.val;
         }
-    }
-    _ = f.charge(Loc.lookup_units);
+    } else _ = f.charge(Loc.lookup_units);
     return f.built_parts.get(.{ v, s.word() }) orelse v_none;
 }
 
@@ -3753,9 +3766,8 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
     defer f.gpa.free(named);
     for (named, tmp.items) |*n, k| n.* = k.step;
     std.mem.sortUnstable(u32, named, {}, std.sort.asc(u32));
-    // Each part copied is a step of the budget (kernel §8), and so is each
-    // field named.
-    _ = f.charge(st.steps.len + named.len);
+    // Each part copied is a step of the budget (kernel §8).
+    _ = f.charge(st.steps.len);
     for (st.steps) |s| {
         if (s.kind == .level) continue;
         if (std.sort.binarySearch(u32, named, s.word(), struct {
