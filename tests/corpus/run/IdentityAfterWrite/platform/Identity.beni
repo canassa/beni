@@ -1,0 +1,8 @@
+--! A test platform: `same`, an identity compare reached from beni.
+
+import Js
+
+
+--| Whether two values are one object.
+pub same : a, a → Bool
+same a b = Js.same a b

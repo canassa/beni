@@ -19,9 +19,10 @@ core       Debug.log             ownership/JsPure.beni           2:returned>-+re
 core       Debug.toString        ownership/JsPure.beni           -
 core       Js.from               ownership/core/JsWords.beni     1:returned>-+res:->fresh
 core       Js.to                 ownership/core/JsWords.beni     1:returned>-+res:->fresh
+# same reads both operands: in place, a list kept from before a write is === to the written one
+core       Js.same               ownership/core/JsWords.beni     1:borrowed>unused|2:borrowed>unused
 # unused is the bottom of the order: no word claims less
 core       Js.entryWindow        browser/managed/Network/Main.beni - Http.get
-core       Js.same               ownership/core/JsWords.beni     -
 core       Js.isNull             ownership/core/JsWords.beni     -
 core       Js.isUndefined        ownership/core/JsWords.beni     -
 core       Js.isNullish          ownership/core/JsWords.beni     -

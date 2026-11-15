@@ -1,0 +1,18 @@
+-- Research report 140: an identity compare reads its operands. `kept` is the
+-- list before `List.push`, which an in-place write keeps as one object with
+-- `ys`, so `Identity.same` answers otherwise in place: the write is refused.
+import Identity
+import List
+import Node exposing (Program)
+
+
+go : Int → String
+go k =
+    xs = [ 1, k ]
+    kept = xs
+    ys = List.push xs 3
+    if Identity.same kept ys then "one object" else "two objects"
+
+
+main : Program
+main = Node.print (go 2)

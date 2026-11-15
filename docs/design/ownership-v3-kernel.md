@@ -367,7 +367,10 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     `toString`; a comparison (`Js.lt`, `gt`, `le`, `ge`) runs an object operand's `valueOf`. Each can
     keep what it is handed, so each operand has no word and escapes: `Js.get` is unknown code, and the
     comparisons are `a, a → fresh bool`. `unused` is true only of an operation that coerces nothing
-    (`Js.same`, `isNull`, `typeIs`).
+    and whose answer no write in place changes (`isNull`, `typeIs`, `fingerprint`). `Js.same` coerces
+    nothing but is `borrowed a, borrowed a → fresh bool`: an in-place write keeps its base's object, so
+    a value kept from before the write is `===` to the written list, which it is not where the write
+    copies. An identity compare reads its operands (research report 140).
 11. **No fact by a name** (`methodCall`, `evidence`, `derivedEffect`, `Check.edgeEffect`, `Check.isSender`):
     a method call or an operator runs the code the dispatch table names: a declaration is a call of its
     contract; a function the compiler derives (`eq`, `compare` of a type that declares none, a codec)

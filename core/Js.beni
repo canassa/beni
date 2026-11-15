@@ -47,8 +47,10 @@ pub foreign pure from : returned a → Value
 pub foreign pure to : returned Value → a
 
 
---| `a === b`.
-pub foreign pure same : unused a, unused a → fresh bool
+--| `a === b`. Each operand is read: an in-place write keeps a list's
+--| object, so what a value kept from before the write is `===` to changes
+--| with the write (research report 140).
+pub foreign pure same : borrowed a, borrowed a → fresh bool
 
 
 --| `v === null`.

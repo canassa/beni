@@ -1,0 +1,2 @@
+# v3 refuses the write: `kept` is compared with `ys` by identity after it, and in place the two are one object.
+13:10 list_still_used List.push
