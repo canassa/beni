@@ -351,6 +351,8 @@ depth: u32 = 0,
 failed: bool = false,
 /// An answer of the body can be an object that was there before (`Contract.old_result`).
 tail_old: bool = false,
+/// The body read a value at a type variable that is not its own type (`narrowed`), or used the answer of a callee that did (`Contract.casts`).
+casts: bool = false,
 
 nodes: std.ArrayList(Node) = .empty,
 kids: std.ArrayList(Kid) = .empty,
@@ -5045,7 +5047,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         nonlinear = true;
     };
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts };
     return c;
 }
 
@@ -5769,7 +5771,13 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // read as a record, a list of tuples as a list of records) holds a
         // record's object that no cell of its own names: the answer is
         // `unknown` over it (kernel §3.4; research report 147).
-        if (try f.punned(args[0], if (arg_insts.len != 0) arg_insts[0].int() else none, place)) return f.unknownOf(place, args[0..1]);
+        // The unknown answer names the argument's cells, but a part of it at a
+        // type of no location is `outside`: the cells the reading has no
+        // location for escape here too (`narrowed`; research report 150).
+        if (try f.punned(args[0], if (arg_insts.len != 0) arg_insts[0].int() else none, place)) {
+            try f.narrowed(args[0], inst, place);
+            return f.unknownOf(place, args[0..1]);
+        }
         // A value read at a type with fewer places than its own (a list
         // read as an `Int`, a list of lists as a list of numbers): the
         // cells at its own locations that no location of the reading names
@@ -5844,6 +5852,14 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // reading holds (a result of a type variable read at `Int`, a `Maybe b`
     // read at `Maybe Int`): its cells escape at the call (`escapeUnplaced`).
     try f.escapeUnplaced(&base, c, cov, inst);
+    // A callee that casts (`Contract.casts`), or a function value handed to
+    // it that does, can answer at a type variable a value of another type: a
+    // wide location of its result that the caller reads with a part of no
+    // location below lets what it holds escape (`escapeHidden`).
+    const casts = c.casts or try f.argsCast(c, args);
+    if (casts) f.casts = true;
+    if (casts) try f.escapeHidden(&base, c, cov, place, inst);
+    try f.escapeWide(c, args, place, inst);
     // An answer of a type with no location holds `outside` (`rootVal`).
     if (es.len == 0) return v_outside;
     // The contract is written for arguments of which no cell is at two
@@ -5986,6 +6002,85 @@ fn escapeUnplaced(f: *Frame, base: *const Use, c: *const Contract, cov: []const 
         for (f.atoms.items[start..]) |*a| a.dead = none;
         try f.noteEscape(start, inst);
     }
+}
+
+/// A wide location of the callee's result that the caller reads at a type
+/// with a part of no location below it (`Loc.holeAt` of the caller's place
+/// at that path: `b` read as `List Int × Int`, `{ l : List Int, n : Int }`
+/// or `List Int`), where the callee casts (`escapeHidden`'s caller): what
+/// the callee put there can be at that part, where a reader finds `outside`,
+/// so it escapes at the call. A location no reading location holds is
+/// `escapeUnplaced`'s. A callee that does not cast answers at a type
+/// variable only values of that variable, whose cells a caller's reading
+/// names where the argument's own type does (kernel §3.4, research report
+/// 150). The scans are work (kernel §8).
+fn escapeHidden(f: *Frame, base: *const Use, c: *const Contract, cov: []const u32, place: PlaceId, inst: u32) Error!void {
+    const rsig = c.layouts[c.arity];
+    const rses = f.m.loc.layoutEntries(rsig);
+    if (rses.len == 0 or cov.len == 0) return;
+    _ = f.charge(Loc.scanUnits(cov.len) + Loc.scanUnits(rses.len));
+    const reached = try f.gpa.alloc(bool, rses.len);
+    defer f.gpa.free(reached);
+    @memset(reached, false);
+    for (cov) |cr| {
+        if (cr == Loc.all) {
+            @memset(reached, true);
+            break;
+        }
+        if (cr != none) reached[cr] = true;
+    }
+    for (rses, 0..) |re, ri| {
+        if (!reached[ri] or !re.kind.wide() or !namesCell(c.res[ri])) continue;
+        if (!try f.m.loc.holeAt(place, re.loc)) continue;
+        var st: SrcState = .{ .inst = inst };
+        const start: u32 = @intCast(f.atoms.items.len);
+        try f.expandSrcs(base, c.res[ri], rsig, @intCast(ri), rsig, @intCast(ri), &st);
+        for (f.atoms.items[start..]) |*a| a.dead = none;
+        try f.noteEscape(start, inst);
+    }
+}
+
+/// A callee whose result is a type variable that holds a parameter that is
+/// a type variable too (`a, Int → b`, `Js.Value → b`, `Maybe.withDefault`'s
+/// `a`): the argument is answered as it is, read at the caller's type, as an
+/// identity's is (`narrowed`): each location of the argument's own layout
+/// that the reading has no location for, or that is wide where the reading
+/// has a part of no location below it, escapes at the call. An argument of
+/// the reading's own type gives nothing (research report 150).
+fn escapeWide(f: *Frame, c: *const Contract, args: []const Val, place: PlaceId, inst: u32) Error!void {
+    const m = f.m;
+    const rses = m.loc.layoutEntries(c.layouts[c.arity]);
+    if (rses.len == 0 or rses[0].loc != 0 or !rses[0].kind.wide()) return;
+    for (c.res[0]) |s| {
+        if (s.kind != .param or s.a >= args.len) continue;
+        const pe = m.loc.layoutEntries(c.layouts[s.a])[s.e];
+        if (pe.loc != 0 or !pe.kind.wide()) continue;
+        try f.narrowed(args[s.a], inst, place);
+    }
+}
+
+/// Whether a function value handed to a function parameter of the call is
+/// known code that casts (`Contract.casts`): the callee answers its answers.
+/// A function the frame was handed (a draft) is judged where the function
+/// meets the frame's own holder (`escapeUnplacedAnswer`), and unknown code
+/// escapes there already.
+fn argsCast(f: *Frame, c: *const Contract, args: []const Val) Error!bool {
+    for (0..@min(c.arity, args.len)) |j| {
+        if (c.fns[j] == null) continue;
+        if (try f.valCasts(args[j], 0)) return true;
+    }
+    return false;
+}
+
+fn valCasts(f: *Frame, v: Val, depth: u32) Error!bool {
+    if (v == v_none or depth > 8) return depth > 8;
+    const n = f.nodes.items[v];
+    if (n.tag == .join) {
+        for (0..n.b) |ki| if (try f.valCasts(f.lists.items[n.a + 2 * ki], depth + 1)) return true;
+        return false;
+    }
+    const code = (try f.codeOf(v)) orelse return false;
+    return code.contract.casts;
 }
 
 /// Whether a source of a contract's result names a cell of a frame: a
@@ -6570,8 +6665,9 @@ fn punned(f: *Frame, v: Val, arg_inst: u32, place: PlaceId) Error!bool {
 
 /// The answer `v` of an identity read at `place`, a type with fewer places
 /// than the value's own: each location of the value's own layout that no
-/// location of the reading covers (`cover(view, own)` is `none`) holds
-/// cells that no reader of the answer can name, read whole or by parts. The
+/// location of the reading covers (`cover(view, own)` is `none` or
+/// `Loc.all`), and each wide one where the reading has a part of no location
+/// below it, holds cells that no reader of the answer can name. The
 /// answer is the same JavaScript value, and a later cast can read it at the
 /// first type again (`hide : List Int → Int`, then `Js.to` back to a list):
 /// so those cells escape at the call (kernel §3.4, *A value read at a type
@@ -6583,21 +6679,51 @@ fn narrowed(f: *Frame, v: Val, inst: u32, place: PlaceId) Error!void {
     const own = f.placeOfVal(v) orelse return;
     if (own == place) return;
     switch (m.places.kind(place)) {
-        .@"var", .@"opaque" => return,
+        // A value read at a type variable of another type than its own: the
+        // variable is a wide entry here, which holds every cell, but a caller
+        // fills it in, and where it fills it with a type that has a part of
+        // no location the value's cells can be there. The contract says so
+        // (`Contract.casts`), and each caller reads it (`applyAt`,
+        // `escapeHidden`; research report 150).
+        // A `Js.Value` read at a type variable is the code of `core/` that
+        // keeps values in arrays and objects of JavaScript: the value is
+        // wide already, and the caller that made it is judged where it reads
+        // the answer (`escapeWide`).
+        .@"var" => {
+            if (m.places.kind(own) != .@"opaque") f.casts = true;
+            return;
+        },
+        .@"opaque" => return,
         .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => {},
     }
     const own_layout = try m.loc.layoutOf(own);
-    if (m.loc.layoutEntries(own_layout).len == 0) return;
-    const cov = try m.loc.cover(try m.loc.layoutOf(place), own_layout);
+    const own_es = m.loc.layoutEntries(own_layout);
+    if (own_es.len == 0) return;
+    const view = try m.loc.layoutOf(place);
+    const view_es = m.loc.layoutEntries(view);
+    const cov = try m.loc.cover(view, own_layout);
     if (f.charge(Loc.scanUnits(cov.len))) {
         try f.escape(v, inst);
         return;
     }
-    for (cov, 0..) |c, k| if (c == none) {
+    // A location of the value's own layout that no location of the reading
+    // is at, nor a wide one above (`none`, or `Loc.all` where the reading has
+    // locations elsewhere), is at a part of the reading of no location, or at
+    // none: its cells escape. And a wide location of the value's own layout
+    // (a `Js.Value`, a type variable) holds cells at places no layout names:
+    // where the reading has a part of no location below it, they can be
+    // there (`Loc.holeAt`). Before research report 150 a location at
+    // `Loc.all` was held "at every entry of the reading", but a part of the
+    // reading at a type of no location is `outside`, so the cells a reader
+    // took out there were nobody's.
+    for (cov, 0..) |c, k| {
+        const hidden = c == none or c == Loc.all or
+            (own_es[k].kind.wide() and !view_es[c].kind.wide() and try m.loc.holeAt(place, own_es[k].loc));
+        if (!hidden) continue;
         const start: u32 = @intCast(f.atoms.items.len);
         _ = try f.leaves(v, @intCast(k), &f.atoms);
         try f.noteEscape(start, inst);
-    };
+    }
 }
 
 /// Whether the contract is that of a function that answers its one parameter
@@ -6825,15 +6951,25 @@ fn escapeUnplacedAnswer(f: *Frame, code: Code, use: *const Use) Error!void {
     const lc = code.contract;
     const fl = lc.layouts[lc.arity];
     const ul = use.fnc.layouts[use.fnc.arity];
-    const n = m.loc.layoutEntries(fl).len;
+    const les = m.loc.layoutEntries(fl);
+    const ues = m.loc.layoutEntries(ul);
+    const n = les.len;
     if (n == 0) return;
     const cov = try m.loc.cover(ul, fl);
     _ = f.charge(Loc.scanUnits(cov.len));
     var psuffix: std.ArrayList(u64) = .empty;
     defer psuffix.deinit(f.gpa);
     for (cov, 0..) |cv, k| {
-        if (cv < Loc.all or !namesCell(lc.res[k])) continue;
-        if (cv == Loc.all and try f.anyMeets(ul, fl, @intCast(k))) continue;
+        if (!namesCell(lc.res[k])) continue;
+        // Placed nowhere: no location of the holder's answer holds it.
+        const unplaced = cv == none or (cv == Loc.all and !try f.anyMeets(ul, fl, @intCast(k)));
+        // A function that casts (`Contract.casts`) answers at a wide
+        // location a value of another type than the holder reads there: where
+        // the holder reads it at a location that is not wide (a concrete
+        // type, which can have a part of no location below it; the holder's
+        // layout names no place to ask), what it holds escapes.
+        const hidden = lc.casts and les[k].kind.wide() and (cv == Loc.all or !ues[cv].kind.wide());
+        if (!unplaced and !hidden) continue;
         var st: SrcState = .{ .inst = use.site.inst, .whole = true };
         const start: u32 = @intCast(f.atoms.items.len);
         try f.answerSrcs(code, use, k, cv, null, &st, 0, &psuffix);

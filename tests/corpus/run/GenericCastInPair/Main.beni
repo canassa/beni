@@ -1,0 +1,28 @@
+-- A function `a → b` whose body casts `( x, x )` to its result's type
+-- variable, read by its caller as `List Int × Int`: the second part of the
+-- pair, an `Int` to the caller, is the list. The function casts
+-- (`Contract.casts`), so its result's wide location, read with a part of no
+-- location below it, escapes at the call (ownership-v3-kernel.md §3.4).
+-- Before, the caller found the list nowhere.
+import Node exposing (Program)
+import Pun
+
+
+g : a → b
+g x = Pun.conv ( x, x )
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    p : List Int × Int
+    p = g x0
+    ( _, h ) = p
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

@@ -208,6 +208,8 @@ pub const Table = struct {
     path_root: std.ArrayList(u32) = .empty,
 
     covers: std.AutoHashMapUnmanaged(CoverKey, []const u32) = .empty,
+    /// `holeBelow`'s answer for each place asked.
+    hole_memo: std.AutoHashMapUnmanaged(u32, bool) = .empty,
     /// Per pair of layouts, `holes`' answer.
     coarse: std.AutoHashMapUnmanaged(CoverKey, ?*const Holes) = .empty,
     /// The entry of a location in a layout of more than `small_layout`
@@ -241,6 +243,7 @@ pub const Table = struct {
 
     pub fn deinit(t: *Table) void {
         const gpa = t.gpa;
+        t.hole_memo.deinit(gpa);
         t.loc_parent.deinit(gpa);
         t.loc_label.deinit(gpa);
         t.loc_summary.deinit(gpa);
@@ -402,6 +405,71 @@ pub const Table = struct {
             p = next;
         }
         return t.places.holds(p).isEmpty();
+    }
+
+    /// The place that `loc`'s labels reach from `place`, step by step, or
+    /// null where `place` has no step of it, or the path names a slot, a row
+    /// or a member of a cycle's deep level, which no place step names.
+    pub fn placeAt(t: *Table, place: PlaceId, loc: u32) Allocator.Error!?PlaceId {
+        var ls: std.ArrayList(u64) = .empty;
+        defer ls.deinit(t.gpa);
+        try t.labels(loc, &ls, t.gpa);
+        t.units +|= scanUnits(ls.items.len);
+        var p = place;
+        for (ls.items) |w| {
+            const l: Label = @bitCast(w);
+            if (l.cyc or l.kind == .fslot or l.kind == .member or l.kind == .row) return null;
+            const st = t.places.steps(p);
+            t.units +|= st.steps.len;
+            p = for (st.steps, st.children) |s, c| {
+                if (s.kind == .level) continue;
+                const sl = t.stepLabel(p, s, false);
+                if (sl.kind == l.kind and sl.payload == l.payload) break c;
+            } else return null;
+        }
+        return p;
+    }
+
+    /// Whether `place` has a part of no location at or below it: a place on
+    /// the way that holds no cell (`Int`, `⊤`, `String`, `Maybe Int`'s
+    /// argument, a record's `Int` field, `List Int`'s elements), before a
+    /// type variable or an opaque type, which is a wide place and holds
+    /// whatever is below it. A value read at `place` through a cast can hold
+    /// a cell at such a part, where a reader finds `outside` (kernel §3.4,
+    /// research report 150). It reads the place graph; a cycle is visited
+    /// once, and each place's answer is kept.
+    pub fn holeBelow(t: *Table, place: PlaceId) Allocator.Error!bool {
+        if (t.hole_memo.get(place.int())) |b| return b;
+        var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+        defer seen.deinit(t.gpa);
+        const b = try t.holeWalk(place, &seen);
+        try t.hole_memo.put(t.gpa, place.int(), b);
+        return b;
+    }
+
+    fn holeWalk(t: *Table, p: PlaceId, seen: *std.AutoHashMapUnmanaged(u32, void)) Allocator.Error!bool {
+        if (t.places.holds(p).isEmpty()) return true;
+        switch (t.places.kind(p)) {
+            // A wide place: it holds every cell below it.
+            .@"var", .@"opaque" => return false,
+            .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => {},
+        }
+        if ((try seen.getOrPut(t.gpa, p.int())).found_existing) return false;
+        const st = t.places.steps(p);
+        t.units +|= 1 + st.steps.len;
+        for (st.steps, st.children) |s, c| {
+            if (s.kind == .level) continue;
+            if (try t.holeWalk(c, seen)) return true;
+        }
+        return false;
+    }
+
+    /// `holeBelow` of the place that `loc` names from `place`; a path that
+    /// names no place (a slot, a row, a deep level, a step `place` does not
+    /// have) is a hole: nothing says what is there.
+    pub fn holeAt(t: *Table, place: PlaceId, loc: u32) Allocator.Error!bool {
+        const p = (try t.placeAt(place, loc)) orelse return true;
+        return t.holeBelow(p);
     }
 
     fn memberLabel(t: *const Table, m: PlaceId, k: Kind) Label {

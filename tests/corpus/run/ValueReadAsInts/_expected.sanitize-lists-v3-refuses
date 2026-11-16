@@ -1,0 +1,2 @@
+# v3 refuses the push: `ints` reads a `Js.Value`, a wide location, at `List Int`, whose elements have no location, so the value escapes at the cast (ownership-v3-kernel.md §3.4).
+17:22 list_still_used List.push

@@ -226,10 +226,15 @@ first half reads.
 Int`, `hide l = Js.to (Js.from l)` answers the list as a number, and a later cast reads it as a list
 again. The reading has no location for the list's array, so no reader of the answer can name it, and
 nothing then says who holds it. Each location of the value's own layout that no location of the reading
-covers (`cover(view, own)` is `none`, which happens where the reading's layout is empty) holds cells that
-**escape at the identity** (`narrowed`): a holder no rule follows. Where the reading's layout is not empty,
-the map puts such a location at every entry of the reading (`Loc.all`), which then holds its cells, and
-nothing is lost. So **a value whose type has no location holds `outside`**, as a fact: whatever a cast
+covers (`cover(view, own)` is `none` where the reading's layout is empty, and `Loc.all` where it has
+locations elsewhere) holds cells that **escape at the identity** (`narrowed`): a holder no rule follows.
+So does each **wide** location of the value's own layout (a `Js.Value`, a type variable), whose cells can
+be at any place below it, where the reading at its place is not wide and has a part of no location below
+it (`Loc.holeAt`: `List Int`'s elements, a record's `Int` field, `Maybe Int`'s argument). *Until research
+report 150 the text said that a location at `Loc.all` is held by every entry of the reading, "and nothing
+is lost"; but a part of the reading at a type of no location is `outside` (below), so `( _, h ) = Js.to
+(Js.from ( x, x ))` read as `List Int × Int` gave `h` nobody's cells (`run/CastPairNoLocation`).* So **a
+value whose type has no location holds `outside`**, as a fact: whatever a cast
 put in it escaped there. A parameter, a capture, a part of a root, a construction of parts that hold
 anything and the answer of a call, each of a type of no location, is `v_outside`, never `v_none`
 (`rootVal`, `capture`, `project`, `built`, `unknownOf`, `applyAt`): such a value is read nowhere but
@@ -258,6 +263,22 @@ result location of the function that no location of the holder's answer holds (w
 skips: the function's type is wider there) lets what it holds escape where the function meets the holder
 (`Frame.escapeUnplacedAnswer`; `apply : (a → Int), a → Int` handed `cast : a → b`). **A location placed
 nowhere never holds nothing.**
+
+**A cast hidden behind a type variable.** A location of the contract's result that the reading does
+have can still hide cells: where it is wide (a type variable) and the body put there a value of another
+type, the caller fills the variable in, and a part of no location below it (`b` read as `List Int ×
+Int`) holds cells of the value that no reader finds (`g x = Js.to (Js.from ( x, x ))`). A body that reads
+a value at a type variable that is not the value's own type (`narrowed` with a reading of a type
+variable), that calls a callee whose contract says so, or whose worded row puts a wide location at
+another type's place (`returned a → b`, `Check.castsAt`), **casts** (`Contract.casts`). At a call of a
+callee that casts, or that is handed a function value whose code casts (`argsCast`), each wide location
+of the result that the caller reads with a part of no location below it lets what it holds escape
+(`Frame.escapeHidden`); where a function that casts meets a holder that reads its wide answer location
+at a location that is not wide, what that location holds escapes there (`escapeUnplacedAnswer`). A
+callee that does not cast answers at a type variable only values of that variable, whose cells each
+reading names where the argument's own type does: `Maybe.withDefault m []` read as `List Int` is no
+cast. The flag is the pessimistic side: it is set for the whole contract, and a caller of a function
+that casts casts too.
 
 *Research report 150: a worded row whose result had no location dropped the parameter it put there
 (`run/WordedReturnedNoLocation`, and `stored`, `elementof`, `taken`, `copyof` and a function parameter's
@@ -605,12 +626,18 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     `prepended` puts in a result of no storage, and `builderdone` at a result of no location each set
     the escape flag of the location (`Check.wordedContract`, `intoElems`, `elemsToElems`, `selfToSelf`);
     a function parameter's answer that `returned`, `stored` or `aliased` puts in such a result escapes
-    (`Fn.ans_escapes`). The JavaScript value is what the word says it is, and a cast reads it back; "at
+    (`Fn.ans_escapes`). So does a location that a result location holds where a part of the result
+    below it has no location and the location is wide, so its cells can be there (`returned a → a ×
+    Int`, whose JavaScript answers `{a: a, b: a}`; `stored a → List a × Int`; `returned a → { l : a,
+    n : Int }`), unless a wide location of the result holds it whole (`Check.placedSafely`; `aliased`
+    and an answer anywhere, `placedAnywhere`). A word that puts a wide location at the place of
+    another type (`returned a → b`) casts (`Contract.casts`, `Check.castsAt`, §3.4). The JavaScript value is what the word says it is, and a cast reads it back; "at
     every location of the result" is at none when there are none, and a location placed nowhere was
     gone. A result of no location that no word describes holds no parameter: each parameter has a word
     that does not put it there (`List.length : borrowed List a → Int`), and those words are the
     positive facts. Only the result word `unknown`, and an element a word names that the list's layout
-    cannot place, make every parameter location escape there (`undescribed`). Safe builds check each
+    cannot place, make every parameter location escape there, where the result has no wide location
+    at its root that holds them (`undescribed`, `placedAnywhere`). Safe builds check each
     row: every location a word puts in the result is a source of some result location or escapes
     (`Check.checkWordedPlaced`, §9). The rows of a type variable that a caller reads at a type of no
     location are §3.4's: the call lets what it cannot place escape. No row of `core/` or of a shipped
@@ -1355,7 +1382,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a location of a frame's result with no source holds no cell in the entry of the result value's own layout that holds its cells (the wide entry above it, `Loc.holes`): its emptiness comes from a rule, not from a reading that had no step for it; the check counts no work | `Frame.checkEmpty`, in `finish` | §3.4 |
 | a construction at a record's place holds the record's object (a part at the object's step): no rule makes a record of its fields alone, whose slots would hold no cell (a record alias's constructor did); the check counts no work | `Frame.built` | §6.4, §11.2 |
 | each location that a reader of a value asks for at another reading than the value's own (`leavesSet`, `argEntries`) is placed in the value's own layout: an entry is at it (the map, or `Loc.all`), a wide entry above it holds it (`Loc.holes`), or the value's own place has its steps and they reach a type of no cell (`Loc.emptyAlong`; a slot, a row and a deep level's member are read by other rules). With `Loc.holes` turned off (research report 146's fault), the first program the gates build panics. The check counts no work | `Frame.checkPlaced` | §3.4 |
-| each parameter location that a worded row's word puts in the result (`returned`, `stored`, `aliased`, `builderdone`, `elementof`, `taken`, the elements and storage of `copyof` and its kin, `Record.copy`'s values, a function parameter's answer under `returned`, `stored` or `aliased`) is a source of some location of the result, or has the escape flag: a placement never lands on no location without an escape. It reads the words again, apart from the code that placed them. With the escape of `returned` turned off (research report 150's fault), the first program with `returned a → Int` panics. The check counts no work | `Check.checkWordedPlaced`, in `wordedContract` | §6.10 |
+| each parameter location that a worded row's word puts in the result (`returned`, `stored`, `aliased`, `builderdone`, `elementof`, `taken`, the elements and storage of `copyof` and its kin, `Record.copy`'s values, a function parameter's answer under `returned`, `stored` or `aliased`) is a source of some location of the result, or has the escape flag: a placement never lands on no location without an escape; and a wide location that `returned` places and does not let escape is held by a wide result location at or above its place, or at its place where the result has no part of no location below it. It reads the words again, apart from the code that placed them. With the escape of `returned` turned off (research report 150's fault), the first program with `returned a → Int` panics. The check counts no work | `Check.checkWordedPlaced`, in `wordedContract` | §6.10 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 
 ## 10. What the kernel costs

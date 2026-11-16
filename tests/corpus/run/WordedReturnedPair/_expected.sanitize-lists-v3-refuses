@@ -1,0 +1,2 @@
+# v3 refuses the push: `returned a → a × Int` puts a wide parameter in a result with a part of no location, so it escapes at the call (ownership-v3-kernel.md §6 rule 10).
+18:22 list_still_used List.push

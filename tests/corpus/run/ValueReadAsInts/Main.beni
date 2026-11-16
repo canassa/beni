@@ -1,0 +1,22 @@
+-- A `Js.Value` read as `List Int`: the value's own location is wide, so its
+-- cells can be anywhere below it, and the reading's elements are numbers,
+-- a part of no location. The value's cells escape at the cast
+-- (ownership-v3-kernel.md §3.4). Before, the list of lists read back as
+-- numbers gave its inner list to an element that held nothing.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    r = Pun.ints (Pun.value [ x0 ])
+    h = Maybe.withDefault (List.head r) 0
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

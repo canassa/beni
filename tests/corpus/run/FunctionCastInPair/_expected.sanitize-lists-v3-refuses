@@ -1,0 +1,2 @@
+# v3 refuses the push: `g` casts, and `apply` reads its answer at a type that is not wide, so what it holds escapes where `g` meets `apply` (ownership-v3-kernel.md §3.4).
+24:22 list_still_used List.push

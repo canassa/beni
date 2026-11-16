@@ -784,6 +784,47 @@ pub const Mod = struct {
         return to.loc == from.loc or (from.kind.wide() and m.loc.isPrefix(from.loc, to.loc));
     }
 
+    /// Whether a word that puts the cells at location `from` (of a parameter,
+    /// of an element, of a function's answer) in a result of `result`'s place,
+    /// whose locations are `res_es`, leaves each cell where a reader of the
+    /// result can name it: a location of the result at `from`'s place or a
+    /// wide one above it holds them, and, where `from` is wide (its cells can
+    /// be at any place below it), the result's place there has no part of no
+    /// location (`Loc.holeAt`) unless a wide location of the result holds it
+    /// whole. Where not, the location escapes: a cast reads the cells back
+    /// from a part where every reader finds `outside` (kernel §6 rule 10,
+    /// research report 150).
+    fn placedSafely(m: *Mod, result: PlaceId, res_es: []const Loc.Entry, from: Loc.Entry) Allocator.Error!bool {
+        var at = false;
+        for (res_es) |re| {
+            if (re.kind.wide() and m.loc.isPrefix(re.loc, from.loc)) return true;
+            if (re.loc == from.loc) at = true;
+        }
+        if (!at) return false;
+        if (!from.kind.wide()) return true;
+        return !try m.loc.holeAt(result, from.loc);
+    }
+
+    /// Whether a word that puts cells anywhere in a result (`aliased`, an
+    /// element no word places) leaves each where a reader can name it: a
+    /// wide location of the result at its root holds every one, or the
+    /// result has a location and no part of no location.
+    fn placedAnywhere(m: *Mod, result: PlaceId, res_es: []const Loc.Entry) Allocator.Error!bool {
+        for (res_es) |re| if (re.kind.wide() and re.loc == 0) return true;
+        return res_es.len != 0 and !try m.loc.holeBelow(result);
+    }
+
+    /// Whether a word that puts a wide location `from` of the place `src`
+    /// at the same path of the place `dst` reads it there at another type
+    /// (`returned a → b`): a cast, which a caller can fill in with a type
+    /// that hides its cells (`Contract.casts`, research report 150).
+    fn castsAt(m: *Mod, src: PlaceId, dst: PlaceId, from: Loc.Entry) Allocator.Error!bool {
+        if (!from.kind.wide()) return false;
+        const a = (try m.loc.placeAt(src, from.loc)) orelse return true;
+        const b = (try m.loc.placeAt(dst, from.loc)) orelse return true;
+        return a != b;
+    }
+
     /// Whether `place` is a record's.
     pub fn isRecordPlace(m: *const Mod, place: PlaceId) bool {
         return m.places.kind(place) == .record;
@@ -1432,7 +1473,7 @@ pub const Mod = struct {
                     described = true;
                     c.nonlinear = true;
                     for (res) |*r| try r.append(gpa, src);
-                    if (res.len == 0) fl.* |= Contract.flag_e;
+                    if (!try m.placedAnywhere(sig.result, res_es)) fl.* |= Contract.flag_e;
                 }
                 if (has(w, .returned)) {
                     described = true;
@@ -1442,11 +1483,15 @@ pub const Mod = struct {
                         try res[ri].append(gpa, src);
                     };
                     if (!found) for (res) |*r| try r.append(gpa, src);
-                    if (res.len == 0) fl.* |= Contract.flag_e;
+                    if (!try m.placedSafely(sig.result, res_es, pe)) fl.* |= Contract.flag_e;
+                    if (try m.castsAt(sig.params[j], sig.result, pe)) c.casts = true;
                 }
                 if (has(w, .stored)) {
                     described = true;
-                    if (!try m.intoElems(res, relem, pe, src)) fl.* |= Contract.flag_e;
+                    if (!try m.intoElems(res, sig.result, relem, pe, src)) fl.* |= Contract.flag_e;
+                    if (relem) |pr| {
+                        if (try m.castsAt(sig.params[j], pr.child, pe)) c.casts = true;
+                    } else if (pe.kind.wide()) c.casts = true;
                 }
             }
         }
@@ -1472,8 +1517,8 @@ pub const Mod = struct {
                 for (0..m.loc.layoutEntries(c.layouts[0]).len) |e| try r.append(gpa, .{ .kind = .param, .a = 0, .e = @intCast(e) });
             }
             // No location to hold the values: they escape (research report 150).
-            if (res.len == 0) for (flags[c.off[0]..c.off[1]]) |*x| {
-                x.* |= Contract.flag_e;
+            for (m.loc.layoutEntries(c.layouts[0]), 0..) |pe, e| if (!try m.placedSafely(sig.result, res_es, pe)) {
+                flags[c.off[0] + e] |= Contract.flag_e;
             };
         } else if (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .prepended)) {
             described = true;
@@ -1497,7 +1542,8 @@ pub const Mod = struct {
                     try res[ri].append(gpa, src);
                 };
                 if (!found) for (res) |*r| try r.append(gpa, src);
-                if (res.len == 0) flags[c.off[0] + e] |= Contract.flag_e;
+                if (!try m.placedSafely(sig.result, res_es, pe)) flags[c.off[0] + e] |= Contract.flag_e;
+                if (try m.castsAt(sig.params[0], sig.result, pe)) c.casts = true;
             }
         }
         if ((has(rw, .elementof) or has(rw, .taken)) and arity > 0) {
@@ -1508,7 +1554,7 @@ pub const Mod = struct {
                 // A location of the element that the list's layout does not
                 // place (`up` is `none`) is a source no word names: the
                 // pessimistic row (research report 148).
-                if (std.mem.indexOfScalar(u32, pr.up, none) != null) try m.undescribed(c, res, true);
+                if (std.mem.indexOfScalar(u32, pr.up, none) != null) try m.undescribed(c, res, sig.result, true);
                 for (child, 0..) |ce, k| {
                     if (pr.up[k] == none) continue;
                     const src: Src = .{ .kind = .param, .a = 0, .e = @intCast(pr.up[k]) };
@@ -1520,13 +1566,14 @@ pub const Mod = struct {
                     if (!found) for (res) |*r| try r.append(gpa, src);
                     // An element answered at a type of no location (`elementof
                     // Int`): it escapes (research report 150).
-                    if (res.len == 0) flags[c.off[0] + pr.up[k]] |= Contract.flag_e;
+                    if (!try m.placedSafely(sig.result, res_es, ce)) flags[c.off[0] + pr.up[k]] |= Contract.flag_e;
+                    if (try m.castsAt(pr.child, sig.result, ce)) c.casts = true;
                 }
-            } else try m.undescribed(c, res, true);
+            } else try m.undescribed(c, res, sig.result, true);
         }
         // A result that comes from behind a cell or from JavaScript, or
         // that no word describes: the pessimistic row (`undescribed`).
-        if (has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown) or !described) try m.undescribed(c, res, has(rw, .unknown));
+        if (has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown) or !described) try m.undescribed(c, res, sig.result, has(rw, .unknown));
         const out = @constCast(c.res);
         for (out, res) |*o, r| o.* = try Contract.normal(m.arena, r.items);
         if (std.debug.runtime_safety) try m.checkWordedPlaced(sig, c, pw, rw);
@@ -1576,6 +1623,18 @@ pub const Mod = struct {
                 continue;
             }
             if (has(w, .returned) or has(w, .stored) or has(w, .aliased)) for (0..n) |e| want.at(c, held, j, e);
+            // `returned`: a wide location that does not escape is held by a
+            // wide location of the result at or above its place, or at its
+            // place where the result has no part of no location below it.
+            if (has(w, .returned)) for (m.loc.layoutEntries(c.layouts[j]), 0..) |pe, e| {
+                if (!pe.kind.wide() or c.flags[c.off[j] + e] & Contract.flag_e != 0) continue;
+                var ok = false;
+                for (m.loc.layoutEntries(c.layouts[arity]), c.res) |re, srcs| for (srcs) |s| {
+                    if (s.kind != .param or s.a != j or s.e != e) continue;
+                    if ((re.kind.wide() and m.loc.isPrefix(re.loc, pe.loc)) or (re.loc == pe.loc and !try m.loc.holeAt(sig.result, pe.loc))) ok = true;
+                };
+                std.debug.assert(ok);
+            };
         }
         if (arity == 0) return;
         if (has(rw, .builderdone) or c.record_copy) for (0..c.off[1]) |e| want.at(c, held, 0, e);
@@ -1613,25 +1672,27 @@ pub const Mod = struct {
     /// places a parameter there, and a result of a type of no location is
     /// no cell of a frame. A result from behind a cell (`lent`, `cellread`)
     /// is the cell's contents, which escaped where they went in.
-    fn undescribed(m: *Mod, c: *Contract.Contract, res: []std.ArrayList(Src), escape: bool) Allocator.Error!void {
+    fn undescribed(m: *Mod, c: *Contract.Contract, res: []std.ArrayList(Src), result: PlaceId, escape: bool) Allocator.Error!void {
         c.nonlinear = true;
         for (res) |*r| {
             try r.append(m.gpa, Src.outside);
             for (0..c.arity) |j| for (0..m.loc.layoutEntries(c.layouts[j]).len) |e| try r.append(m.gpa, .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) });
         }
-        if (escape and res.len == 0) for (@constCast(c.flags)) |*x| {
+        if (escape and !try m.placedAnywhere(result, m.loc.layoutEntries(c.layouts[c.arity]))) for (@constCast(c.flags)) |*x| {
             x.* |= Contract.flag_e;
         };
     }
 
     /// Put `src`, a source at the location `from` of a parameter, among the
-    /// result's elements. Whether any location of the result holds it: where
-    /// none does (a result of no location, or one with no element), the
-    /// caller makes it escape (research report 150).
-    fn intoElems(m: *Mod, res: []std.ArrayList(Src), relem: ?*const Loc.Proj, from: Loc.Entry, src: Src) Allocator.Error!bool {
+    /// result's elements. Whether each of its cells is where a reader can
+    /// name it (`placedSafely` at the element's place, `placedAnywhere`
+    /// where the result has no element): where not (a result of no location,
+    /// one with no element, an element of no location), the caller makes it
+    /// escape (research report 150).
+    fn intoElems(m: *Mod, res: []std.ArrayList(Src), result: PlaceId, relem: ?*const Loc.Proj, from: Loc.Entry, src: Src) Allocator.Error!bool {
         const pr = relem orelse {
             for (res) |*r| try r.append(m.gpa, src);
-            return res.len != 0;
+            return m.placedAnywhere(result, m.loc.layoutEntries(try m.loc.layoutOf(result)));
         };
         const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
         var found = false;
@@ -1645,7 +1706,7 @@ pub const Mod = struct {
             placed = true;
             try res[u].append(m.gpa, src);
         };
-        return placed;
+        return placed and try m.placedSafely(pr.child, child, from);
     }
 
     /// The result's elements hold the elements of parameter `j`. An element
@@ -1672,7 +1733,11 @@ pub const Mod = struct {
                 placed = true;
                 try res[ri].append(m.gpa, src);
             };
-            if (!placed) @constCast(c.flags)[c.off[j] + e] |= Contract.flag_e;
+            // A wide element location (`copyof` of a list of a type variable)
+            // whose cells can be at a part of the result of no location escapes
+            // too (`placedSafely`).
+            if (!placed or (pe.kind.wide() and !try m.placedSafely(sig.result, res_es, pe))) @constCast(c.flags)[c.off[j] + e] |= Contract.flag_e;
+            if (try m.castsAt(sig.params[j], sig.result, pe)) @constCast(c).casts = true;
         }
     }
 
@@ -1752,12 +1817,18 @@ pub const Mod = struct {
                     try res[ri].append(m.gpa, src);
                 };
                 if (!found) for (res) |*r| try r.append(m.gpa, src);
-                if (res.len == 0) unplaced = true;
+                if (!try m.placedSafely(sig.result, res_es, ae)) unplaced = true;
+                if (try m.castsAt(rplace, sig.result, ae)) @constCast(c).casts = true;
             }
-            if (has(w, .stored) and !try m.intoElems(res, relem, ae, src)) unplaced = true;
+            if (has(w, .stored)) {
+                if (!try m.intoElems(res, sig.result, relem, ae, src)) unplaced = true;
+                if (relem) |pr| {
+                    if (try m.castsAt(rplace, pr.child, ae)) @constCast(c).casts = true;
+                } else if (ae.kind.wide()) @constCast(c).casts = true;
+            }
             if (has(w, .aliased)) {
                 for (res) |*r| try r.append(m.gpa, src);
-                if (res.len == 0) unplaced = true;
+                if (!try m.placedAnywhere(sig.result, res_es)) unplaced = true;
             }
         }
         const fnc = try m.arena.create(Contract.Fn);
