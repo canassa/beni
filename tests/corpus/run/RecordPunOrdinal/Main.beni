@@ -1,39 +1,40 @@
 -- A constructor read as another type's constructor at the same position:
--- `Y xs` is `{ $: "Y", a: xs }`, and the pattern `V u` of a type of one
--- constructor reads `.a` with no test. `V`'s argument names the same step
--- as `X`'s, a step `W`'s place has, so the projection of the `Y`
+-- `Y xs 0` is `{ $: "Y", a: xs, b: 0 }`, and the pattern `V u _` of a type
+-- of one constructor reads `.a` with no test. `V`'s argument names the same
+-- step as `X`'s, a step `W`'s place has, so the projection of the `Y`
 -- construction answered `none`. The cast's reading has a constructor's
 -- argument that no location of `W` covers, so its answer is `unknown`
 -- (ownership-v3-kernel.md §3.4), and v3 refuses the push of `u`, which is
 -- `xs`. In place `xs` had 2 items. `vlen` builds a `V`, so that its pattern
--- is code the program can run.
+-- is code the program can run; two arguments keep it an object in a
+-- release build.
 import Node exposing (Program)
 import Pun
 
 
 type W
-    = X (List Int)
-    | Y (List Int)
+    = X (List Int) Int
+    | Y (List Int) Int
 
 
 type V
-    = V (List Int)
+    = V (List Int) Int
 
 
 vlen : V → Int
-vlen (V u) = List.length u
+vlen (V u _) = List.length u
 
 
 go : Int → String
 go n =
     xs = [ n ]
     v : V
-    v = Pun.conv (Y xs)
+    v = Pun.conv (Y xs 0)
     case v of
-        V u →
+        V u _ →
             w = List.push u 9
             "${String.fromInt (List.length w)} ${String.fromInt (List.length xs)}"
 
 
 main : Program
-main = Node.print "${go 0} ${String.fromInt (vlen (V []))}"
+main = Node.print "${go 0} ${String.fromInt (vlen (V [] 1))}"
