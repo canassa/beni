@@ -5995,7 +5995,8 @@ fn escapeUnplaced(f: *Frame, base: *const Use, c: *const Contract, cov: []const 
         if (reached[ri] or !namesCell(c.res[ri])) continue;
         var st: SrcState = .{ .inst = inst };
         const start: u32 = @intCast(f.atoms.items.len);
-        try f.allSrcs(base, c, c.res[ri], rsig, @intCast(ri), &st);
+        // Not a cast: the call reads each source as it reads it in place.
+        try f.expandSrcs(base, c.res[ri], rsig, @intCast(ri), rsig, @intCast(ri), &st);
         // A written location that the callee answers there is a new name
         // of the written cells (`oldNames`); what escapes is the cells, at
         // any time.
@@ -6082,6 +6083,13 @@ fn escapeWide(f: *Frame, c: *const Contract, args: []const Val, place: PlaceId, 
             // rules that read those (`cover`); research report 150 §11.
             const own_at = (try m.loc.placeAt(own, pe.loc)) orelse continue;
             if (own_at == read_at) continue;
+            // Read at this frame's own type variable, a value of another type
+            // than the variable: the frame casts, and its caller reads it
+            // (`escapeHidden`). A `Js.Value` is core's arrays (`narrowed`).
+            if (m.places.kind(read_at) == .@"var") switch (m.places.kind(own_at)) {
+                .@"var", .@"opaque", .closure => {},
+                .record, .tuple, .ctor, .list, .dict, .ref, .cross => f.casts = true,
+            };
             if (!try f.hides(own_at, read_at)) continue;
             const start: u32 = @intCast(f.atoms.items.len);
             _ = try f.argLeaves(args[s.a], psig, s.e, &.{}, false, &f.atoms);
@@ -6157,6 +6165,13 @@ fn allSrcs(f: *Frame, base: *const Use, c: *const Contract, srcs: []const Src, r
     defer others.deinit(f.gpa);
     for (srcs) |s| switch (s.kind) {
         .param => if (s.a < base.args.len) {
+            // The argument's own type holds no cell at the parameter's
+            // place (`List.sort xs` of a `List Int`: its elements): nothing.
+            if (f.placeOfVal(base.args[s.a])) |own| {
+                if (try f.m.loc.placeAt(own, f.m.loc.layoutEntries(c.layouts[s.a])[s.e].loc)) |at| {
+                    if (f.m.places.holds(at).isEmpty()) continue;
+                }
+            }
             _ = try f.argLeaves(base.args[s.a], c.layouts[s.a], s.e, &.{}, false, &f.atoms);
         } else try others.append(f.gpa, s),
         .answer, .fresh, .outside, .twice => try others.append(f.gpa, s),
