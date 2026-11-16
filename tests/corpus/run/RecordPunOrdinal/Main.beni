@@ -5,7 +5,8 @@
 -- construction answered `none`. The cast's reading has a constructor's
 -- argument that no location of `W` covers, so its answer is `unknown`
 -- (ownership-v3-kernel.md §3.4), and v3 refuses the push of `u`, which is
--- `xs`. In place `xs` had 2 items.
+-- `xs`. In place `xs` had 2 items. `vlen` builds a `V`, so that its pattern
+-- is code the program can run.
 import Node exposing (Program)
 import Pun
 
@@ -17,6 +18,10 @@ type W
 
 type V
     = V (List Int)
+
+
+vlen : V → Int
+vlen (V u) = List.length u
 
 
 go : Int → String
@@ -31,4 +36,4 @@ go n =
 
 
 main : Program
-main = Node.print (go 0)
+main = Node.print "${go 0} ${String.fromInt (vlen (V []))}"

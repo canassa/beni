@@ -5213,7 +5213,6 @@ fn castSlotLost(f: *Frame, v: Val, ploc: u32, rentry: Loc.Entry, e_loc: u32) Err
     return !try f.slotHeld(try t.layoutOf(n.place), asked.items);
 }
 
-
 /// Whether a reading at the entries `js` of layout `view`, of a value whose
 /// own place is `own`, asks for a field slot of the record at the value's
 /// root that `own` has no slot for (`rootSlotLost`). The slots below the

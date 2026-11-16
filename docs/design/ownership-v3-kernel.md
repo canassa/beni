@@ -179,10 +179,10 @@ another type than the one it was handed (`Js.to (Js.from x)`):
   `type W = X (List Int) | Y (List Int)`, read as `type V = V (List Int)`, has that step in its own place
   and no part there, though `V u` reads `.a` with no test. An array read as another type of array (`List
   a` as `Builder a`) has every location covered, and is no cast here;
-- a contract that pairs a wide location of a parameter with a location of its answer that a slot is at
-  or below (the slot asked below a type variable of the signature, `argEntries`; `pairedLeaves` where the
-  two are both wide), or a wide location with a concrete one (`toR : a → R`, `toR x = Pun.conv x`: the
-  answer's slot `.a=` holds the parameter's one location; `castSlotLost`), is read as a cast. The slot's
+- a contract that pairs a wide location of a parameter with a wide location of its answer, below which
+  the caller reads a slot (`argEntries`, from `pairedLeaves`), or a wide location with a concrete one
+  (`toR : a → R`, `toR x = Pun.conv x`: the answer's slot `.a=` holds the parameter's one location;
+  `castSlotLost`), can be a cast, and is read as one: the slot's
   record is the argument's part at the parameter's location, and the slot below it is the label path the
   caller asks there. It is held only where the argument's own layout has a slot at that path, or a wide
   entry at or above it (`slotHeld`); else it holds `outside`. A label path is a test here only outside a
