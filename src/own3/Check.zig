@@ -73,10 +73,9 @@ pub const decl_floor: u64 = 1 << 20;
 /// 52 units for each entry of its two instructions (research report 138).
 pub const layout_units: u64 = 1 << 7;
 
-/// The units of work of each store variable that the adapter reads, and of
-/// each field, element and argument that it closes (`Mod.chargePlaces`,
-/// kernel §8): a lookup in its table of variables, a push and a pop, and the
-/// hash of the node it makes. Measured on instances of a record of 3 000
+/// The units of work of each store variable that the adapter closes, and of
+/// each field of a record that it reads (`Mod.chargePlaces`, kernel §8): a
+/// lookup in its table of variables, and the hash of the node it makes. Measured on instances of a record of 3 000
 /// fields (research report 145).
 pub const var_units: u64 = Loc.lookup_units;
 
@@ -620,8 +619,8 @@ pub const Mod = struct {
         const now = @as(u64, m.places.count()) + m.places.step_tab.list.len;
         m.loc.units +|= (now -| m.place_records) *| call_units;
         m.place_records = now;
-        // Each store variable that the adapter read, and each field,
-        // element and argument it closed, is work too, whether or not it
+        // Each store variable that the adapter closed, and each field of a
+        // record it read, is work too, whether or not it
         // added a place: two instances of one wide record type add one
         // place, and each is read whole (research report 145).
         m.loc.units +|= (m.adapter.var_work -% m.var_records) *| var_units;

@@ -1436,7 +1436,7 @@ fn wholeUpdate(arena: std.mem.Allocator, count: usize) ![]const u8 {
     for (1..count) |i| try out.print(arena, ", f{d} = {d}", .{ i, i });
     try out.appendSlice(arena, " }\n    r1 = { r0 | f0 = r0.f1");
     for (1..count) |i| try out.print(arena, ", f{d} = r0.f{d}", .{ i, (i + 1) % count });
-    try out.print(arena, " }\n    r1.f0 + r1.f{d}\n", .{count - 1});
+    try out.print(arena, " }}\n    r1.f0 + r1.f{d}\n", .{count - 1});
     return out.toOwnedSlice(arena);
 }
 
