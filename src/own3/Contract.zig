@@ -237,15 +237,18 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
 
 /// The join of two contracts of one signature: every flag and every source of both.
 pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.Error!*const Contract {
-    // Two contracts of one signature have one arity and one set of layouts.
-    // The one other pair is a local function's bottom contract, which has no
-    // captures, and its first walk, which has them (`Frame.solveCodes`): the
-    // bottom has no flag and no source, so the join is `b`. Any other pair
-    // would drop `a`'s facts (research report 148, kernel §9).
-    if (a.arity != b.arity or !std.mem.eql(u32, a.layouts, b.layouts)) {
+    // Two contracts of one code have one set of layouts for one arity. A
+    // local function's arity is its parameters and its captures, and a walk
+    // can find a capture an earlier one did not (its bottom contract has
+    // none; a function called before its binding): a contract of another
+    // arity is of no use to the rounds, which walk again to a fixed point at
+    // the new one. A join of two contracts of one arity and other layouts
+    // would drop facts the rounds need (research report 148, kernel §9).
+    if (a.arity != b.arity) return b;
+    if (!std.mem.eql(u32, a.layouts, b.layouts)) {
         if (std.debug.runtime_safety) {
-            for (a.flags) |x| if (x != 0) std.debug.panic("own3: a join of two contracts of different signatures drops a flag ({d} and {d} parameters)", .{ a.arity, b.arity });
-            for (a.res) |r| if (r.len != 0) std.debug.panic("own3: a join of two contracts of different signatures drops a source ({d} and {d} parameters)", .{ a.arity, b.arity });
+            for (a.flags) |x| if (x != 0) std.debug.panic("own3: a join of two contracts of one arity and other layouts drops a flag", .{});
+            for (a.res) |r| if (r.len != 0) std.debug.panic("own3: a join of two contracts of one arity and other layouts drops a source", .{});
         }
         return b;
     }
