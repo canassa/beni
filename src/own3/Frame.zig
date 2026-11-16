@@ -3105,6 +3105,48 @@ fn finishDemands(f: *Frame) Error!void {
 
 // ---- patterns ------------------------------------------------------------------------
 
+// ---- the two positions whose tags are a closed set ----------------------------------------
+//
+// A pattern holds a pattern tag, and a binding of a `let` holds one of three.
+// Anything else in either position is not a program the lowering makes: the
+// walk gives up on the declaration (kernel §1). `patTag` and `letTag` are
+// the only switches over `Bir.Inst.Tag` that name every tag for these two
+// positions, so a new tag compiles only once each is placed.
+
+const PatTag = enum { wild, variable, ctor, int, char, string, unit, tuple, list, spread, record, as, not_a_pattern };
+
+fn patTag(tag: Inst.Tag) PatTag {
+    return switch (tag) {
+        .pat_wild => .wild,
+        .pat_var => .variable,
+        .pat_ctor => .ctor,
+        .pat_int => .int,
+        .pat_char => .char,
+        .pat_string => .string,
+        .pat_unit => .unit,
+        .pat_tuple => .tuple,
+        .pat_list => .list,
+        .pat_spread => .spread,
+        .pat_record => .record,
+        .pat_as => .as,
+        // Not a pattern: a reference, a type, a schema plan, a literal, an
+        // expression, a binding, a branch or the placeholder.
+        .local, .top, .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .method_call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .@"error" => .not_a_pattern,
+    };
+}
+
+const LetTag = enum { def, pattern, stmt, not_a_binding };
+
+fn letTag(tag: Inst.Tag) LetTag {
+    return switch (tag) {
+        .let_def => .def,
+        .let_pattern => .pattern,
+        .let_stmt => .stmt,
+        // Not a binding of a `let`.
+        .local, .top, .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .method_call, .type_dispatch, .lambda, .let, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => .not_a_binding,
+    };
+}
+
 fn bindLocal(f: *Frame, local: u32, v: Val) void {
     const l = f.d.locals_start + local;
     f.m.lv[l] = v;
@@ -3117,16 +3159,16 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
     _ = f.charge(1);
     const m = f.m;
     const data = m.datas[pat];
-    switch (m.tags[pat]) {
-        .pat_var => f.bindLocal(data.lhs, v),
-        .pat_as => {
+    switch (patTag(m.tags[pat])) {
+        .variable => f.bindLocal(data.lhs, v),
+        .as => {
             f.bindLocal(data.rhs, v);
             try f.bindPattern(data.lhs, v);
         },
-        .pat_tuple => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index), 0..) |p, k| {
+        .tuple => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index), 0..) |p, k| {
             try f.bindPattern(p.int(), try f.project(v, .{ .kind = .index, .payload = @intCast(k) }));
         },
-        .pat_ctor => {
+        .ctor => {
             const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index);
             if (args.len == 0) return;
             const info = m.ctorInfo(data.lhs);
@@ -3155,18 +3197,21 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
                 try f.bindPattern(p.int(), if (v == v_none) v_none else part);
             }
         },
-        .pat_list => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |p| {
+        .list => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |p| {
             // The rest of a list pattern is a view of the list: the same storage, the same elements.
-            if (m.tags[p.int()] == .pat_spread) try f.bindPattern(m.datas[p.int()].lhs, v) else try f.bindPattern(p.int(), try f.project(v, Step.elem));
+            if (patTag(m.tags[p.int()]) == .spread) try f.bindPattern(m.datas[p.int()].lhs, v) else try f.bindPattern(p.int(), try f.project(v, Step.elem));
         },
-        .pat_record => for (m.bir.extraSlice(Bir.inlineRange(data), u32)) |local| {
+        .record => for (m.bir.extraSlice(Bir.inlineRange(data), u32)) |local| {
             const name = m.bir.locals[f.d.locals_start + local].name;
             // A field is read out of its record's slot where the pattern matches (kernel §11).
             if (name != .none) try f.readSlots(v, &.{@intCast(m.fieldRank(name))}, pat);
             const part = if (name == .none) try f.unknownOf(try m.placeOfLocal(f.d, local), &.{v}) else try f.project(v, .{ .kind = .field, .payload = @intCast(m.fieldRank(name)) });
             f.bindLocal(local, part);
         },
-        else => {},
+        // These bind no local.
+        .wild, .int, .char, .string, .unit => {},
+        // A spread binds through its list (`.list`); met anywhere else it is no pattern the lowering makes.
+        .spread, .not_a_pattern => f.failed = true,
     }
 }
 
@@ -3176,18 +3221,25 @@ fn readsList(f: *Frame, pat: u32) bool {
     _ = f.charge(1);
     const m = f.m;
     const data = m.datas[pat];
-    switch (m.tags[pat]) {
-        .pat_list => return true,
-        .pat_as => return f.readsList(data.lhs),
-        .pat_tuple => {
+    switch (patTag(m.tags[pat])) {
+        .list => return true,
+        .as => return f.readsList(data.lhs),
+        .tuple => {
             for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |p| if (f.readsList(p.int())) return true;
             return false;
         },
-        .pat_ctor => {
+        .ctor => {
             for (m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |p| if (f.readsList(p.int())) return true;
             return false;
         },
-        else => return false,
+        // A pattern with no list in it, and no sub-pattern that has one (a record pattern binds locals).
+        .wild, .variable, .int, .char, .string, .unit, .record => return false,
+        // A spread is the rest of a list pattern, which `.list` has answered; alone it is taken to read the list.
+        .spread => return true,
+        .not_a_pattern => {
+            f.failed = true;
+            return true;
+        },
     }
 }
 
@@ -3210,16 +3262,15 @@ fn eval(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     // deeper; the declaration gave up, and a write it did not reach has no
     // line, so it is not authorised.
     if (f.tick()) return f.giveUp(inst);
-    switch (m.tags[inst]) {
-        .let => {
-            const bindings = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.lhs)), Inst.Index);
-            try f.enterLet(inst, bindings);
-            for (bindings) |b| try f.binding(b.int());
-            return f.eval(data.rhs, mode, tail);
-        },
-        .case => return f.caseOf(inst, mode, tail),
-        else => {},
+    // A `let` and a `case` are answered here; every other instruction is
+    // `evalInner`'s, whose switch names every tag.
+    if (m.tags[inst] == .let) {
+        const bindings = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.lhs)), Inst.Index);
+        try f.enterLet(inst, bindings);
+        for (bindings) |b| try f.binding(b.int());
+        return f.eval(data.rhs, mode, tail);
     }
+    if (m.tags[inst] == .case) return f.caseOf(inst, mode, tail);
     const v = try f.evalInner(inst, mode);
     if (mode == .value) try f.mention(v, inst);
     if (tail) {
@@ -3250,7 +3301,92 @@ fn makesObject(f: *Frame, inst: u32) Error!bool {
             const c = (try m.declContract(t)) orelse return false;
             return !c.old_result;
         },
-        else => return false,
+        // False is the pessimistic answer here: the tail is then taken to answer an old value (`tail_old`).
+        // A primitive: no object.
+        .int,
+        .float,
+        .char,
+        .string,
+        .chunk,
+        .interp,
+        .unit,
+        // The value exists already, or comes from code that makes no claim: a reference, a projection, an update, a dispatch, a function, a `?`, markup.
+        .local,
+        .top,
+        .ctor,
+        .import_value,
+        .import_ctor,
+        .qualified,
+        .qualified_ctor,
+        .schema_type_ref,
+        .schema_value_ref,
+        .schema_ctor_ref,
+        .ext_value,
+        .ext_ctor,
+        .schema_member_top,
+        .ext_schema_member,
+        .schema_ctor_top,
+        .ext_schema_ctor,
+        .field_access,
+        .tuple_index,
+        .record_update,
+        .method_call,
+        .type_dispatch,
+        .lambda,
+        .@"try",
+        .markup,
+        // A `let` and a `case` are answered before a tail is read (`eval`); a binding or a branch is no value.
+        .let,
+        .let_def,
+        .let_pattern,
+        .let_stmt,
+        .case,
+        .branch,
+        // Not expressions: a type, a schema plan, a pattern, the placeholder.
+        .type_var,
+        .type_top,
+        .type_import,
+        .type_qualified,
+        .ext_type,
+        .schema_type_top,
+        .ext_schema_type,
+        .type_app,
+        .type_fn,
+        .type_unit,
+        .type_tuple,
+        .type_record,
+        .type_record_ext,
+        .schema_ref,
+        .schema_app,
+        .schema_paren,
+        .schema_record,
+        .schema_field,
+        .schema_value,
+        .schema_tagged,
+        .schema_variant,
+        .schema_as,
+        .schema_via,
+        .schema_optional,
+        .schema_nullable,
+        .schema_expr_ref,
+        .schema_parameter,
+        .schema_primitive,
+        .schema_target_top,
+        .ext_schema_target,
+        .pat_wild,
+        .pat_var,
+        .pat_ctor,
+        .pat_int,
+        .pat_char,
+        .pat_string,
+        .pat_unit,
+        .pat_tuple,
+        .pat_list,
+        .pat_spread,
+        .pat_record,
+        .pat_as,
+        .@"error",
+        => return false,
     }
 }
 
@@ -3808,7 +3944,91 @@ fn helperHoles(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!
                     if (!k.isValue() or k == .vocab_markup) return;
                 },
                 .ext_value => {},
-                else => return,
+                // The emitter's `helperCallee` takes a call of a top-level function and no other callee: a local
+                // function could capture what its arguments do not show, and the rest name no function of the top level.
+                .local,
+                .ctor,
+                .import_value,
+                .import_ctor,
+                .qualified,
+                .qualified_ctor,
+                .schema_type_ref,
+                .schema_value_ref,
+                .schema_ctor_ref,
+                .ext_ctor,
+                .schema_member_top,
+                .ext_schema_member,
+                .schema_ctor_top,
+                .ext_schema_ctor,
+                .type_var,
+                .type_top,
+                .type_import,
+                .type_qualified,
+                .ext_type,
+                .schema_type_top,
+                .ext_schema_type,
+                .type_app,
+                .type_fn,
+                .type_unit,
+                .type_tuple,
+                .type_record,
+                .type_record_ext,
+                .schema_ref,
+                .schema_app,
+                .schema_paren,
+                .schema_record,
+                .schema_field,
+                .schema_value,
+                .schema_tagged,
+                .schema_variant,
+                .schema_as,
+                .schema_via,
+                .schema_optional,
+                .schema_nullable,
+                .schema_expr_ref,
+                .schema_parameter,
+                .schema_primitive,
+                .schema_target_top,
+                .ext_schema_target,
+                .int,
+                .float,
+                .char,
+                .string,
+                .chunk,
+                .interp,
+                .unit,
+                .tuple,
+                .list,
+                .record,
+                .record_update,
+                .field_access,
+                .tuple_index,
+                .call,
+                .method_call,
+                .type_dispatch,
+                .lambda,
+                .let,
+                .let_def,
+                .let_pattern,
+                .let_stmt,
+                .case,
+                .branch,
+                .@"try",
+                .markup,
+                .pat_wild,
+                .pat_var,
+                .pat_ctor,
+                .pat_int,
+                .pat_char,
+                .pat_string,
+                .pat_unit,
+                .pat_tuple,
+                .pat_list,
+                .pat_spread,
+                .pat_record,
+                .pat_as,
+                .@"error",
+                => return,
             }
             try out.append(f.gpa, v);
         },
@@ -4216,8 +4436,8 @@ fn recordOf(f: *Frame, place: PlaceId, kids: []const Kid, inst: u32, base: Val) 
 fn binding(f: *Frame, b: u32) Error!void {
     const m = f.m;
     const data = m.datas[b];
-    switch (m.tags[b]) {
-        .let_def => {
+    switch (letTag(m.tags[b])) {
+        .def => {
             const def = m.bir.extraData(@fromBackingInt(data.lhs), Bir.LetDef);
             const l = f.d.locals_start + def.local;
             // Code that a binding above named is made already (`makeCode`).
@@ -4234,13 +4454,13 @@ fn binding(f: *Frame, b: u32) Error!void {
             }.order) != null) try f.escape(v, b);
             f.bindLocal(def.local, v);
         },
-        .let_pattern => {
+        .pattern => {
             const v = try f.ev(data.rhs);
             if (f.readsList(data.lhs)) try f.readNoSlots(v, b);
             try f.bindPattern(data.lhs, v);
         },
-        .let_stmt => _ = try f.ev(data.rhs),
-        else => {},
+        .stmt => _ = try f.ev(data.rhs),
+        .not_a_binding => f.failed = true,
     }
 }
 
@@ -4286,10 +4506,12 @@ fn enterLet(f: *Frame, let_inst: u32, bindings: []const Inst.Index) Error!void {
     const m = f.m;
     for (bindings) |bi| {
         const b = bi.int();
-        switch (m.tags[b]) {
-            .let_def => f.unbind(m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef).local),
-            .let_pattern => f.unbindPattern(m.datas[b].lhs),
-            else => {},
+        switch (letTag(m.tags[b])) {
+            .def => f.unbind(m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef).local),
+            .pattern => f.unbindPattern(m.datas[b].lhs),
+            // A statement binds no local.
+            .stmt => {},
+            .not_a_binding => f.failed = true,
         }
     }
     if (!m.let_seen.isSet(let_inst)) {
@@ -4309,17 +4531,19 @@ fn unbindPattern(f: *Frame, pat: u32) void {
     _ = f.charge(1);
     const m = f.m;
     const data = m.datas[pat];
-    switch (m.tags[pat]) {
-        .pat_var => f.unbind(data.lhs),
-        .pat_as => {
+    switch (patTag(m.tags[pat])) {
+        .variable => f.unbind(data.lhs),
+        .as => {
             f.unbind(data.rhs);
             f.unbindPattern(data.lhs);
         },
-        .pat_tuple, .pat_list => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |p| f.unbindPattern(p.int()),
-        .pat_spread => f.unbindPattern(data.lhs),
-        .pat_ctor => for (m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |p| f.unbindPattern(p.int()),
-        .pat_record => for (m.bir.extraSlice(Bir.inlineRange(data), u32)) |local| f.unbind(local),
-        else => {},
+        .tuple, .list => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |p| f.unbindPattern(p.int()),
+        .spread => f.unbindPattern(data.lhs),
+        .ctor => for (m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |p| f.unbindPattern(p.int()),
+        .record => for (m.bir.extraSlice(Bir.inlineRange(data), u32)) |local| f.unbind(local),
+        // These bind no local.
+        .wild, .int, .char, .string, .unit => {},
+        .not_a_pattern => f.failed = true,
     }
 }
 
@@ -4336,15 +4560,15 @@ fn findGroups(f: *Frame, bindings: []const Inst.Index) Error!void {
     for (bindings, 0..) |bi, k| {
         const b = bi.int();
         var last = b;
-        switch (m.tags[b]) {
-            .let_def => {
+        switch (letTag(m.tags[b])) {
+            .def => {
                 last = @max(last, m.datas[b].rhs);
                 const def = m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef);
                 for (m.bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Inst.Index)) |p| last = @max(last, p.int());
             },
-            .let_pattern => last = @max(last, @max(m.datas[b].lhs, m.datas[b].rhs)),
-            .let_stmt => last = @max(last, m.datas[b].rhs),
-            else => {},
+            .pattern => last = @max(last, @max(m.datas[b].lhs, m.datas[b].rhs)),
+            .stmt => last = @max(last, m.datas[b].rhs),
+            .not_a_binding => f.failed = true,
         }
         const first = (if (k == 0) b else @max(prev, b)) + 1;
         prev = @max(prev, last);
@@ -4937,31 +5161,30 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     const callee = data.lhs;
     if (m.spreadOf(f.d, inst)) |sp| return f.spreadChain(inst, sp);
     if (args.len == 2 and m.isListAppend(inst)) return f.appendChain(inst);
-    switch (m.tags[callee]) {
-        .ctor, .ext_ctor => {
-            const place = try m.placeOfInst(inst);
-            var tmp: std.ArrayList(Kid) = .empty;
-            defer tmp.deinit(f.gpa);
-            var vals: std.ArrayList(Val) = .empty;
-            defer vals.deinit(f.gpa);
-            var known = true;
-            for (args, 0..) |a, k| {
-                const v = try f.ev(a.int());
-                try vals.append(f.gpa, v);
-                if (try m.ctorArgStep(callee, place, @intCast(k))) |s| {
-                    try tmp.append(f.gpa, .{ .step = s.word(), .val = v });
-                } else known = false;
-            }
-            // A constructor that no row describes: no claim, and each cell of its arguments.
-            if (!known) return f.unknownOf(place, vals.items);
-            // A record alias's constructor builds the record (backend.md §4):
-            // the value the literal it stands for makes, with its object and
-            // its slots (kernel §11.2). As a construction of its fields
-            // alone, its slots held no cell, and an update of it wrote none.
-            if (m.isRecordPlace(place)) return f.recordOf(place, tmp.items, inst, v_none);
-            return f.built(place, tmp.items);
-        },
-        else => {},
+    // A constructor is applied here; any other callee is evaluated below, as an
+    // expression (`evalInner`, whose switch names every tag).
+    if (m.tags[callee] == .ctor or m.tags[callee] == .ext_ctor) {
+        const place = try m.placeOfInst(inst);
+        var tmp: std.ArrayList(Kid) = .empty;
+        defer tmp.deinit(f.gpa);
+        var vals: std.ArrayList(Val) = .empty;
+        defer vals.deinit(f.gpa);
+        var known = true;
+        for (args, 0..) |a, k| {
+            const v = try f.ev(a.int());
+            try vals.append(f.gpa, v);
+            if (try m.ctorArgStep(callee, place, @intCast(k))) |s| {
+                try tmp.append(f.gpa, .{ .step = s.word(), .val = v });
+            } else known = false;
+        }
+        // A constructor that no row describes: no claim, and each cell of its arguments.
+        if (!known) return f.unknownOf(place, vals.items);
+        // A record alias's constructor builds the record (backend.md §4):
+        // the value the literal it stands for makes, with its object and
+        // its slots (kernel §11.2). As a construction of its fields
+        // alone, its slots held no cell, and an update of it wrote none.
+        if (m.isRecordPlace(place)) return f.recordOf(place, tmp.items, inst, v_none);
+        return f.built(place, tmp.items);
     }
     // The callee, then the arguments in order.
     var code: ?Code = null;
@@ -4970,33 +5193,32 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     // A markup primitive of the vocabulary (`pub markup map`), which each
     // lowering's runtime implements (`boundary.md` §9.4.8).
     var primitive = false;
-    switch (m.tags[callee]) {
-        .top, .ext_value => {
-            f.noteWalked(callee);
-            // The evidence of a call is at the call; that of a reference is at the reference.
-            _ = try f.evidence(callee);
-            _ = try f.evidence(inst);
-            if (m.calleeOf(callee)) |t| {
-                if (try m.declContract(t)) |c| code = .{ .contract = c, .decl = t, .own_params = c.arity };
-                if (t[0] < m.in.birs.len and t[1] < m.in.birs[t[0]].decls.len) primitive = m.in.birs[t[0]].decls[t[1]].kind == .vocab_markup;
-            }
-        },
-        else => {
-            callee_val = try f.eval(callee, .callee, false);
-            const n = f.nodes.items[callee_val];
-            switch (n.tag) {
-                .closure => code = f.codes.items[n.a],
-                .fnref => {
-                    if (try m.declContract(.{ n.a, n.b })) |c| code = .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
-                },
-                .ref => fn_root = f.ownFnRoot(callee_val),
-                .none, .outside, .built, .join, .unknown => {},
-                .later => unreachable, // read through `capVal` only
-            }
-            // One of several functions, or a function with no contract: no
-            // rule follows which code runs, so each of them goes to the `top` use.
-            if (code == null and fn_root == none) try f.flowTop(callee_val, inst);
-        },
+    // A function of the top level has its contract; any other callee is an
+    // expression, evaluated by `evalInner`, whose switch names every tag.
+    if (m.tags[callee] == .top or m.tags[callee] == .ext_value) {
+        f.noteWalked(callee);
+        // The evidence of a call is at the call; that of a reference is at the reference.
+        _ = try f.evidence(callee);
+        _ = try f.evidence(inst);
+        if (m.calleeOf(callee)) |t| {
+            if (try m.declContract(t)) |c| code = .{ .contract = c, .decl = t, .own_params = c.arity };
+            if (t[0] < m.in.birs.len and t[1] < m.in.birs[t[0]].decls.len) primitive = m.in.birs[t[0]].decls[t[1]].kind == .vocab_markup;
+        }
+    } else {
+        callee_val = try f.eval(callee, .callee, false);
+        const n = f.nodes.items[callee_val];
+        switch (n.tag) {
+            .closure => code = f.codes.items[n.a],
+            .fnref => {
+                if (try m.declContract(.{ n.a, n.b })) |c| code = .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
+            },
+            .ref => fn_root = f.ownFnRoot(callee_val),
+            .none, .outside, .built, .join, .unknown => {},
+            .later => unreachable, // read through `capVal` only
+        }
+        // One of several functions, or a function with no contract: no
+        // rule follows which code runs, so each of them goes to the `top` use.
+        if (code == null and fn_root == none) try f.flowTop(callee_val, inst);
     }
     if (code) |c| if (c.contract.entry and args.len == 1) return f.entryCall(inst, c.decl, args[0].int());
     var vals: std.ArrayList(Val) = .empty;

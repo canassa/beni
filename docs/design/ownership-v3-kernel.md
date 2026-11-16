@@ -100,9 +100,17 @@ gave up has no contract at `publish` (`Check.checkModule`).
 The value of a local before its binding is `v_unbound`, which nothing reads: `evalInner .local` reads a
 local only where its frame bound it, and safe builds assert it (`evalInner`, `capVal`).
 
-Every `switch` over `Tag`, `RootKind`, `EKind`, `Src.Kind`, `Use.kind` and `Bir.Inst.Tag` in `src/own3/`
-has no `else`: a new kind compiles only once each reader has a case. Ten switches on `Bir.Inst.Tag` in `Frame.zig` (patterns, statements, markup items) have
-one today, each over tags that bind no local, read no list and name no code (research report 148, #2541).
+Every `switch` over `Tag`, `RootKind`, `EKind`, `Src.Kind`, `Use.kind`, `Bir.Inst.Tag`, `Place.Kind`,
+`Facts.Cause`, `Edges.Edge` and `Dispatch.Term` in `src/own3/` has no `else`: a new kind compiles only once each reader
+has a case. A tag that a reader takes the same way as others is listed with them under a comment that says why that
+answer is right for it, and where it is not known to be right the answer is the pessimistic one (a refusal, `unknown`, a
+given-up walk). A position that holds a closed set of tags, a pattern or a binding of a `let`, is classified once
+(`Frame.patTag`, `Frame.letTag`), and a tag outside the set gives up the declaration. Where one or two tags are special
+and every other goes to a reader that is exhaustive itself (`eval`: `let` and `case`, else `evalInner`; `call`: a
+constructor or a top-level callee, else `eval`), the test is an `if`, not a `switch`. A predicate over the type store's shapes
+(`fnType`, `isMarkup`, `isView`, `isSender`) answers no for any shape it does not name, which is the refusing side. (Research
+report 148 noted ten
+exceptions in `Frame.zig`; #2541 removed them.)
 
 ### 3.4 A value read at a type with more places than its own
 

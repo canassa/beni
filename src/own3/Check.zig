@@ -454,7 +454,7 @@ pub const Mod = struct {
             .list => "a list",
             .dict => "a dictionary",
             .closure => "a function",
-            else => "a type",
+            .ref, .@"opaque", .@"var", .cross => "a type",
         };
         const by: []const u8 = if (m.over_decl) |di| try std.fmt.allocPrint(m.arena, ", met by `{s}`", .{m.names.declName(m.in.module, di)}) else "";
         return .{
@@ -526,7 +526,8 @@ pub const Mod = struct {
                     }
                     break :blk true;
                 },
-                else => false,
+                // Any other instruction is not a literal.
+                .local, .top, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_value, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .record_update, .field_access, .tuple_index, .method_call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => false,
             };
             if (literal) {
                 lit.set(i);
@@ -745,7 +746,8 @@ pub const Mod = struct {
         return switch (owner.instTag(@fromBackingInt(body))) {
             .type_top => m.aliasIsSender(.{ t[0], data.lhs }, depth + 1),
             .ext_type => if (data.lhs < m.in.provenance.len) (if (m.in.provenance[data.lhs].typeDecl(data.rhs)) |td| m.aliasIsSender(.{ data.lhs, td.int() }, depth + 1) else false) else false,
-            else => false,
+            // Any other type is not an alias of a sender.
+            .local, .top, .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_import, .type_qualified, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .method_call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => false,
         };
     }
 
@@ -810,7 +812,8 @@ pub const Mod = struct {
         const at: [2]u32 = switch (m.tags[ref]) {
             .ctor => .{ m.in.module, d.lhs },
             .ext_ctor => if (d.lhs < m.in.provenance.len and d.rhs < m.in.provenance[d.lhs].ctor_index.len) .{ d.lhs, m.in.provenance[d.lhs].ctor_index[d.rhs] } else return null,
-            else => return null,
+            // No other instruction names a constructor.
+            .local, .top, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_value, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .method_call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => return null,
         };
         if (at[0] >= m.in.birs.len or at[1] >= m.in.birs[at[0]].ctors.len) return null;
         return at;
@@ -834,7 +837,8 @@ pub const Mod = struct {
         switch (m.places.kind(place)) {
             .ctor => return try m.ctorStep(info.ordinal, k),
             .record => return m.recordAliasStep(ref, k),
-            else => return null,
+            // No step is known from any other place.
+            .tuple, .list, .dict, .ref, .closure, .@"opaque", .@"var", .cross => return null,
         }
     }
 
@@ -886,7 +890,8 @@ pub const Mod = struct {
                 const decl = m.in.provenance[d.lhs].valueDecl(d.rhs) orelse return null;
                 break :blk .{ d.lhs, decl.int() };
             },
-            else => return null,
+            // No other instruction names a declaration to call.
+            .local, .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .method_call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => return null,
         };
         var budget: u32 = 16;
         while (budget > 0) : (budget -= 1) t = Prepass.aliasStep(m.in.birs, m.in.provenance, t) orelse break;
@@ -900,7 +905,8 @@ pub const Mod = struct {
         return switch (dt.term(ti)) {
             .top => |u| .{ m.in.module, u.decl.int() },
             .ext => |u| if (m.in.provenance.len > u.module.int()) (if (m.in.provenance[u.module.int()].valueDecl(@backingInt(u.value))) |d| .{ u.module.int(), d.int() } else null) else null,
-            else => null,
+            // No other term names a declaration.
+            .param, .derived, .ext_derived, .primitive, .undetermined, .field, .identity, .text, .codec => null,
         };
     }
 
@@ -1119,7 +1125,7 @@ pub const Mod = struct {
         var r: RowInfo = .{};
         for (edges.items) |e| switch (e) {
             .derived => |j| if (j < dt.derived.len) r.add(try m.rowInfo(j)),
-            else => r.addEffect(try m.rowEdgeEffect(e)),
+            .top, .ext, .ext_derived, .primitive, .undetermined, .codec => r.addEffect(try m.rowEdgeEffect(e)),
         };
         return r;
     }
@@ -1186,7 +1192,7 @@ pub const Mod = struct {
                     }
                     try names.append(arena, m.row_slot[k]);
                 },
-                else => own.addEffect(try m.rowEdgeEffect(e)),
+                .top, .ext, .ext_derived, .primitive, .undetermined, .codec => own.addEffect(try m.rowEdgeEffect(e)),
             };
             try direct.append(arena, own);
             try deps.append(arena, try arena.dupe(u32, names.items));
@@ -1232,7 +1238,8 @@ pub const Mod = struct {
         const x = try m.edgeEffect(e);
         switch (e) {
             .top => |d| if (d < m.row_read.bit_length) m.row_read.set(d),
-            else => {},
+            // Only a declaration of this module has a read bit.
+            .ext, .derived, .ext_derived, .primitive, .undetermined, .codec => {},
         }
         return x;
     }
@@ -1817,7 +1824,8 @@ pub const Mod = struct {
                 const target: ?[2]u32 = switch (m.tags[i]) {
                     .top => .{ m.in.module, m.datas[i].lhs },
                     .method_call => m.methodTarget(@intCast(i)),
-                    else => null,
+                    // No other instruction names a declaration of this module.
+                    .local, .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_value, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => null,
                 };
                 const t = target orelse continue;
                 if (t[0] != m.in.module) continue;
@@ -1949,7 +1957,8 @@ pub const Mod = struct {
             .method_call => return if (m.methodTarget(inst)) |t| m.refName(t) else "<derived method>",
             .type_dispatch => return "<dispatched method>",
             .local => return m.localName(f.d, m.datas[inst].lhs),
-            else => {},
+            // No other instruction has a name the text can give.
+            .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => {},
         }
         return "call";
     }
@@ -1972,12 +1981,14 @@ pub const Mod = struct {
                 switch (m.tags[data.lhs]) {
                     .ctor, .ext_ctor => return "<constructor …>",
                     .top, .ext_value => if (m.calleeOf(data.lhs)) |t| return std.fmt.allocPrint(m.arena, "<call {s}>", .{try m.refName(t)}),
-                    else => {},
+                    // Any other callee has no name the text can give.
+                    .local, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .tuple, .list, .record, .record_update, .field_access, .tuple_index, .call, .method_call, .type_dispatch, .lambda, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => {},
                 }
                 return "<call>";
             },
             .method_call => if (m.methodTarget(inst)) |t| return std.fmt.allocPrint(m.arena, "<call {s}>", .{try m.refName(t)}),
-            else => {},
+            // No other instruction has a name the text can give.
+            .ctor, .import_value, .import_ctor, .qualified, .qualified_ctor, .schema_type_ref, .schema_value_ref, .schema_ctor_ref, .ext_ctor, .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor, .type_var, .type_top, .type_import, .type_qualified, .ext_type, .schema_type_top, .ext_schema_type, .type_app, .type_fn, .type_unit, .type_tuple, .type_record, .type_record_ext, .schema_ref, .schema_app, .schema_paren, .schema_record, .schema_field, .schema_value, .schema_tagged, .schema_variant, .schema_as, .schema_via, .schema_optional, .schema_nullable, .schema_expr_ref, .schema_parameter, .schema_primitive, .schema_target_top, .ext_schema_target, .int, .float, .char, .string, .chunk, .interp, .unit, .type_dispatch, .let, .let_def, .let_pattern, .let_stmt, .case, .branch, .@"try", .markup, .pat_wild, .pat_var, .pat_ctor, .pat_int, .pat_char, .pat_string, .pat_unit, .pat_tuple, .pat_list, .pat_spread, .pat_record, .pat_as, .@"error" => {},
         }
         return "<expression>";
     }
@@ -2043,7 +2054,8 @@ pub const Mod = struct {
             .disjoint => "another operand of the same operation reaches it",
             .held_operand => "an operand that waits for its consumer holds it",
             .escaped => "it escaped before the write",
-            else => "",
+            // These carry the detail of their own line (`d.detail`).
+            .top_level, .captured_edit, .later_use, .alias, .supply, .need, .limit, .exclusive, .once, .payload, .read_only, .level, .comparison, .loan => "",
         };
     }
 
