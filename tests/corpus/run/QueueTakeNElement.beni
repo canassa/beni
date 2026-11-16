@@ -1,0 +1,26 @@
+-- A list offered to a `Queue` and taken back by `Queue.takeN` is the list
+-- the program still holds, as for `takeAll` (ownership-v3-kernel.md §3.4).
+-- In place, the length of `xs` would print 3.
+import Io
+import List
+import Node exposing (Program)
+import Queue
+
+
+go : Int → Program
+go n =
+    xs = [ n, 2 ]
+    q = Queue.unbounded ⊤
+    _ = Queue.offer q xs
+    w =
+        case Queue.takeN q 1 of
+            [ v, …_ ] →
+                List.push v 9
+
+            [] →
+                xs
+    Node.print "${String.fromInt (List.length w)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Io.run λ⊤ → go 1

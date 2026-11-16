@@ -1,0 +1,8 @@
+--! A test platform: one value at two places of an answer that `Js` types.
+
+import Js
+
+
+--| A pair of the value and itself, at any type.
+pub twin : a → b
+twin x = Js.to (Js.from ( x, x ))

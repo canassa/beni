@@ -772,6 +772,16 @@ pub const Mod = struct {
         return m.loc.selfLoc(place);
     }
 
+    /// Whether a worded source at entry `from` of one layout names cells at
+    /// entry `to` of the layout a word puts it in: the same location, or a
+    /// wide one above it, which holds every cell below it (a `Js.Value`, or a
+    /// type variable, that the result reads as a list of records). A word
+    /// that matched the location alone left the locations below it with no
+    /// source (kernel §3.4).
+    fn holdsAt(m: *const Mod, from: Loc.Entry, to: Loc.Entry) bool {
+        return to.loc == from.loc or (from.kind.wide() and m.loc.isPrefix(from.loc, to.loc));
+    }
+
     /// Whether `place` is a record's.
     pub fn isRecordPlace(m: *const Mod, place: PlaceId) bool {
         return m.places.kind(place) == .record;
@@ -1395,15 +1405,15 @@ pub const Mod = struct {
                 if (has(w, .returned)) {
                     described = true;
                     var found = false;
-                    for (res_es, 0..) |re, ri| if (re.loc == pe.loc) {
-                        found = true;
+                    for (res_es, 0..) |re, ri| if (m.holdsAt(pe, re)) {
+                        if (re.loc == pe.loc) found = true;
                         try res[ri].append(gpa, src);
                     };
                     if (!found) for (res) |*r| try r.append(gpa, src);
                 }
                 if (has(w, .stored)) {
                     described = true;
-                    try m.intoElems(res, sig.result, relem, pe.loc, src);
+                    try m.intoElems(res, sig.result, relem, pe, src);
                 }
             }
         }
@@ -1438,7 +1448,7 @@ pub const Mod = struct {
         }
         if (has(rw, .builderdone) and arity > 0) {
             described = true;
-            for (m.loc.layoutEntries(c.layouts[0]), 0..) |pe, e| for (res_es, 0..) |re, ri| if (re.loc == pe.loc) {
+            for (m.loc.layoutEntries(c.layouts[0]), 0..) |pe, e| for (res_es, 0..) |re, ri| if (m.holdsAt(pe, re)) {
                 try res[ri].append(gpa, .{ .kind = .param, .a = 0, .e = @intCast(e) });
             };
         }
@@ -1451,8 +1461,8 @@ pub const Mod = struct {
                     if (pr.up[k] == none) continue;
                     const src: Src = .{ .kind = .param, .a = 0, .e = @intCast(pr.up[k]) };
                     var found = false;
-                    for (res_es, 0..) |re, ri| if (re.loc == ce.loc) {
-                        found = true;
+                    for (res_es, 0..) |re, ri| if (m.holdsAt(ce, re)) {
+                        if (re.loc == ce.loc) found = true;
                         try res[ri].append(gpa, src);
                     };
                     if (!found) for (res) |*r| try r.append(gpa, src);
@@ -1479,15 +1489,15 @@ pub const Mod = struct {
         }
     }
 
-    fn intoElems(m: *Mod, res: []std.ArrayList(Src), result: PlaceId, relem: ?*const Loc.Proj, loc: u32, src: Src) Allocator.Error!void {
+    fn intoElems(m: *Mod, res: []std.ArrayList(Src), result: PlaceId, relem: ?*const Loc.Proj, from: Loc.Entry, src: Src) Allocator.Error!void {
         const pr = relem orelse {
             for (res) |*r| try r.append(m.gpa, src);
             return;
         };
         const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
         var found = false;
-        for (child, 0..) |ce, k| if (ce.loc == loc and pr.up[k] != none) {
-            found = true;
+        for (child, 0..) |ce, k| if (m.holdsAt(from, ce) and pr.up[k] != none) {
+            if (ce.loc == from.loc) found = true;
             try res[pr.up[k]].append(m.gpa, src);
         };
         _ = result;
@@ -1503,8 +1513,8 @@ pub const Mod = struct {
             if (pe.loc == pself) continue;
             const src: Src = .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) };
             var found = false;
-            for (res_es, 0..) |re, ri| if (re.loc == pe.loc and re.loc != rself) {
-                found = true;
+            for (res_es, 0..) |re, ri| if (m.holdsAt(pe, re) and re.loc != rself) {
+                if (re.loc == pe.loc) found = true;
                 try res[ri].append(m.gpa, src);
             };
             if (!found) for (res_es, 0..) |re, ri| if (re.loc != rself) try res[ri].append(m.gpa, src);
@@ -1571,13 +1581,13 @@ pub const Mod = struct {
             const src: Src = .{ .kind = .answer, .a = @intCast(j), .e = @intCast(e) };
             if (has(w, .returned)) {
                 var found = false;
-                for (res_es, 0..) |re, ri| if (re.loc == ae.loc) {
-                    found = true;
+                for (res_es, 0..) |re, ri| if (m.holdsAt(ae, re)) {
+                    if (re.loc == ae.loc) found = true;
                     try res[ri].append(m.gpa, src);
                 };
                 if (!found) for (res) |*r| try r.append(m.gpa, src);
             }
-            if (has(w, .stored)) try m.intoElems(res, sig.result, relem, ae.loc, src);
+            if (has(w, .stored)) try m.intoElems(res, sig.result, relem, ae, src);
             if (has(w, .aliased)) for (res) |*r| try r.append(m.gpa, src);
         }
         const fnc = try m.arena.create(Contract.Fn);

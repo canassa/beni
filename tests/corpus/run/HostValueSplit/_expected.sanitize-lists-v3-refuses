@@ -1,0 +1,2 @@
+# v3 refuses the call: `bump` writes the first part of the pair and reads the second, which is the same list (ownership-v3-kernel.md §3.4).
+22:16 list_still_used call

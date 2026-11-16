@@ -109,6 +109,9 @@ pub const Kind = enum(u8) {
     }
 };
 
+/// `Table.holes`: per entry of a view, a wide entry of a coarser layout above it.
+pub const Holes = struct { read: []const u32, above: []const u32 };
+
 pub const Entry = struct {
     loc: u32,
     kind: Kind,
@@ -205,6 +208,8 @@ pub const Table = struct {
     path_root: std.ArrayList(u32) = .empty,
 
     covers: std.AutoHashMapUnmanaged(CoverKey, []const u32) = .empty,
+    /// Per pair of layouts, `holes`' answer.
+    coarse: std.AutoHashMapUnmanaged(CoverKey, ?*const Holes) = .empty,
     /// The entry of a location in a layout of more than `small_layout`
     /// entries, by layout and location (`indexOf`): a lookup is one step,
     /// not a scan of the layout.
@@ -251,6 +256,7 @@ pub const Table = struct {
         t.path_index.deinit(gpa);
         t.path_root.deinit(gpa);
         t.covers.deinit(gpa);
+        t.coarse.deinit(gpa);
         t.entry_index.deinit(gpa);
         t.over.deinit(gpa);
     }
@@ -796,6 +802,47 @@ pub const Table = struct {
         t.units +|= t.layoutEntries(sig).len;
         for (t.layoutEntries(sig)) |s| if (s.kind == .@"var" and t.isPrefix(entry, s.loc)) return true;
         return false;
+    }
+
+    /// Per entry `j` of `view`: `above`, the entry of `of` that holds its
+    /// cells when it is a wide entry strictly above `j`'s location (a
+    /// `Js.Value` read as a list of records, a type variable of a folded
+    /// payload), or `none`; and `read`, that entry where the call map
+    /// `cover(view, of)` puts it at another entry of `view`, so that a
+    /// reading through the map alone finds none of `j`'s cells. Null when
+    /// no entry has one. A reading of a value of layout `of` at `j` reads
+    /// `read[j]` too (the fallback is all of the wide entry), and where `j` is
+    /// a summary location its cells are no single place: the wide entry
+    /// cannot say which of them are at two of its places (kernel §3.4, §4.1,
+    /// §4.4). Kept for each pair; it costs the two maps (kernel §8).
+    pub fn holes(t: *Table, view: u32, of: u32) Allocator.Error!?*const Holes {
+        if (view == of) return null;
+        const key: CoverKey = .{ .sig = view, .of = of };
+        if (t.coarse.get(key)) |x| return x;
+        const ves = t.layoutEntries(view);
+        const oes = t.layoutEntries(of);
+        // Per entry of `view`, the entry of `of` that holds its cells; and
+        // per entry of `of`, the entry of `view` that a reading puts it at.
+        const up = try t.cover(of, view);
+        const down = try t.cover(view, of);
+        t.units +|= scanUnits(up.len);
+        var x: ?*Holes = null;
+        for (ves, up, 0..) |ve, k, j| if (k < all and oes[k].kind.wide() and oes[k].loc != ve.loc) {
+            const h = x orelse blk: {
+                const h = try t.arena.create(Holes);
+                const read = try t.arena.alloc(u32, ves.len);
+                const above = try t.arena.alloc(u32, ves.len);
+                @memset(read, none);
+                @memset(above, none);
+                h.* = .{ .read = read, .above = above };
+                x = h;
+                break :blk h;
+            };
+            @constCast(h.above)[j] = k;
+            if (down[k] != j and down[k] != all) @constCast(h.read)[j] = k;
+        };
+        try t.coarse.put(t.gpa, key, x);
+        return x;
     }
 
     /// Per entry of layout `of` (a caller's type), the entry of layout `sig`

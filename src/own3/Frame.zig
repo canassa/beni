@@ -376,6 +376,12 @@ judge_ctx: u32 = none,
 judge_at: u32 = none,
 /// Set by `argLeaves` when the fallback cover gave an entry.
 hit_all: bool = false,
+/// Set by `argEntries` when a part that `pairedLeaves` asks for is no
+/// location of the argument's own layout, and every entry is read.
+suffix_fallback: bool = false,
+/// Set by `argEntries` when a wide entry of the argument read at a summary
+/// location below it gave an entry (`Loc.holes`): no single place.
+coarse_hit: bool = false,
 uses: std.ArrayList(Read) = .empty,
 escapes: std.ArrayList(Escape) = .empty,
 /// The atoms of each escape, a run per `Escape`: a copy, so a run of `atoms` under construction can be compacted after it noted one.
@@ -409,6 +415,11 @@ built_index: std.AutoHashMapUnmanaged(Val, BuiltIndex) = .empty,
 /// construction and its step (`project`), and the constructions so indexed.
 built_parts: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
 built_parted: std.AutoHashMapUnmanaged(Val, bool) = .empty,
+/// Per own cell `(root, path, entry)` that `freshSrc` asked about: how many
+/// escapes it has tested, whether one of them holds the cell, and the atoms
+/// of those escapes. Escapes only grow, so the answer for the escapes tested
+/// stands (kernel §8).
+fresh_esc: std.AutoHashMapUnmanaged([3]u32, [3]u32) = .empty,
 /// The atoms of the write in judgement, grouped by root and entry, when
 /// there are more than `w_index_min` of them (`indexWrite`).
 w_ix: WIndex = .{},
@@ -1126,6 +1137,14 @@ fn checkShare(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?
 /// saw as atoms, never an answer of a function parameter: `answers` says
 /// which entries hold one, and a pair of entries with one is tested here.
 fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) Error!void {
+    return f.deriveLinearSplit(root, claim, answers, null);
+}
+
+/// `deriveLinear`, where `split` gives, per entry, the wide entry of the
+/// callee's result it is at when another entry is at it too, or `none`: the
+/// callee's claim does not cover two entries of one such group, so each pair
+/// of them that can hold one cell (`canShare`) is tested (kernel §3.4).
+fn deriveLinearSplit(f: *Frame, root: u32, claim: ?bool, answers: []const bool, split: ?[]const u32) Error!void {
     const r = f.roots.items[root];
     var linear = claim orelse true;
     const n = f.m.loc.layouts.items[r.layout].len;
@@ -1140,7 +1159,13 @@ fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) Error
     // parameter is tested: the first of each pair is such an entry.
     var firsts: std.ArrayList(u32) = .empty;
     defer firsts.deinit(f.gpa);
-    if (linear) for (held.items) |e| if (claim == null or answers[e]) try firsts.append(f.gpa, e);
+    const grouped = struct {
+        fn at(sp: ?[]const u32, e: u32) bool {
+            const x = sp orelse return false;
+            return x[e] != none;
+        }
+    }.at;
+    if (linear) for (held.items) |e| if (claim == null or answers[e] or grouped(split, e)) try firsts.append(f.gpa, e);
     // A large set of entries is tested by `runsShare`, linear in its atoms.
     var runs: std.ArrayList([2]u32) = .empty;
     defer runs.deinit(f.gpa);
@@ -1150,7 +1175,7 @@ fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) Error
     if (linear) for (held.items) |e| {
         const a = f.rents.items[r.ent + e];
         try runs.append(f.gpa, .{ a.start, a.start + a.len });
-        if (claim != null) try sel.append(f.gpa, answers[e]);
+        if (claim != null) try sel.append(f.gpa, answers[e] or grouped(split, e));
         total += a.len;
     };
     const sl: ?[]const bool = if (claim != null) sel.items else null;
@@ -1173,6 +1198,15 @@ fn deriveLinear(f: *Frame, root: u32, claim: ?bool, answers: []const bool) Error
         }
         for (seconds) |e2| {
             if (e2 == e1) continue;
+            // A pair the claim covers: the first is only of a group, and the
+            // second is at another entry of the callee, or of a kind that
+            // holds no cell of the first's (two fields' slots, a slot and a list).
+            if (claim != null and !answers[e1] and !answers[e2]) {
+                const sp = split.?;
+                if (sp[e2] != sp[e1]) continue;
+                const es = f.m.loc.layoutEntries(r.layout);
+                if (!canShare(f.m, es[e1], es[e2])) continue;
+            }
             const a2 = f.rents.items[r.ent + e2];
             if (f.dupOverlap(f.atoms.items[a1.start..][0..a1.len], f.atoms.items[a2.start..][0..a2.len])) {
                 linear = false;
@@ -1654,14 +1688,27 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
     const own = try f.m.loc.layoutOf(n.place);
     if (view == own) return f.leavesOwn(v, js, out);
     const cov = try f.m.loc.cover(view, own);
+    // A wide entry of `v`'s own layout holds the cells of the view's
+    // locations below it, which the map puts at another entry of the view (a
+    // `Js.Value` read as a list of records, a folded payload): it is read at
+    // each of them too, and none of them is single (kernel §3.4).
+    const holes = try f.m.loc.holes(view, own);
+    var coarse_dup = false;
     var ks: Entries = .{};
     // Each entry of the map is a step (kernel §8). A large set of entries is
     // a mark for each entry of the view, so that the map is read once.
     _ = f.charge(cov.len);
     if (js.len <= 8) {
-        for (cov, 0..) |c, k| for (js) |j| if (Loc.hits(c, j)) {
+        for (cov, 0..) |c, k| for (js) |j| if (Loc.hits(c, j) or (holes != null and holes.?.read[j] == k)) {
             try ks.add(f.gpa, @intCast(k));
             break;
+        };
+        if (holes) |h| for (js, 0..) |j, i| if (h.above[j] != none) {
+            // A summary below a wide entry, or two locations below one.
+            if (!f.m.loc.layoutEntries(view)[j].single) coarse_dup = true;
+            for (js[i + 1 ..]) |j2| if (h.above[j2] == h.above[j]) {
+                coarse_dup = true;
+            };
         };
     } else {
         const vn = f.m.loc.layoutEntries(view).len;
@@ -1670,9 +1717,38 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
         defer f.m.gpa.free(in_js);
         @memset(in_js, false);
         for (js) |j| in_js[j] = true;
-        for (cov, 0..) |c, k| if (c == Loc.all or (c < vn and in_js[c])) try ks.add(f.gpa, @intCast(k));
+        const extra = try f.m.gpa.alloc(bool, cov.len);
+        defer f.m.gpa.free(extra);
+        @memset(extra, false);
+        // Per wide entry of `own`: how many entries of `js` it is above.
+        const above_n = try f.m.gpa.alloc(u32, cov.len);
+        defer f.m.gpa.free(above_n);
+        @memset(above_n, 0);
+        if (holes) |h| for (js) |j| {
+            if (h.read[j] != none) extra[h.read[j]] = true;
+            if (h.above[j] == none) continue;
+            if (!f.m.loc.layoutEntries(view)[j].single) coarse_dup = true;
+            above_n[h.above[j]] += 1;
+            if (above_n[h.above[j]] > 1) coarse_dup = true;
+        };
+        for (cov, 0..) |c, k| if (c == Loc.all or (c < vn and in_js[c]) or extra[k]) try ks.add(f.gpa, @intCast(k));
     }
-    return f.leavesOwn(v, ks.slice(), out);
+    const dup = try f.leavesOwn(v, ks.slice(), out);
+    return dup or coarse_dup;
+}
+
+/// Per entry `k` of layout `own`, the flags of the entries of `sig` whose
+/// cells `k` holds though the map puts it at another entry (`Loc.holes`),
+/// or-ed; empty when there is none. It costs the signature's layout (kernel §8).
+fn holeFlags(f: *Frame, sig: u32, own: u32, flags: []const u8) Error![]u8 {
+    const h = (try f.m.loc.holes(sig, own)) orelse return f.gpa.alloc(u8, 0);
+    _ = f.charge(Loc.scanUnits(h.read.len));
+    const out = try f.gpa.alloc(u8, f.m.loc.layoutEntries(own).len);
+    @memset(out, 0);
+    for (h.read, 0..) |k, j| if (k != none) {
+        out[k] |= flags[j];
+    };
+    return out;
 }
 
 fn whole(tag: Tag) bool {
@@ -2271,9 +2347,13 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
     for (flags) |x| if (CMod.reads(x)) {
         any_flag = true;
     };
+    // A wide entry of `v`'s own layout that holds the cells of locations of
+    // the signature below it (`Loc.holes`) is read where they are read (kernel §3.4).
+    const extra = try f.holeFlags(sig, own, flags);
+    defer f.gpa.free(extra);
     for (cov, 0..) |c, k| {
         const read = if (c == none) true else if (c == Loc.all) any_flag else CMod.reads(flags[c]);
-        if (read) try f.lists.append(f.gpa, @intCast(k)) else all = false;
+        if (read or (extra.len != 0 and CMod.reads(extra[k]))) try f.lists.append(f.gpa, @intCast(k)) else all = false;
     }
     const nmask: u32 = @intCast(f.lists.items.len - start);
     if (nmask == 0) return;
@@ -2563,10 +2643,31 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
         nwes += 1;
     } else false;
     const own_es = f.m.loc.layoutEntries(own_layout);
+    // A wide entry of the operand's own layout that holds the cells of
+    // locations of the signature below it (`Loc.holes`) has their flags too (kernel §3.4).
+    const extra = try f.holeFlags(o.sig, own_layout, o.flags);
+    defer f.gpa.free(extra);
+    // The written location is below a wide entry of the operand's own
+    // layout: that entry is the written cells, and it holds the cells of each
+    // other location of the signature below it too. Another of those that the
+    // callee reads or answers is the written cells, and no rule makes the two
+    // apart: the operand cannot say which of its cells are at which (kernel
+    // §3.4, §5 test 2).
+    if (skip != none and skip < Loc.all) if (try f.m.loc.holes(o.sig, own_layout)) |h| {
+        const k0 = h.above[skip];
+        if (k0 != none) {
+            _ = f.charge(Loc.scanUnits(h.above.len));
+            for (h.above, 0..) |k, j| if (j != skip and k == k0 and o.flags[j] != 0) return true;
+            const c0 = cov[k0];
+            if (c0 == Loc.all and any_flag) return true;
+            if (c0 < Loc.all and c0 != skip and o.flags[c0] != 0) return true;
+        }
+    };
     // The scan of the targets is work, and so is each test of an entry against their kinds (kernel §8).
     if (f.charge(ws.len)) return true;
     for (cov, 0..) |c, k| {
-        if (!any_kind and c < Loc.all and o.flags[c] == flag_a) {
+        const more: u8 = if (extra.len != 0) extra[k] else 0;
+        if (!any_kind and c < Loc.all and (o.flags[c] | more) == flag_a) {
             if (f.charge(nwes)) return true;
             const meets = for (wes[0..nwes]) |we| {
                 if (canShare(f.m, own_es[k], we)) break true;
@@ -2580,7 +2681,7 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
         if (c == Loc.all) {
             // The written entry itself, when it is the one flagged entry.
             if (skip != none or !any_flag) continue;
-        } else if (c != none and o.flags[c] == 0) continue;
+        } else if (c != none and (o.flags[c] | more) == 0) continue;
         f.scratch.clearRetainingCapacity();
         _ = try f.leaves(o.v, @intCast(k), &f.scratch);
         if (skip != none and n.tag == .ref) {
@@ -4460,6 +4561,13 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         for (mine) |a| try f.atomSrcsIn(a, &srcs);
         if (twice) try srcs.append(f.gpa, Src.twice);
         res[e] = try CMod.normal(m.arena, srcs.items);
+        if (safety and result != v_none and !m.steps_over) {
+            // `twice` names no cell: a location with no other source holds none.
+            const names = for (res[e]) |x| {
+                if (x.kind != .twice) break true;
+            } else false;
+            if (!names) try f.checkEmpty(result, result_place, @intCast(e));
+        }
         // An answered location is answered, and so another operand of a
         // call that writes (kernel §5, test 2). It is read too, except a
         // record's field slot: the caller holds the answer and reads the
@@ -4528,6 +4636,41 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     return c;
 }
 
+/// Safe builds: a location of a published result with no source holds no
+/// cell by a rule, not because the reading had no step for it (kernel §3.4,
+/// §9). Where the result's own layout is coarser than the result's type, the
+/// entry of the own layout that holds the location's cells (a wide entry
+/// above it, `Loc.holes`) holds no atom either.
+fn checkEmpty(f: *Frame, v: Val, place: PlaceId, e: u32) Error!void {
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .ref, .built, .join => {},
+        .none, .fnref, .outside, .closure, .unknown => return,
+        .later => unreachable, // read through `capVal` only
+    }
+    if (n.place == place) return;
+    const m = f.m;
+    const view = try m.loc.layoutOf(place);
+    const own = try m.loc.layoutOf(n.place);
+    if (view == own) return;
+    const up = try m.loc.cover(own, view);
+    const k = up[e];
+    if (k >= Loc.all or !m.loc.layoutEntries(own)[k].kind.wide()) return;
+    var tmp: std.ArrayList(Atom) = .empty;
+    defer tmp.deinit(f.gpa);
+    // The check counts nothing: a safe build's budget is a release build's.
+    const steps = m.steps;
+    const units = m.module_units;
+    const over = m.steps_over;
+    const failed = f.failed;
+    _ = try f.leavesOwn(v, &.{k}, &tmp);
+    m.steps = steps;
+    m.module_units = units;
+    m.steps_over = over;
+    f.failed = failed;
+    if (tmp.items.len != 0) std.debug.panic("own3: result location {d} of a contract has no source, and the wide entry {d} above it holds {d} cells (kernel §3.4)", .{ e, k, tmp.items.len });
+}
+
 /// What atom `a` is for a contract: a parameter location, a named fresh
 /// cell, an outside cell, an answer (kernel §4.2). Each entry of a run once
 /// (`markAtom`).
@@ -4574,10 +4717,24 @@ fn atomSrcsIn(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
 /// this frame's contract, and whether the frame let it escape.
 fn freshSrc(f: *Frame, a: Atom) Error!Src {
     const k = try f.freshId(a.root, a.e);
-    var escaped = false;
-    for (f.escapes.items) |esc| if (f.overlapAny(&.{a}, f.esc_atoms.items[esc.start..][0..esc.len])) {
-        escaped = true;
-    };
+    // The escapes that an earlier question about the same cell tested are
+    // not tested again: one result location of a wide layout can hold the
+    // same cells as each of the others, and each asks. A known answer costs
+    // a lookup, and never more than the scan it replaces (kernel §8).
+    const got = try f.fresh_esc.getOrPut(f.gpa, .{ a.root, a.path, a.e });
+    if (!got.found_existing) got.value_ptr.* = .{ 0, 0, 0 };
+    const memo = got.value_ptr;
+    if (memo[0] != 0) _ = f.charge(@min(Loc.lookup_units, memo[2]));
+    var escaped = memo[1] != 0;
+    for (f.escapes.items[memo[0]..]) |esc| {
+        if (escaped) {
+            // The answer is known; the rest of the scan only counts.
+            _ = f.charge(esc.len);
+        } else if (f.overlapAny(&.{a}, f.esc_atoms.items[esc.start..][0..esc.len])) escaped = true;
+        memo[2] += esc.len;
+    }
+    memo[0] = @intCast(f.escapes.items.len);
+    memo[1] = @intFromBool(escaped);
     return Src.fresh(k, escaped);
 }
 
@@ -4892,8 +5049,11 @@ fn operandLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
 /// asks for are one set (`leavesOwn`).
 fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bool, out: *std.ArrayList(Atom)) Error!bool {
     var ks: Entries = .{};
+    f.coarse_hit = false;
     if (!try f.argEntries(v, sig, se, suffix, deep, &ks)) return f.leaves(v, 0, out);
-    return f.leavesOwn(v, ks.slice(), out);
+    const coarse_hit = f.coarse_hit;
+    const dup = try f.leavesOwn(v, ks.slice(), out);
+    return dup or coarse_hit;
 }
 
 /// The entries of the argument `v`'s own layout that `argLeaves` reads,
@@ -4914,6 +5074,19 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
     var hit: std.ArrayList(u32) = .empty;
     defer hit.deinit(f.gpa);
     try f.coverHits(sig, own, cov, se, &hit);
+    // A wide entry of the argument's own layout that holds the cells at `se`,
+    // which the map puts at another entry (`Loc.holes`): read too, and a
+    // summary `se` is then no single place (kernel §3.4). The hits stay
+    // ascending.
+    if (try m.loc.holes(sig, own)) |h| {
+        if (h.read[se] != none) {
+            const k = h.read[se];
+            var at: usize = 0;
+            while (at < hit.items.len and hit.items[at] < k) at += 1;
+            if (at == hit.items.len or hit.items[at] != k) try hit.insert(f.gpa, at, k);
+        }
+        if (h.above[se] != none and !m.loc.layoutEntries(sig)[se].single) f.coarse_hit = true;
+    }
     // Each entry found is work of its own (kernel §8).
     _ = f.charge(hit.items.len);
     if (suffix.len != 0) {
@@ -4922,6 +5095,7 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
             want = m.loc.find(want.?, l);
             if (want == null) break;
         }
+        if (want == null) f.suffix_fallback = true;
         if (want) |wl| {
             var found: Entries = .{};
             // The cell at that part. `deep`: each cell below it too (the
@@ -4931,7 +5105,10 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
                 if (cov[k] != se and !deep) continue;
                 try found.add(f.gpa, k);
             };
+            if (found.slice().len == 0) f.suffix_fallback = true;
             if (found.slice().len != 0) {
+                // A wide entry above that part holds its cells too (kernel §3.4).
+                for (hit.items) |k| if ((oes[k].kind == .@"var" or oes[k].kind == .@"opaque") and oes[k].loc != wl and m.loc.isPrefix(oes[k].loc, wl)) try found.add(f.gpa, k);
                 for (found.slice()) |k| try ks.add(f.gpa, k);
                 return true;
             }
@@ -5097,7 +5274,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // sources are two cells have no ground: no two locations of the result
     // are apart, and a summary location fed by two sources, or by an
     // answer, is `twice`.
-    const args_apart = try f.argsApart(args);
+    const args_apart = try f.argsApart(args) and !try f.argsSplit(args, c);
     const root = try f.newRoot(.local, place, inst);
     f.roots.items[root].call = true;
     const cov = try m.loc.cover(c.layouts[c.arity], layout);
@@ -5161,7 +5338,41 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = twice };
         has_answer[e] = answers;
     }
-    try f.deriveLinear(root, !c.nonlinear and args_apart, has_answer);
+    // The callee's claim is about its own locations. Two locations of the
+    // caller at one wide location of the callee's result (a type variable,
+    // a `Js.Value` read as a pair) are one location to the callee, which says
+    // nothing of whether one cell is at both: they are tested by their atoms,
+    // as an answer's are (kernel §3.4, §4.4).
+    var split: ?[]u32 = null;
+    defer if (split) |x| f.gpa.free(x);
+    if (es.len > 1) {
+        const rses = m.loc.layoutEntries(c.layouts[c.arity]);
+        const seen = try f.gpa.alloc(u32, rses.len);
+        defer f.gpa.free(seen);
+        @memset(seen, none);
+        _ = f.charge(es.len + rses.len);
+        for (cov, 0..) |cr, e| {
+            // Every entry of the callee covers it: no claim does.
+            if (cr == Loc.all) {
+                has_answer[e] = true;
+                continue;
+            }
+            if (cr == none or !rses[cr].kind.wide()) continue;
+            if (seen[cr] == none) {
+                seen[cr] = @intCast(e);
+                continue;
+            }
+            const sp = split orelse blk: {
+                const x = try f.gpa.alloc(u32, es.len);
+                @memset(x, none);
+                split = x;
+                break :blk x;
+            };
+            sp[e] = cr;
+            sp[seen[cr]] = cr;
+        }
+    }
+    try f.deriveLinearSplit(root, !c.nonlinear and args_apart, has_answer, split);
     return f.rootVal(root);
 }
 
@@ -5176,6 +5387,40 @@ fn argsApart(f: *Frame, args: []const Val) Error!bool {
     defer runs.deinit(f.gpa);
     for (args) |v| if (!try f.partsOf(v, &buf, &runs, 0)) return false;
     return try f.runsApart(buf.items, runs.items);
+}
+
+/// Whether an argument is read at its parameter's layout through a wide
+/// entry of its own that stands for two locations of the parameter, or for
+/// a summary location (`Loc.holes`, kernel §3.4): the callee sees one cell
+/// at two places of it, which the argument's own layout cannot show apart.
+/// The contract is written for arguments that are apart (kernel §4.4).
+fn argsSplit(f: *Frame, args: []const Val, c: *const Contract) Error!bool {
+    const m = f.m;
+    for (args, 0..) |v, j| {
+        if (j >= c.arity) break;
+        const n = f.nodes.items[v];
+        switch (n.tag) {
+            .ref, .built, .join => {},
+            .none, .fnref, .outside, .closure, .unknown => continue,
+            .later => unreachable, // read through `capVal` only
+        }
+        const sig = c.layouts[j];
+        const h = (try m.loc.holes(sig, try m.loc.layoutOf(n.place))) orelse continue;
+        if (try splitAbove(m, sig, h)) return true;
+    }
+    return false;
+}
+
+/// Whether one wide entry of `holes` is above two entries of `view`, or
+/// above a summary entry: one cell of it can be at two places of the view.
+fn splitAbove(m: *Mod, view: u32, h: *const Loc.Holes) Error!bool {
+    const ves = m.loc.layoutEntries(view);
+    for (h.above, 0..) |k, j| {
+        if (k == none) continue;
+        if (!ves[j].single) return true;
+        for (h.above[j + 1 ..]) |k2| if (k2 == k) return true;
+    }
+    return false;
 }
 
 /// Whether no cell is at two places of the one value `v`.
@@ -5434,7 +5679,12 @@ fn pairedLeaves(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rlayo
     try m.loc.labels(rloc, &labels, f.gpa);
     const skip = m.loc.loc_depth.items[rentry.loc];
     // A wide entry of the caller's own type stands for each cell below that place.
-    return f.argLeaves(v, psig, pe, labels.items[skip..], m.loc.layoutEntries(rlayout)[e].kind.wide(), &f.atoms);
+    f.suffix_fallback = false;
+    const dup = try f.argLeaves(v, psig, pe, labels.items[skip..], m.loc.layoutEntries(rlayout)[e].kind.wide(), &f.atoms);
+    // The argument has no location at that part (a value that a conversion
+    // gave another type): every cell it has is read there, and a summary
+    // location of the caller is then no single place (kernel §3.4).
+    return dup or (f.suffix_fallback and !m.loc.layoutEntries(rlayout)[e].single);
 }
 
 // ---- function values: one rule (research report 112 §2) -------------------------------------
@@ -5590,6 +5840,9 @@ fn smallLayout(f: *Frame, l: u32) bool {
 /// as it is and does nothing else with it.
 fn isIdentity(f: *const Frame, c: *const Contract) bool {
     const m = f.m;
+    // A contract that holds one cell of the parameter at two places of the
+    // answer (`Js.to (Js.from ( x, x ))`) answers no value as it is.
+    if (c.nonlinear) return false;
     if (c.arity != 1 or c.res.len != 1 or c.res[0].len != 1 or c.flags.len != 1 or c.flags[0] & (flag_w | flag_e) != 0) return false;
     if (c.fns[0]) |fnc| {
         // A function parameter that the body answers and does not call.

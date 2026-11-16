@@ -1,0 +1,43 @@
+-- A value that `Js` gives a type with more places than its own type has: its
+-- elements are below a type variable's one location, and a reading of the
+-- answer's elements reads all of that location (ownership-v3-kernel.md §3.4).
+-- Each answer is the argument itself, so each write is of a value the
+-- program reads after it: in place, `r0.x` would print 99 and `xs` 3 items.
+import Cast
+import List
+import Node exposing (Program)
+
+
+type alias R =
+    x : Int
+    y : Int
+
+
+record : Int → String
+record n =
+    r0 = { x = n, y = 2 }
+    w =
+        case Cast.asList [ r0 ] of
+            [ v, …_ ] →
+                { v | x = 99 }
+
+            [] →
+                r0
+    "${String.fromInt w.x} ${String.fromInt r0.x}"
+
+
+list : Int → String
+list n =
+    xs = [ n, 2 ]
+    w =
+        case Cast.viaLocal [ xs ] of
+            [ v, …_ ] →
+                List.push v 9
+
+            [] →
+                xs
+    "${String.fromInt (List.length w)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print "${record 1} ${list 1}"

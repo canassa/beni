@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -102,6 +102,65 @@ local only where its frame bound it, and safe builds assert it (`evalInner`, `ca
 
 Every `switch` over `Tag`, `RootKind`, `EKind`, `Src.Kind`, `Use.kind` and `Bir.Inst.Tag` in `src/own3/`
 has no `else`: a new kind compiles only once each reader has a case.
+
+### 3.4 A value read at a type with more places than its own
+
+A value has the layout of its own place, and it can be read at a place whose type has more locations: a
+`Js.Value` that `Js.to` gives the type `List R` (`Js.to` is an identity, `apply`), a value of a type
+variable read at `List (List b)`, a local that the type check generalised (`got = Js.to v`, `∀c. c`) read
+at an instance of its type, a payload of a non-regular type, which the place graph folds onto a type
+variable (`type T a = Leaf a | Wrap (T (List a))`). The value's own layout then has **one wide entry**
+where the reading has a location and the locations below it. The wide entry names every cell at or below
+its place, so it holds the cells of each of those locations, and **a reading of any of them reads all of
+the wide entry**: it is the fallback that §4.1 names. The call map (`Loc.cover`) sends the wide entry to
+the reading's entry at the same place, so a reading through the map alone found nothing below it, and a
+location that can hold every cell of the value read as holding none.
+
+`Loc.Table.holes(view, own)` names, for each location `j` of the reading, the wide entry of the value's
+own layout strictly above it (`above`), and that entry again where the map puts it at another location
+(`read`). Every reading of a value through a map reads `read[j]` with the entries the map gives:
+`leavesSet` (the parts of a construction, the arms of a join, a frame's result in `finish`), `argEntries`
+(what a call reads, writes, lets escape and answers of an argument, `argLeaves`, `pairedLeaves`) and the
+flags of a call that `readBy` and `otherReaches` compare (`holeFlags`). Where a reading below a wide
+entry passes a suffix (`argEntries`), a `var` or `opaque` entry above the part asked for is read too.
+**A summary location below a wide entry is no single place** (`dup`, §4.4): the wide entry is one
+location, and it cannot say that one cell is not at two of the summary's places (`Js.array [ x, x ]`
+read as a list). Projections need no new rule: a step that a value's own layout does not have makes
+`unknown` over the value (`project`). Worded rows read a parameter the same way (rule 10, `holdsAt`).
+
+**Two locations below one wide entry are no two places of it.** A wide location holds one value, and the
+locations of another reading below it can hold one cell at two of them (`Js.to (Js.from ( x, x ))` read
+as a pair: both parts are `x`). Four facts that rest on "apart" are read so:
+
+- **a callee's claim** (§4.4) is about its own locations. Where two locations of the caller's result
+  are at one wide location of the callee's result, or at every one of them (`Loc.all`), the claim says
+  nothing of them: they are tested by their atoms, as an answer's are, each pair that can hold one cell
+  (`canShare`: two fields' slots, a slot and a list, cannot) (`apply`, `deriveLinearSplit`);
+- **the apart-arguments rule** (§4.4): an argument read through a wide entry of its own that is above
+  two locations of the parameter, or above a summary location, is not apart (`argsSplit`);
+- **another location of the written operand** (§5, test 2): where the written location is below a wide
+  entry of the operand's own layout, that entry is the written cells, and any other location of the
+  signature below it, or at it, that the callee reads or answers reaches them, with no claim that the two
+  are apart (`otherReaches`);
+- **a part a result is read at** (`pairedLeaves`): where the part is no location of the argument's own
+  layout and every entry is read, a summary location of the caller is no single place (`dup`).
+
+And a contract that holds one cell of its parameter at two places of its answer (`nonlinear`) answers no
+value as it is: it is applied as a call, not as an identity (`isIdentity`).
+
+So the cells of a converted value are where the value is: a cell the host made is `outside` already
+(the answer of unknown code, §3.2), and a cell of the frame that went through `Js` and came back is
+still that cell, at every location the type gives it. *Research report 146: `Queue.takeAll` and
+`Queue.takeN` make their answer with `Js.to` from a `Js.Value`, and their contracts said that the
+elements hold nothing; an element was then a cell nobody else held, and `{ v | x = 99 }` of a record
+taken back out of the queue was accepted while the program read the record. `Schema.describe`'s
+definitions, the elements of `Schema`'s engine lists (`fieldList`, `variantList`, `ctorList`) and the
+input of an issue (`Json`, `Schema`) were the same; and so were writes below the folded payloads of
+the corpus's polymorphic recursion, which v3 accepted though their fixtures say each is a list another
+holder reads (`run/SanitiserFoldedType`, `run/SanitiserFamilyRead`, `ownership/OneListTwoLevels`). The
+review of the report found the four facts above: a platform function that answers `( x, x )` at a type
+variable had a contract of one location, and a caller that read the answer as a pair wrote one part in
+place and read the other (`run/HostValueSplit`).*
 
 ## 4. Names
 
@@ -371,7 +430,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     place (`nonlinear`). A function parameter the words do not describe is handed every cell of every
     parameter, not `free`. The word `fresh` names one site for each location of the result (a builder's
     storage and its elements are two cells); `copyof` and its kin name one site, the new list. A `foreign`
-    with no word has no contract: unknown code. *The missing fact is the pessimistic one.*
+    with no word has no contract: unknown code. *The missing fact is the pessimistic one.* A word that
+    puts a parameter's location in the result (`returned`, `stored`, `elementof`, `taken`,
+    `builderdone`, the elements of `copyof`) puts it at the result's location of the same place and,
+    where the parameter's location is wide, at every result location below it (`Check.holdsAt`, §3.4):
+    a word that matched the place alone gave the locations below a wide entry no source. No row of
+    `core/` or of a platform has such a pair today (research report 146).
 
     The words are shared: a signature with a word that only v2 and v3 read is kept in a column of its
     own, which v2 and v3 read and v1 does not; any other signature is in v1's column, which all three
@@ -935,6 +999,15 @@ paths:
   research report 145 found a declaration at its cap that gave up earlier when an index was charged up
   front).
 
+  **Whether a cell the frame made escaped is asked once for each cell** (`freshSrc`, research report 146).
+  Each atom of a frame's result that names a cell the frame made asks whether an escape holds it, and
+  the test compared the atom with every atom of every escape. A result whose every location holds the
+  same cells (a value read through a wide entry, §3.4) asked it once for each location: in `Schema`'s
+  `shapeOf` it was 95 % of the work, 16 million units, and passed the declaration's budget. Escapes only
+  grow, so the answer for the escapes tested stands: it is kept for each cell (its root, path and
+  entry), and a later question tests only the escapes made since, at the cost of a lookup and never more
+  than the scan it replaces. The answers are the same.
+
   The record shapes of research report 145 now cost about their width: the literal and its update,
   a chain of updates, a record of lists whose fields are moved, nested records, a record passed
   through calls and an entry's model, at sizes 250 to 3 000. Two stay quadratic in the number of
@@ -1098,6 +1171,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a run that a read skips as old holds only old names, for runs of at most 64 atoms | `Frame.runReaches` | §5.1, §8 |
 | the entries whose runs `rootReach` reads, listed once, are the ones a scan of every entry finds | `Frame.runEntries` | §8 |
 | the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |
+| a location of a frame's result with no source holds no cell in the entry of the result value's own layout that holds its cells (the wide entry above it, `Loc.holes`): its emptiness comes from a rule, not from a reading that had no step for it; the check counts no work | `Frame.checkEmpty`, in `finish` | §3.4 |
 
 ## 10. What the kernel costs
 
