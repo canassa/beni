@@ -16,7 +16,8 @@
 // - `inst.<shape>`: no row at all: a walked function whose result is a type variable, read by its caller
 //   at a type of no location (`a, Int → b` at `Int`, `a → List Int × b` at a pair, `Maybe.map` and
 //   `List.map` of a cast whose answers the caller reads at `Int`, a function `a → b` handed to a holder of
-//   `a → Int`).
+//   `a → Int`), and a cast of `( x, x )` read as `List Int × Int` (in a function `a → b`, through a holder of
+//   `a → List Int × Int`, and by a row whose JavaScript answers `{a: a, b: a}`).
 //
 // Each program then pushes the list and reads the value read back (`live`) or not (`dead`).
 import fs from 'fs';
@@ -77,12 +78,16 @@ pub foreign pure copyI : borrowed List a → copyof Int
 
 
 pub foreign pure runI : once returned sync (⊤ → a) → Int
+
+
+pub foreign pure dupPair : returned a → a × Int
 `;
 const platformJs = `${rows.map(([n, , , js]) => `export const ${n} = ${js};`).join('\n')}
 export const atI = (xs, i) => xs[i];
 export const takeI = (xs, i) => xs[i];
 export const copyI = (xs) => xs.slice();
 export const runI = (f) => f();
+export const dupPair = (a) => ({ a: a, b: a });
 `;
 
 const header = (extra = '') => `import Node exposing (Program)
@@ -265,6 +270,20 @@ apply f q =
 cast q =
     Pun.conv q
 `, '    m : Maybe Int\n    m = Maybe.map (Just x0) cast\n    h = Maybe.withDefault m 0\n'],
+  pairCast: [`g : a → b
+g q =
+    Pun.conv ( q, q )
+`, '    p : List Int × Int\n    p = g x0\n    ( _, h ) = p\n'],
+  pairHolder: [`g : a → b
+g q =
+    Pun.conv ( q, q )
+
+
+apply : (a → List Int × Int), a → List Int × Int
+apply f q =
+    f q
+`, '    p = apply g x0\n    ( _, h ) = p\n'],
+  pairRow: ['', '    p = Pun.dupPair x0\n    ( _, h ) = p\n'],
   maybeRow: ['', '    m : Maybe Int\n    m = Pun.retMaybeVar x0\n    h = Maybe.withDefault m 0\n'],
 };
 for (const [shape, [decls, body]] of Object.entries(inst)) for (const live of [true, false]) {

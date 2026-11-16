@@ -5995,7 +5995,7 @@ fn escapeUnplaced(f: *Frame, base: *const Use, c: *const Contract, cov: []const 
         if (reached[ri] or !namesCell(c.res[ri])) continue;
         var st: SrcState = .{ .inst = inst };
         const start: u32 = @intCast(f.atoms.items.len);
-        try f.expandSrcs(base, c.res[ri], rsig, @intCast(ri), rsig, @intCast(ri), &st);
+        try f.allSrcs(base, c, c.res[ri], rsig, @intCast(ri), &st);
         // A written location that the callee answers there is a new name
         // of the written cells (`oldNames`); what escapes is the cells, at
         // any time.
@@ -6034,29 +6034,93 @@ fn escapeHidden(f: *Frame, base: *const Use, c: *const Contract, cov: []const u3
         if (!try f.m.loc.holeAt(place, re.loc)) continue;
         var st: SrcState = .{ .inst = inst };
         const start: u32 = @intCast(f.atoms.items.len);
-        try f.expandSrcs(base, c.res[ri], rsig, @intCast(ri), rsig, @intCast(ri), &st);
+        try f.allSrcs(base, c, c.res[ri], rsig, @intCast(ri), &st);
         for (f.atoms.items[start..]) |*a| a.dead = none;
         try f.noteEscape(start, inst);
     }
 }
 
-/// A callee whose result is a type variable that holds a parameter that is
-/// a type variable too (`a, Int → b`, `Js.Value → b`, `Maybe.withDefault`'s
-/// `a`): the argument is answered as it is, read at the caller's type, as an
-/// identity's is (`narrowed`): each location of the argument's own layout
-/// that the reading has no location for, or that is wide where the reading
-/// has a part of no location below it, escapes at the call. An argument of
-/// the reading's own type gives nothing (research report 150).
+/// A callee whose result has a wide location (a type variable) that holds a
+/// parameter location that is wide too (`a, Int → b`, `Js.Value → b`,
+/// `Maybe a → b`, `List Js.Value → b`): the argument's part there is answered
+/// as it is, read at the caller's type. Where both are roots the argument is
+/// read as an identity's is (`narrowed`). Elsewhere, where the argument's
+/// own type at that place is not the caller's type at the result's place
+/// (`Loc.placeAt`), and the caller's has a part of no location below it,
+/// the argument's cells there escape: honest code answers a value of the
+/// variable at the variable, and the two places are one type (research
+/// report 150; `Maybe.withDefault m []` read as `List Int` gives nothing).
 fn escapeWide(f: *Frame, c: *const Contract, args: []const Val, place: PlaceId, inst: u32) Error!void {
     const m = f.m;
-    const rses = m.loc.layoutEntries(c.layouts[c.arity]);
-    if (rses.len == 0 or rses[0].loc != 0 or !rses[0].kind.wide()) return;
-    for (c.res[0]) |s| {
-        if (s.kind != .param or s.a >= args.len) continue;
-        const pe = m.loc.layoutEntries(c.layouts[s.a])[s.e];
-        if (pe.loc != 0 or !pe.kind.wide()) continue;
-        try f.narrowed(args[s.a], inst, place);
+    const rsig = c.layouts[c.arity];
+    const rses = m.loc.layoutEntries(rsig);
+    _ = f.charge(Loc.scanUnits(rses.len));
+    for (rses, 0..) |re, ri| {
+        if (!re.kind.wide()) continue;
+        for (c.res[ri]) |s| {
+            if (s.kind != .param or s.a >= args.len) continue;
+            const psig = c.layouts[s.a];
+            const pe = m.loc.layoutEntries(psig)[s.e];
+            if (!pe.kind.wide()) continue;
+            if (pe.loc == 0 and re.loc == 0) {
+                try f.narrowed(args[s.a], inst, place);
+                continue;
+            }
+            const read_at = (try m.loc.placeAt(place, re.loc)) orelse continue;
+            // A value of no cell gives nothing; a function value's captures are
+            // read where it flows (`flow`), not by its place.
+            if (args[s.a] == v_none or args[s.a] == v_outside) continue;
+            const own = f.placeOfVal(args[s.a]) orelse continue;
+            switch (m.places.kind(own)) {
+                // A value of the caller's own type variable: the caller's caller
+                // fills it in and reads it there.
+                .closure, .@"var" => continue,
+                .record, .tuple, .ctor, .list, .dict, .ref, .cross, .@"opaque" => {},
+            }
+            // A path the argument's own place does not name by steps (a deep
+            // level of a cycle, a row, the inside of a `Dict`) is left to the
+            // rules that read those (`cover`); research report 150 §11.
+            const own_at = (try m.loc.placeAt(own, pe.loc)) orelse continue;
+            if (own_at == read_at) continue;
+            if (!try f.hides(own_at, read_at)) continue;
+            const start: u32 = @intCast(f.atoms.items.len);
+            _ = try f.argLeaves(args[s.a], psig, s.e, &.{}, false, &f.atoms);
+            try f.noteEscape(start, inst);
+        }
     }
+}
+
+/// Whether a value of the place `own` read at the place `view` has a cell
+/// that no reader can name: `narrowed`'s test, of types alone. A location
+/// of `own`'s layout that no location of `view`'s is at or wide above, or
+/// a wide one that `view` reads at a location that is not wide with a part
+/// of no location below it. Two places of one type hide nothing.
+fn hides(f: *Frame, own: PlaceId, view: PlaceId) Error!bool {
+    const m = f.m;
+    switch (m.places.kind(view)) {
+        .@"var", .@"opaque" => return false,
+        .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => {},
+    }
+    const ol = try m.loc.layoutOf(own);
+    const oes = m.loc.layoutEntries(ol);
+    if (oes.len == 0) return false;
+    const vl = try m.loc.layoutOf(view);
+    const ves = m.loc.layoutEntries(vl);
+    // One layout, location for location: one type read at itself.
+    if (ol == vl) return false;
+    if (oes.len == ves.len) {
+        _ = f.charge(Loc.scanUnits(oes.len));
+        for (oes, ves) |a, b| {
+            if (a.loc != b.loc or a.kind != b.kind) break;
+        } else return false;
+    }
+    const cov = try m.loc.cover(vl, ol);
+    _ = f.charge(Loc.scanUnits(cov.len));
+    for (cov, 0..) |c, k| {
+        if (c == none or c == Loc.all) return true;
+        if (oes[k].kind.wide() and !ves[c].kind.wide() and try m.loc.holeAt(view, oes[k].loc)) return true;
+    }
+    return false;
 }
 
 /// Whether a function value handed to a function parameter of the call is
@@ -6081,6 +6145,23 @@ fn valCasts(f: *Frame, v: Val, depth: u32) Error!bool {
     }
     const code = (try f.codeOf(v)) orelse return false;
     return code.contract.casts;
+}
+
+/// Every cell that the sources `srcs` of the callee's result location `ri`
+/// can name, appended to `f.atoms`: a parameter's every cell at its entry
+/// (`argLeaves`), whatever part a reading would take of it; the others as
+/// the call reads them (`expandSrcs`). What an escape of a location must
+/// cover (research report 150).
+fn allSrcs(f: *Frame, base: *const Use, c: *const Contract, srcs: []const Src, rsig: u32, ri: u32, st: *SrcState) Error!void {
+    var others: std.ArrayList(Src) = .empty;
+    defer others.deinit(f.gpa);
+    for (srcs) |s| switch (s.kind) {
+        .param => if (s.a < base.args.len) {
+            _ = try f.argLeaves(base.args[s.a], c.layouts[s.a], s.e, &.{}, false, &f.atoms);
+        } else try others.append(f.gpa, s),
+        .answer, .fresh, .outside, .twice => try others.append(f.gpa, s),
+    };
+    if (others.items.len != 0) try f.expandSrcs(base, others.items, rsig, ri, rsig, ri, st);
 }
 
 /// Whether a source of a contract's result names a cell of a frame: a
@@ -6701,6 +6782,14 @@ fn narrowed(f: *Frame, v: Val, inst: u32, place: PlaceId) Error!void {
     if (own_es.len == 0) return;
     const view = try m.loc.layoutOf(place);
     const view_es = m.loc.layoutEntries(view);
+    // One layout, location for location: one type read at itself.
+    if (own_layout == view) return;
+    if (own_es.len == view_es.len) {
+        _ = f.charge(Loc.scanUnits(own_es.len));
+        for (own_es, view_es) |a, b| {
+            if (a.loc != b.loc or a.kind != b.kind) break;
+        } else return;
+    }
     const cov = try m.loc.cover(view, own_layout);
     if (f.charge(Loc.scanUnits(cov.len))) {
         try f.escape(v, inst);
@@ -6968,8 +7057,21 @@ fn escapeUnplacedAnswer(f: *Frame, code: Code, use: *const Use) Error!void {
         // the holder reads it at a location that is not wide (a concrete
         // type, which can have a part of no location below it; the holder's
         // layout names no place to ask), what it holds escapes.
-        const hidden = lc.casts and les[k].kind.wide() and (cv == Loc.all or !ues[cv].kind.wide());
-        if (!unplaced and !hidden) continue;
+        const read_narrow = les[k].kind.wide() and (cv == Loc.all or (cv != none and !ues[cv].kind.wide()));
+        const hidden = lc.casts and read_narrow;
+        // A wide parameter location answered at this wide location is the
+        // argument as it is, which the holder reads at its own type: no
+        // cast only where the holder's parameter and answer are one type at
+        // the roots (`identity` handed to `Model → Model`); else what it
+        // holds escapes, as at a call (`escapeWide`; research report 150).
+        const wide_param = read_narrow and for (lc.res[k]) |ls| {
+            if (ls.kind != .param or ls.a >= code.own_params) continue;
+            const pe = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e];
+            if (!pe.kind.wide()) continue;
+            if (pe.loc == 0 and les[k].loc == 0 and ls.a < use.fnc.arity and use.fnc.layouts[ls.a] == ul) continue;
+            break true;
+        } else false;
+        if (!unplaced and !hidden and !wide_param) continue;
         var st: SrcState = .{ .inst = use.site.inst, .whole = true };
         const start: u32 = @intCast(f.atoms.items.len);
         try f.answerSrcs(code, use, k, cv, null, &st, 0, &psuffix);
