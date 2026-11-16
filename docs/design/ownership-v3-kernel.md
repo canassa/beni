@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -101,7 +101,8 @@ The value of a local before its binding is `v_unbound`, which nothing reads: `ev
 local only where its frame bound it, and safe builds assert it (`evalInner`, `capVal`).
 
 Every `switch` over `Tag`, `RootKind`, `EKind`, `Src.Kind`, `Use.kind` and `Bir.Inst.Tag` in `src/own3/`
-has no `else`: a new kind compiles only once each reader has a case.
+has no `else`: a new kind compiles only once each reader has a case. Ten switches on `Bir.Inst.Tag` in `Frame.zig` (patterns, statements, markup items) have
+one today, each over tags that bind no local, read no list and name no code (research report 148, #2541).
 
 ### 3.4 A value read at a type with more places than its own
 
@@ -173,7 +174,8 @@ record, which is no cell at all) writes an object no cell names (`recordUpdate`,
 another type than the one it was handed (`Js.to (Js.from x)`):
 - an identity whose answer is read at another type of parts than its argument's own, both concrete, with
   a field slot or a constructor's argument that no location of the argument's own layout covers (the
-  call map, `cover`), answers `unknown` over the argument (`punned`). The constructor's argument is the
+  call map, `cover`), answers `unknown` over the argument (`punned`; any location of any kind since research
+  report 148, below). The constructor's argument is the
   other half of rule 5's "another constructor's argument holds none": a step names a constructor by its
   position, so `V`'s argument and `X`'s are one step, and a value built as `Y xs` of
   `type W = X (List Int) | Y (List Int)`, read as `type V = V (List Int)`, has that step in its own place
@@ -198,6 +200,49 @@ accepted. Its review found the two casts: a constructor read as another type's (
 and a function of a type variable that answers its parameter as a record (`run/RecordPunGenericCast`).*
 What stays open: a cast of a value whose type has a cycle, read at a type whose slot of a field is in
 the deep level where the value's own record of that field is another object (#2540).
+
+**Every location a cast's reading has that the value's own place does not.** The cast above is not
+only of slots and constructors' arguments: an `Int` read as a list, a list of numbers read as a list of
+lists, a tuple of numbers read as a tuple of lists each read a location — an array — that no location of
+the value's own layout covers. The map answers `none` for it where the value's own layout is empty and
+`Loc.all` where it is not, and the readers of the answer go through the map the other way (`argEntries`,
+`leavesSet`), where no entry of the value's own layout is at it: they found nothing. So an identity whose
+reading has **any** location that the map leaves uncovered (`none` or `Loc.all`), of any kind, answers
+`unknown` over its argument (`punned`); so does an identity of a value of no cell (`v_none`: a number)
+read at a type with a location, whatever the argument's type was (`fromInt n = Js.to (Js.from n)` reads
+`n` through `Js.Value`), and at a type variable too (`unhide : Int → b`, read by its caller as a list).
+Otherwise a type variable or an opaque type of the reading is no pun: it is a wide entry, which §3.4's
+first half reads.
+
+**A value read at a type with fewer places than its own.** The converse holds too: `hide : List Int →
+Int`, `hide l = Js.to (Js.from l)` answers the list as a number, and a later cast reads it as a list
+again. The reading has no location for the list's array, so no reader of the answer can name it, and
+nothing then says who holds it. Each location of the value's own layout that no location of the reading
+covers (`cover(view, own)` is `none`, which happens where the reading's layout is empty) holds cells that
+**escape at the identity** (`narrowed`): a holder no rule follows. Where the reading's layout is not empty,
+the map puts such a location at every entry of the reading (`Loc.all`), which then holds its cells, and
+nothing is lost. So **a value whose type has no location holds `outside`**, as a fact: whatever a cast
+put in it escaped there. A parameter, a capture, a part of a root, a construction of parts that hold
+anything and the answer of a call, each of a type of no location, is `v_outside`, never `v_none`
+(`rootVal`, `capture`, `project`, `built`, `unknownOf`, `applyAt`): such a value is read nowhere but
+where a cast reads it at a type with a location, and there it has no claim (a cast handed to `Maybe.map`
+as a function value reads the `Int` in a parameter's `Maybe` as a list). A literal is `v_none`: it holds
+no cell at all. And where a callee answers what it was handed at a location the caller reads as a list,
+the argument gives no cell there (none, or only a record's slots), and the argument's type holds no cell
+at that path (`Int` at the callee's `a`, read as a list at its `b`: `un : W a → W b` cast what it was
+handed), the caller's list holds `outside` (`pairedLeaves`, `Loc.emptyAlongLabels`). A reader of a value
+of an empty layout then reads nothing (`Frame.checkPlaced`, §9).
+
+*Research report 148: an audit of every place in `src/own3/` where a missing fact can become an empty
+answer, for the mistake of reports 146 and 147. A helper that cast a list to an `Int` let its contract say
+that it keeps nothing (`run/HostValueNarrowInt`); an `Int` read back as a list was a list nobody held, in a
+body (`run/HostValueWidenInt`) or in a platform function of `Int → List Int` (`run/HostValueFromInt`); a list
+of lists read as a list of numbers and back lost its inner arrays (`run/HostValueNarrowList`). Its review
+found a value of no cell read back through a type variable: answered as it is (`run/HostValueVarAnswer`),
+in a constructor (`run/HostValueVarCtor`), in a record (`run/HostValueVarRecord`), and by a cast handed to
+`Maybe.map` (`run/HostValueVarMap`). A first fix that refused every list write of no cell refused
+`bench/corpus`'s `FormValidation.andMap`, whose `++` writes `Invalid`'s list of a `Valid` construction: a
+write of no cell is a dead constructor's argument there, so the rule went.*
 
 So the cells of a converted value are where the value is: a cell the host made is `outside` already
 (the answer of unknown code, §3.2), and a cell of the frame that went through `Js` and came back is
@@ -247,6 +292,15 @@ nothing of the model; report 125 found the same in the composition of answers an
 (`answersAt`, `slotsOf`, and the label tests `Loc.noObject` and `Loc.belowWide`, now deleted) and in a
 constructor's row (`ctorValue`); its review found the call map pairing two deep levels of different
 cycles (`Loc.cover`).*
+
+**A location of a part that the whole's layout does not name.** A projection maps each location of a
+part to one of the whole's (`Loc.Proj.up`, and a path's `to_root`); in a folded type (polymorphic
+recursion, §3.4) a location of the part can have none. It can hold any cell of the root, so a reader of
+it reads every entry of the root (`leavesOwnWalk`), a test of it reaches (`refReaches`), the index of a
+construction's parts reads that part for every entry (`builtIndex`), and an `elementof` row with such a
+location is the pessimistic row (`Check.wordedContract`). *Research report 148: these read nothing; in
+the corpus's polymorphic recursion a function that pushed an element of its parameter's folded payload
+then had a contract that wrote nothing of its parameter (`PolyRecBranch.ww`).*
 
 ### 4.2 A fresh cell has a name
 
@@ -324,7 +378,13 @@ A write of the atoms W at time t is accepted when (`demand`, `finishDemands`):
    whether the callee reads it or not (`Contract.flag_a`, §11). Another
    location of the written operand itself, when the operand is a part of one root N, is another place of N:
    its cells are apart from W when N holds each cell once — a parameter by the apart-arguments rule, a root
-   the frame made by its own `linear`, never the answer of a function parameter;
+   the frame made by its own `linear`, never the answer of a function parameter. A location of the operand
+   that the call map cannot place (`Loc.all`: a deep level whose region the signature reads with a type
+   variable) is at every location of the signature, the written one and each other the callee reads or
+   answers: it is another place of the operand wherever another location has a flag, apart from W only
+   when the operand holds each cell once (`valueApart`) and the location holds no cell at two of its places
+   (research report 148: it was skipped as the written location itself, and `T xs [ T xs [] ]` handed to a
+   callee over `T a` that wrote the entry level and read the deep level was accepted, `run/CycleVarOtherPlace`);
 3. **no escape**: no escape whose context is compatible with the write's overlaps W. An escape owns a copy
    of its atoms (`esc_atoms`), and where the answer of a function parameter escapes, so does what the
    function was handed (`Answer.base`, in `noteEscape`): the answer can hold it;
@@ -498,7 +558,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     `builderdone`, the elements of `copyof`) puts it at the result's location of the same place and,
     where the parameter's location is wide, at every result location below it (`Check.holdsAt`, §3.4):
     a word that matched the place alone gave the locations below a wide entry no source. No row of
-    `core/` or of a platform has such a pair today (research report 146).
+    `core/` or of a platform has such a pair today (research report 146). A location of a parameter
+    that no location of the result holds is at every one of them, for `builderdone` as for
+    `returned`; the wide storage of a `copyof` parameter (one of a type variable) holds its elements
+    too, so it is read as one; and the answer of a function parameter that holds a cell, where no word
+    (`returned`, `stored`, `aliased`) puts it in the result, escapes (`Fn.ans_escapes`). No row has any
+    of these today either (research report 148).
 
     The words are shared: a signature with a word that only v2 and v3 read is kept in a column of its
     own, which v2 and v3 read and v1 does not; any other signature is in v1's column, which all three
@@ -561,7 +626,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     after `update` has run (two clicks in one task, an event that bubbles through two handlers;
     `boundary.md` §9.4.8 counts each as escaped where the markup is made). A component's children are
     a prop (`children`, `language.md` §11.8): everything their holes read escapes. A hole's value
-    that is built here, or a function that answers anything but markup, escapes too. **The runtime
+    that is built here, or a function that answers anything but markup, escapes too, and so does one
+    of several values (an `if` or a `case`) of which one arm is such a value (`keptHole`; research
+    report 148: a `join` was read whatever its arms were). **The runtime
     calls the functions the markup gives it with items of the markup's own values** (`boundary.md`
     §9.4.8, *The render*): a `For`'s row function and key function with each item of `each` (and a
     row's position), a `Show`'s body and key function with the value in `when`. Each is **applied to
@@ -1236,6 +1303,8 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |
 | a location of a frame's result with no source holds no cell in the entry of the result value's own layout that holds its cells (the wide entry above it, `Loc.holes`): its emptiness comes from a rule, not from a reading that had no step for it; the check counts no work | `Frame.checkEmpty`, in `finish` | §3.4 |
 | a construction at a record's place holds the record's object (a part at the object's step): no rule makes a record of its fields alone, whose slots would hold no cell (a record alias's constructor did); the check counts no work | `Frame.built` | §6.4, §11.2 |
+| each location that a reader of a value asks for at another reading than the value's own (`leavesSet`, `argEntries`) is placed in the value's own layout: an entry is at it (the map, or `Loc.all`), a wide entry above it holds it (`Loc.holes`), or the value's own place has its steps and they reach a type of no cell (`Loc.emptyAlong`; a slot, a row and a deep level's member are read by other rules). With `Loc.holes` turned off (research report 146's fault), the first program the gates build panics. The check counts no work | `Frame.checkPlaced` | §3.4 |
+| two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 
 ## 10. What the kernel costs
 
@@ -1272,7 +1341,9 @@ cells, and an update is a write of some of them.
    of the object reads a slot that changed). Its answer is the same object: each slot is `r`'s under a
    new name (`version`, §5.1), each field it does not name holds `r`'s part, each field it names the new
    value. An update is not a new object (`makesObject`): a function that answers one answers an object
-   that was there before (`Contract.old_result`).
+   that was there before (`Contract.old_result`). An update of a base of no cell (a number read as a
+   record) writes an object no cell names, `outside` (§3.4); it made no demand at all before research
+   report 148 (`run/RecordPunNumberUpdate`).
 4. **A field read is a read of its slot** (`readSlots`). `r.f`, a record pattern's field, and a field
    that a record alias's constructor pattern binds (`P k _`, §6.6) read the
    slot `.f=` of `r` at their time: after an in-place write of `f` the slot holds the new value, so a
