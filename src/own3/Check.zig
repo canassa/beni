@@ -833,17 +833,35 @@ pub const Mod = struct {
         if (k >= info.arity) return null;
         switch (m.places.kind(place)) {
             .ctor => return try m.ctorStep(info.ordinal, k),
-            .record => {
-                const at = m.ctorAt(ref).?;
-                const owner = m.in.birs[at[0]];
-                const body = owner.decl(owner.ctors[at[1]].decl).annotation.unwrap() orelse return null;
-                if (owner.instTag(body) != .type_record) return null;
-                const fields = owner.extraSlice(Bir.inlineRange(owner.instData(body)), Bir.Field);
-                if (fields.len != info.arity) return null;
-                return .{ .kind = .field, .payload = @intCast(m.adapter.rank(owner.symbol(fields[k].name))) };
-            },
+            .record => return m.recordAliasStep(ref, k),
             else => return null,
         }
+    }
+
+    /// Whether the constructor `ref` is a record alias's, which builds a
+    /// record and matches one (backend.md §4), whatever place it is read at.
+    pub fn isRecordAliasCtor(m: *const Mod, ref: u32) bool {
+        const at = m.ctorAt(ref) orelse return false;
+        const owner = m.in.birs[at[0]];
+        const d = owner.decl(owner.ctors[at[1]].decl);
+        if (d.kind != .type_alias) return false;
+        const body = d.annotation.unwrap() orelse return false;
+        return owner.instTag(body) == .type_record;
+    }
+
+    /// The field step of a record alias's constructor `ref`'s argument `k`:
+    /// the field that the alias writes `k`-th. Null when `ref` is no record
+    /// alias's constructor, or the alias's fields are not its arguments.
+    pub fn recordAliasStep(m: *const Mod, ref: u32, k: u32) ?Step {
+        const info = m.ctorInfo(ref) orelse return null;
+        if (k >= info.arity) return null;
+        const at = m.ctorAt(ref).?;
+        const owner = m.in.birs[at[0]];
+        const body = owner.decl(owner.ctors[at[1]].decl).annotation.unwrap() orelse return null;
+        if (owner.instTag(body) != .type_record) return null;
+        const fields = owner.extraSlice(Bir.inlineRange(owner.instData(body)), Bir.Field);
+        if (fields.len != info.arity) return null;
+        return .{ .kind = .field, .payload = @intCast(m.adapter.rank(owner.symbol(fields[k].name))) };
     }
 
     /// The step from the scrutinee of a `try` to the value that it has when

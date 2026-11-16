@@ -1,0 +1,2 @@
+# v3 refuses the update: a record built by its alias's constructor has its slots, and `a.k` reads the written slot after it (ownership-v3-kernel.md §11.2).
+17:10 record_still_used update

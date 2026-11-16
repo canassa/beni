@@ -382,6 +382,9 @@ suffix_fallback: bool = false,
 /// Set by `argEntries` when a wide entry of the argument read at a summary
 /// location below it gave an entry (`Loc.holes`): no single place.
 coarse_hit: bool = false,
+/// Set by `argEntries` when the location asked for is a record's field slot
+/// that the argument's own layout has no slot for (`slotsLost`).
+slot_lost: bool = false,
 uses: std.ArrayList(Read) = .empty,
 escapes: std.ArrayList(Escape) = .empty,
 /// The atoms of each escape, a run per `Escape`: a copy, so a run of `atoms` under construction can be compacted after it noted one.
@@ -1733,6 +1736,9 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
         };
         for (cov, 0..) |c, k| if (c == Loc.all or (c < vn and in_js[c]) or extra[k]) try ks.add(f.gpa, @intCast(k));
     }
+    // A slot of the view that `v`'s own layout has no slot for: a tuple or a
+    // constructor read as a record, whose object no cell names (`slotsLost`).
+    if (try f.slotsLost(view, n.place, js)) try out.append(f.gpa, outside_atom);
     const dup = try f.leavesOwn(v, ks.slice(), out);
     return dup or coarse_dup;
 }
@@ -2170,10 +2176,7 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
             // A scan of the parts is work of its own (kernel §8).
             _ = f.charge(n.b);
             for (0..n.b) |ki| if (f.kids.items[n.a + ki].step == s.word()) return f.kids.items[n.a + ki].val;
-            // A construction names every part that holds a cell (`built`,
-            // `recordUpdate`): another constructor's argument, and a field
-            // whose value held no object, hold none.
-            return v_none;
+            return f.builtAbsent(v, n, s);
         },
         .join => {
             // A join's arms can share values (an arm that is the value of
@@ -2222,7 +2225,7 @@ fn builtPart(f: *Frame, v: Val, n: Node, s: Step) Error!Val {
         made.value_ptr.* = false;
         _ = f.charge(n.b);
         for (0..n.b) |ki| if (f.kids.items[n.a + ki].step == s.word()) return f.kids.items[n.a + ki].val;
-        return v_none;
+        return f.builtAbsent(v, n, s);
     }
     if (!made.value_ptr.*) {
         made.value_ptr.* = true;
@@ -2234,7 +2237,21 @@ fn builtPart(f: *Frame, v: Val, n: Node, s: Step) Error!Val {
             if (!got.found_existing) got.value_ptr.* = k.val;
         }
     } else _ = f.charge(Loc.lookup_units);
-    return f.built_parts.get(.{ v, s.word() }) orelse v_none;
+    return f.built_parts.get(.{ v, s.word() }) orelse f.builtAbsent(v, n, s);
+}
+
+/// The part of the construction `v` (node `n`) at step `s`, where no part of
+/// it is. A construction names every part of its own place that holds a
+/// cell (`built`, `recordUpdate`): another constructor's argument, and a
+/// field whose value held no object, hold none. A step that its own place
+/// does not have is another reading of the value (kernel §3.4: a tuple read
+/// as a record through `Js.to`, which is one JavaScript object): the
+/// construction says nothing of it, so the part is `unknown` over `v`, never
+/// `none` (research report 147). The lookup is work (kernel §8).
+fn builtAbsent(f: *Frame, v: Val, n: Node, s: Step) Error!Val {
+    _ = f.charge(Loc.lookup_units);
+    if (try f.m.loc.proj(n.place, s) == null) return f.unknownOf(n.place, &.{v});
+    return v_none;
 }
 
 /// `project` of the join `v` (node `n`): the join of its arms' parts.
@@ -3023,6 +3040,25 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
             const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index);
             if (args.len == 0) return;
             const info = m.ctorInfo(data.lhs);
+            if (m.isRecordAliasCtor(data.lhs)) {
+                // A record alias's constructor pattern is a record pattern
+                // (backend.md §4): argument `k` is the field that the alias
+                // writes `k`-th, read out of its slot where the pattern
+                // matches (kernel §11.4). By its constructor's row it named
+                // a step that a record does not have, and bound nothing
+                // (research report 147).
+                for (args, 0..) |p, k| {
+                    const s = m.recordAliasStep(data.lhs, @intCast(k)) orelse {
+                        // No field for the argument: no claim, and all of `v`.
+                        try f.readAll(v, pat);
+                        try f.bindPattern(p.int(), try f.unknownOf(try m.placeOfInst(p.int()), &.{v}));
+                        continue;
+                    };
+                    if (m.tags[p.int()] != .pat_wild) try f.readSlots(v, &.{@as(u32, s.payload)}, pat);
+                    try f.bindPattern(p.int(), try f.project(v, s));
+                }
+                return;
+            }
             for (args, 0..) |p, k| {
                 // A constructor that the walk has no row for: its argument can be any part of `v`.
                 const part = if (info) |ci| try f.project(v, try m.ctorStep(ci.ordinal, @intCast(k))) else try f.unknownOf(try m.placeOfInst(p.int()), &.{v});
@@ -3116,6 +3152,8 @@ fn makesObject(f: *Frame, inst: u32) Error!bool {
         .record, .tuple, .list => return true,
         .call => {
             const callee = m.datas[inst].lhs;
+            // A record alias's constructor builds a record (backend.md §4).
+            if (m.tags[callee] == .ctor or m.tags[callee] == .ext_ctor) return m.isRecordPlace(try m.placeOfInst(inst));
             if (m.tags[callee] != .top and m.tags[callee] != .ext_value) return false;
             if (m.spreadOf(f.d, inst) != null) return false;
             const t = m.calleeOf(callee) orelse return false;
@@ -3706,6 +3744,14 @@ fn ctorValue(f: *Frame, inst: u32) Error!Val {
                 for (0..m.loc.layoutEntries(c.layouts[k]).len) |pj| if (try f.locsMeet(c.layouts[k], @intCast(pj), cl, @intCast(j))) try lists[pr.up[j]].append(f.gpa, .{ .kind = .param, .a = @intCast(k), .e = @intCast(pj) });
             }
         }
+        // A record alias's constructor makes the record's object, as its
+        // literal does (`recordOf`, kernel §11.2): each slot is a cell it
+        // made, a site of its own, which no other holder has. With no
+        // source, a slot of its answer held no cell (research report 147).
+        if (m.isRecordPlace(rplace)) {
+            const es = m.loc.layoutEntries(c.layouts[info.arity]);
+            for (es, 0..) |e, j| if (f.isOwnSlot(e.loc)) try lists[j].append(f.gpa, Src.fresh(try m.siteId(std.hash.Wyhash.hash(inst, std.mem.asBytes(&j))), false));
+        }
         const res = @constCast(c.res);
         for (res, lists) |*r, l| r.* = try CMod.normal(m.arena, l.items);
         for (@constCast(c.flags)) |*x| x.* = flag_r;
@@ -3723,6 +3769,17 @@ fn unknownResult(f: *Frame, inst: u32, in_sight: []const Val) Error!Val {
 
 fn built(f: *Frame, place: PlaceId, kids: []const Kid) Error!Val {
     if (try f.layoutLen(place) == 0) return v_none;
+    // A construction at a record's place holds the record's object, whose
+    // slots are cells (kernel §11.2, `recordOf`): a construction of the
+    // fields alone held no slot, and an update of it wrote no cell
+    // (research report 147). The check counts no work (kernel §9).
+    if (std.debug.runtime_safety and f.m.isRecordPlace(place)) {
+        const has_object = for (kids) |k| {
+            if (k.step == slot_kid) break true;
+        } else false;
+        if (!has_object) for (f.m.loc.layoutEntries(try f.m.loc.layoutOf(place)), 0..) |e, j| if (f.isOwnSlot(e.loc))
+            std.debug.panic("own3: a record construction at place {d} has no object, and its slot {d} holds no cell", .{ place, j });
+    }
     var any = false;
     for (kids) |k| if (k.val != v_none) {
         any = true;
@@ -3868,6 +3925,11 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
     // The write: the slots of the fields named, with every value as an operand.
     const w: u32 = @intCast(f.atoms.items.len);
     try f.slotAtoms(base, ranks, &f.atoms);
+    // A record always holds its object (kernel §11.2): slots that hold no
+    // cell are of an object no cell names (a tuple of numbers read as a
+    // record below a callee's type variable), and the write has no claim on
+    // it (kernel §3.4; research report 147).
+    if (f.atoms.items.len == w) try f.atoms.append(f.gpa, outside_atom);
     const os = try f.gpa.alloc(Other, tmp.items.len);
     for (os, tmp.items) |*o, k| o.* = .{ .v = k.val };
     try f.demand(w, .{ .point = inst, .op = .update, .kind = .update, .base_inst = data.lhs, .others = os });
@@ -3948,6 +4010,11 @@ fn slotAtoms(f: *Frame, v: Val, ranks: []const u32, out: *std.ArrayList(Atom)) E
     var es: std.ArrayList(u32) = .empty;
     defer es.deinit(f.gpa);
     if (!try f.slotEntries(place, ranks, &es)) {
+        // A slot that the value's own layout does not have (a tuple or a
+        // constructor read as a record through `Js.to`, one JavaScript
+        // object): no cell of the frame names the object written, so the
+        // write has no claim on it (kernel §3.4; research report 147).
+        try out.append(f.gpa, outside_atom);
         _ = try f.allLeaves(v, out);
         return;
     }
@@ -4765,6 +4832,11 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
             }
             // A constructor that no row describes: no claim, and each cell of its arguments.
             if (!known) return f.unknownOf(place, vals.items);
+            // A record alias's constructor builds the record (backend.md §4):
+            // the value the literal it stands for makes, with its object and
+            // its slots (kernel §11.2). As a construction of its fields
+            // alone, its slots held no cell, and an update of it wrote none.
+            if (m.isRecordPlace(place)) return f.recordOf(place, tmp.items, inst, v_none);
             return f.built(place, tmp.items);
         },
         else => {},
@@ -5050,10 +5122,48 @@ fn operandLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
 fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bool, out: *std.ArrayList(Atom)) Error!bool {
     var ks: Entries = .{};
     f.coarse_hit = false;
+    f.slot_lost = false;
     if (!try f.argEntries(v, sig, se, suffix, deep, &ks)) return f.leaves(v, 0, out);
+    // A slot of the record at the argument's root that its own place has no
+    // slot for: no cell of the frame names the object (`rootSlotLost`).
+    if (f.slot_lost) try out.append(f.gpa, outside_atom);
     const coarse_hit = f.coarse_hit;
     const dup = try f.leavesOwn(v, ks.slice(), out);
     return dup or coarse_hit;
+}
+
+/// Whether a reading at the entries `js` of layout `view`, of a value whose
+/// own place is `own`, asks for a field slot of the record at the value's
+/// root that `own` has no slot for (`rootSlotLost`). The slots below the
+/// root are asked of the parts that hold them, each at its own place
+/// (`leavesOwnWalk`). It costs the entries asked (kernel §8).
+fn slotsLost(f: *Frame, view: u32, own: PlaceId, js: []const u32) Error!bool {
+    const ves = f.m.loc.layoutEntries(view);
+    _ = f.charge(js.len);
+    for (js) |j| {
+        if (!f.isOwnSlot(ves[j].loc)) continue;
+        const l: Loc.Label = @bitCast(f.m.loc.loc_label.items[ves[j].loc]);
+        if (try f.rootSlotLost(own, l.payload)) return true;
+    }
+    return false;
+}
+
+/// Whether the slot of field `rank` of the record at the root of a value
+/// whose own place is `own` is no cell of the value's own layout: `own` is
+/// a tuple, a constructor, a list or another value that is no record, or a
+/// record that does not name the field. A record's object is a cell only
+/// where a layout names its slots (kernel §11.1); a tuple or a constructor
+/// read as a record through `Js.to` is one JavaScript object whose slots no
+/// cell names, so a write of one is a write of a cell outside every claim,
+/// and a reading that found nothing there read "no cell" for "no claim"
+/// (kernel §3.4; research report 147). A place that names no parts (a type
+/// variable, an opaque type) is a wide entry, which holds the object.
+fn rootSlotLost(f: *Frame, own: PlaceId, rank: u32) Error!bool {
+    switch (f.m.places.kind(own)) {
+        .@"var", .@"opaque", .cross => return false,
+        .record => return try f.slotEntry(own, rank) == none,
+        .tuple, .ctor, .list, .dict, .ref, .closure => return true,
+    }
 }
 
 /// The entries of the argument `v`'s own layout that `argLeaves` reads,
@@ -5113,6 +5223,27 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
                 return true;
             }
         }
+        // A slot asked below a type variable of the signature (the caller's
+        // view of what a cast answers) that the argument's own layout has
+        // no part at: no entry below that variable is a slot of the same
+        // field, and no wide entry is above it. The label path is no test
+        // here, since the map pairs a cycle's deep level with its entry
+        // level; a slot of the field is (`rootSlotLost`, kernel §3.4).
+        const sl: Loc.Label = @bitCast(suffix[suffix.len - 1]);
+        if (sl.kind == .fslot) {
+            const oes = m.loc.layoutEntries(own);
+            const held = for (hit.items) |k| {
+                const ol: Loc.Label = @bitCast(m.loc.loc_label.items[oes[k].loc]);
+                if (oes[k].loc != 0 and ol.kind == .fslot and ol.payload == sl.payload) break true;
+                if (oes[k].kind.wide() and (want == null or m.loc.isPrefix(oes[k].loc, want.?))) break true;
+            } else false;
+            if (!held) f.slot_lost = true;
+        }
+    } else if (f.isOwnSlot(m.loc.layoutEntries(sig)[se].loc)) {
+        // A slot of the record at the argument's root that its own place has
+        // no slot for (`rootSlotLost`).
+        const l: Loc.Label = @bitCast(m.loc.loc_label.items[m.loc.layoutEntries(sig)[se].loc]);
+        if (try f.rootSlotLost(n.place, l.payload)) f.slot_lost = true;
     }
     for (hit.items) |k| {
         if (cov[k] == Loc.all) f.hit_all = true;
@@ -5211,6 +5342,11 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // A function value stays the function that it is: nothing consumed it.
     if (f.isIdentity(c)) {
         try f.readBy(args[0], inst, c.layouts[0], c.flags);
+        // A value read at another type of parts (a tuple or a constructor
+        // read as a record, a list of tuples as a list of records) holds a
+        // record's object that no cell of its own names: the answer is
+        // `unknown` over it (kernel §3.4; research report 147).
+        if (try f.punned(args[0], if (arg_insts.len != 0) arg_insts[0].int() else none, place)) return f.unknownOf(place, args[0..1]);
         return args[0];
     }
     // `Record.copy` (kernel §11): a new object whose fields hold the argument's values.
@@ -5246,7 +5382,13 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         for (0..n) |se| if (c.flags[c.off[j] + se] & flag_w != 0) {
             const w: u32 = @intCast(f.atoms.items.len);
             const dup = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
-            // A written argument of no cell asks nothing, and is accepted.
+            // A written argument of no cell asks nothing, and is accepted;
+            // but the slot of the record at its root is the record's object,
+            // which a record always holds (kernel §11.2): a written one that
+            // holds no cell is an object no cell names (a tuple of numbers
+            // read as a record through `Js.to`), and has no claim (kernel
+            // §3.4; research report 147).
+            if (f.atoms.items.len == w and f.isOwnSlot(m.loc.layoutEntries(sig)[se].loc)) try f.atoms.append(f.gpa, outside_atom);
             try f.demand(w, .{
                 .point = inst,
                 .callee_inst = callee,
@@ -5838,6 +5980,32 @@ fn smallLayout(f: *Frame, l: u32) bool {
 
 /// Whether the contract is that of a function that answers its one parameter
 /// as it is and does nothing else with it.
+/// Whether the answer `v` of an identity (the argument at `arg_inst`, or
+/// `none`) is read at `place`, another type of parts than its own, which
+/// has a record's field slot. Both are types of parts (neither is a type
+/// variable or an opaque type, which §3.4's wide entries hold), so the
+/// identity is a cast between two shapes of one JavaScript object (a tuple
+/// read as a record, a list of tuples as a list of records): the reading's
+/// slots are of an object no cell of the value's own layout names, at any
+/// depth (research report 147). It costs the reading's layout (kernel §8).
+fn punned(f: *Frame, v: Val, arg_inst: u32, place: PlaceId) Error!bool {
+    const m = f.m;
+    const own = f.placeOfVal(v) orelse (if (arg_inst != none) try m.placeOfInst(arg_inst) else return false);
+    if (own == place) return false;
+    for ([_]PlaceId{ own, place }) |p| switch (m.places.kind(p)) {
+        .@"var", .@"opaque", .cross => return false,
+        .record, .tuple, .ctor, .list, .dict, .ref, .closure => {},
+    };
+    const es = m.loc.layoutEntries(try m.loc.layoutOf(place));
+    _ = f.charge(Loc.scanUnits(es.len));
+    for (es) |e| {
+        if (e.loc == 0) continue;
+        const l: Loc.Label = @bitCast(m.loc.loc_label.items[e.loc]);
+        if (l.kind == .fslot) return true;
+    }
+    return false;
+}
+
 fn isIdentity(f: *const Frame, c: *const Contract) bool {
     const m = f.m;
     // A contract that holds one cell of the parameter at two places of the

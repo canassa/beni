@@ -1,0 +1,2 @@
+# v3 refuses the update: the slot two steps below the callee's one location is one no slot of the inner tuple's own layout holds (ownership-v3-kernel.md §3.4).
+19:18 record_still_used update

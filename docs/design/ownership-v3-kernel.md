@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -147,6 +147,42 @@ as a pair: both parts are `x`). Four facts that rest on "apart" are read so:
 
 And a contract that holds one cell of its parameter at two places of its answer (`nonlinear`) answers no
 value as it is: it is applied as a call, not as an identity (`isIdentity`).
+
+**A construction read at a step its own place does not have.** The same holds of a value that is no
+root: a construction read at another type of the same JavaScript shape (`backend.md` §4: a tuple, a
+record of fields `a`, `b`, … and a constructor's value are one object of those properties), which a
+platform function over `Js` can answer as it is. A construction names every part of its own place that
+holds a cell, so a step its own place has and no part is at holds none (another constructor's argument,
+a field whose value held no object); **a step its own place does not have is `unknown` over the
+construction** (`project`, `builtAbsent`), as on a root.
+
+**A record's slot that the value's own place has no slot for.** A record's object is a cell only where a
+layout names its slots (§11.1). A tuple's or a constructor's object is no cell, since no write in place
+reaches one; read as a record, its slots are a cell that no atom names, and every other holder of the
+object reads it by parts that hold no location for it (a number, or nothing at all). So a reading of a
+slot of the record at a value's root, where the value's own place is no record that names the field and
+no wide place, holds `outside` as well as what the map gives (`rootSlotLost`): a write of it has no claim.
+It is applied at each reading of a value through a map — `leavesSet` (each part of a construction and
+each arm of a join is read at its own place, so the slots below a value's root are asked of the part
+that holds them), `argEntries` (a callee's slot of its parameter's root, and a slot one step below a
+type variable at the signature's root, the caller's view of what a cast answers) — at the update of a
+value whose type does not name the slot (`slotAtoms`), and at a write of a slot that holds no cell:
+a record always holds its object (§11.2), so a slot write whose atoms are none (a tuple of numbers read
+as a record, which is no cell at all) writes an object no cell names (`recordUpdate`, `applyAt`). An
+identity whose answer is read at another type of parts than its argument's own, both concrete, which
+has a field slot, is a cast between two shapes of one object, and answers `unknown` over the argument
+(`punned`): every slot below it is then of no claim, at any depth.
+
+*Research report 147: a tuple read as a record through `Js.to` (`run/RecordPunTuple`) projected `.a` on
+the tuple's construction to `none`, so a push of `p.a` wrote no cell v3 knew of; and a function that
+updated a tuple of numbers or a constructor read as a record (`run/RecordPunHelper`,
+`run/RecordPunConstructor`, `run/RecordPunAnswer`) wrote an object no atom named, so the caller's demand
+was of nothing, or of the lists beside it, and was accepted.* What stays open: a slot two or more steps
+below a type variable of a callee's answer, of a value that a non-identity contract answers there, at a
+type of parts other than its own (a platform function that answers `( Js.to (Js.from x), 1 )`, read as a
+pair of a record of records). The call map pairs a deep level of a cycle with its entry level, so a
+label path that a layout does not have is no sign that the value has no record there, and no test of it
+is taken; #2540 holds it.
 
 So the cells of a converted value are where the value is: a cell the host made is `outside` already
 (the answer of unknown code, §3.2), and a cell of the frame that went through `Js` and came back is
@@ -368,14 +404,26 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    and `Js.object`'s fields are — has no location for its elements, so it is `unknown` over every value
    it was made of (§3.2); before, its elements went nowhere, and a list handed to JavaScript inside one
    did not escape (report 117 §10; research report 120 §5 found the same hole through `Hosted.tap`, where
-   a subscription's body lost what it captured). *Invariant: a part the construction does not name holds
-   none, and a construction that cannot name its parts is `unknown`.*
-5. **Project** (`project`): a step on a root extends its path; on a construction takes the named part or
-   `none`; on `unknown` stays `unknown`; on a closure is `unknown` over it. *Invariant: a part's leaves are
-   a subset of the whole's.*
+   a subscription's body lost what it captured). **A record alias's constructor builds the record**
+   (`backend.md` §4), so its application is the record literal it stands for, with its object and its
+   slots (`recordOf`, §11.2), and as a function value its contract answers a new object: each slot of its
+   answer is a cell it made (`ctorValue`). *Invariant: a part the construction does not name holds
+   none, and a construction that cannot name its parts is `unknown`.* *Research report 147: the
+   alias's constructor built a construction of its fields alone, so `a = P n [ 1 ]` had no slots, `{ a |
+   k = 5 }` wrote no cell, and `a.k` read after it read 5 in place.*
+5. **Project** (`project`): a step on a root extends its path; on a construction takes the named part, or
+   `none` where its own place has the step and no part is at it, or `unknown` over the construction where
+   its own place does not have the step (§3.4, `builtAbsent`); on `unknown` stays `unknown`; on a closure
+   is `unknown` over it. *Invariant: a part's leaves are a subset of the whole's, and a step a value's own
+   place does not have is no claim.*
 6. **Pattern and `?`** (`bindPattern`, `evalInner .try`): a constructor pattern projects by the row of its
-   constructor; `?` on `Result` or `Maybe` is the argument of the first constructor (`language.md` §6.6),
-   any other type `unknown` over the scrutinee; the failure answers the scrutinee (a read).
+   constructor; **a record alias's constructor pattern is a record pattern** (`backend.md` §4): its
+   argument `k` is the field the alias writes `k`-th, read out of its slot where the pattern matches
+   (§11.4), whatever form binds it (`case`, `let`, `as`, a parameter, a lambda); `?` on `Result` or
+   `Maybe` is the argument of the first constructor (`language.md` §6.6), any other type `unknown` over
+   the scrutinee; the failure answers the scrutinee (a read). *Research report 147: the alias's pattern
+   projected by a constructor's step, which a record does not have, so it bound nothing and its contract
+   read no slot.*
 7. **`if` and `case`** (`caseOf`, `joinVal`): the value is a `join` of the arms, each with its context; two
    arms of one `case` are never one run (`compatible`), so a holder in another arm is no holder.
 8. **Loops** are recursion and the worded loops of `core/`: a function handed to a callee flows to the
@@ -1172,6 +1220,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | the entries whose runs `rootReach` reads, listed once, are the ones a scan of every entry finds | `Frame.runEntries` | §8 |
 | the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |
 | a location of a frame's result with no source holds no cell in the entry of the result value's own layout that holds its cells (the wide entry above it, `Loc.holes`): its emptiness comes from a rule, not from a reading that had no step for it; the check counts no work | `Frame.checkEmpty`, in `finish` | §3.4 |
+| a construction at a record's place holds the record's object (a part at the object's step): no rule makes a record of its fields alone, whose slots would hold no cell (a record alias's constructor did); the check counts no work | `Frame.built` | §6.4, §11.2 |
 
 ## 10. What the kernel costs
 
@@ -1198,7 +1247,9 @@ cells, and an update is a write of some of them.
    to it ends in the field's step with `Loc.slot_bit` set (`abstractPath`).
 2. **A record literal makes its slots** (`Frame.recordOf`): a construction of its field values, as a
    tuple's is, and one more part, the object, a root the frame made whose slots are `own` (§4.3). The
-   construction keeps each value as it is, so a `join` keeps its arms (§6.7).
+   construction keeps each value as it is, so a `join` keeps its arms (§6.7). A record alias's
+   constructor applied (`P n [ 1 ]`) is the literal it stands for, and makes the same value; used as a
+   function, its answer's slots are a new cell each (`ctorValue`, §6.4).
 3. **An update writes the slots of the fields it names** (`Frame.recordUpdate`). `{ r | f₁ = v₁, … }`
    evaluates `r`, then each value, then writes: a demand (op `update`) of `r`'s atoms at the slots
    `f₁ …`, with each value as another operand (a value that holds `r` would see the store). It reads
@@ -1207,7 +1258,8 @@ cells, and an update is a write of some of them.
    new name (`version`, §5.1), each field it does not name holds `r`'s part, each field it names the new
    value. An update is not a new object (`makesObject`): a function that answers one answers an object
    that was there before (`Contract.old_result`).
-4. **A field read is a read of its slot** (`readSlots`). `r.f`, and a record pattern's field, read the
+4. **A field read is a read of its slot** (`readSlots`). `r.f`, a record pattern's field, and a field
+   that a record alias's constructor pattern binds (`P k _`, §6.6) read the
    slot `.f=` of `r` at their time: after an in-place write of `f` the slot holds the new value, so a
    holder that reads `f` after the write is a later read (§5, test 4). A field the write did not name
    reads another cell, and stands. A read of the record whole (a call that reads it, the frame's answer, a

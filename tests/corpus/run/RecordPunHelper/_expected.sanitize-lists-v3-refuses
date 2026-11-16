@@ -1,0 +1,2 @@
+# v3 refuses the call: `setA` writes a slot that the tuple's own layout has no location for (ownership-v3-kernel.md §3.4).
+19:10 list_still_used call
