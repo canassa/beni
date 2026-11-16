@@ -874,9 +874,10 @@ paths:
   (`refReaches`, the atoms that `leavesOwnWalk` and `rootLeaves` make). Safe builds check, for runs of
   at most 64 atoms, that every atom of such a run is old. The answer is the one the scan gives, so no
   verdict moves but through the budget. The counted work of a chain is still quadratic in its length
-  (each pair of a write and a later read is a step), and a chain of more than about 550 writes in one
-  function reaches the declaration's budget, in about 0.4 s for 5 000 (LLVM ReleaseSafe). *Before, the
-  pairs were counted by the old names they passed over, so about 85 writes reached the module's budget.*
+  (each pair of a write and a later read is a step), and a chain of more than about 800 writes in one
+  function reaches the declaration's budget (about 550 before research report 145 indexed the write,
+  below). *Before, the pairs were counted by the old names they passed over, so about 85 writes reached
+  the module's budget.*
 
   **A part of a join is projected once in a frame** (`proj_memo`, research report 135). The arms of a
   join can be values of earlier `case`s, so the values of a walk are a DAG, and `project` made the part
@@ -886,6 +887,61 @@ paths:
   s, 400 levels in 3.6 s). A value never changes once it is made, so its part at one step is the part a
   second projection makes: it is kept, by the value and the step, for the rest of the frame. A chain of
   `n` `case`s now makes at most a part for each of its values and each step, O(n²) for `n` levels.
+
+  **A wide record costs its width, not its square** (research report 145). A literal of 3 000 fields
+  and one update that writes all of them took 7.9 s of v3 (ReleaseSafe), with no limit, and the time
+  grew with the square of the width. Five loops each cost the width once for each field, and each is
+  a lookup now, with the same answers:
+  - **The budget reads the layout that the walk makes** (`Mod.budgetPlace`). A reference to a local
+    earns for the local's layout: the walk's value of a reference is the local's (`.local` in
+    `evalInner`). Its own type is an instance of the local's that the type check copied for this
+    reference alone, and the adapter read each copy whole, uncounted: n references to a record of n
+    number fields were n² reads of a variable, almost all of the 7.9 s. The adapter's work is
+    counted now (`Groups.Adapter.var_work`, `Check.var_units`, a lookup each: `Mod.chargePlaces`),
+    a field whose type is a leaf is read with no stack (`childId`), and the budgets stop being made
+    once the location table's work passes `module_cap`: the module passes its budget whatever the
+    rest earns, so no more of it is done. A reference to a top-level value still reads its instance,
+    which the walk projects (`.top`): counted, so the cap bounds it (a top-level record of 3 000 fields
+    read field by field reaches about 78 million units, 0.8 s of ReleaseFast).
+  - **A write of more than 32 atoms is indexed** (`Frame.indexWrite`, `w_index_min`). The tests of
+    §5 compare the atoms of each other operand, escape, answer and later read with the write's; two
+    atoms overlap only at one root and entry, so the write's atoms are grouped by them (and by root, for
+    `rootReach`), and an atom compares its group only (`atomsReachIndexed`, `overlapIndexed`). An atom
+    looked up costs a lookup and its group, and never more than the scan of the write it replaces; the
+    index is not counted apart (it is linear in the write's atoms, each counted where it was made). The write of every slot of a record of n fields,
+    against the n later reads of its fields, was n² pairs of atoms; so was a chain of writes, whose
+    write names every older name (§5.1).
+  - **A projection of a construction of more than 16 parts is a lookup** (`Frame.builtPart`): its
+    parts are indexed by step once in the frame, the first at each step, as the scan finds. The first
+    projection scans, as before (most constructions are projected once); the second costs the scan and
+    makes the index; each later one is a lookup. A field
+    read of each field of a record of n fields scanned its n parts.
+  - **`rootReach` reads only the entries of a root that hold a run** (`Frame.runEntries`, for a root of
+    more than 32 entries, made once its entries are, which never change after; the first list costs the
+    scan of every entry, and safe builds check it for roots of at most 256 entries). A
+    record literal's root has an entry for each field value, none with a run, and every operand of an
+    update that is a field of it scanned them all.
+  - **A projection's inverse is sparse where the child is small** (`Loc.Proj.down_keys`): where the
+    child's entries are at fewer than an eighth of the parent's, it names the entries of the parent
+    that they are at, not every entry of the parent; else it is dense, as before (an element of a list
+    is most of its layout, and a search for each entry cost a quarter more on research report 138's
+    lists of references). The projection of each field of a
+    record of n fields made an array of n, so n² in the location table (the module's work): a record of
+    1 000 lists at 30 types reached the module's budget there (research report 138 §9).
+  - The copy of an update looks up each field it names in a sorted list (`recordUpdate`), not in the
+    list of every field named.
+
+  No test costs more units than the one it replaces, so no budget moves toward a limit (the review of
+  research report 145 found a declaration at its cap that gave up earlier when an index was charged up
+  front).
+
+  The record shapes of research report 145 now cost about their width: the literal and its update,
+  a chain of updates, a record of lists whose fields are moved, nested records, a record passed
+  through calls and an entry's model, at sizes 250 to 3 000. Two stay quadratic in the number of
+  writes and are counted, so the budget stops them: `n` writes each read by later reads (a record of
+  `n` lists, each pushed; a record of `n` records, each written by a helper) are `n²` pairs of a
+  write and a later read, and a record of 500 lists each pushed reaches its declaration's budget, in
+  0.05 s of ReleaseFast. Every dump of the 2 751 ownership roots is the same.
 
 
   Past either budget every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
@@ -983,8 +1039,9 @@ So a diamond of aliases 64 deep is read in its depth, not in 4⁶⁴ (#2121), an
 nominal types that each hold 32 others in 0.05 s, not 20 s. The type check's own cycle pass
 (`check/Cycles.zig`) still walks the rows below each declaration's sites when the module has a
 constant: it is the type check's cost, not v3's, and research report 131 measures it.
-The adapter's reading of a type that adds no place is not counted (`Mod.chargePlaces` counts what it
-adds). In a function of 8 000 calls over a record of 2 040 lists, most of v3's 0.43 s is the adapter
+The adapter's reading of a type that adds no place was not counted (`Mod.chargePlaces` counted what it
+added) until research report 145; each variable it closes and each field of a record it
+reads counts now (`var_units`). In a function of 8 000 calls over a record of 2 040 lists, most of v3's 0.43 s is the adapter
 (`ofVar`, and the freeing of its tables), and the type check of the module takes 11.5 s: the adapter
 reads the types that the type check made (research report 135 §3).
 
@@ -1039,6 +1096,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | the index of a call map read the other way says what a scan of it says, for maps of at most 64 entries | `Frame.coverHits` | §6.2, §8 |
 | the scan of an answer's map, the other map read once, says what `answersAt` says, for layouts of at most 64 entries | `Frame.AnswersAt.check` | §8 |
 | a run that a read skips as old holds only old names, for runs of at most 64 atoms | `Frame.runReaches` | §5.1, §8 |
+| the entries whose runs `rootReach` reads, listed once, are the ones a scan of every entry finds | `Frame.runEntries` | §8 |
 | the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |
 
 ## 10. What the kernel costs
