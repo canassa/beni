@@ -378,17 +378,27 @@ pub const Table = struct {
         var ls: std.ArrayList(u64) = .empty;
         defer ls.deinit(gpa);
         try t.labels(loc, &ls, gpa);
+        return t.emptyAlongLabels(place, ls.items, false);
+    }
+
+    /// `emptyAlong` of a path given as labels. With `cast` (a reader that
+    /// asks whether a type of a value says it can hold no cell where another
+    /// reading has one, `Frame.pairedLeaves`), a slot, a row, a deep level
+    /// and a wide place on the way say nothing (false), and a step the place
+    /// does not have says that it holds none (true).
+    pub fn emptyAlongLabels(t: *const Table, place: PlaceId, ls: []const u64, cast: bool) bool {
         var p = place;
-        for (ls.items) |w| {
+        for (ls) |w| {
             const l: Label = @bitCast(w);
             if (t.places.holds(p).isEmpty()) return true;
-            if (l.cyc or l.kind == .fslot or l.kind == .member or l.kind == .row) return true;
+            if (l.cyc or l.kind == .fslot or l.kind == .member or l.kind == .row) return !cast;
+            if (cast and (t.places.kind(p) == .@"var" or t.places.kind(p) == .@"opaque")) return false;
             const st = t.places.steps(p);
             const next = for (st.steps, st.children) |s, c| {
                 if (s.kind == .level) continue;
                 const sl = t.stepLabel(p, s, false);
                 if (sl.kind == l.kind and sl.payload == l.payload) break c;
-            } else return false;
+            } else return cast;
             p = next;
         }
         return t.places.holds(p).isEmpty();

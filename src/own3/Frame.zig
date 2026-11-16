@@ -589,7 +589,11 @@ fn refVal(f: *Frame, root: u32, path: u32) Error!Val {
 
 fn rootVal(f: *Frame, root: u32) Error!Val {
     const r = f.roots.items[root];
-    if (f.m.loc.layouts.items[r.layout].len == 0) return v_none;
+    // A value of a type with no location holds no cell that the frame can
+    // name, but a cast can put one there (a list read as an `Int`), which
+    // escaped where it was put (`narrowed`): it holds `outside`, never
+    // nothing (research report 148).
+    if (f.m.loc.layouts.items[r.layout].len == 0) return v_outside;
     return f.refVal(root, r.path);
 }
 
@@ -1826,7 +1830,12 @@ fn whole(tag: Tag) bool {
 /// `outside` only when each value it is made of holds no cell of the frame,
 /// which is then a fact of those values (kernel §3.2).
 fn unknownOf(f: *Frame, place: PlaceId, vs: []const Val) Error!Val {
-    if (try f.layoutLen(place) == 0) return v_none;
+    // At a type with no location: `outside` where a value it is made of
+    // holds anything (`rootVal`), else nothing.
+    if (try f.layoutLen(place) == 0) {
+        for (vs) |x| if (x != v_none) return v_outside;
+        return v_none;
+    }
     const start: u32 = @intCast(f.lists.items.len);
     for (vs) |v| if (v != v_none and v != v_outside) try f.lists.append(f.gpa, v);
     const count: u32 = @intCast(f.lists.items.len - start);
@@ -2223,7 +2232,7 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
             _ = f.charge(Loc.lookup_units);
             const np = (try f.m.loc.pathExtend(n.b, s)) orelse return f.unknownOf(n.place, &.{v});
             const child = f.m.loc.paths.items[np].place;
-            if (try f.layoutLen(child) == 0) return v_none;
+            if (try f.layoutLen(child) == 0) return v_outside;
             return f.refVal(n.a, np);
         },
         .built => {
@@ -3304,8 +3313,8 @@ fn capture(f: *Frame, local: u32) Error!Val {
     }
     for (f.cap_locals.items, 0..) |l, k| if (l == local) return f.rootVal(f.params.items[f.own_params + k]);
     const place = try m.placeOfLocal(f.d, local);
-    // A local of no object needs no root.
-    if (try f.layoutLen(place) == 0) return v_none;
+    // A local of no object needs no root; it holds `outside` (`rootVal`).
+    if (try f.layoutLen(place) == 0) return v_outside;
     const root = try f.newRoot(.capture, place, none);
     f.roots.items[root].index = @intCast(f.params.items.len);
     try f.params.append(f.gpa, root);
@@ -3864,7 +3873,12 @@ fn unknownResult(f: *Frame, inst: u32, in_sight: []const Val) Error!Val {
 }
 
 fn built(f: *Frame, place: PlaceId, kids: []const Kid) Error!Val {
-    if (try f.layoutLen(place) == 0) return v_none;
+    // A construction of a type with no location holds a cell only where a
+    // part does, which a cast put there: `outside` (`rootVal`).
+    if (try f.layoutLen(place) == 0) {
+        for (kids) |k| if (k.val != v_none) return v_outside;
+        return v_none;
+    }
     // A construction at a record's place holds the record's object, whose
     // slots are cells (kernel §11.2, `recordOf`): a construction of the
     // fields alone held no slot, and an update of it wrote no cell
@@ -5603,7 +5617,8 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // The result.
     const layout = try m.loc.layoutOf(place);
     const es = m.loc.layoutEntries(layout);
-    if (es.len == 0) return v_none;
+    // An answer of a type with no location holds `outside` (`rootVal`).
+    if (es.len == 0) return v_outside;
     // The contract is written for arguments of which no cell is at two
     // places (kernel §4.4). Where that does not hold, its claims that two
     // sources are two cells have no ground: no two locations of the result
@@ -5922,7 +5937,8 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
                 if (s.a >= args.len) {
                     try f.lostAnswer(base, st);
                 } else {
-                    if (try f.pairedLeaves(args[s.a], c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
+                    const ai = if (s.a < base.site.arg_insts.len) base.site.arg_insts[s.a].int() else none;
+                    if (try f.pairedLeaves(args[s.a], ai, c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
                     if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
                 }
             },
@@ -6001,7 +6017,46 @@ fn handsFree(fnc: ?*const CMod.Fn, par: Src) bool {
 /// The atoms of argument `v` at the callee's parameter entry `pe`, for the
 /// caller's result entry `e`: when both are below a type variable, the part
 /// of the argument at the same place below it.
-fn pairedLeaves(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rlayout: u32, e: u32) Error!bool {
+fn pairedLeaves(f: *Frame, v: Val, arg_inst: u32, psig: u32, pe: u32, rsig: u32, cr: u32, rlayout: u32, e: u32) Error!bool {
+    const start = f.atoms.items.len;
+    const dup = try f.pairedLeavesAt(v, psig, pe, rsig, cr, rlayout, e);
+    // A record's slots are no cell of another kind: a caller's list there
+    // that only slots feed is fed by no cell (a record answered at a type
+    // variable and read as a record of lists, `un : { a : Int } → b`).
+    const no_cell = for (f.atoms.items[start..]) |a| {
+        if (!f.isSlotAtom(a)) break false;
+    } else true;
+    // Only a list of the caller's is asked: a wide location of the caller
+    // (a `Js.Value`, a type variable) holds the whole of what the callee
+    // answers, of which an `Int` at the callee's `a` is no part.
+    if (no_cell and arg_inst != none and f.m.loc.layoutEntries(rlayout)[e].kind == .list) {
+        // No cell of the argument at the location: proved empty where the
+        // argument's type has a cell there (another constructor's argument),
+        // but where its type has none (`Int` at the callee's `a`) and the
+        // caller reads a cell (a list at the callee's `b`), the callee cast
+        // what it was handed (`un : W a → W b`, `un r = Js.to (Js.from r)`):
+        // a cell no rule names, `outside` (research report 148).
+        const m = f.m;
+        const rentry = m.loc.layoutEntries(rsig)[cr];
+        const rloc = m.loc.layoutEntries(rlayout)[e].loc;
+        var labels: std.ArrayList(u64) = .empty;
+        defer labels.deinit(f.gpa);
+        // A slot of the parameter stands for its record's object: the path is the record's.
+        const pentry = m.loc.layoutEntries(psig)[pe];
+        try m.loc.labels(if (pentry.kind == .field) m.loc.loc_parent.items[pentry.loc] else pentry.loc, &labels, f.gpa);
+        if (m.loc.isPrefix(rentry.loc, rloc)) {
+            var below: std.ArrayList(u64) = .empty;
+            defer below.deinit(f.gpa);
+            try m.loc.labels(rloc, &below, f.gpa);
+            try labels.appendSlice(f.gpa, below.items[m.loc.loc_depth.items[rentry.loc]..]);
+        }
+        _ = f.charge(Loc.scanUnits(labels.items.len));
+        if (m.loc.emptyAlongLabels(try m.placeOfInst(arg_inst), labels.items, true)) try f.atoms.append(f.gpa, outside_atom);
+    }
+    return dup;
+}
+
+fn pairedLeavesAt(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rlayout: u32, e: u32) Error!bool {
     const m = f.m;
     const pentry = m.loc.layoutEntries(psig)[pe];
     const rentry = m.loc.layoutEntries(rsig)[cr];
@@ -6202,10 +6257,11 @@ fn punned(f: *Frame, v: Val, arg_inst: u32, place: PlaceId) Error!bool {
     // of `n` holds nothing the walk can name, and the list read out of it
     // was a cell). A cast through a type of no cell let its cells escape
     // (`narrowed`), so it is `unknown`, never a new list (research report 148).
-    if (v == v_none) switch (m.places.kind(place)) {
-        .@"var", .@"opaque" => return false,
-        .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => return try f.layoutLen(place) != 0,
-    };
+    // A type variable or an opaque type is no exemption here: the reading's
+    // wide entry names whatever a caller reads there (`unhide : Int → b`,
+    // `unhide t = Js.to (Js.from t)`, read as a list), and a value of no
+    // cell has no wide entry that holds it.
+    if (v == v_none) return try f.layoutLen(place) != 0;
     const own = f.placeOfVal(v) orelse (if (arg_inst != none) try m.placeOfInst(arg_inst) else return false);
     if (own == place) return false;
     // A type variable or an opaque type is a wide entry, which §3.4 reads

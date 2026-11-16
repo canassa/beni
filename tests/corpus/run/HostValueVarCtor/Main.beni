@@ -1,0 +1,36 @@
+-- A function of `W a → W b` that answers its parameter through `Js.to`,
+-- handed `W i 1` where `i` is a list read as an `Int`, and read as
+-- `W (List Int)`. The argument's type holds no cell at `a`, and the
+-- caller reads a list at `b`: only a cast puts one there, so the caller's
+-- list holds `outside` (ownership-v3-kernel.md §3.4). Before, it held
+-- nothing, and in place the push of `ys` pushed onto `xs`.
+import Node exposing (Program)
+import Pun
+
+
+type W a
+    = W a Int
+
+
+un : W a → W b
+un r =
+    Pun.conv r
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    i : Int
+    i = Pun.conv xs
+    w : W (List Int)
+    w = un (W i 1)
+    ys =
+        case w of
+            W y _ →
+                y
+    zs = List.push ys 9
+    "${String.fromInt (List.length zs)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print (go 1)

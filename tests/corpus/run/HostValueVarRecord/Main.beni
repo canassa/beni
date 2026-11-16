@@ -1,0 +1,28 @@
+-- A record of an `Int` answered at a type variable through `Js.to`, read
+-- as a record of a list: the caller's list is fed only by the record's
+-- slot, which is no list, and the argument's type holds no cell there, so
+-- it holds `outside` (ownership-v3-kernel.md §3.4). Before, the push of
+-- `ys` wrote no cell v3 knew, and in place it pushed onto `xs`.
+import Node exposing (Program)
+import Pun
+
+
+un : { a : Int } → b
+un r =
+    Pun.conv r
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    i : Int
+    i = Pun.conv xs
+    r : { a : List Int }
+    r = un { a = i }
+    ys = r.a
+    zs = List.push ys 9
+    "${String.fromInt (List.length zs)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print (go 1)
