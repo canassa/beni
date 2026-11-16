@@ -1,0 +1,26 @@
+-- A tuple read as a record below a type variable of a callee's answer,
+-- beside a record that has a field of the same name: the caller's slot
+-- `.0.a.a=` is held only by a slot of the argument at `.a.a=`, and the
+-- argument's own slot of the field `a` is at `.1.a=`, another object. So
+-- the slot is a cell no claim names, and v3 refuses the update
+-- (ownership-v3-kernel.md §3.4). In place `inner`'s number read 5.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    inner = ( n, [ 1 ] )
+    pr : { a : { a : Int, b : List Int }, b : { a : Int } } × Int
+    pr = Pun.convPair ( inner, { a = 3 } )
+    case pr of
+        ( p, _ ) →
+            q = p.a
+            q2 = { q | a = 5 }
+            case inner of
+                ( m, _ ) →
+                    "${String.fromInt q2.a} ${String.fromInt m}"
+
+
+main : Program
+main = Node.print (go 0)

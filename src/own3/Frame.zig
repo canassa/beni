@@ -5132,6 +5132,88 @@ fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bo
     return dup or coarse_hit;
 }
 
+/// Whether layout `own` (an argument's) holds the record object whose slot
+/// is asked at the label path `asked` (from the argument's root): a slot at
+/// that path, a wide entry at or above it, or, where the asked path or a slot
+/// of the field is in the deep level of a cycle, a slot of the field: the
+/// call map pairs a cycle's deep level with its entry level, so a label path
+/// there is no test (kernel §4.1). A record's object is a cell only where a
+/// layout names its slots (kernel §11.1, §3.4). It scans `own` (kernel §8).
+fn slotHeld(f: *Frame, own: u32, asked: []const u64) Error!bool {
+    const t = &f.m.loc;
+    const last: Loc.Label = @bitCast(asked[asked.len - 1]);
+    var at: ?u32 = 0;
+    var asked_cyc = false;
+    for (asked) |w| {
+        const l: Loc.Label = @bitCast(w);
+        if (l.cyc) asked_cyc = true;
+        if (at) |x| at = t.find(x, w);
+    }
+    const oes = t.layoutEntries(own);
+    _ = f.charge(Loc.scanUnits(oes.len) + asked.len);
+    var ls: std.ArrayList(u64) = .empty;
+    defer ls.deinit(f.gpa);
+    for (oes) |oe| {
+        if (at) |x| if (oe.loc == x) return true;
+        if (oe.kind.wide()) {
+            if (oe.loc == 0) return true;
+            ls.clearRetainingCapacity();
+            try t.labels(oe.loc, &ls, f.gpa);
+            _ = f.charge(Loc.scanUnits(ls.items.len));
+            if (ls.items.len <= asked.len and std.mem.eql(u64, ls.items, asked[0..ls.items.len])) return true;
+            continue;
+        }
+        if (oe.loc == 0) continue;
+        const ol: Loc.Label = @bitCast(t.loc_label.items[oe.loc]);
+        if (ol.kind != .fslot or ol.payload != last.payload) continue;
+        if (asked_cyc or ol.cyc) return true;
+        var x = oe.loc;
+        const in_cycle = while (x != 0) : (x = t.loc_parent.items[x]) {
+            const pl: Loc.Label = @bitCast(t.loc_label.items[x]);
+            if (pl.cyc) break true;
+        } else false;
+        _ = f.charge(Loc.scanUnits(t.loc_depth.items[oe.loc]));
+        if (in_cycle) return true;
+    }
+    return false;
+}
+
+/// Whether the caller's slot at `e_loc` of an answer that a callee casts to
+/// (`pairedLeaves`: the contract pairs the parameter location `ploc` with
+/// the answer location `rentry`, one of them wide) is of an object no cell
+/// of the argument `v` names: `v`'s own layout does not hold the record
+/// whose slot it is (`slotHeld`). The record is `v`'s part at `ploc`, read
+/// below `rentry` where `rentry` is wide, or itself where the slot is
+/// `rentry` (a value of a type variable answered as a record).
+fn castSlotLost(f: *Frame, v: Val, ploc: u32, rentry: Loc.Entry, e_loc: u32) Error!bool {
+    const t = &f.m.loc;
+    if (e_loc == 0) return false;
+    const l: Loc.Label = @bitCast(t.loc_label.items[e_loc]);
+    if (l.kind != .fslot) return false;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        // Its leaves hold `outside` already.
+        .outside, .unknown => return false,
+        .none, .fnref, .closure => return true,
+        .ref, .built, .join => {},
+        .later => unreachable, // read through `capVal` only
+    }
+    var asked: std.ArrayList(u64) = .empty;
+    defer asked.deinit(f.gpa);
+    try t.labels(ploc, &asked, f.gpa);
+    if (rentry.kind.wide()) {
+        var below: std.ArrayList(u64) = .empty;
+        defer below.deinit(f.gpa);
+        try t.labels(e_loc, &below, f.gpa);
+        const skip = t.loc_depth.items[rentry.loc];
+        if (skip > below.items.len) return false;
+        try asked.appendSlice(f.gpa, below.items[skip..]);
+    } else try asked.append(f.gpa, l.word());
+    if (asked.items.len == 0) return false;
+    return !try f.slotHeld(try t.layoutOf(n.place), asked.items);
+}
+
+
 /// Whether a reading at the entries `js` of layout `view`, of a value whose
 /// own place is `own`, asks for a field slot of the record at the value's
 /// root that `own` has no slot for (`rootSlotLost`). The slots below the
@@ -5224,20 +5306,15 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
             }
         }
         // A slot asked below a type variable of the signature (the caller's
-        // view of what a cast answers) that the argument's own layout has
-        // no part at: no entry below that variable is a slot of the same
-        // field, and no wide entry is above it. The label path is no test
-        // here, since the map pairs a cycle's deep level with its entry
-        // level; a slot of the field is (`rootSlotLost`, kernel §3.4).
+        // view of what a cast answers) that the argument's own layout does
+        // not hold (`slotHeld`): no cell names the object (kernel §3.4).
         const sl: Loc.Label = @bitCast(suffix[suffix.len - 1]);
         if (sl.kind == .fslot) {
-            const oes = m.loc.layoutEntries(own);
-            const held = for (hit.items) |k| {
-                const ol: Loc.Label = @bitCast(m.loc.loc_label.items[oes[k].loc]);
-                if (oes[k].loc != 0 and ol.kind == .fslot and ol.payload == sl.payload) break true;
-                if (oes[k].kind.wide() and (want == null or m.loc.isPrefix(oes[k].loc, want.?))) break true;
-            } else false;
-            if (!held) f.slot_lost = true;
+            var asked: std.ArrayList(u64) = .empty;
+            defer asked.deinit(f.gpa);
+            try m.loc.labels(m.loc.layoutEntries(sig)[se].loc, &asked, f.gpa);
+            try asked.appendSlice(f.gpa, suffix);
+            if (!try f.slotHeld(own, asked.items)) f.slot_lost = true;
         }
     } else if (f.isOwnSlot(m.loc.layoutEntries(sig)[se].loc)) {
         // A slot of the record at the argument's root that its own place has
@@ -5812,7 +5889,18 @@ fn pairedLeaves(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rlayo
     const m = f.m;
     const pentry = m.loc.layoutEntries(psig)[pe];
     const rentry = m.loc.layoutEntries(rsig)[cr];
-    if (!(pentry.kind.wide() and rentry.kind.wide())) return f.argLeaves(v, psig, pe, &.{}, false, &f.atoms);
+    if (!(pentry.kind.wide() and rentry.kind.wide())) {
+        const dup = try f.argLeaves(v, psig, pe, &.{}, false, &f.atoms);
+        // A wide location of one side and a concrete one of the other: the
+        // callee casts what it was handed (`Js.to` of a parameter of a type
+        // variable answered as a record, a tuple answered as a type
+        // variable). A record's slot of the caller's answer there holds an
+        // object of the argument's only where the argument has a slot of
+        // that field (or a wide entry, which holds every object); else no
+        // cell names it (kernel §3.4, research report 147).
+        if (pentry.kind.wide() != rentry.kind.wide() and try f.castSlotLost(v, pentry.loc, rentry, m.loc.layoutEntries(rlayout)[e].loc)) try f.atoms.append(f.gpa, outside_atom);
+        return dup;
+    }
     const rloc = m.loc.layoutEntries(rlayout)[e].loc;
     // The fallback cover: the caller's entry is not below the callee's.
     if (!m.loc.isPrefix(rentry.loc, rloc)) return f.argLeaves(v, psig, pe, &.{}, false, &f.atoms);
@@ -5978,16 +6066,17 @@ fn smallLayout(f: *Frame, l: u32) bool {
     return f.m.loc.layoutEntries(l).len <= 64;
 }
 
-/// Whether the contract is that of a function that answers its one parameter
-/// as it is and does nothing else with it.
 /// Whether the answer `v` of an identity (the argument at `arg_inst`, or
-/// `none`) is read at `place`, another type of parts than its own, which
-/// has a record's field slot. Both are types of parts (neither is a type
-/// variable or an opaque type, which §3.4's wide entries hold), so the
-/// identity is a cast between two shapes of one JavaScript object (a tuple
-/// read as a record, a list of tuples as a list of records): the reading's
-/// slots are of an object no cell of the value's own layout names, at any
-/// depth (research report 147). It costs the reading's layout (kernel §8).
+/// `none`) is read at `place`, another type of parts than its own, with a
+/// location that no location of the value's own layout covers. Both are
+/// types of parts (neither is a type variable or an opaque type, whose wide
+/// entries §3.4 reads), so the identity is a cast between two shapes of one
+/// JavaScript object (a tuple read as a record, a constructor as another
+/// type's constructor, a list of tuples as a list of records): the value's
+/// own steps say nothing of the reading's, which can name a part of
+/// another constructor than the one the value was built with, or a record's
+/// slot that no cell names, at any depth (research report 147). The map is
+/// kept for each pair; its scan is work (kernel §8).
 fn punned(f: *Frame, v: Val, arg_inst: u32, place: PlaceId) Error!bool {
     const m = f.m;
     const own = f.placeOfVal(v) orelse (if (arg_inst != none) try m.placeOfInst(arg_inst) else return false);
@@ -5996,16 +6085,29 @@ fn punned(f: *Frame, v: Val, arg_inst: u32, place: PlaceId) Error!bool {
         .@"var", .@"opaque", .cross => return false,
         .record, .tuple, .ctor, .list, .dict, .ref, .closure => {},
     };
-    const es = m.loc.layoutEntries(try m.loc.layoutOf(place));
-    _ = f.charge(Loc.scanUnits(es.len));
-    for (es) |e| {
-        if (e.loc == 0) continue;
-        const l: Loc.Label = @bitCast(m.loc.loc_label.items[e.loc]);
-        if (l.kind == .fslot) return true;
-    }
+    // Each location of the reading that a location of the value's own
+    // layout covers (the same one, or a wide one above it) is one the value
+    // has: an array read as another type of array (`List a` as `Builder a`)
+    // is no pun. A location that none covers is a part the value does not
+    // have, or has as another constructor's (kernel §3.4). Of those, a
+    // record's slot or a constructor's argument is what a reading answers
+    // `none` for (a slot no cell names, a part of the constructor the value
+    // was not built with); a list's level that none covers is read through
+    // a root, whose missing step is `unknown` already (`project`). A type of
+    // no cell has no location to read.
+    const view = try m.loc.layoutOf(place);
+    const ves = m.loc.layoutEntries(view);
+    const cov = try m.loc.cover(try m.loc.layoutOf(own), view);
+    _ = f.charge(Loc.scanUnits(cov.len));
+    for (cov, ves) |c, ve| if ((c == none or c == Loc.all) and ve.loc != 0) {
+        const l: Loc.Label = @bitCast(m.loc.loc_label.items[ve.loc]);
+        if (l.kind == .fslot or l.kind == .ctor_arg) return true;
+    };
     return false;
 }
 
+/// Whether the contract is that of a function that answers its one parameter
+/// as it is and does nothing else with it.
 fn isIdentity(f: *const Frame, c: *const Contract) bool {
     const m = f.m;
     // A contract that holds one cell of the parameter at two places of the

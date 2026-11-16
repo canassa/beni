@@ -164,25 +164,40 @@ slot of the record at a value's root, where the value's own place is no record t
 no wide place, holds `outside` as well as what the map gives (`rootSlotLost`): a write of it has no claim.
 It is applied at each reading of a value through a map — `leavesSet` (each part of a construction and
 each arm of a join is read at its own place, so the slots below a value's root are asked of the part
-that holds them), `argEntries` (a callee's slot of its parameter's root, and a slot one step below a
-type variable at the signature's root, the caller's view of what a cast answers) — at the update of a
-value whose type does not name the slot (`slotAtoms`), and at a write of a slot that holds no cell:
-a record always holds its object (§11.2), so a slot write whose atoms are none (a tuple of numbers read
-as a record, which is no cell at all) writes an object no cell names (`recordUpdate`, `applyAt`). An
-identity whose answer is read at another type of parts than its argument's own, both concrete, which
-has a field slot, is a cast between two shapes of one object, and answers `unknown` over the argument
-(`punned`): every slot below it is then of no claim, at any depth.
+that holds them) and `argEntries` (a callee's slot of its parameter's root) — at the update of a value
+whose type does not name the slot (`slotAtoms`), and at a write of a slot that holds no cell: a record
+always holds its object (§11.2), so a slot write whose atoms are none (a tuple of numbers read as a
+record, which is no cell at all) writes an object no cell names (`recordUpdate`, `applyAt`).
+
+**A cast.** Two places of one call can be two types of one object where a callee answers a value of
+another type than the one it was handed (`Js.to (Js.from x)`):
+- an identity whose answer is read at another type of parts than its argument's own, both concrete, with
+  a field slot or a constructor's argument that no location of the argument's own layout covers (the
+  call map, `cover`), answers `unknown` over the argument (`punned`). The constructor's argument is the
+  other half of rule 5's "another constructor's argument holds none": a step names a constructor by its
+  position, so `V`'s argument and `X`'s are one step, and a value built as `Y xs` of
+  `type W = X (List Int) | Y (List Int)`, read as `type V = V (List Int)`, has that step in its own place
+  and no part there, though `V u` reads `.a` with no test. An array read as another type of array (`List
+  a` as `Builder a`) has every location covered, and is no cast here;
+- a contract that pairs a wide location of a parameter with a location of its answer that a slot is at
+  or below (the slot asked below a type variable of the signature, `argEntries`; `pairedLeaves` where the
+  two are both wide), or a wide location with a concrete one (`toR : a → R`, `toR x = Pun.conv x`: the
+  answer's slot `.a=` holds the parameter's one location; `castSlotLost`), is read as a cast. The slot's
+  record is the argument's part at the parameter's location, and the slot below it is the label path the
+  caller asks there. It is held only where the argument's own layout has a slot at that path, or a wide
+  entry at or above it (`slotHeld`); else it holds `outside`. A label path is a test here only outside a
+  cycle: the call map pairs a cycle's deep level with its entry level, which name one place by two paths,
+  so in a deep level a slot of the same field holds it.
 
 *Research report 147: a tuple read as a record through `Js.to` (`run/RecordPunTuple`) projected `.a` on
 the tuple's construction to `none`, so a push of `p.a` wrote no cell v3 knew of; and a function that
 updated a tuple of numbers or a constructor read as a record (`run/RecordPunHelper`,
-`run/RecordPunConstructor`, `run/RecordPunAnswer`) wrote an object no atom named, so the caller's demand
-was of nothing, or of the lists beside it, and was accepted.* What stays open: a slot two or more steps
-below a type variable of a callee's answer, of a value that a non-identity contract answers there, at a
-type of parts other than its own (a platform function that answers `( Js.to (Js.from x), 1 )`, read as a
-pair of a record of records). The call map pairs a deep level of a cycle with its entry level, so a
-label path that a layout does not have is no sign that the value has no record there, and no test of it
-is taken; #2540 holds it.
+`run/RecordPunConstructor`, `run/RecordPunAnswer`, `run/RecordPunDeep`, `run/RecordPunBeside`) wrote an
+object no atom named, so the caller's demand was of nothing, or of the lists beside it, and was
+accepted. Its review found the two casts: a constructor read as another type's (`run/RecordPunOrdinal`),
+and a function of a type variable that answers its parameter as a record (`run/RecordPunGenericCast`).*
+What stays open: a cast of a value whose type has a cycle, read at a type whose slot of a field is in
+the deep level where the value's own record of that field is another object (#2540).
 
 So the cells of a converted value are where the value is: a cell the host made is `outside` already
 (the answer of unknown code, §3.2), and a cell of the frame that went through `Js` and came back is
