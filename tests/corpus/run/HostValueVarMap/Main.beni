@@ -9,8 +9,7 @@ import Pun
 
 
 un : Maybe Int → Maybe b
-un t =
-    Maybe.map t Pun.conv
+un t = Maybe.map t Pun.conv
 
 
 go : Int → String

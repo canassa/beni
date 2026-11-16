@@ -13,8 +13,7 @@ type W a
 
 
 un : W a → W b
-un r =
-    Pun.conv r
+un r = Pun.conv r
 
 
 go : Int → String

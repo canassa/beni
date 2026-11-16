@@ -9,8 +9,7 @@ import Pun
 
 
 hide : List Int → Int
-hide l =
-    Pun.conv l
+hide l = Pun.conv l
 
 
 go : Int → String

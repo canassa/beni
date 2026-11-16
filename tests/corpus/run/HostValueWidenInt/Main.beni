@@ -8,8 +8,7 @@ import Pun
 
 
 keep : Int → Int
-keep k =
-    k
+keep k = k
 
 
 go : Int → String

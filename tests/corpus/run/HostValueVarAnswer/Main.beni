@@ -10,8 +10,7 @@ import Pun
 
 
 unhide : Int → b
-unhide t =
-    Pun.conv t
+unhide t = Pun.conv t
 
 
 go : Int → String

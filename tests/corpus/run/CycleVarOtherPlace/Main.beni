@@ -13,13 +13,11 @@ type T a
 
 
 hOf : (a → Int), T a → Int
-hOf h (T y _) =
-    h y
+hOf h (T y _) = h y
 
 
 each : T a, (a → a), (a → Int) → a × Int
-each (T x kids) g h =
-    ( g x, List.foldl kids 0 (λc acc → acc + hOf h c) )
+each (T x kids) g h = ( g x, List.foldl kids 0 λc acc → acc + hOf h c )
 
 
 go : Int → String

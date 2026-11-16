@@ -9,8 +9,7 @@ import Pun
 
 
 flat : List (List Int) → List Int
-flat l =
-    Pun.conv l
+flat l = Pun.conv l
 
 
 pushIn : List (List Int) → Int
