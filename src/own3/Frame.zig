@@ -408,7 +408,7 @@ built_index: std.AutoHashMapUnmanaged(Val, BuiltIndex) = .empty,
 /// Per construction of more than `scan_parts` parts, each part by the
 /// construction and its step (`project`), and the constructions so indexed.
 built_parts: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
-built_parted: std.AutoHashMapUnmanaged(Val, void) = .empty,
+built_parted: std.AutoHashMapUnmanaged(Val, bool) = .empty,
 /// The atoms of the write in judgement, grouped by root and entry, when
 /// there are more than `w_index_min` of them (`indexWrite`).
 w_ix: WIndex = .{},
@@ -713,11 +713,17 @@ fn pathPrefix(f: *const Frame, a: u32, b: u32) bool {
     return f.m.loc.pathPrefix(a, b);
 }
 
-fn overlapAny(f: *Frame, xs: []const Atom, ys: []const Atom) bool {
+/// `overlapAny` of `xs` and the write in judgement `ys`: indexed when
+/// `indexWrite` indexed it.
+fn overlapWrite(f: *Frame, xs: []const Atom, ys: []const Atom) bool {
     if (f.wIndexed(ys)) {
         for (xs) |x| if (f.overlapIndexed(x)) return true;
         return false;
     }
+    return f.overlapAny(xs, ys);
+}
+
+fn overlapAny(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
     for (xs) |x| {
         // Each comparison made is work (kernel §8); past the budget the two
         // can share a cell.
@@ -2128,11 +2134,19 @@ const scan_parts = 16;
 /// 145). The index costs a lookup for each part, once, and each projection a
 /// lookup (kernel §8).
 fn builtPart(f: *Frame, v: Val, n: Node, s: Step) Error!Val {
+    // The first projection scans, as before: most constructions are
+    // projected once. The second costs the scan too, and makes the index;
+    // each later one is a lookup. So no projection costs more than the scan
+    // did, and a budget never moves toward a limit.
     const made = try f.built_parted.getOrPut(f.gpa, v);
     if (!made.found_existing) {
-        // The first projection costs the scan it replaces, and makes the
-        // index; each later one a lookup. So no projection costs more than
-        // the scan did, and a budget never moves toward a limit.
+        made.value_ptr.* = false;
+        _ = f.charge(n.b);
+        for (0..n.b) |ki| if (f.kids.items[n.a + ki].step == s.word()) return f.kids.items[n.a + ki].val;
+        return v_none;
+    }
+    if (!made.value_ptr.*) {
+        made.value_ptr.* = true;
         _ = f.charge(n.b);
         for (0..n.b) |ki| {
             const k = f.kids.items[n.a + ki];
@@ -2718,7 +2732,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
                 d.detail = "the walk of this declaration gave up";
                 break;
             }
-            if (f.overlapAny(f.esc_atoms.items[e.start..][0..e.len], f.atoms.items[w..][0..wn])) {
+            if (f.overlapWrite(f.esc_atoms.items[e.start..][0..e.len], f.atoms.items[w..][0..wn])) {
                 d.refused = .escaped;
                 break;
             }
@@ -2729,7 +2743,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
     // A write of a cell that a function parameter was handed before: a function that keeps it reads the edit.
     // Each answer compared is work (kernel §8).
     if (in.op != .supply and wn != 0 and !f.charge(f.answers.items.len)) for (f.answers.items) |an| {
-        if (f.overlapAny(an.base.items, f.atoms.items[w..][0..wn])) f.drafts.items[an.di].rewrites = true;
+        if (f.overlapWrite(an.base.items, f.atoms.items[w..][0..wn])) f.drafts.items[an.di].rewrites = true;
     };
     try f.demands.append(f.gpa, d);
 }
