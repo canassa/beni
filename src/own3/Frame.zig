@@ -414,7 +414,7 @@ built_parted: std.AutoHashMapUnmanaged(Val, bool) = .empty,
 w_ix: WIndex = .{},
 /// Per root the frame made, the entries whose runs `rootReach` reads, once
 /// its entries are made (`runEntries`).
-run_ents: std.AutoHashMapUnmanaged(u32, RunEntries) = .empty,
+run_ents: std.ArrayList(?RunEntries) = .empty,
 reach_nest: u32 = 0,
 flow_active: std.ArrayList(struct { key: FlowKey, args: []const Val }) = .empty,
 /// The lowest depth of a use whose context the judgments in work read: the
@@ -1843,8 +1843,9 @@ fn runEntries(f: *Frame, root: u32, made: *bool) Error!?RunEntries {
     if (r.linear == .undecided) return null;
     const res = f.m.loc.layoutEntries(r.layout);
     if (res.len <= w_index_min) return null;
-    const got = try f.run_ents.getOrPut(f.gpa, root);
-    if (!got.found_existing) {
+    if (f.run_ents.items.len <= root) try f.run_ents.appendNTimes(f.gpa, null, root + 1 - f.run_ents.items.len);
+    const got = &f.run_ents.items[root];
+    if (got.* == null) {
         // The scan that makes the list is the one `rootReach` made each time.
         made.* = true;
         _ = f.charge(res.len);
@@ -1860,7 +1861,7 @@ fn runEntries(f: *Frame, root: u32, made: *bool) Error!?RunEntries {
             if (ent.len == 0) continue;
             try ents.append(f.gpa, @intCast(i));
         }
-        got.value_ptr.* = .{ .ents = ents.items, .has_slots = has_slots };
+        got.* = .{ .ents = ents.items, .has_slots = has_slots };
     }
     if (safety and res.len <= 256) {
         // The entries never change once made.
@@ -1869,12 +1870,12 @@ fn runEntries(f: *Frame, root: u32, made: *bool) Error!?RunEntries {
             const ent = f.rents.items[r.ent + i];
             const reads = ent.len != 0 and (ent.kind == .alias or ent.kind == .derived or ent.kind == .version);
             if (!reads) continue;
-            std.debug.assert(k < got.value_ptr.ents.len and got.value_ptr.ents[k] == i);
+            std.debug.assert(k < got.*.?.ents.len and got.*.?.ents[k] == i);
             k += 1;
         }
-        std.debug.assert(k == got.value_ptr.ents.len);
+        std.debug.assert(k == got.*.?.ents.len);
     }
-    return got.value_ptr.*;
+    return got.*;
 }
 
 /// `rootReach`'s test of the runs of root `root` (a root the frame made)
@@ -1965,16 +1966,26 @@ const WIndex = struct {
     on: bool = false,
     sorted: std.ArrayList(Atom) = .empty,
     by_re: std.AutoHashMapUnmanaged([2]u32, [2]u32) = .empty,
-    by_root: std.AutoHashMapUnmanaged(u32, [2]u32) = .empty,
 
     fn group(ix: *const WIndex, root: u32, e: u32) []const Atom {
         const r = ix.by_re.get(.{ root, e }) orelse return &.{};
         return ix.sorted.items[r[0]..r[1]];
     }
 
+    /// The atoms of root `root`: a run of `sorted`, by binary search.
     fn ofRoot(ix: *const WIndex, root: u32) []const Atom {
-        const r = ix.by_root.get(root) orelse return &.{};
-        return ix.sorted.items[r[0]..r[1]];
+        const xs = ix.sorted.items;
+        const Cmp = struct {
+            fn order(r: u32, a: Atom) std.math.Order {
+                return std.math.order(r, a.root);
+            }
+            fn above(r: u32, a: Atom) std.math.Order {
+                return if (a.root <= r) .gt else .lt;
+            }
+        };
+        const lo = std.sort.lowerBound(Atom, xs, root, Cmp.order);
+        const hi = std.sort.lowerBound(Atom, xs, root, Cmp.above);
+        return xs[lo..hi];
     }
 };
 
@@ -1992,7 +2003,6 @@ fn indexWrite(f: *Frame, ws: []const Atom) Error!void {
     if (ws.len <= w_index_min) return;
     ix.sorted.clearRetainingCapacity();
     ix.by_re.clearRetainingCapacity();
-    ix.by_root.clearRetainingCapacity();
     // The index is not counted apart: it is linear in the write's atoms,
     // each counted where it was made, and each test that reads it costs at
     // most what the scan it replaces cost, so no budget moves toward a
@@ -2009,13 +2019,6 @@ fn indexWrite(f: *Frame, ws: []const Atom) Error!void {
         var j = i;
         while (j < xs.len and xs[j].root == xs[i].root and xs[j].e == xs[i].e) j += 1;
         try ix.by_re.put(f.gpa, .{ xs[i].root, xs[i].e }, .{ @intCast(i), @intCast(j) });
-        i = j;
-    }
-    i = 0;
-    while (i < xs.len) {
-        var j = i;
-        while (j < xs.len and xs[j].root == xs[i].root) j += 1;
-        try ix.by_root.put(f.gpa, xs[i].root, .{ @intCast(i), @intCast(j) });
         i = j;
     }
     ix.of = ws;

@@ -189,9 +189,7 @@ pub const Adapter = struct {
     /// of its verdict (§4.4). v3's account has no allowance to pass and
     /// v3 counts its own work (its kernel §8), so it keeps them.
     repeat_reservations: bool = true,
-    /// The store variables `ofVar` has read and the fields, elements and
-    /// arguments it has closed: its work, for a caller that counts it (v3
-    /// charges it to its budget, its kernel §8). It changes no answer.
+    /// The variables closed and the fields read: work, which v3 counts.
     var_work: u64 = 0,
 
     const AliasMemo = struct { id: u32, tested: bool, reserved: bool, log: [2]u32 };
@@ -319,7 +317,6 @@ pub const Adapter = struct {
         var ids: std.ArrayList(u32) = .empty;
         defer ids.deinit(a.gpa);
         while (stack.pop()) |f| {
-            a.var_work +%= 1;
             const r, const c = store.resolved(f.v);
             if (a.by_var.contains(r.int())) continue;
             if (!f.expanded) {
@@ -363,28 +360,21 @@ pub const Adapter = struct {
             if (knot.* == none) knot.* = try a.add(.{ .kind = .cyclic, .place_kind = .@"var", .head = 0, .a = 0, .b = 0 });
             return knot.*;
         }
-        // A leaf: the id `ofVar` gives it, with no stack. A record's field
-        // of a scalar or a type variable is one, and each instance of a wide
-        // record that the type check copied reads one for each field
-        // (research report 145).
+        // A leaf, with no stack: a copy of a wide record reads one a field (report 145).
         const c = a.in.store.resolvedContent(v);
-        switch (c) {
-            .flex, .rigid, .err, .alias => {
-                a.var_work +%= 1;
-                // A leaf closes with no kid and no argument.
-                var kids: std.ArrayList(Kid) = .empty;
-                var ids: std.ArrayList(u32) = .empty;
-                const id = try a.close(c, &kids, &ids);
-                try a.by_var.put(a.gpa, r.int(), id);
-                return id;
-            },
-            .structure => {},
+        if (c != .structure) {
+            var kids: std.ArrayList(Kid) = .empty;
+            var ids: std.ArrayList(u32) = .empty;
+            const id = try a.close(c, &kids, &ids);
+            try a.by_var.put(a.gpa, r.int(), id);
+            return id;
         }
         // A record's field types are read here, on demand.
         return a.ofVar(v);
     }
 
     fn close(a: *Adapter, c: TypeStore.Content, kids: *std.ArrayList(Kid), ids: *std.ArrayList(u32)) Error!u32 {
+        a.var_work +%= 1;
         const store = a.in.store;
         switch (c) {
             .flex, .rigid => |fl| return if (fl.kind.scalar()) a.leaf(&a.cross_id, .cross) else a.leaf(&a.var_id, .@"var"), // `[ 0 ]` is `List number`: no object
@@ -394,7 +384,6 @@ pub const Adapter = struct {
                 .func => return a.leaf(&a.closure_id, .closure),
                 .empty_record => return a.structural(.record, 0, &.{}),
                 .tuple => |t| {
-                    a.var_work +%= t.len;
                     kids.clearRetainingCapacity();
                     for (store.vars(t), 0..) |e, k| try kids.append(a.gpa, .{ .step = try Step.index(a.account, @intCast(k)), .id = try a.childId(e) });
                     return a.structural(.tuple, t.len, kids.items);
@@ -420,7 +409,6 @@ pub const Adapter = struct {
                     return a.structural(.record, 0, local.items);
                 },
                 .app => |ap| {
-                    a.var_work +%= ap.args.len;
                     ids.clearRetainingCapacity();
                     for (store.vars(ap.args)) |arg| try ids.append(a.gpa, try a.childId(arg));
                     return a.nominal(ap.type, ids.items);

@@ -347,7 +347,8 @@ const layers = [_]Entry{
     // Which types share one place graph (§2.1, *A family*).
     .{ .file = "Family.zig", .layer = 12, .max_lines = 260 },
     // 2 000 since research report 131: each reading of an alias kept (`applied`).
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2000 },
+    // 2 010 since research report 145: the adapter counts its work, and reads a leaf with no stack.
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2010 },
     // A refused loan's text, split from `Message` (#1991).
     .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },
     // How a block names what is local to a module, split from `Block` (#1991).
