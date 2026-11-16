@@ -1,0 +1,2 @@
+# v3 refuses the call: the deep level of `t` that the call map cannot place is another place of the operand, and `t` holds `xs` at both levels (ownership-v3-kernel.md §5, test 2).
+29:10 list_still_used call

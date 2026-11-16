@@ -1,0 +1,2 @@
+# v3 refuses the push: `ys` is an `Int` read as a list, a location its own place does not have, so it is unknown (ownership-v3-kernel.md §3.4).
+22:10 list_still_used List.push

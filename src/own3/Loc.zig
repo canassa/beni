@@ -365,6 +365,35 @@ pub const Table = struct {
         };
     }
 
+    /// Safe builds (kernel §9, `Frame.checkPlaced`): whether the place that
+    /// `loc`'s labels reach from `place`, step by step, holds no cell:
+    /// true where a place on the way holds none at or below it (`holds` is
+    /// empty: `Maybe Int` where the reading has `Maybe (List a)`'s list), or
+    /// where the path names a slot, a row or a member of a cycle's deep
+    /// level, which other rules read (`slotsLost`, `cover`: a closed record
+    /// holds no field beyond those it names); false where `place` does not
+    /// have a step of it, or it reaches a place that holds a cell. It reads
+    /// the place graph only, and counts no work.
+    pub fn emptyAlong(t: *const Table, place: PlaceId, loc: u32, gpa: Allocator) Allocator.Error!bool {
+        var ls: std.ArrayList(u64) = .empty;
+        defer ls.deinit(gpa);
+        try t.labels(loc, &ls, gpa);
+        var p = place;
+        for (ls.items) |w| {
+            const l: Label = @bitCast(w);
+            if (t.places.holds(p).isEmpty()) return true;
+            if (l.cyc or l.kind == .fslot or l.kind == .member or l.kind == .row) return true;
+            const st = t.places.steps(p);
+            const next = for (st.steps, st.children) |s, c| {
+                if (s.kind == .level) continue;
+                const sl = t.stepLabel(p, s, false);
+                if (sl.kind == l.kind and sl.payload == l.payload) break c;
+            } else return false;
+            p = next;
+        }
+        return t.places.holds(p).isEmpty();
+    }
+
     fn memberLabel(t: *const Table, m: PlaceId, k: Kind) Label {
         return .{ .kind = .member, .payload = @backingInt(k), .cyc = true, .head = t.places.head(m) };
     }

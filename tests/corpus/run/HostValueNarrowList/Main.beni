@@ -1,0 +1,37 @@
+-- A list of lists read as a list of numbers through `Js.to` in a helper:
+-- the reading has no location for the inner arrays, so they escape at the
+-- cast, and `flat`'s contract says so (ownership-v3-kernel.md §3.4). Read
+-- back as a list of lists, the inner arrays are a location the value's own
+-- place does not have: `unknown`. Before, both readings held nothing, and
+-- `pushIn` pushed onto `xs` in place while `xs` is read after it.
+import Node exposing (Program)
+import Pun
+
+
+flat : List (List Int) → List Int
+flat l =
+    Pun.conv l
+
+
+pushIn : List (List Int) → Int
+pushIn ls =
+    case ls of
+        [ x, …_ ] →
+            List.length (List.push x 9)
+
+        [] →
+            0
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    k = flat [ xs ]
+    ys : List (List Int)
+    ys = Pun.conv k
+    w = pushIn ys
+    "${String.fromInt w} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print (go 1)

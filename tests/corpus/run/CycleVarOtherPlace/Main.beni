@@ -1,0 +1,35 @@
+-- A callee over `T a` writes the entry level's `x` and reads the deep
+-- level's. Its signature has a type variable in the cycle, so the call map
+-- cannot place the caller's deep level (`Loc.all`), and that location is
+-- another place of the written operand all the same (ownership-v3-kernel.md
+-- §5, test 2). `t` holds `xs` at both levels, so the write is refused.
+-- Before, an operand location mapped to every entry was skipped as if it
+-- were the written one, and the push was accepted while `h` read `xs`.
+import Node exposing (Program)
+
+
+type T a
+    = T a (List (T a))
+
+
+hOf : (a → Int), T a → Int
+hOf h (T y _) =
+    h y
+
+
+each : T a, (a → a), (a → Int) → a × Int
+each (T x kids) g h =
+    ( g x, List.foldl kids 0 (λc acc → acc + hOf h c) )
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    t = T xs [ T xs [] ]
+    case each t (λl → List.push l 9) List.length of
+        ( w, k ) →
+            "${String.fromInt (List.length w)} ${String.fromInt k}"
+
+
+main : Program
+main = Node.print (go 1)

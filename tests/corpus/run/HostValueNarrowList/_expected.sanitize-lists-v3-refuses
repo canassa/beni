@@ -1,0 +1,2 @@
+# v3 refuses the call: the inner arrays read back as a list of lists are a location the value's own place does not have, so they are unknown (ownership-v3-kernel.md §3.4).
+32:9 list_still_used call

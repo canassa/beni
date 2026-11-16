@@ -1497,10 +1497,20 @@ fn builtIndex(f: *Frame, v: Val, n: Node) Error!*const BuiltIndex {
         }
         if (try m.loc.proj(n.place, Step.fromWord(k.step))) |pr| {
             _ = f.charge(pr.up.len);
-            for (pr.up) |u| if (u != none and last[u] != ki) {
+            // A location of the part with no location in the whole's layout
+            // (`up` is `none`) is at no entry the index can name: the part
+            // is read for every entry, never for none (research report 148).
+            var unplaced = false;
+            for (pr.up) |u| {
+                if (u == none) {
+                    unplaced = true;
+                    continue;
+                }
+                if (last[u] == ki) continue;
                 last[u] = @intCast(ki);
                 try pairs.append(m.gpa, .{ u, @intCast(ki) });
-            };
+            }
+            if (unplaced) try reads_all.append(f.gpa, @intCast(ki));
         } else try reads_all.append(f.gpa, @intCast(ki));
     }
     const off = try f.gpa.alloc(u32, len + 1);
@@ -1552,7 +1562,17 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
                 const re = p.to_root[k];
                 if (re == none) lost = true else try res.add(f.gpa, re);
             }
-            if (lost) try out.append(f.gpa, outside_atom);
+            // A location of the part that the root's layout does not name
+            // (`to_root` is `none`): no write may claim it, and it can hold
+            // any cell of the root, so every entry of the root is read, never
+            // none (research report 148).
+            if (lost) {
+                try out.append(f.gpa, outside_atom);
+                const lr = f.roots.items[n.a];
+                const rn = m.loc.layoutEntries(lr.layout).len;
+                _ = f.charge(rn);
+                for (0..rn) |re| try f.rootLeaves(n.a, lr.path, @intCast(re), out);
+            }
             var dup = false;
             const at = out.items.len;
             const r = f.roots.items[n.a];
@@ -1739,8 +1759,43 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
     // A slot of the view that `v`'s own layout has no slot for: a tuple or a
     // constructor read as a record, whose object no cell names (`slotsLost`).
     if (try f.slotsLost(view, n.place, js)) try out.append(f.gpa, outside_atom);
+    if (std.debug.runtime_safety) try f.checkPlaced(view, own, n.place, cov, holes, js);
     const dup = try f.leavesOwn(v, ks.slice(), out);
     return dup or coarse_dup;
+}
+
+/// Safe builds (kernel §9): each location `j` of the reading `view` that a
+/// reader of a value of layout `own` asks for is placed in the value's own
+/// layout: an entry of `own` is at it (the map, `cover(view, own)`, or
+/// `Loc.all`), or a wide entry of `own` above it holds it (`Loc.holes`), or
+/// it is a record's slot that the value has no slot for (`slotsLost`, read
+/// as `outside`), or the value's own place has the location's steps and
+/// they reach a type of no cell (`Loc.emptyAlong`: `Result String b` read
+/// as `Result a b`). A location placed by none of them reads as holding no
+/// cell, and nothing says it holds none: a value read at a type with more
+/// places than its own that no rule saw (research reports 146, 147 and 148;
+/// a cast is `unknown` before it gets here, `punned`). The check counts no work.
+fn checkPlaced(f: *Frame, view: u32, own: u32, own_place: PlaceId, cov: []const u32, holes: ?*const Loc.Holes, js: []const u32) Error!void {
+    const m = f.m;
+    // A value of a type with no location holds no cell (a cell that a cast
+    // put in one escaped there, `narrowed`).
+    if (m.loc.layoutEntries(own).len == 0) return;
+    const ves = m.loc.layoutEntries(view);
+    const seen = try f.gpa.alloc(bool, ves.len);
+    defer f.gpa.free(seen);
+    @memset(seen, false);
+    for (cov) |c| {
+        if (c == Loc.all) return;
+        if (c < ves.len) seen[c] = true;
+    }
+    if (holes) |h| for (h.read, h.above, 0..) |r, a, j| if (r != none or a != none) {
+        seen[j] = true;
+    };
+    for (js) |j| {
+        if (seen[j]) continue;
+        if (try m.loc.emptyAlong(own_place, ves[j].loc, f.gpa)) continue;
+        std.debug.panic("own3: location {d} of a reading (layout {d}) has no location in the value's own layout {d}, and no wide entry above it", .{ j, view, own });
+    }
 }
 
 /// Per entry `k` of layout `own`, the flags of the entries of `sig` whose
@@ -2404,8 +2459,9 @@ fn refReaches(f: *Frame, root: u32, path: u32, k: u32, w: []const Atom) Error!bo
     // The step that `leaves` counts, and the entry it maps (kernel §8).
     if (f.tick() or f.charge(1)) return true;
     const re = f.m.loc.paths.items[path].to_root[k];
-    // A location the root does not have: a cell of no frame, which is no cell of `w`.
-    if (re == none) return false;
+    // A location the root's layout does not name: it can hold any cell of
+    // the root, so it reaches (research report 148).
+    if (re == none) return true;
     const r = f.roots.items[root];
     switch (r.kind) {
         .outside => return false,
@@ -2682,6 +2738,9 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
     };
     // The scan of the targets is work, and so is each test of an entry against their kinds (kernel §8).
     if (f.charge(ws.len)) return true;
+    // Whether the operand holds each cell once, asked at the first entry
+    // the map cannot place (below).
+    var apart_value: ?bool = null;
     for (cov, 0..) |c, k| {
         const more: u8 = if (extra.len != 0) extra[k] else 0;
         if (!any_kind and c < Loc.all and (o.flags[c] | more) == flag_a) {
@@ -2696,11 +2755,33 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
             if (f.m.loc.layoutEntries(own_layout)[k].loc == wl) continue;
         }
         if (c == Loc.all) {
-            // The written entry itself, when it is the one flagged entry.
-            if (skip != none or !any_flag) continue;
+            // An entry the map cannot place (the deep level of a cycle whose
+            // region the signature reads with a type variable, `Loc.cycleWider`)
+            // is at every location of the signature: the written one, and each
+            // other that the callee reads or answers. It is the written entry
+            // itself only where no other location has a flag; else it is
+            // another place of the operand too, and its cells are tested as
+            // one (research report 148: a callee over `T a` wrote the entry
+            // level's list and read the deep level's, and the caller's
+            // `T xs [ T xs [] ]` passed). Two locations of the signature hold
+            // two sets of cells where the operand holds each cell once
+            // (`valueApart`, the apart-arguments rule of kernel §4.4): its
+            // cells at the entry are then each at one of them, and the
+            // callee's write of one is no read of another. Where it does not,
+            // the entry's cells are tested against the written ones.
+            if (!any_flag) continue;
+            if (skip != none) {
+                const other = for (o.flags, 0..) |x, j| {
+                    if (j != skip and x != 0) break true;
+                } else false;
+                if (!other) continue;
+                if (apart_value == null) apart_value = try f.valueApart(o.v, 0);
+            }
         } else if (c != none and (o.flags[c] | more) == 0) continue;
         f.scratch.clearRetainingCapacity();
-        _ = try f.leaves(o.v, @intCast(k), &f.scratch);
+        const dup_k = try f.leaves(o.v, @intCast(k), &f.scratch);
+        // A summary entry that holds one cell at two of its places is no two sets.
+        if (c == Loc.all and skip != none and apart_value.? and !dup_k) continue;
         if (skip != none and n.tag == .ref) {
             // Another location of the written operand itself, which is a part
             // of one root N: two locations of it are two places of N, so they
@@ -3453,18 +3534,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
                     for (held.items[rd[0]..rd[1]]) |x| try f.escape(x, inst);
                     continue;
                 }
-                const n = f.nodes.items[v];
-                const kept = std.mem.indexOfScalar(u32, unrendered.items, o.int()) != null or switch (n.tag) {
-                    .built => true,
-                    .closure => blk: {
-                        // A function that answers markup is a part of the view.
-                        const lc = f.codes.items[n.a].contract;
-                        for (m.loc.layoutEntries(lc.layouts[lc.arity])) |e| if (e.kind != .@"opaque") break :blk true;
-                        break :blk false;
-                    },
-                    .none, .outside, .ref, .join, .fnref, .unknown => false,
-                    .later => unreachable, // read through `capVal` only
-                };
+                const kept = std.mem.indexOfScalar(u32, unrendered.items, o.int()) != null or try f.keptHole(v);
                 if (kept) try f.escape(v, inst) else try f.readAll(v, inst);
             }
             return f.unknownOf(try m.placeOfInst(inst), held.items);
@@ -3649,6 +3719,32 @@ fn keptItems(f: *Frame, root: Bir.ExtraIndex, out: *std.ArrayList(u32), handed: 
         },
         .text, .hole, .@"for", .show => {},
     }
+}
+
+/// Whether the value `v` of a hole is kept by the runtime past the render
+/// (kernel §6.12): a value built here, or a function that answers anything
+/// but markup. One of several values is kept where any of them is: an
+/// `if` or a `case` whose arm builds one (research report 148: a `join`
+/// was read, never kept, whatever its arms were). Each arm is work (kernel
+/// §8); past the budget the value is kept.
+fn keptHole(f: *Frame, v: Val) Error!bool {
+    const n = f.nodes.items[v];
+    return switch (n.tag) {
+        .built => true,
+        .closure => blk: {
+            // A function that answers markup is a part of the view.
+            const lc = f.codes.items[n.a].contract;
+            for (f.m.loc.layoutEntries(lc.layouts[lc.arity])) |e| if (e.kind != .@"opaque") break :blk true;
+            break :blk false;
+        },
+        .join => blk: {
+            if (f.charge(n.b)) break :blk true;
+            for (0..n.b) |i| if (try f.keptHole(f.lists.items[n.a + 2 * i])) break :blk true;
+            break :blk false;
+        },
+        .none, .outside, .ref, .fnref, .unknown => false,
+        .later => unreachable, // read through `capVal` only
+    };
 }
 
 fn keptOf(f: *Frame, start: Bir.ExtraIndex, end: Bir.ExtraIndex, out: *std.ArrayList(u32)) Error!void {
@@ -3921,7 +4017,19 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
         const s: Step = .{ .kind = .field, .payload = @intCast(rank.*) };
         try tmp.append(f.gpa, .{ .step = s.word(), .val = try f.ev(fd.value.int()) });
     }
-    if (base == v_none) return f.recordOf(place, tmp.items, inst, v_none);
+    if (base == v_none) {
+        // A record always holds its object (kernel §11.2): a base of no cell
+        // (a number read as a record through `Js.to`) is an object no cell
+        // names, and the write of its slots has no claim (kernel §3.4), as a
+        // slot write whose atoms are none below. Before, it made no demand
+        // at all (research report 148).
+        const w: u32 = @intCast(f.atoms.items.len);
+        try f.atoms.append(f.gpa, outside_atom);
+        const os = try f.gpa.alloc(Other, tmp.items.len);
+        for (os, tmp.items) |*o, k| o.* = .{ .v = k.val };
+        try f.demand(w, .{ .point = inst, .op = .update, .kind = .update, .base_inst = data.lhs, .others = os });
+        return f.recordOf(place, tmp.items, inst, v_none);
+    }
     // The write: the slots of the fields named, with every value as an operand.
     const w: u32 = @intCast(f.atoms.items.len);
     try f.slotAtoms(base, ranks, &f.atoms);
@@ -5280,6 +5388,9 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
     }
     // Each entry found is work of its own (kernel §8).
     _ = f.charge(hit.items.len);
+    // Safe builds (kernel §9): the location asked is placed in the value's
+    // own layout, as `leavesSet` checks (`checkPlaced`).
+    if (std.debug.runtime_safety and hit.items.len == 0 and own != sig) try f.checkPlaced(sig, own, n.place, cov, try m.loc.holes(sig, own), &.{se});
     if (suffix.len != 0) {
         var want: ?u32 = m.loc.layoutEntries(sig)[se].loc;
         for (suffix) |l| {
@@ -5423,6 +5534,12 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // record's object that no cell of its own names: the answer is
         // `unknown` over it (kernel §3.4; research report 147).
         if (try f.punned(args[0], if (arg_insts.len != 0) arg_insts[0].int() else none, place)) return f.unknownOf(place, args[0..1]);
+        // A value read at a type with fewer places than its own (a list
+        // read as an `Int`, a list of lists as a list of numbers): the
+        // cells at its own locations that no location of the reading names
+        // are held by a value no reader can name, so they escape here
+        // (kernel §3.4; research report 148).
+        try f.narrowed(args[0], inst, place);
         return args[0];
     }
     // `Record.copy` (kernel §11): a new object whose fields hold the argument's values.
@@ -6078,31 +6195,80 @@ fn smallLayout(f: *Frame, l: u32) bool {
 /// kept for each pair; its scan is work (kernel §8).
 fn punned(f: *Frame, v: Val, arg_inst: u32, place: PlaceId) Error!bool {
     const m = f.m;
+    // A value of no cell (a number, a parameter of a type of no location)
+    // read at a type with a location: whatever is there, the value's own
+    // reading names none of it, though the argument's type is a type
+    // variable or `Js.Value` (`fromInt n = Js.to (Js.from n)`: the `Value`
+    // of `n` holds nothing the walk can name, and the list read out of it
+    // was a cell). A cast through a type of no cell let its cells escape
+    // (`narrowed`), so it is `unknown`, never a new list (research report 148).
+    if (v == v_none) switch (m.places.kind(place)) {
+        .@"var", .@"opaque" => return false,
+        .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => return try f.layoutLen(place) != 0,
+    };
     const own = f.placeOfVal(v) orelse (if (arg_inst != none) try m.placeOfInst(arg_inst) else return false);
     if (own == place) return false;
+    // A type variable or an opaque type is a wide entry, which §3.4 reads
+    // (`Loc.holes`). A type of no cell (`Int`, a crossing foreign type) is
+    // no wide entry: it has no location at all, so a reading of it at a
+    // type with a list or a record names cells it does not (research report
+    // 148).
     for ([_]PlaceId{ own, place }) |p| switch (m.places.kind(p)) {
-        .@"var", .@"opaque", .cross => return false,
-        .record, .tuple, .ctor, .list, .dict, .ref, .closure => {},
+        .@"var", .@"opaque" => return false,
+        .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => {},
     };
     // Each location of the reading that a location of the value's own
     // layout covers (the same one, or a wide one above it) is one the value
     // has: an array read as another type of array (`List a` as `Builder a`)
     // is no pun. A location that none covers is a part the value does not
-    // have, or has as another constructor's (kernel §3.4). Of those, a
-    // record's slot or a constructor's argument is what a reading answers
-    // `none` for (a slot no cell names, a part of the constructor the value
-    // was not built with); a list's level that none covers is read through
-    // a root, whose missing step is `unknown` already (`project`). A type of
-    // no cell has no location to read.
+    // have, or has as another constructor's (kernel §3.4), whatever its kind:
+    // a record's slot that no cell names, a part of the constructor the
+    // value was not built with, an array where the value has a number (an
+    // `Int`, or a list of numbers read as a list of lists). The map answers
+    // `none` for such a location where the value's own layout is empty, and
+    // `Loc.all` (covered by every entry) where it is not; the readers of the
+    // answer go through the map the other way (`argEntries`, `leavesSet`),
+    // where no entry of the value's own layout is at it, and found nothing.
+    // Before, a list's level that none covers was taken to be read through a
+    // root's missing step (`project`), which only a pattern takes (research
+    // report 148). A type of no cell has no location to read.
     const view = try m.loc.layoutOf(place);
-    const ves = m.loc.layoutEntries(view);
     const cov = try m.loc.cover(try m.loc.layoutOf(own), view);
     _ = f.charge(Loc.scanUnits(cov.len));
-    for (cov, ves) |c, ve| if ((c == none or c == Loc.all) and ve.loc != 0) {
-        const l: Loc.Label = @bitCast(m.loc.loc_label.items[ve.loc]);
-        if (l.kind == .fslot or l.kind == .ctor_arg) return true;
-    };
+    for (cov) |c| if (c == none or c == Loc.all) return true;
     return false;
+}
+
+/// The answer `v` of an identity read at `place`, a type with fewer places
+/// than the value's own: each location of the value's own layout that no
+/// location of the reading covers (`cover(view, own)` is `none`) holds
+/// cells that no reader of the answer can name, read whole or by parts. The
+/// answer is the same JavaScript value, and a later cast can read it at the
+/// first type again (`hide : List Int → Int`, then `Js.to` back to a list):
+/// so those cells escape at the call (kernel §3.4, *A value read at a type
+/// with fewer places than its own*; research report 148). A type variable or
+/// an opaque type of the reading is a wide entry, which covers every cell
+/// below it. The scan of the map is work (kernel §8).
+fn narrowed(f: *Frame, v: Val, inst: u32, place: PlaceId) Error!void {
+    const m = f.m;
+    const own = f.placeOfVal(v) orelse return;
+    if (own == place) return;
+    switch (m.places.kind(place)) {
+        .@"var", .@"opaque" => return,
+        .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => {},
+    }
+    const own_layout = try m.loc.layoutOf(own);
+    if (m.loc.layoutEntries(own_layout).len == 0) return;
+    const cov = try m.loc.cover(try m.loc.layoutOf(place), own_layout);
+    if (f.charge(Loc.scanUnits(cov.len))) {
+        try f.escape(v, inst);
+        return;
+    }
+    for (cov, 0..) |c, k| if (c == none) {
+        const start: u32 = @intCast(f.atoms.items.len);
+        _ = try f.leaves(v, @intCast(k), &f.atoms);
+        try f.noteEscape(start, inst);
+    };
 }
 
 /// Whether the contract is that of a function that answers its one parameter

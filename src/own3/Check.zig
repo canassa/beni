@@ -1466,15 +1466,28 @@ pub const Mod = struct {
         }
         if (has(rw, .builderdone) and arity > 0) {
             described = true;
-            for (m.loc.layoutEntries(c.layouts[0]), 0..) |pe, e| for (res_es, 0..) |re, ri| if (m.holdsAt(pe, re)) {
-                try res[ri].append(gpa, .{ .kind = .param, .a = 0, .e = @intCast(e) });
-            };
+            // A location of the builder that no location of the result holds
+            // (`holdsAt`) is at every one of them, as `returned`'s is: never
+            // at none (research report 148).
+            for (m.loc.layoutEntries(c.layouts[0]), 0..) |pe, e| {
+                const src: Src = .{ .kind = .param, .a = 0, .e = @intCast(e) };
+                var found = false;
+                for (res_es, 0..) |re, ri| if (m.holdsAt(pe, re)) {
+                    found = true;
+                    try res[ri].append(gpa, src);
+                };
+                if (!found) for (res) |*r| try r.append(gpa, src);
+            }
         }
         if ((has(rw, .elementof) or has(rw, .taken)) and arity > 0) {
             described = true;
             if (has(rw, .taken)) c.taken = true;
             if (try m.loc.proj(sig.params[0], Step.elem)) |pr| {
                 const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
+                // A location of the element that the list's layout does not
+                // place (`up` is `none`) is a source no word names: the
+                // pessimistic row (research report 148).
+                if (std.mem.indexOfScalar(u32, pr.up, none) != null) try m.undescribed(c, res);
                 for (child, 0..) |ce, k| {
                     if (pr.up[k] == none) continue;
                     const src: Src = .{ .kind = .param, .a = 0, .e = @intCast(pr.up[k]) };
@@ -1528,7 +1541,10 @@ pub const Mod = struct {
         const rself = try m.selfLoc(sig.result);
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
         for (m.loc.layoutEntries(c.layouts[j]), 0..) |pe, e| {
-            if (pe.loc == pself) continue;
+            // The list's own storage is the new list's, not an element; a
+            // wide entry there (a parameter of a type variable) holds the
+            // elements too, so it is read as one (research report 148).
+            if (pe.loc == pself and !pe.kind.wide()) continue;
             const src: Src = .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) };
             var found = false;
             for (res_es, 0..) |re, ri| if (m.holdsAt(pe, re) and re.loc != rself) {
@@ -1618,7 +1634,10 @@ pub const Mod = struct {
             .called = true,
             // A cell's callback runs once, now; the cell keeps what it answers.
             .lost = !(taken or has(w, .once) or has(w, .many) or has(w, .cellupdate) or has(w, .cellmodify)),
-            .ans_escapes = has(w, .cellupdate) or has(w, .cellmodify),
+            // An answer that holds a cell and that no word puts in the
+            // result goes where no word says: it escapes (kernel §6.10; research
+            // report 148). No row of `core/` or a platform has one.
+            .ans_escapes = has(w, .cellupdate) or has(w, .cellmodify) or (ans.len != 0 and !has(w, .returned) and !has(w, .stored) and !has(w, .aliased)),
         };
         return fnc;
     }

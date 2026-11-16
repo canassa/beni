@@ -1,0 +1,2 @@
+# v3 refuses the push: `hide` reads the list at `Int`, which has no location for its array, so the array escapes there (ownership-v3-kernel.md §3.4).
+20:10 list_still_used List.push
