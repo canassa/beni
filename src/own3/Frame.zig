@@ -7077,21 +7077,64 @@ fn escapeUnplacedAnswer(f: *Frame, code: Code, use: *const Use) Error!void {
         // A wide parameter location answered at this wide location is the
         // argument as it is, which the holder reads at its own type: no
         // cast only where the holder's parameter and answer are one type at
-        // the roots (`identity` handed to `Model → Model`); else what it
+        // the same place (`identity` handed to `Model → Model`); else what it
         // holds escapes, as at a call (`escapeWide`; research report 150).
         const wide_param = read_narrow and for (lc.res[k]) |ls| {
             if (ls.kind != .param or ls.a >= code.own_params) continue;
             const pe = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e];
             if (!pe.kind.wide()) continue;
-            if (pe.loc == 0 and les[k].loc == 0 and ls.a < use.fnc.arity and use.fnc.layouts[ls.a] == ul) continue;
+            // The holder hands and reads one type, at the same place of it:
+            // the function answers the value where it was (`identity` handed
+            // to `Model → Model`, `List.reverse` to `List Int → List Int`).
+            if (pe.loc == les[k].loc and ls.a < use.fnc.arity and use.fnc.layouts[ls.a] == ul) continue;
             break true;
         } else false;
         if (!unplaced and !hidden and !wide_param) continue;
+        // Placed nowhere, but only of parameters the holder hands nothing at
+        // that place (its parameter type has no location there: `List a →
+        // List a` held as `List Int → List Int`, whose elements are numbers):
+        // no cell is lost.
+        if (unplaced and !hidden and !wide_param and try holderGivesNone(f, code, use, k)) continue;
         var st: SrcState = .{ .inst = use.site.inst, .whole = true };
         const start: u32 = @intCast(f.atoms.items.len);
         try f.answerSrcs(code, use, k, cv, null, &st, 0, &psuffix);
         try f.noteEscape(start, use.site.inst);
     }
+}
+
+/// Whether every source of the function's result location `k` names no cell a
+/// reader could miss: a parameter location at whose place the holder's
+/// parameter type has no location, nor a wide one above it (the holder hands
+/// nothing there), a capture of no cell, or a cell the function made that no
+/// other location of its result holds.
+fn holderGivesNone(f: *Frame, code: Code, use: *const Use, k: usize) Error!bool {
+    const m = f.m;
+    const lc = code.contract;
+    for (lc.res[k]) |ls| switch (ls.kind) {
+        .param => {
+            // A capture of no cell (a number) gives none.
+            if (ls.a >= code.own_params) {
+                if (ls.a - code.own_params >= code.ncaps) return false;
+                const cv = try f.capVal(code, ls.a - code.own_params);
+                if (cv == v_none or cv == v_outside) continue;
+                return false;
+            }
+            if (ls.a >= use.fnc.arity) return false;
+            const pe = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e];
+            for (m.loc.layoutEntries(use.fnc.layouts[ls.a])) |he| {
+                if (he.loc == pe.loc or (he.kind.wide() and m.loc.isPrefix(he.loc, pe.loc))) return false;
+            }
+        },
+        // A cell the function made that no other location of its result
+        // holds: no holder but this place, which no reader names, sees it.
+        .fresh => for (lc.res, 0..) |other, ri| {
+            if (ri == k) continue;
+            for (other) |o| if (o.kind == .fresh and o.a == ls.a) return false;
+        },
+        .outside, .twice => {},
+        .answer => return false,
+    };
+    return true;
 }
 
 /// The holder of `use` can run the known function `code`, and what it hands

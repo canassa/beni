@@ -261,7 +261,10 @@ reads `h` as holding nothing of `x`. The same holds where a function value meets
 to: its contract is written for its own type, the holder reads its answer at the holder's type, and a
 result location of the function that no location of the holder's answer holds (which `answerOfCode`
 skips: the function's type is wider there) lets what it holds escape where the function meets the holder
-(`Frame.escapeUnplacedAnswer`; `apply : (a → Int), a → Int` handed `cast : a → b`). **A location placed
+(`Frame.escapeUnplacedAnswer`; `apply : (a → Int), a → Int` handed `cast : a → b`). A location whose every source names no cell a reader
+could miss is skipped (`holderGivesNone`): a parameter location at whose place the holder's parameter
+type has no location (`List a → List a` held as `List Int → List Int`), a capture of no cell, a cell
+the function made that no other location of its result holds. **A location placed
 nowhere never holds nothing.**
 
 **A cast hidden behind a type variable.** A location of the contract's result that the reading does
@@ -278,7 +281,24 @@ at a location that is not wide, what that location holds escapes there (`escapeU
 callee that does not cast answers at a type variable only values of that variable, whose cells each
 reading names where the argument's own type does: `Maybe.withDefault m []` read as `List Int` is no
 cast. The flag is the pessimistic side: it is set for the whole contract, and a caller of a function
-that casts casts too.
+that casts casts too. A `Js.Value` read at a type variable does not set it: `core/` keeps values in
+JavaScript arrays and objects and reads them back so, and the flag made every list function cast.
+
+**A wide parameter answered at a wide result location** is the argument, or its part there, as it is,
+read at the caller's type (`Frame.escapeWide`): where both are roots, as an identity's (`narrowed`);
+elsewhere (`Maybe a → b`, `List Js.Value → b`, `{ r | v : a } → b`), where the argument's own type at
+the parameter's place (`Loc.placeAt`) hides a cell from the caller's type at the result's place (`hides`:
+`narrowed`'s test of types alone), every cell of the argument there escapes; where the caller reads it
+at a type variable of its own, a value of another type than the variable (not a `Js.Value`) makes the
+caller cast, so its own caller reads it (`λ⊤ → fm (Just ( x, x ))` with `fm : Maybe a → b`). A function value of that
+shape that meets a holder which reads its wide answer location at a location that is not wide lets what
+it holds escape, unless the holder's parameter and answer are one layout and the two locations one place (`List.reverse` held as `List Int → List Int`)
+(`escapeUnplacedAnswer`). At a call of a callee that casts, the escape of a
+wide location covers every cell of a parameter at its entry (`allSrcs`), not the part a reading would
+take: where the body cast, the part is not where the types say. *What this does not cover* (research report 150 §11): a
+path that no place step names (a deep level of a cycle, a row, the inside of a `Dict`), an argument of
+the caller's own type variable or a function value, and a `Js.Value` inside a container cast at a type
+variable in a frame whose own result is that variable (`λ⊤ → fromMaybeV (Just v)`).
 
 *Research report 150: a worded row whose result had no location dropped the parameter it put there
 (`run/WordedReturnedNoLocation`, and `stored`, `elementof`, `taken`, `copyof` and a function parameter's

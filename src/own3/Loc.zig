@@ -208,8 +208,10 @@ pub const Table = struct {
     path_root: std.ArrayList(u32) = .empty,
 
     covers: std.AutoHashMapUnmanaged(CoverKey, []const u32) = .empty,
-    /// `holeBelow`'s answer for each place asked.
-    hole_memo: std.AutoHashMapUnmanaged(u32, bool) = .empty,
+    /// `holeBelow`'s answer for each place, a column by place: 0 not asked, 1 no, 2 yes.
+    hole_memo: std.ArrayList(u8) = .empty,
+    /// `placeAt`'s answer for each (place, location) asked, `none` for no place.
+    place_at_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
     /// Per pair of layouts, `holes`' answer.
     coarse: std.AutoHashMapUnmanaged(CoverKey, ?*const Holes) = .empty,
     /// The entry of a location in a layout of more than `small_layout`
@@ -244,6 +246,7 @@ pub const Table = struct {
     pub fn deinit(t: *Table) void {
         const gpa = t.gpa;
         t.hole_memo.deinit(gpa);
+        t.place_at_memo.deinit(gpa);
         t.loc_parent.deinit(gpa);
         t.loc_label.deinit(gpa);
         t.loc_summary.deinit(gpa);
@@ -411,6 +414,14 @@ pub const Table = struct {
     /// null where `place` has no step of it, or the path names a slot, a row
     /// or a member of a cycle's deep level, which no place step names.
     pub fn placeAt(t: *Table, place: PlaceId, loc: u32) Allocator.Error!?PlaceId {
+        const key: [2]u32 = .{ place.int(), loc };
+        if (t.place_at_memo.get(key)) |hit| return if (hit == none) null else @fromBackingInt(hit);
+        const got = try t.placeAtWalk(place, loc);
+        try t.place_at_memo.put(t.gpa, key, if (got) |g| g.int() else none);
+        return got;
+    }
+
+    fn placeAtWalk(t: *Table, place: PlaceId, loc: u32) Allocator.Error!?PlaceId {
         var ls: std.ArrayList(u64) = .empty;
         defer ls.deinit(t.gpa);
         try t.labels(loc, &ls, t.gpa);
@@ -439,22 +450,26 @@ pub const Table = struct {
     /// research report 150). It reads the place graph; a cycle is visited
     /// once, and each place's answer is kept.
     pub fn holeBelow(t: *Table, place: PlaceId) Allocator.Error!bool {
-        if (t.hole_memo.get(place.int())) |b| return b;
-        var seen: std.AutoHashMapUnmanaged(u32, void) = .empty;
+        const pi = place.int();
+        if (pi < t.hole_memo.items.len and t.hole_memo.items[pi] != 0) return t.hole_memo.items[pi] == 2;
+        var seen = try std.DynamicBitSetUnmanaged.initEmpty(t.gpa, t.places.count());
         defer seen.deinit(t.gpa);
         const b = try t.holeWalk(place, &seen);
-        try t.hole_memo.put(t.gpa, place.int(), b);
+        if (pi >= t.hole_memo.items.len) try t.hole_memo.appendNTimes(t.gpa, 0, @as(usize, t.places.count()) + 1 - t.hole_memo.items.len);
+        t.hole_memo.items[pi] = if (b) 2 else 1;
         return b;
     }
 
-    fn holeWalk(t: *Table, p: PlaceId, seen: *std.AutoHashMapUnmanaged(u32, void)) Allocator.Error!bool {
+    fn holeWalk(t: *Table, p: PlaceId, seen: *std.DynamicBitSetUnmanaged) Allocator.Error!bool {
         if (t.places.holds(p).isEmpty()) return true;
         switch (t.places.kind(p)) {
             // A wide place: it holds every cell below it.
             .@"var", .@"opaque" => return false,
             .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => {},
         }
-        if ((try seen.getOrPut(t.gpa, p.int())).found_existing) return false;
+        if (p.int() >= seen.capacity()) try seen.resize(t.gpa, @as(usize, t.places.count()) + 1, false);
+        if (seen.isSet(p.int())) return false;
+        seen.set(p.int());
         const st = t.places.steps(p);
         t.units +|= 1 + st.steps.len;
         for (st.steps, st.children) |s, c| {
