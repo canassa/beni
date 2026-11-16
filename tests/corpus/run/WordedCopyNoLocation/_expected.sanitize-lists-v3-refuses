@@ -1,0 +1,2 @@
+# v3 refuses the write of the inner list: `copyAll`'s copy holds the elements of `x0` at `Int`, which has no location for them, so they escape at the call (ownership-v3-kernel.md §6 rule 10).
+17:9 list_still_used call

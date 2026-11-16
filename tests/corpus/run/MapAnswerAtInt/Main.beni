@@ -1,0 +1,25 @@
+-- `List.map` of a function `a → b` whose answer the caller reads as
+-- `Int`: `List.map`'s result holds the function's answers at its elements,
+-- which the caller's `List Int` has no location for. They escape at the
+-- call (ownership-v3-kernel.md §3.4); before, they went nowhere.
+import Node exposing (Program)
+import Pun
+
+
+cast : a → b
+cast x = Pun.conv x
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    hs : List Int
+    hs = List.map [ x0 ] cast
+    zs : List (List Int)
+    zs = Pun.conv hs
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length (List.concat zs))}"
+
+
+main : Program
+main = Node.print (go 1)

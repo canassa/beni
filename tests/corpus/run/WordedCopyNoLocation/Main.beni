@@ -1,0 +1,22 @@
+-- A platform row `copyof Int`: a shallow copy, read at a type of no
+-- location. The copy is a new array, but its elements are the elements of
+-- the list it was handed, and the result has no location to hold them:
+-- they escape at the call (ownership-v3-kernel.md §6 rule 10). Before, they
+-- went nowhere, and the push of the inner list, written in place through
+-- `List.update`, changed what the copy, read back, holds.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ [ n ] ]
+    h = Pun.copyAll x0
+    z : List (List Int)
+    z = Pun.conv h
+    x = List.update x0 0 λq → List.push q 9
+    "${String.fromInt (List.length (List.concat x))} ${String.fromInt (List.length (List.concat z))}"
+
+
+main : Program
+main = Node.print (go 1)

@@ -1,0 +1,21 @@
+-- A platform row `elementof Int`: it answers an element of its list, at
+-- a type of no location. The element (here a list) escapes at the call
+-- (ownership-v3-kernel.md §6 rule 10). Before, it went nowhere, and the
+-- push of the inner list in place changed what `z` reads.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    outer = [ x0 ]
+    h = Pun.at outer 0
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

@@ -1422,10 +1422,17 @@ pub const Mod = struct {
                 // A cell's handle is never `own`: a write of the cell asks nothing of the caller.
                 if (has(w, .escaped) or into_cell or unknown) fl.* |= Contract.flag_e;
                 const src: Src = .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) };
+                // A word that puts the location in the result, where the
+                // result has no location to hold it (an `Int`, a `Maybe Int`,
+                // `⊤`, a phantom type): the answer is the same JavaScript
+                // value, and a cast reads it back, so the cells escape here,
+                // as a walked cast's do (`narrowed`, kernel §3.4). Placed
+                // nowhere is never "gone" (research report 150).
                 if (has(w, .aliased) or unknown) {
                     described = true;
                     c.nonlinear = true;
                     for (res) |*r| try r.append(gpa, src);
+                    if (res.len == 0) fl.* |= Contract.flag_e;
                 }
                 if (has(w, .returned)) {
                     described = true;
@@ -1435,10 +1442,11 @@ pub const Mod = struct {
                         try res[ri].append(gpa, src);
                     };
                     if (!found) for (res) |*r| try r.append(gpa, src);
+                    if (res.len == 0) fl.* |= Contract.flag_e;
                 }
                 if (has(w, .stored)) {
                     described = true;
-                    try m.intoElems(res, sig.result, relem, pe, src);
+                    if (!try m.intoElems(res, relem, pe, src)) fl.* |= Contract.flag_e;
                 }
             }
         }
@@ -1463,6 +1471,10 @@ pub const Mod = struct {
                 try r.append(gpa, Src.fresh(0, false));
                 for (0..m.loc.layoutEntries(c.layouts[0]).len) |e| try r.append(gpa, .{ .kind = .param, .a = 0, .e = @intCast(e) });
             }
+            // No location to hold the values: they escape (research report 150).
+            if (res.len == 0) for (flags[c.off[0]..c.off[1]]) |*x| {
+                x.* |= Contract.flag_e;
+            };
         } else if (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .prepended)) {
             described = true;
             for (res_es, 0..) |re, ri| if (re.loc == rself) try res[ri].append(gpa, Src.fresh(0, false));
@@ -1475,7 +1487,8 @@ pub const Mod = struct {
             described = true;
             // A location of the builder that no location of the result holds
             // (`holdsAt`) is at every one of them, as `returned`'s is: never
-            // at none (research report 148).
+            // at none (research report 148). A result of no location holds
+            // none of them, and they escape (research report 150).
             for (m.loc.layoutEntries(c.layouts[0]), 0..) |pe, e| {
                 const src: Src = .{ .kind = .param, .a = 0, .e = @intCast(e) };
                 var found = false;
@@ -1484,6 +1497,7 @@ pub const Mod = struct {
                     try res[ri].append(gpa, src);
                 };
                 if (!found) for (res) |*r| try r.append(gpa, src);
+                if (res.len == 0) flags[c.off[0] + e] |= Contract.flag_e;
             }
         }
         if ((has(rw, .elementof) or has(rw, .taken)) and arity > 0) {
@@ -1494,7 +1508,7 @@ pub const Mod = struct {
                 // A location of the element that the list's layout does not
                 // place (`up` is `none`) is a source no word names: the
                 // pessimistic row (research report 148).
-                if (std.mem.indexOfScalar(u32, pr.up, none) != null) try m.undescribed(c, res);
+                if (std.mem.indexOfScalar(u32, pr.up, none) != null) try m.undescribed(c, res, true);
                 for (child, 0..) |ce, k| {
                     if (pr.up[k] == none) continue;
                     const src: Src = .{ .kind = .param, .a = 0, .e = @intCast(pr.up[k]) };
@@ -1504,45 +1518,139 @@ pub const Mod = struct {
                         try res[ri].append(gpa, src);
                     };
                     if (!found) for (res) |*r| try r.append(gpa, src);
+                    // An element answered at a type of no location (`elementof
+                    // Int`): it escapes (research report 150).
+                    if (res.len == 0) flags[c.off[0] + pr.up[k]] |= Contract.flag_e;
                 }
-            } else try m.undescribed(c, res);
+            } else try m.undescribed(c, res, true);
         }
         // A result that comes from behind a cell or from JavaScript, or
         // that no word describes: the pessimistic row (`undescribed`).
-        if (has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown) or !described) try m.undescribed(c, res);
+        if (has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown) or !described) try m.undescribed(c, res, has(rw, .unknown));
         const out = @constCast(c.res);
         for (out, res) |*o, r| o.* = try Contract.normal(m.arena, r.items);
+        if (std.debug.runtime_safety) try m.checkWordedPlaced(sig, c, pw, rw);
         return c;
+    }
+
+    /// Safe builds: each parameter location that a word puts in the result
+    /// (`returned`, `stored`, `aliased`, `builderdone`, `elementof`, `taken`,
+    /// the elements and storage of `copyof` and its kin, `Record.copy`'s
+    /// values, and a function parameter's answer under `returned`, `stored`
+    /// or `aliased`) is a source of some location of the result, or escapes.
+    /// A row's placement never lands on no location without an escape
+    /// (kernel §6 rule 10, §9; research report 150). It reads the words
+    /// again, apart from the code that placed them, and counts no work.
+    fn checkWordedPlaced(m: *Mod, sig: Sig, c: *const Contract.Contract, pw: []const u32, rw: u32) Allocator.Error!void {
+        const gpa = m.gpa;
+        const arity = c.arity;
+        const total = c.off[arity];
+        const held = try gpa.alloc(bool, total);
+        defer gpa.free(held);
+        @memset(held, false);
+        var answered = try gpa.alloc(bool, arity);
+        defer gpa.free(answered);
+        @memset(answered, false);
+        for (c.res) |srcs| for (srcs) |s| switch (s.kind) {
+            .param => if (s.a < arity) {
+                held[c.off[s.a] + s.e] = true;
+            },
+            .answer => if (s.a < arity) {
+                answered[s.a] = true;
+            },
+            .fresh, .outside, .twice => {},
+        };
+        const want = struct {
+            fn at(cc: *const Contract.Contract, hd: []const bool, j: usize, e: usize) void {
+                const i = cc.off[j] + e;
+                std.debug.assert(hd[i] or cc.flags[i] & Contract.flag_e != 0);
+            }
+        };
+        for (0..arity) |j| {
+            const w = pw[j];
+            const n = c.off[j + 1] - c.off[j];
+            if (c.fns[j]) |fnc| {
+                const ans_n = m.loc.layoutEntries(fnc.layouts[fnc.arity]).len;
+                if (ans_n != 0 and (has(w, .returned) or has(w, .stored) or has(w, .aliased)))
+                    std.debug.assert(answered[j] or fnc.ans_escapes);
+                continue;
+            }
+            if (has(w, .returned) or has(w, .stored) or has(w, .aliased)) for (0..n) |e| want.at(c, held, j, e);
+        }
+        if (arity == 0) return;
+        if (has(rw, .builderdone) or c.record_copy) for (0..c.off[1]) |e| want.at(c, held, 0, e);
+        if (has(rw, .elementof) or has(rw, .taken)) if (try m.loc.proj(sig.params[0], Step.elem)) |pr| {
+            for (pr.up) |u| if (u != none) want.at(c, held, 0, u);
+        };
+        if (!c.record_copy and (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .prepended))) {
+            for (0..@min(arity, 2)) |j| {
+                if (j == 0 and has(rw, .prepended)) continue;
+                if (j == 1 and has(rw, .copyof)) continue;
+                const pself = try m.selfLoc(sig.params[j]);
+                for (m.loc.layoutEntries(c.layouts[j]), 0..) |pe, e| if (pe.loc != pself or pe.kind.wide()) want.at(c, held, j, e);
+            }
+            for (0..@min(arity, 2)) |j| {
+                if (!((j == 0 and has(rw, .concatenated)) or (j == 1 and has(rw, .prepended)))) continue;
+                const pself = try m.selfLoc(sig.params[j]);
+                for (m.loc.layoutEntries(c.layouts[j]), 0..) |pe, e| if (pe.loc == pself) want.at(c, held, j, e);
+            }
+        }
     }
 
     /// The result of a worded row that the words do not describe: it can be
     /// a cell outside every frame (JavaScript's, a cell's contents), so no
     /// frame may write it, and it can hold every cell of every parameter, at
     /// any place (kernel §6.10: a missing fact is the pessimistic one).
-    fn undescribed(m: *Mod, c: *Contract.Contract, res: []std.ArrayList(Src)) Allocator.Error!void {
+    ///
+    /// A result of no location holds no parameter location as a source.
+    /// Where a word says that the result can be anything (`unknown`), or puts
+    /// a parameter's elements in it that the result's layout cannot place
+    /// (`elementof`, `taken`; `escape`), the JavaScript value can still be
+    /// each, and a cast reads it back: every parameter location escapes
+    /// (research report 150). Where the result has no word and each parameter
+    /// has a word that does not put it in the result (`borrowed List a →
+    /// Int`, `List.length`), those words are the positive facts: no word
+    /// places a parameter there, and a result of a type of no location is
+    /// no cell of a frame. A result from behind a cell (`lent`, `cellread`)
+    /// is the cell's contents, which escaped where they went in.
+    fn undescribed(m: *Mod, c: *Contract.Contract, res: []std.ArrayList(Src), escape: bool) Allocator.Error!void {
         c.nonlinear = true;
         for (res) |*r| {
             try r.append(m.gpa, Src.outside);
             for (0..c.arity) |j| for (0..m.loc.layoutEntries(c.layouts[j]).len) |e| try r.append(m.gpa, .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) });
         }
+        if (escape and res.len == 0) for (@constCast(c.flags)) |*x| {
+            x.* |= Contract.flag_e;
+        };
     }
 
-    fn intoElems(m: *Mod, res: []std.ArrayList(Src), result: PlaceId, relem: ?*const Loc.Proj, from: Loc.Entry, src: Src) Allocator.Error!void {
+    /// Put `src`, a source at the location `from` of a parameter, among the
+    /// result's elements. Whether any location of the result holds it: where
+    /// none does (a result of no location, or one with no element), the
+    /// caller makes it escape (research report 150).
+    fn intoElems(m: *Mod, res: []std.ArrayList(Src), relem: ?*const Loc.Proj, from: Loc.Entry, src: Src) Allocator.Error!bool {
         const pr = relem orelse {
             for (res) |*r| try r.append(m.gpa, src);
-            return;
+            return res.len != 0;
         };
         const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
         var found = false;
+        var placed = false;
         for (child, 0..) |ce, k| if (m.holdsAt(from, ce) and pr.up[k] != none) {
             if (ce.loc == from.loc) found = true;
+            placed = true;
             try res[pr.up[k]].append(m.gpa, src);
         };
-        _ = result;
-        if (!found) for (pr.up) |u| if (u != none) try res[u].append(m.gpa, src);
+        if (!found) for (pr.up) |u| if (u != none) {
+            placed = true;
+            try res[u].append(m.gpa, src);
+        };
+        return placed;
     }
 
-    /// The result's elements hold the elements of parameter `j`.
+    /// The result's elements hold the elements of parameter `j`. An element
+    /// location that no location of the result holds but the storage (a
+    /// `copyof Int`) escapes (research report 150).
     fn elemsToElems(m: *Mod, res: []std.ArrayList(Src), sig: Sig, c: *const Contract.Contract, j: u32) Allocator.Error!void {
         const pself = try m.selfLoc(sig.params[j]);
         const rself = try m.selfLoc(sig.result);
@@ -1554,21 +1662,33 @@ pub const Mod = struct {
             if (pe.loc == pself and !pe.kind.wide()) continue;
             const src: Src = .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) };
             var found = false;
+            var placed = false;
             for (res_es, 0..) |re, ri| if (m.holdsAt(pe, re) and re.loc != rself) {
                 if (re.loc == pe.loc) found = true;
+                placed = true;
                 try res[ri].append(m.gpa, src);
             };
-            if (!found) for (res_es, 0..) |re, ri| if (re.loc != rself) try res[ri].append(m.gpa, src);
+            if (!found) for (res_es, 0..) |re, ri| if (re.loc != rself) {
+                placed = true;
+                try res[ri].append(m.gpa, src);
+            };
+            if (!placed) @constCast(c.flags)[c.off[j] + e] |= Contract.flag_e;
         }
     }
 
-    /// The result's storage can be parameter `j`'s.
+    /// The result's storage can be parameter `j`'s. A result with no storage
+    /// to hold it lets it escape (research report 150).
     fn selfToSelf(m: *Mod, res: []std.ArrayList(Src), sig: Sig, c: *const Contract.Contract, j: u32) Allocator.Error!void {
         const pself = try m.selfLoc(sig.params[j]);
         const rself = try m.selfLoc(sig.result);
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
         for (m.loc.layoutEntries(c.layouts[j]), 0..) |pe, e| if (pe.loc == pself) {
-            for (res_es, 0..) |re, ri| if (re.loc == rself) try res[ri].append(m.gpa, .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) });
+            var placed = false;
+            for (res_es, 0..) |re, ri| if (re.loc == rself) {
+                placed = true;
+                try res[ri].append(m.gpa, .{ .kind = .param, .a = @intCast(j), .e = @intCast(e) });
+            };
+            if (!placed) @constCast(c.flags)[c.off[j] + e] |= Contract.flag_e;
         };
     }
 
@@ -1618,6 +1738,11 @@ pub const Mod = struct {
         const ans = m.loc.layoutEntries(layouts[arity]);
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
         const relem = try m.loc.proj(sig.result, Step.elem);
+        // An answer location that a word puts in the result where no location
+        // of the result holds it (`once returned (⊤ → a) → Int`) is placed
+        // nowhere: it escapes, as an answer that no word places does
+        // (research report 150).
+        var unplaced = false;
         for (ans, 0..) |ae, e| {
             const src: Src = .{ .kind = .answer, .a = @intCast(j), .e = @intCast(e) };
             if (has(w, .returned)) {
@@ -1627,9 +1752,13 @@ pub const Mod = struct {
                     try res[ri].append(m.gpa, src);
                 };
                 if (!found) for (res) |*r| try r.append(m.gpa, src);
+                if (res.len == 0) unplaced = true;
             }
-            if (has(w, .stored)) try m.intoElems(res, sig.result, relem, ae, src);
-            if (has(w, .aliased)) for (res) |*r| try r.append(m.gpa, src);
+            if (has(w, .stored) and !try m.intoElems(res, relem, ae, src)) unplaced = true;
+            if (has(w, .aliased)) {
+                for (res) |*r| try r.append(m.gpa, src);
+                if (res.len == 0) unplaced = true;
+            }
         }
         const fnc = try m.arena.create(Contract.Fn);
         fnc.* = .{
@@ -1644,7 +1773,7 @@ pub const Mod = struct {
             // An answer that holds a cell and that no word puts in the
             // result goes where no word says: it escapes (kernel §6.10; research
             // report 148). No row of `core/` or a platform has one.
-            .ans_escapes = has(w, .cellupdate) or has(w, .cellmodify) or (ans.len != 0 and !has(w, .returned) and !has(w, .stored) and !has(w, .aliased)),
+            .ans_escapes = unplaced or has(w, .cellupdate) or has(w, .cellmodify) or (ans.len != 0 and !has(w, .returned) and !has(w, .stored) and !has(w, .aliased)),
         };
         return fnc;
     }

@@ -48,6 +48,10 @@ function run(cmd, args, cwd, timeoutMs) {
   return new Promise((resolve) => {
     const p = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     // The two streams apart, then joined: their interleaving is the scheduler's, not the program's.
+    // Decoded as streams: a chunk can end inside a character of several bytes, and decoding each chunk
+    // alone turned it into two U+FFFD, a false DIFF.
+    p.stdout.setEncoding('utf8');
+    p.stderr.setEncoding('utf8');
     let out = '';
     let err = '';
     p.stdout.on('data', (d) => { out += d; });

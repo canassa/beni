@@ -1,0 +1,22 @@
+-- A platform row `returned a → Maybe b` read at `Maybe Int`: the row's
+-- result has a location for `b`, which holds the parameter, and the
+-- caller's instance has none. The location the caller's reading does not
+-- hold escapes at the call (ownership-v3-kernel.md §3.4). Before, the call
+-- read only the locations of the instance, and the list went nowhere.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    h : Maybe Int
+    h = Pun.stash x0
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

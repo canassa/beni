@@ -5839,6 +5839,11 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // The result.
     const layout = try m.loc.layoutOf(place);
     const es = m.loc.layoutEntries(layout);
+    const cov = try m.loc.cover(c.layouts[c.arity], layout);
+    // A location of the callee's result that no location of the caller's
+    // reading holds (a result of a type variable read at `Int`, a `Maybe b`
+    // read at `Maybe Int`): its cells escape at the call (`escapeUnplaced`).
+    try f.escapeUnplaced(&base, c, cov, inst);
     // An answer of a type with no location holds `outside` (`rootVal`).
     if (es.len == 0) return v_outside;
     // The contract is written for arguments of which no cell is at two
@@ -5849,7 +5854,6 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     const args_apart = try f.argsApart(args) and !try f.argsSplit(args, c);
     const root = try f.newRoot(.local, place, inst);
     f.roots.items[root].call = true;
-    const cov = try m.loc.cover(c.layouts[c.arity], layout);
     const ent0 = f.roots.items[root].ent;
     // Per entry: it holds the answer of a function parameter, which the callee's claims do not cover (`deriveLinear`).
     const has_answer = try f.gpa.alloc(bool, es.len);
@@ -5946,6 +5950,53 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     }
     try f.deriveLinearSplit(root, !c.nonlinear and args_apart, has_answer, split);
     return f.rootVal(root);
+}
+
+/// The locations of the callee's result that no location of the caller's
+/// reading holds: `cov` maps no entry of the reading to them, and no entry
+/// to `Loc.all`. The reading is an instance of the callee's result type, and
+/// an instance can have fewer locations than the type (a type variable read
+/// at `Int`, `Maybe b` at `Maybe Int`, a row at a record of no other field);
+/// the answer is the same JavaScript value all the same, and a cast reads it
+/// back at the type that has them. So what such a location holds — what
+/// the arguments put there, a cell the callee made, the answer of a function
+/// parameter — escapes at the call, as a walked cast's cells do (`narrowed`,
+/// kernel §3.4): a location placed nowhere is never "holds nothing"
+/// (research report 150). The scans are work (kernel §8).
+fn escapeUnplaced(f: *Frame, base: *const Use, c: *const Contract, cov: []const u32, inst: u32) Error!void {
+    const rsig = c.layouts[c.arity];
+    const n = f.m.loc.layoutEntries(rsig).len;
+    if (n == 0) return;
+    _ = f.charge(Loc.scanUnits(cov.len) + Loc.scanUnits(n));
+    const reached = try f.gpa.alloc(bool, n);
+    defer f.gpa.free(reached);
+    @memset(reached, false);
+    for (cov) |cr| {
+        if (cr == Loc.all) return;
+        if (cr != none) reached[cr] = true;
+    }
+    for (0..n) |ri| {
+        if (reached[ri] or !namesCell(c.res[ri])) continue;
+        var st: SrcState = .{ .inst = inst };
+        const start: u32 = @intCast(f.atoms.items.len);
+        try f.expandSrcs(base, c.res[ri], rsig, @intCast(ri), rsig, @intCast(ri), &st);
+        // A written location that the callee answers there is a new name
+        // of the written cells (`oldNames`); what escapes is the cells, at
+        // any time.
+        for (f.atoms.items[start..]) |*a| a.dead = none;
+        try f.noteEscape(start, inst);
+    }
+}
+
+/// Whether a source of a contract's result names a cell of a frame: a
+/// parameter's, the answer of a function parameter, or a cell the callee made.
+fn namesCell(srcs: []const Src) bool {
+    for (srcs) |s| switch (s.kind) {
+        .param, .answer, .fresh => return true,
+        // No cell of a frame.
+        .outside, .twice => {},
+    };
+    return false;
 }
 
 /// Whether no cell is at two places of the arguments `args`: in two
@@ -6759,7 +6810,35 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
             }
         }
     }
+    try f.escapeUnplacedAnswer(code, &use);
     try f.flowCaptures(code, &use);
+}
+
+/// The result entries of the known function `code` that no entry of the
+/// answer `use` reads it at holds (`answerOfCode` skips them: the holder's
+/// answer type is an instance with fewer locations, a function of `a → b`
+/// read as `a → Int`): the answer is the same JavaScript value, which a cast
+/// reads back, so what those entries hold escapes at the use (kernel §3.4,
+/// `narrowed`; research report 150). The scans are work (kernel §8).
+fn escapeUnplacedAnswer(f: *Frame, code: Code, use: *const Use) Error!void {
+    const m = f.m;
+    const lc = code.contract;
+    const fl = lc.layouts[lc.arity];
+    const ul = use.fnc.layouts[use.fnc.arity];
+    const n = m.loc.layoutEntries(fl).len;
+    if (n == 0) return;
+    const cov = try m.loc.cover(ul, fl);
+    _ = f.charge(Loc.scanUnits(cov.len));
+    var psuffix: std.ArrayList(u64) = .empty;
+    defer psuffix.deinit(f.gpa);
+    for (cov, 0..) |cv, k| {
+        if (cv < Loc.all or !namesCell(lc.res[k])) continue;
+        if (cv == Loc.all and try f.anyMeets(ul, fl, @intCast(k))) continue;
+        var st: SrcState = .{ .inst = use.site.inst, .whole = true };
+        const start: u32 = @intCast(f.atoms.items.len);
+        try f.answerSrcs(code, use, k, cv, null, &st, 0, &psuffix);
+        try f.noteEscape(start, use.site.inst);
+    }
 }
 
 /// The holder of `use` can run the known function `code`, and what it hands
@@ -7575,69 +7654,82 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
             .old => continue,
             .full => return f.lostAnswer(use, st),
         }
-        for (lc.res[k]) |ls| switch (ls.kind) {
-            // A cell the function made: one root at this holder for its name (kernel §4.2).
-            .fresh => try f.freshAtom(use.key, code.id(), f.m.isDraft(lc), ls.a, ls.e != 0, use.site.inst, &f.atoms),
-            .outside => try f.atoms.append(f.gpa, outside_atom),
-            .twice => st.twice = true,
-            .answer => {
-                // The answer of a function that the known function captured:
-                // that function is in a location of this one.
-                if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps or ls.a >= lc.arity) {
-                    try f.lostAnswer(use, st);
-                    continue;
-                }
-                const lf = lc.fns[ls.a] orelse {
-                    try f.lostAnswer(use, st);
-                    continue;
-                };
-                const inner = try f.innerUse(code, ls.a, lf, use);
-                const outer = st.suffix;
-                const outer_whole = st.whole;
-                st.suffix = &.{};
-                st.whole = true;
-                try f.answerOf(try f.capVal(code, ls.a - code.own_params), &inner, ls.e, st, depth + 1);
-                st.suffix = outer;
-                st.whole = outer_whole;
-            },
-            .param => {
-                if (ls.a >= code.own_params) {
-                    // A captured value in the answer: each run answers the
-                    // same cell, so two runs can answer one cell. The answer holds it.
-                    st.twice = true;
-                    if (ls.a - code.own_params < code.ncaps) {
-                        _ = try f.argLeaves(try f.capVal(code, ls.a - code.own_params), lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
-                    } else try f.lostAnswer(use, st);
-                    continue;
-                }
-                // What the holder hands that parameter.
-                var slots: std.ArrayList(Slot) = .empty;
-                defer slots.deinit(f.gpa);
-                // The answer entry is at the result entry's location, or
-                // below it: the parameter's cells at the same place.
-                var rel: ?[]const u64 = null;
-                const kloc = m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc;
-                const aloc = m.loc.layoutEntries(fnc.layouts[fnc.arity])[ae].loc;
+        try f.answerSrcs(code, use, k, cv, ae, st, depth, &psuffix);
+    }
+}
+
+/// What the result entry `k` of the known function `code`, in the location
+/// of `use`, holds: its sources read in the use. `cv` is the call map's
+/// entry for `k`, and `ae` the use's answer entry asked, if any (the part
+/// of a parameter at the same place below it).
+fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u32, st: *SrcState, depth: u32, psuffix: *std.ArrayList(u64)) Error!void {
+    const m = f.m;
+    const fnc = use.fnc;
+    const lc = code.contract;
+    for (lc.res[k]) |ls| switch (ls.kind) {
+        // A cell the function made: one root at this holder for its name (kernel §4.2).
+        .fresh => try f.freshAtom(use.key, code.id(), f.m.isDraft(lc), ls.a, ls.e != 0, use.site.inst, &f.atoms),
+        .outside => try f.atoms.append(f.gpa, outside_atom),
+        .twice => st.twice = true,
+        .answer => {
+            // The answer of a function that the known function captured:
+            // that function is in a location of this one.
+            if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps or ls.a >= lc.arity) {
+                try f.lostAnswer(use, st);
+                continue;
+            }
+            const lf = lc.fns[ls.a] orelse {
+                try f.lostAnswer(use, st);
+                continue;
+            };
+            const inner = try f.innerUse(code, ls.a, lf, use);
+            const outer = st.suffix;
+            const outer_whole = st.whole;
+            st.suffix = &.{};
+            st.whole = true;
+            try f.answerOf(try f.capVal(code, ls.a - code.own_params), &inner, ls.e, st, depth + 1);
+            st.suffix = outer;
+            st.whole = outer_whole;
+        },
+        .param => {
+            if (ls.a >= code.own_params) {
+                // A captured value in the answer: each run answers the
+                // same cell, so two runs can answer one cell. The answer holds it.
+                st.twice = true;
+                if (ls.a - code.own_params < code.ncaps) {
+                    _ = try f.argLeaves(try f.capVal(code, ls.a - code.own_params), lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
+                } else try f.lostAnswer(use, st);
+                continue;
+            }
+            // What the holder hands that parameter.
+            var slots: std.ArrayList(Slot) = .empty;
+            defer slots.deinit(f.gpa);
+            // The answer entry is at the result entry's location, or
+            // below it: the parameter's cells at the same place.
+            var rel: ?[]const u64 = null;
+            const kloc = m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc;
+            if (ae) |ae_| {
+                const aloc = m.loc.layoutEntries(fnc.layouts[fnc.arity])[ae_].loc;
                 if (cv < Loc.all and m.loc.isPrefix(kloc, aloc)) {
-                    try f.suffixOf(aloc, kloc, &psuffix);
+                    try f.suffixOf(aloc, kloc, psuffix);
                     rel = try f.gpa.dupe(u64, psuffix.items);
                 }
-                if (!try f.slotsOf(use, ls.a, lc.layouts[ls.a], ls.e, rel, &slots)) {
-                    try f.lostAnswer(use, st);
-                    continue;
-                }
-                var sink: FlatSink = .{ .st = st, .depth = depth };
-                const wide = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].kind.wide();
-                for (slots.items) |slot| {
-                    // The holder can hand one cell to two calls: two answers can be that cell.
-                    if (!slot.free) st.twice = true;
-                    // The part of what is handed that the function's parameter entry is.
-                    const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, &psuffix);
-                    for (slot.srcs) |ss| try f.resolve(use, ss, part, wide, &sink, 0);
-                }
-            },
-        };
-    }
+            }
+            if (!try f.slotsOf(use, ls.a, lc.layouts[ls.a], ls.e, rel, &slots)) {
+                try f.lostAnswer(use, st);
+                continue;
+            }
+            var sink: FlatSink = .{ .st = st, .depth = depth };
+            const wide = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].kind.wide();
+            for (slots.items) |slot| {
+                // The holder can hand one cell to two calls: two answers can be that cell.
+                if (!slot.free) st.twice = true;
+                // The part of what is handed that the function's parameter entry is.
+                const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, psuffix);
+                for (slot.srcs) |ss| try f.resolve(use, ss, part, wide, &sink, 0);
+            }
+        },
+    };
 }
 
 /// Each cell that the answer of the function value `v`, in the location of `use`, can hold escapes at the use's site.

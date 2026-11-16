@@ -1,0 +1,2 @@
+# v3 refuses the push: `run` puts its function's answer, `x0`, in a result of no location, so the answer escapes (ownership-v3-kernel.md §6 rule 10).
+15:22 list_still_used List.push

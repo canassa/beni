@@ -1,0 +1,21 @@
+-- A platform row whose word `stored` puts its parameter among the
+-- result's elements, where the result (`⊤`) has none: the parameter
+-- escapes at the call (ownership-v3-kernel.md §6 rule 10). Before, it went
+-- nowhere, and the push of `x0` in place changed the list that `z`, the
+-- `⊤` read back as a list, still is.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    h = Pun.stash x0
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

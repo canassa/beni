@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -240,6 +240,32 @@ the argument gives no cell there (none, or only a record's slots), and the argum
 at that path (`Int` at the callee's `a`, read as a list at its `b`: `un : W a → W b` cast what it was
 handed), the caller's list holds `outside` (`pairedLeaves`, `Loc.emptyAlongLabels`). A reader of a value
 of an empty layout then reads nothing (`Frame.checkPlaced`, §9).
+
+**A contract's location that the caller's reading does not have.** The same holds where no cast is
+written at the call: a contract is written for the callee's own type, and a caller reads the answer at an
+instance of it, which can have fewer locations (a type variable filled in with `Int`, `Maybe b` read as
+`Maybe Int`, a pair whose second part is a variable read as `List Int × Int`). The answer is the same
+JavaScript value whatever type the caller reads it at, so what the callee put at such a location is there,
+and a cast reads it back. The call map pairs each location of the reading with one of the contract's
+result (`Loc.cover`); a location of the contract's result that no location of the reading is paired with,
+where none is paired with `Loc.all`, holds cells that no reader of the answer can name, so **its sources
+escape at the call** (`Frame.escapeUnplaced`), each as the call reads it: a parameter's cells, the answer
+of a function parameter, a cell the callee made. That another location of the answer holds the same cells
+is not enough: a part of the answer at a type of no location is `v_outside` (above), so `( _, h ) = g x`
+reads `h` as holding nothing of `x`. The same holds where a function value meets the holder it is handed
+to: its contract is written for its own type, the holder reads its answer at the holder's type, and a
+result location of the function that no location of the holder's answer holds (which `answerOfCode`
+skips: the function's type is wider there) lets what it holds escape where the function meets the holder
+(`Frame.escapeUnplacedAnswer`; `apply : (a → Int), a → Int` handed `cast : a → b`). **A location placed
+nowhere never holds nothing.**
+
+*Research report 150: a worded row whose result had no location dropped the parameter it put there
+(`run/WordedReturnedNoLocation`, and `stored`, `elementof`, `taken`, `copyof` and a function parameter's
+answer, rule 10); a call whose instance has fewer locations than the contract dropped them the same way
+(`run/WordedMaybeInstance`, `run/GenericAnswerAtInt`, `run/GenericAnswerInPair`, `run/MapAnswerAtInt`),
+and so did a function that met its holder (`run/FunctionAnswerAtInt`). The cost: where the argument's own
+layout is one wide entry (a `Js.Value`, a folded payload), the source at such a location is all of it, and
+it all escapes (research report 150 names the fixtures this refuses).*
 
 *Research report 148: an audit of every place in `src/own3/` where a missing fact can become an empty
 answer, for the mistake of reports 146 and 147. A helper that cast a list to an `Int` let its contract say
@@ -572,6 +598,23 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     too, so it is read as one; and the answer of a function parameter that holds a cell, where no word
     (`returned`, `stored`, `aliased`) puts it in the result, escapes (`Fn.ans_escapes`). No row has any
     of these today either (research report 148).
+
+    **A word that puts a location in a result with no location to hold it lets it escape**, as a
+    walked cast does (`narrowed`, §3.4): `returned a → Int`, `stored a → ⊤`, `aliased a → Int`,
+    `elementof Int`, `taken Int`, the elements of `copyof Int`, a storage that `concatenated` or
+    `prepended` puts in a result of no storage, and `builderdone` at a result of no location each set
+    the escape flag of the location (`Check.wordedContract`, `intoElems`, `elemsToElems`, `selfToSelf`);
+    a function parameter's answer that `returned`, `stored` or `aliased` puts in such a result escapes
+    (`Fn.ans_escapes`). The JavaScript value is what the word says it is, and a cast reads it back; "at
+    every location of the result" is at none when there are none, and a location placed nowhere was
+    gone. A result of no location that no word describes holds no parameter: each parameter has a word
+    that does not put it there (`List.length : borrowed List a → Int`), and those words are the
+    positive facts. Only the result word `unknown`, and an element a word names that the list's layout
+    cannot place, make every parameter location escape there (`undescribed`). Safe builds check each
+    row: every location a word puts in the result is a source of some result location or escapes
+    (`Check.checkWordedPlaced`, §9). The rows of a type variable that a caller reads at a type of no
+    location are §3.4's: the call lets what it cannot place escape. No row of `core/` or of a shipped
+    platform has a result of no location with such a word (research report 150).
 
     The words are shared: a signature with a word that only v2 and v3 read is kept in a column of its
     own, which v2 and v3 read and v1 does not; any other signature is in v1's column, which all three
@@ -1312,6 +1355,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a location of a frame's result with no source holds no cell in the entry of the result value's own layout that holds its cells (the wide entry above it, `Loc.holes`): its emptiness comes from a rule, not from a reading that had no step for it; the check counts no work | `Frame.checkEmpty`, in `finish` | §3.4 |
 | a construction at a record's place holds the record's object (a part at the object's step): no rule makes a record of its fields alone, whose slots would hold no cell (a record alias's constructor did); the check counts no work | `Frame.built` | §6.4, §11.2 |
 | each location that a reader of a value asks for at another reading than the value's own (`leavesSet`, `argEntries`) is placed in the value's own layout: an entry is at it (the map, or `Loc.all`), a wide entry above it holds it (`Loc.holes`), or the value's own place has its steps and they reach a type of no cell (`Loc.emptyAlong`; a slot, a row and a deep level's member are read by other rules). With `Loc.holes` turned off (research report 146's fault), the first program the gates build panics. The check counts no work | `Frame.checkPlaced` | §3.4 |
+| each parameter location that a worded row's word puts in the result (`returned`, `stored`, `aliased`, `builderdone`, `elementof`, `taken`, the elements and storage of `copyof` and its kin, `Record.copy`'s values, a function parameter's answer under `returned`, `stored` or `aliased`) is a source of some location of the result, or has the escape flag: a placement never lands on no location without an escape. It reads the words again, apart from the code that placed them. With the escape of `returned` turned off (research report 150's fault), the first program with `returned a → Int` panics. The check counts no work | `Check.checkWordedPlaced`, in `wordedContract` | §6.10 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 
 ## 10. What the kernel costs

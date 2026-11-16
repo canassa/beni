@@ -1,0 +1,2 @@
+# v3 refuses the push: the location of `b` in `stash`'s result holds `x0`, and the caller reads it at `Maybe Int`, which has no such location, so it escapes at the call (ownership-v3-kernel.md §3.4).
+17:22 list_still_used List.push
