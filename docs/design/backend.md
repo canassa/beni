@@ -8042,7 +8042,11 @@ for an effect, and whose initialiser does nothing â `Opt` drops it whole â
 statement `undefined`, so no read of the parameter is left. *Amended 2026-11-15 (#2512):* the
 initialiser node itself is left as it was. Lowering shares a node among the reads of one value (a
 `case`'s subject is its tests' and an `as` binding's), so writing `undefined` over it wrote it over
-the live reads too (`run/ReleaseUnreadAsList`). The pass takes this in every round, but
+the live reads too (`run/ReleaseUnreadAsList`). *Amended 2026-11-17 (#2547):* the rule is general.
+Lowering hands one node to several readers wherever a pattern reads one value twice, so `JsIr` is a
+DAG there, and a rewrite this pass makes in place must hold at every parent of the node: a fold to
+the node's value does, a drop licensed by one reader being dead does not (research report 152 counts
+the sites; `run/ReleaseAsBoundScrutinee`, `run/ReleaseAsListInPlace`). The pass takes this in every round, but
 such a drop asks for no round of its own â what it exposes the next round finds, whichever asks â
 since the extra rounds it asked for cost a `--schema-library` release build a third more analyses.
 The model binding of `mount` (`let e = a.init`) is dead only once its self-assignment is gone and
