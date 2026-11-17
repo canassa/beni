@@ -73,7 +73,7 @@ message. Which one is decided by the handler's type.
   `onClick` through a lambda). It can call `Html.preventDefault event` itself, as a statement,
   then return the message. `Html.key event`, `Html.targetValue event` and `Html.targetChecked event`
   read it. `Html.targetValue` gives a `Maybe String`: `Nothing` when the target has no string
-  `value`, for example a `<div>`.
+  `value`, for example a `<div>`. `Html.targetChecked` gives a `Maybe Bool` in the same way.
 - A handler must not wait. It returns a message and does nothing else.
 - On `browser-inline`, a handler in the program's own markup can be any function or message
   value. In another module's markup, it must be a constructor that takes the payload or nothing.
