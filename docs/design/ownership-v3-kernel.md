@@ -334,7 +334,10 @@ escape:
 - **An identity is what the build writes, not what the words say.** `returned a → Js.Value` is as true
   of `(a) => [a]` as of `(a) => a`. A call answers its argument as it is (`Frame.identityCall`; the
   argument read at the reading's type, `narrowed`) where its contract is an identity's and does not
-  cast, or where the build writes the call as its argument: `Js.from` and `Js.to` of the core package,
+  cast; where the walked body answers its one parameter itself, whole, through identities only, whatever
+  type it read it at (`Contract.exact`: `conv v = Js.to (Js.from v)` at `a → b`; a call of it is the
+  argument read at the caller's type, a function value of it keeps the cast mark, since its holder reads
+  its answer at the holder's types); or where the build writes the call as its argument: `Js.from` and `Js.to` of the core package,
   which the backend compiles to nothing (`Mod.emitsArgument`, keyed as `js/JsIntrinsic.zig` keys them:
   the core package, the module `Js`, the declaration's name; a module of another package of that name
   is an ordinary module). That is a fact of the code the build writes, and the one place the kernel
