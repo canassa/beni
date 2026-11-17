@@ -1,0 +1,2 @@
+# The layer hands Hosted.key a compare that keeps its list: refused in the layer, whose writes the build does not enforce (ownership-v3-kernel.md §6 rule 10).
+31:10 list_still_used value

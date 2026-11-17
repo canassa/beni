@@ -5623,7 +5623,7 @@ fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
     const x = (try m.termsInfo(roots.items[0..ncallee])).effect;
     // Each text of an edge of the evidence that can do something, once.
     const texts = (try m.termsInfo(roots.items[ncallee..])).texts;
-    for ([_]u4{ 1, 2, 4, 8 }) |b| if (texts & b != 0) try m.addRefusal(f, inst, .call, Check.RowInfo.text(b));
+    for ([_]u4{ 1, 2, 4, 8 }) |b| if (texts & b != 0) try m.addEvidenceRefusal(f, inst, Check.RowInfo.text(b));
     return x;
 }
 

@@ -778,9 +778,15 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     from a key (`boundary.md` §9.8.3, amended 2026-11-17), and `Hosted.key` is the map's only writer: it
     stores `comparer k`, a call of the key type's own `compare`, which `key`'s `where k.compare` hands as
     evidence and which is judged there (rule 11): a `compare` that writes or keeps a parameter is refused
-    where `key` is called. So every comparer `compare` can run reads its two keys and keeps nothing, and
-    `compare` borrows both; an identity with no comparer stops the program. The fact is one of `Hosted`'s
-    code, so it holds whatever a `Key` value is: research report 153 §4 found a `Key` made with `Js.to`
+    where `key` is called, in whatever package calls it. A refusal of evidence stops the build of core and
+    of every platform, a project's own layer included, as it stops the program's, though their writes are
+    not enforced: evidence can be kept and run later on another package's values, as `key` keeps it
+    (`Enforce.checkModule`; `browser/tea/KeyLayerKeeps`, a layer that made a key of its own type whose
+    `compare` kept its list, which the first review of research report 154 found accepted and trapping).
+    So every comparer `compare` can run reads its two keys and keeps nothing, and `compare` borrows both;
+    an identity with no comparer stops the program. The fact is one of `Hosted`'s code (and of the host's
+    `Map`, whose methods a platform could change for every module at once, as it could change the
+    built-ins that every sibling of core calls), so it holds whatever a `Key` value is: research report 153 §4 found a `Key` made with `Js.to`
     whose comparer kept its key (`browser/tea/KeyForgedKeeps`), and a real key whose comparer property a
     platform overwrites (`browser/tea/KeyAltered`) is the same; neither comparer runs now. (The owner
     asked for every `Key` to come from `Hosted.key`; that alone would not close the second program, which

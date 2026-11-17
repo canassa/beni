@@ -238,10 +238,17 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         for (r.limits) |l| try others.append(arena, l.text);
         ctx.state.reports[mi_u] = try Report.Kept.of(gpa, .{ .module = mi_u, .lines = lines, .others = others.items, .limits = @intCast(r.limits.len) });
     }
-    if (session.graph.modulePackage(m) != .app or !session.enforce_ownership) return;
+    if (!session.enforce_ownership) return;
+    // Core and the platforms authorise no write of their own, so only a
+    // refusal of evidence stops their build: a function handed as evidence
+    // can be kept and run later on another package's values (`Hosted.key`
+    // stores a key type's `compare`, which `Hosted.compare` runs on the
+    // program's keys; kernel §6 rules 10 and 11).
+    const app = session.graph.modulePackage(m) == .app;
     const dest = &d.per_module[mi_u];
     for (lines, r.lines) |l, rl| {
         if (!l.refused) continue;
+        if (!app and !rl.evidence) continue;
         // A write of a record's field slot is a record's refusal (kernel §11).
         const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\nThe step 0 prototype of the ownership checker (`--ownership=v3`) refuses a write that it cannot show to be safe. Change a copy (`{s}`).", .{
             l.op,
@@ -253,6 +260,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         });
         try dest.append(gpa, .{ .ownership = true, .code = if (rl.record) .record_still_used else .list_still_used, .module = m, .region = @fromBackingInt(0), .token = l.token, .message = message });
     }
+    if (!app) return;
     for (r.limits) |o| try dest.append(gpa, .{ .ownership = true, .code = .ownership_limit, .module = m, .region = @fromBackingInt(0), .token = o.token orelse 0, .message = try gpa.dupe(u8, o.text) });
 }
 

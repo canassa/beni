@@ -145,6 +145,9 @@ pub const Line = struct {
     detail: []const u8 = "",
     /// The write is of a record's field slot (kernel §11).
     record: bool = false,
+    /// A refusal of a function handed as evidence (`Frame.evidence`), which
+    /// every package's build enforces (kernel §6 rule 11).
+    evidence: bool = false,
     /// `update`: the later reads the lowering reads before the stores (kernel §11).
     hoists: []const OwnHoists.Read = &.{},
 };
@@ -2627,6 +2630,15 @@ pub const Mod = struct {
     }
 
     pub fn addRefusal(m: *Mod, f: *const Frame, inst: u32, cause: Facts.Cause, detail: []const u8) Allocator.Error!void {
+        return m.addRefusalOf(f, inst, cause, detail, false);
+    }
+
+    /// `addRefusal` of a function handed as evidence (kernel §6 rule 11).
+    pub fn addEvidenceRefusal(m: *Mod, f: *const Frame, inst: u32, detail: []const u8) Allocator.Error!void {
+        return m.addRefusalOf(f, inst, .call, detail, true);
+    }
+
+    fn addRefusalOf(m: *Mod, f: *const Frame, inst: u32, cause: Facts.Cause, detail: []const u8, evidence: bool) Allocator.Error!void {
         // One line for each refusal: a walk can meet one refusal on each of
         // many paths (kernel §8), and each would be a diagnostic.
         const key: RefusalKey = .{ .inst = inst, .cause = @backingInt(cause), .detail = std.hash.Wyhash.hash(0, detail) };
@@ -2639,7 +2651,7 @@ pub const Mod = struct {
             }
         }
         got.value_ptr.* = @intCast(m.lines.items.len);
-        try m.lines.append(m.gpa, .{ .inst = inst, .token = m.tokens[inst], .kind = .callsite, .op = "value", .base = try m.baseText(f, inst), .refused = true, .cause = cause, .detail = detail });
+        try m.lines.append(m.gpa, .{ .inst = inst, .token = m.tokens[inst], .kind = .callsite, .op = "value", .base = try m.baseText(f, inst), .refused = true, .cause = cause, .detail = detail, .evidence = evidence });
     }
 
     pub fn addEntryLine(m: *Mod, f: *const Frame, inst: u32, code: anytype, model: bool, loc: u32, ok: bool) Allocator.Error!void {
