@@ -1,6 +1,6 @@
 # harvest-v2-records
 
-The test programs of the 29 pull requests that built checker v2's record pass (`own2-*`), run under
+The test programs of the 31 pull requests that built checker v2's record pass (`own2-*`), run under
 `--ownership=v3` with the four-leg oracle (`--mode=both`) at `47aeb7854a`. The pull requests are closed.
 v2's expectation files (`.v2`, `.v2.ownership`, `.in-place-v2`, `ownership-v2-known.txt`) are not kept.
 
@@ -16,7 +16,7 @@ library code is the pull request's text, unchanged. A refusal inside the library
 judgement of the pull request's own code; a refusal in `run` would be the driver's, and the drivers hand
 each call a fresh value for that reason.
 
-Verdict: every program is SAME, REFUSED or LIMIT. There is no fault (no TRAP, DIFF, IPTRAP, IPDIFF,
+Pull request 2469 adds no program. Verdict: every program is SAME, REFUSED or LIMIT. There is no fault (no TRAP, DIFF, IPTRAP, IPDIFF,
 RIPTRAP, RIPDIFF or CRASH). Safe = writing in place at the refused site would be correct.
 
 | Program | Source PR | v3 verdict | Judgement |
@@ -47,6 +47,8 @@ RIPTRAP, RIPDIFF or CRASH). Safe = writing in place at the refused site would be
 | SanitiserRecordLimit | 2468 | LIMIT | as RecordLimitKeepsSpread (answer -98999) |
 | SanitiserRecordRefused | 2468 | REFUSED later-use | correct: two updates of one record |
 | SanitiserRowKeptApart | 2468 | REFUSED later-use | **precision loss**: the callback writes a `Record.copy`'s fresh field |
+| SanitiserRecordTwinFold | 2471 | REFUSED supply | **precision loss**: a fold whose callback answers one record at two fields writes it through `v.a`, and nothing reads `v.b` |
+| SanitiserRecordTwinFoldRead | 2471 | REFUSED supply | correct: the same fold, and `v.b` is read after the write |
 
 `SanitiserCellCapture`, `SanitiserCellEdit` and `SanitiserRowKeptApart` share a name with a corpus program;
 the pull request changed it, so the text here differs. The other pull requests of the 29 add only v2

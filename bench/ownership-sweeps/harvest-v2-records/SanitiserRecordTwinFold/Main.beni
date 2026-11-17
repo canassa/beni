@@ -1,0 +1,36 @@
+-- `ownership-v2.md` §2.8 (#1018): a fold whose callback answers one record at two fields. The next
+-- step writes that record through `v.a`, and `v.b` is the same object. Nothing reads `v.b` after
+-- the write, so no read is stale: checker v2 accepts, and each update is a store. v1 refuses the
+-- callback's update (`ownership/RecordFoldBelow`, `twinFold`). The refused twin, which reads `v.b`
+-- after the write, is `SanitiserRecordTwinFoldRead`.
+import Node exposing (Program)
+
+
+type alias D =
+    tag : String
+    count : Int
+
+
+type alias Two =
+    a : D
+    b : D
+
+
+bump : Int, D → D
+bump n d = { d | count = d.count + n }
+
+
+twin : Int, Two → Two
+twin n v =
+    r = bump n v.a
+    { a = r, b = r }
+
+
+twinFold : List Int, Two → Two
+twinFold ns t = List.foldl ns t λn v → twin n v
+
+
+main : Program
+main =
+    out = twinFold [ 1, 2, 3 ] { a = { tag = "a", count = 0 }, b = { tag = "b", count = 100 } }
+    Node.printLines [ String.fromInt out.a.count, String.fromInt out.b.count, out.b.tag ]

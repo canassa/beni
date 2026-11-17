@@ -23,4 +23,6 @@ bench/ownership-sweeps/harvest-v2-records/SanitiserCellCapture
 bench/ownership-sweeps/harvest-v2-records/SanitiserCellEdit
 bench/ownership-sweeps/harvest-v2-records/SanitiserRecordLimit
 bench/ownership-sweeps/harvest-v2-records/SanitiserRecordRefused
+bench/ownership-sweeps/harvest-v2-records/SanitiserRecordTwinFold
+bench/ownership-sweeps/harvest-v2-records/SanitiserRecordTwinFoldRead
 bench/ownership-sweeps/harvest-v2-records/SanitiserRowKeptApart
