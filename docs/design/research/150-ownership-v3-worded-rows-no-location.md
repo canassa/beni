@@ -228,29 +228,28 @@ programs' faults on the base.
 | `records` | 1876 | 353 | 1523 | 0 | 0 | 0 | — |
 | `recursive-levels` | 16131 | 3869 | 12262 | 0 | 0 | 0 | — |
 | `runtime-calls-faults` | 8 | 2 | 5 | 1 | 0 | 0 | — |
-| `wider-functions` | 354 | 116 | 238 | 0 | 0 | 0 | — |
+| `wider-functions` | 354 | 144 | 210 | 0 | 0 | 0 | — |
 | `wnl` | 156 | 0 | 156 | 0 | 0 | 72 | — |
-| **total** | **87864** | **18648** | **69037** | **15** | **3** | **103** | 124 PLAINFAIL, 25 TIMEOUT, 12 BOTHFAIL |
+| **total** | **87864** | **18676** | **69009** | **15** | **3** | **103** | 124 PLAINFAIL, 25 TIMEOUT, 12 BOTHFAIL |
 
 - **Faults**: the corpus's three `TRAP`s are the known ones (`run/ListSanitiserTrieHolder`, as its golden
   says; `dom/ShowAndBranches` and `tea/ShowAndBranches`, #2504, out of scope), on the base too. **0 new.**
 - **Against the base, program by program**: none goes from `REFUSED` to `SAME`. 100 base faults are
   refused (`TRAP`/`DIFF` → `REFUSED`: `wnl` 72, `blindS-faults` 17, the corpus's 11 new fixtures run
-  as programs). 301 go from `SAME` to `REFUSED`: 296 `dead` twins or safe programs — `recursive-levels`
-  165 (folded payloads read over a part of no location), `wnl` 73, `wider-functions` 28, `blindS-faults`
-  17, `host-values` 9, `function-values` 2, `blind2` 1, and the corpus's 4 of §7.1 — and 2 `live` twins
+  as programs). 273 go from `SAME` to `REFUSED`: 271 `dead` twins or safe programs — `recursive-levels`
+  165 (folded payloads read over a part of no location), `wnl` 73, `blindS-faults` 17, `host-values` 9, `function-values` 2, `blind2` 1, and the corpus's 4 of §7.1 — and 2 `live` twins
   the base printed right by chance (`wnl`'s `inst.maybeRow.live`, whose JavaScript `Maybe` reads the
   array as `Nothing`; `blind5d`'s one).
 
 ## 9. Speed
 
 `bench/ownership-v2-review.mjs --checkers=v3 --runs=1 --jobs=1 --roots=real` on ReleaseFast LLVM compilers
-of the base and of the fix, seven rounds alternated, the least of each root kept (load average 7 to 15).
+of the base and of the fix, seven rounds alternated, the least of each root kept (load average about 1).
 
 | Measure | Base | Fix | Change |
 |---|---:|---:|---:|
-| v3 on the 32 real roots | 1 263.0 ms | 1 264.4 ms | +0.1 % |
-| the largest rise, `bench/ui/apps/micro/beni/Helpers` | 23.2 ms | 23.9 ms | +0.7 ms |
+| v3 on the 32 real roots | 1 256.5 ms | 1 257.6 ms | +0.1 % |
+| the largest rise, `bench/todomvc/apps/beni/Sandbox.beni` | 19.5 ms | 20.3 ms | +0.8 ms |
 
 The work the fix adds is counted (kernel §8): the scans of a call map in `escapeUnplaced`,
 `escapeHidden`, `escapeWide` and `escapeUnplacedAnswer`, and the place graph walks of `Loc.holeBelow`
