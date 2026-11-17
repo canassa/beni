@@ -826,7 +826,10 @@ callService svc request =
             Ok (fromHost r)
 
         Err reason →
-            if Js.same (Js.get reason "retryable") (Js.from True) then Err Unavailable else Js.throw reason
+            if Js.same (Js.get reason "retryable") (Js.from True) then
+                Err Unavailable
+            else
+                Js.throw reason
 
 
 -- Park on a host promise: `Ok` its value, `Err` its reason, as the fiber's
