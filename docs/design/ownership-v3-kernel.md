@@ -619,6 +619,20 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    capture bound after the closure is made is a `later` slot read as the value bound there (`capVal`;
    lowering guarantees it is bound before any run). Local functions that name each other in a cycle are
    one group walked to a fixed point (`findGroups`). *Invariant: a closure's leaves are its captures'.*
+
+   **A kept closure is observed only through its calls** (`escape`, `heldLeaves`). A holder that the walk
+   does not follow and that keeps a closure (an item of markup the runtime keeps, unknown code, a holder
+   that lost the function) can do one thing with what the closure captured: run its code, at any time, any
+   number of times. JavaScript gives no other way into a closure's environment, and an identity compare of
+   the function reads none of it. A run of the code reaches a location of a capture only where its
+   contract says so: a flag (read, written, escaped, handed to a function that can write), a source of its
+   answer, or a supply to a function. So the cells a kept closure holds are the leaves of its captures at
+   those locations, and only they escape; a capture location with no flag, no source and no supply is one
+   that no run of the code reaches. A captured function (what its own calls reach is another contract's),
+   a contract that casts (§3.4: its reads are not where the types say), and a draft (a contract of a round
+   of a group, which can still grow) escape whole. *Research report 153: a handler `λ_ → Toggle todo.id`
+   kept by the markup runtime escaped every slot of `todo`, and `update`'s in-place write of
+   `todo.completed` was refused (TodoMVC); the handler reads `.id=` alone.*
 4. **Construct** (`built`, `listOf`, `spreadChain`, `appendChain`): a tuple, record or constructor names
    each part that holds a cell; a list literal's storage is the frame's own cell, its elements are the
    items' leaves as one run with `partDup`; a spread's base is written (a demand) and its storage is a new

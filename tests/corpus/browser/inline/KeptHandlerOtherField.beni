@@ -1,0 +1,52 @@
+-- A handler the runtime keeps is observed only through its calls
+-- (`ownership-v3-kernel.md` §6 rule 3, *A kept closure is observed only
+-- through its calls*). The pick button's handler captures the model and
+-- reads its `id` alone, so `update` writes `label` and `n` in place under
+-- `--ownership=v3`, and a pick after a rename still picks the id.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick Int
+    | Rename
+
+
+type alias Model =
+    id : Int
+    label : String
+    picked : Int
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick id →
+            { model | picked = id }
+
+        Rename →
+            { model | label = "row ${String.fromInt model.n}", n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="pick" onClick={λ_ → Pick model.id}>pick</button>
+        <button id="rename" onClick={Rename}>rename</button>
+        <p id="label">{model.label}</p>
+        <p id="picked">{model.picked}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { id = 4, label = "row 0", picked = 0, n = 1 }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

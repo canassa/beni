@@ -2521,8 +2521,58 @@ fn escape(f: *Frame, v: Val, point: u32) Error!void {
     if (v == v_none or v == v_outside) return;
     try f.readAll(v, point);
     const start: u32 = @intCast(f.atoms.items.len);
-    _ = try f.allLeaves(v, &f.atoms);
+    try f.heldLeaves(v, &f.atoms);
     try f.noteEscape(start, point);
+}
+
+/// The leaves of `v` that a holder that keeps it can observe (kernel §6
+/// rule 3, *A kept closure is observed only through its calls*): every
+/// leaf, but of a closure only the leaves of its captures at the locations
+/// its contract reaches. A captured function, a contract that casts and a
+/// draft are held whole: what a run of them reaches is not settled here.
+fn heldLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!void {
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .closure => if (try f.closureHeld(v, out)) return,
+        .join => {
+            // Each arm is work (kernel §8); past the budget, every leaf.
+            if (!f.charge(n.b)) {
+                for (0..n.b) |ki| try f.heldLeaves(f.lists.items[n.a + 2 * ki], out);
+                return;
+            }
+        },
+        // Every other value is held whole.
+        .none, .outside, .ref, .fnref, .built, .unknown => {},
+        .later => unreachable, // read through `capVal` only
+    }
+    _ = try f.allLeaves(v, out);
+}
+
+/// The leaves of the closure `v`'s captures at the locations its contract
+/// reaches, appended to `out`; false, with nothing appended, where the
+/// closure is held whole.
+fn closureHeld(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
+    const m = f.m;
+    const code = f.codes.items[f.nodes.items[v].a];
+    const lc = code.contract;
+    if (m.isDraft(lc) or lc.casts or code.own_params + code.ncaps > lc.arity) return false;
+    for (0..code.ncaps) |k| if (lc.fns[code.own_params + k] != null) return false;
+    for (0..code.ncaps) |k| {
+        const j: u32 = @intCast(code.own_params + k);
+        const capv = try f.capVal(code, k);
+        const n = lc.off[j + 1] - lc.off[j];
+        // The scan of the capture's flags and of the answer's sources is work (kernel §8).
+        _ = f.charge(Loc.scanUnits(n));
+        for (0..n) |e| {
+            var touched = lc.flags[lc.off[j] + e] != 0 or handsOn(lc, j, @intCast(e));
+            if (!touched) for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j and s.e == e) {
+                touched = true;
+            };
+            if (!touched) continue;
+            _ = try f.argLeaves(capv, lc.layouts[j], @intCast(e), &.{}, false, out);
+        }
+    }
+    return true;
 }
 
 /// The atoms `f.atoms[start..]` escape at `point`: they are held by something
