@@ -67,9 +67,24 @@ controlValue : Event → String
 controlValue ev = Js.to (Js.get (Js.get (Js.from ev) "target") "value")
 
 
---| Whether the checkbox an event came from is checked.
-pub targetChecked : Event → Bool
-targetChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
+--| Whether the checkbox an event came from is checked. `Nothing` when the
+--| target has no boolean `checked`, as only an `<input>` has one.
+pub targetChecked : Event → Maybe Bool
+targetChecked ev =
+    checked = Js.get (Js.get (Js.from ev) "target") "checked"
+    if Js.typeIs checked "boolean" then
+        Just (Js.to checked)
+    else
+        Nothing
+
+
+-- The payload of `onCheck`: whether the control the event came from is
+-- checked. The event is allowed only on `input`, and every `input` has a
+-- boolean `checked` by the HTML specification, which is why the read is
+-- true of `Bool` (boundary.md §4.3 (a)). `targetChecked` is the read for
+-- any other target.
+controlChecked : Event → Bool
+controlChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
 
 
 --| A text field's selection, in code points as `String` counts them: where
@@ -1532,7 +1547,7 @@ pub event "onBlur" : Event
 pub event "onChange" delegated via controlValue on "input" "select" "textarea" : String
 
 
-pub event "onCheck" name "change" delegated via targetChecked on "input" : Bool
+pub event "onCheck" name "change" delegated via controlChecked on "input" : Bool
 
 
 pub event "onClick" delegated : Event

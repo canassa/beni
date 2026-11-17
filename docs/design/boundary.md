@@ -1635,6 +1635,9 @@ extractor of an event. `onInput` and `onChange` name `controlValue`, which is no
 allowed only `on "input" "select" "textarea"`, whose `value` is a string by the HTML specification,
 so their payload stays `String`. The specification is the reason the read is true (§4.3 (a)), so
 `controlValue` carries no test, and a release page is byte for byte what it was.
+In the same way, `targetChecked` is `Event → Maybe Bool`, `Nothing` when the target has no boolean
+`checked`, and `onCheck`, allowed only `on "input"`, names the private `controlChecked` (the owner,
+2026-11-16).
 
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
