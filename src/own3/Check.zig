@@ -879,7 +879,8 @@ pub const Mod = struct {
                     },
                     .unit, .empty_record, .func, .app, .tuple => return null,
                 },
-                .ctor_arg, .contents, .row, .member, .env, .slot, .fslot => return null,
+                .ctor_arg => m.ctorArgType(t, l.head, l.payload >> 12, l.payload & 0xfff) orelse return null,
+                .contents, .row, .member, .env, .slot, .fslot => return null,
             };
         }
         return t;
@@ -951,10 +952,50 @@ pub const Mod = struct {
                     },
                     .unit, .empty_record, .func, .app, .tuple => return null,
                 },
-                .ctor_arg, .contents, .env, .slot, .level, .row => return null,
+                .ctor_arg => blk: {
+                    const ca = m.places.ctorArgOf(s);
+                    const head = switch (st) {
+                        .app => |ap| ap.type.int(),
+                        .unit, .empty_record, .func, .tuple, .record => return null,
+                    };
+                    break :blk m.ctorArgType(cur, head, ca[0], ca[1]) orelse return null;
+                },
+                .contents, .env, .slot, .level, .row => return null,
             };
         }
         return cur;
+    }
+
+    /// The type of argument `arg` of constructor `ctor` (its ordinal) of the
+    /// type `t`, an application of the custom type `head`: the application's
+    /// argument where the declaration writes the constructor's argument as
+    /// one of the type's parameters (`Just a` of `Maybe a`, `Node a …` of
+    /// `Tree a`); `null` for any other argument, which this test does not
+    /// read (the pessimistic side).
+    fn ctorArgType(m: *Mod, t: Var, head: u32, ctor: u32, arg: u32) ?Var {
+        const store = m.in.store;
+        _, const c = store.resolved(t);
+        const ap = switch (c) {
+            .structure => |s| switch (s) {
+                .app => |x| x,
+                .unit, .empty_record, .func, .tuple, .record => return null,
+            },
+            .flex, .rigid, .alias, .err => return null,
+        };
+        if (ap.type.int() != head or head >= m.in.types.entries.len) return null;
+        const e = m.in.types.entries[head];
+        if (e.kind != .adt or e.module.int() >= m.in.birs.len) return null;
+        const bir = m.in.birs[e.module.int()];
+        const ctors = bir.declCtors(bir.decl(e.decl));
+        if (ctor >= ctors.len) return null;
+        const cargs = bir.extraSlice(.{ .start = ctors[ctor].args_start, .end = ctors[ctor].args_end }, Inst.Index);
+        if (arg >= cargs.len) return null;
+        const term = cargs[arg];
+        if (bir.instTag(term) != .type_var) return null;
+        const p = Bir.TypeVarInfo.unpack(bir.instData(term).rhs).param;
+        if (p == Bir.TypeVarInfo.param_none) return null;
+        const xs = store.vars(ap.args);
+        return if (p < xs.len) xs[p] else null;
     }
 
     /// Whether the types `a` and `b` are one type: one variable of the
@@ -2089,6 +2130,23 @@ pub const Mod = struct {
                 }
             }
         }
+        // What the row hands the function at a location of another type
+        // than the parameter location it comes from (a cast: `feed :
+        // borrowed a, once returned (b → c) → c`, JavaScript `f([a])`) is
+        // below the function parameter's place, where the caller's function
+        // reads its own type and can cast it back: it escapes (research
+        // report 151's review).
+        for (0..arity) |k| for (m.loc.layoutEntries(layouts[k]), 0..) |fe, e| {
+            const ft_k = try m.typeAt(pvars[k], fe.loc);
+            for (supply[off[k] + e]) |s| {
+                if (s.kind != .param or s.a >= c.arity) continue;
+                const pe = m.loc.layoutEntries(c.layouts[s.a])[s.e];
+                // A location of no type variable (a list handed where the words
+                // do not say what is handed) is the pessimistic supply, no cast.
+                if ((pe.kind != .@"var" and pe.kind != .@"opaque") or !fe.kind.wide()) continue;
+                if (!try m.typesOne(try m.typeAt(sig.vars[s.a], pe.loc), ft_k)) @constCast(c.flags)[c.off[s.a] + s.e] |= Contract.flag_e;
+            }
+        };
         // Its answer.
         const ans = m.loc.layoutEntries(layouts[arity]);
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
@@ -2108,17 +2166,32 @@ pub const Mod = struct {
                 };
                 if (!found) for (res) |*r| try r.append(m.gpa, src);
                 if (!try m.placedSafely(sig.result, res_es, ae)) unplaced = true;
-                if (try m.castsAt(rplace, sig.result, ft.result, sigResult(sig), ae)) @constCast(c).casts = true;
+                // A cast answer is below the result, where no reader names it:
+                // every cell it holds escapes (research report 151's review).
+                if (try m.castsAt(rplace, sig.result, ft.result, sigResult(sig), ae)) {
+                    @constCast(c).casts = true;
+                    unplaced = true;
+                }
             }
             if (has(w, .stored)) {
                 if (!try m.intoElems(res, sig.result, relem, ae, src)) unplaced = true;
                 if (relem) |pr| {
-                    if (try m.castsAt(rplace, pr.child, ft.result, m.elemType(sigResult(sig)), ae)) @constCast(c).casts = true;
-                } else if (ae.kind.wide()) @constCast(c).casts = true;
+                    if (try m.castsAt(rplace, pr.child, ft.result, m.elemType(sigResult(sig)), ae)) {
+                        @constCast(c).casts = true;
+                        unplaced = true;
+                    }
+                } else if (ae.kind.wide()) {
+                    @constCast(c).casts = true;
+                    unplaced = true;
+                }
             }
             if (has(w, .aliased)) {
                 for (res) |*r| try r.append(m.gpa, src);
                 if (!try m.placedAnywhere(sig.result, res_es)) unplaced = true;
+                if (try m.aliasedCasts(ft.result, ae.loc, sigResult(sig), res_es)) {
+                    @constCast(c).casts = true;
+                    unplaced = true;
+                }
             }
         }
         const fnc = try m.arena.create(Contract.Fn);

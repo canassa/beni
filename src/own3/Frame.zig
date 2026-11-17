@@ -5865,6 +5865,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     const casts = c.casts or try f.argsCast(c, args);
     if (casts) f.casts = true;
     if (casts) try f.escapeHidden(&base, c, cov, place, inst);
+    if (casts) try f.escapeHandedOff(c, code, args, &site, inst);
     try f.escapeWide(c, args, arg_insts, place, inst);
     // An answer of a type with no location holds `outside` (`rootVal`).
     if (es.len == 0) return v_outside;
@@ -5972,6 +5973,44 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     }
     try f.deriveLinearSplit(root, !c.nonlinear and args_apart, has_answer, split);
     return f.rootVal(root);
+}
+
+/// A callee that casts can hand a cast value on as well as answer one: it
+/// hands a function parameter a value read at the function's parameter
+/// type (`feed x g = g (Js.to (Js.from x))`), whose part of no location the
+/// caller's function reads at its own type and casts back; and the answer of
+/// a function parameter that it answers can be below its answer (`ans g =
+/// Js.to (Js.from (g ⊤))`), where `escapeHidden` reads the answer only as
+/// the caller's reading names it. So at the call, each cell of an argument
+/// that the contract hands a function parameter escapes (its supply), and
+/// so does each cell a function argument's answer can hold where the
+/// contract answers it (`escapeAnswer`): the pessimistic side, for a
+/// contract that casts (research report 151's review).
+fn escapeHandedOff(f: *Frame, c: *const Contract, code: Code, args: []const Val, site: *const Site, inst: u32) Error!void {
+    for (0..c.arity) |j| {
+        const fnc = c.fns[j] orelse continue;
+        _ = f.charge(Loc.scanUnits(fnc.supply.len));
+        for (fnc.supply) |srcs| for (srcs) |s| {
+            // The answer of another function argument handed on (`feed h g =
+            // g (Js.to (Js.from (h ⊤)))`): every cell it can hold escapes.
+            if (s.kind == .answer and s.a < c.arity and s.a < args.len) if (c.fns[s.a]) |afn| {
+                const ause: Use = .{ .kind = .call, .id = f.useId(), .key = inst, .holder = code.id(), .c = c, .fnc = afn, .j = s.a, .args = args, .site = site };
+                try f.escapeAnswer(args[s.a], &ause);
+                continue;
+            };
+            if (s.kind != .param or s.a >= args.len) continue;
+            const start: u32 = @intCast(f.atoms.items.len);
+            _ = try f.argLeaves(args[s.a], c.layouts[s.a], s.e, &.{}, false, &f.atoms);
+            try f.noteEscape(start, inst);
+        };
+        const answered = blk: {
+            for (c.res) |srcs| for (srcs) |s| if (s.kind == .answer and s.a == j) break :blk true;
+            break :blk false;
+        };
+        if (!answered) continue;
+        const use: Use = .{ .kind = .call, .id = f.useId(), .key = inst, .holder = code.id(), .c = c, .fnc = fnc, .j = @intCast(j), .args = args, .site = site };
+        try f.escapeAnswer(args[j], &use);
+    }
 }
 
 /// The locations of the callee's result that no location of the caller's

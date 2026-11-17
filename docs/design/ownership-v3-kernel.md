@@ -313,7 +313,8 @@ escape:
   `a` and `b` are one place, and so are `List a` and `List b`. Two places that are one are one type only
   where their types are one: one variable of the store, or one structure whose parts are one type each
   (`Mod.sameType`; the type at a location is read through elements, a tuple's parts and a record's
-  fields, `Mod.typeAt`, `typeAtPath`, and any other step is another type, the pessimistic side). So a
+  fields and a constructor's argument written as a type parameter, `Mod.typeAt`, `typeAtPath`,
+  `ctorArgType`, and any other step is another type, the pessimistic side). So a
   row whose word puts a wide location at a place of another type casts by its types (`returned a → b`,
   `stored a → List b`, `aliased a → b`: `Check.castsAt`, `aliasedCasts`; rule 10), at every instance:
   before, the places said "one type", the row had no mark, and a caller that filled both variables
@@ -338,7 +339,20 @@ escape:
   the core package, the module `Js`, the declaration's name; a module of another package of that name
   is an ordinary module). That is a fact of the code the build writes, and the one place the kernel
   reads a declaration by its name (rule 11). A row that casts is a call: its answer is read where
-  `escapeHidden` and `escapeUnplacedAnswer` read a cast's (`run/CastRowMapped`, `CastRowGeneric`).
+  `escapeHidden` and `escapeUnplacedAnswer` read a cast's (`run/CastRowMapped`, `CastRowGeneric`). A
+  callee that casts can also hand a cast value on, to a function parameter (`feed x g = g (Js.to
+  (Js.from x))`, whose argument the caller's function reads at its own type and casts back), or answer
+  the answer of a function parameter below its answer (`ans g = Js.to (Js.from (g ⊤))`), where
+  `escapeHidden` reads the answer only as the caller's reading names it. So at a call of a callee that
+  casts, each cell that the contract hands a function parameter escapes (its supply: an argument's
+  cells, and every cell another function argument's answer can hold), and so does every cell of a
+  function argument's answer that the contract answers (`escapeHandedOff`, `escapeAnswer`; research
+  report 151's review). A row says the same in its words: a cast placement of a function parameter's
+  answer (`once returned (⊤ → a) → b`) makes that answer escape (`Fn.ans_escapes`), and a supply of a
+  type variable's or a `Js.Value`'s location at a function parameter location of another type (`feed :
+  borrowed a, once returned (b → c) → c`) makes the location escape. The type at a constructor's
+  argument is read where the type's declaration writes it as one of the type's parameters
+  (`Mod.ctorArgType`: `Just a` of `Maybe a`); any other argument is no type the test names.
 - **A `Js.Value` is what it was made from.** A value read through an identity is the value it was:
   `Js.from x` is `x`, and `Just (Js.from ( x, x ))`, of type `Maybe Js.Value`, has the pair as its part,
   which a reader of the part reads (`Frame.partAt`, step by step from the place of each part reached;
