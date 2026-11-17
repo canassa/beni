@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §6 rule 10 revised again the same day (research report 154). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §6 rules 1 and 10 revised again the same day (research report 154). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -514,6 +514,32 @@ exception (`alternatives`): the answer of a function `g` and a parameter locatio
 `free` are alternatives, because a cell handed `free` is read by the callee no more, so it is in the answer
 or it stays, never both (the `taken` rows of `core/`).
 
+**The parts of a list pattern are apart** (research report 154, #2548). A list pattern `[ p₁, …, pₙ, …r ]`
+(the spread anywhere, or none) binds the items at n distinct positions of one list and, through its
+spread, a view of the other positions. Where the list holds each cell once, no cell is in two of these
+parts: an item is the cell at its position and the cells below it, the spread the cells at the other
+positions and below them (and the list's storage, which no item is). The list holds each cell once where
+the scrutinee is a part of one root N that is
+
+- a **parameter**, by the apart-arguments rule: a callee's contract is written for arguments of which no
+  cell is at two places; a caller reads its claims about the answer only where that holds (`argsApart`),
+  and a callee that writes a summary location of an argument that holds a cell at two of its places is
+  refused at the call (§5, test 1); or
+- a root the frame made that is `linear` and has no `twice` entry.
+
+Then each part is a value that carries the match and its position (`Node.pos`, `Frame.listParts`), every
+atom of it carries them too (`Atom.pos`, set where its leaves are read and kept by `project`), and two
+atoms of one match at two positions are two cells: `overlap` says no, so the four tests of §5 and the
+duplicate test above treat them as apart. A match is one run of the binding in the walk (`Check.Mod.
+next_match`), not the instruction, since a body can be walked more than once; atoms of two matches are
+compared as before. A part matched again by an inner pattern takes the inner match's positions and gives
+up the outer one's (the pessimistic side). A scrutinee of any other root — the answer of a function
+parameter, a capture, a cell a callee made, `outside` — or of a construction or a join carries no
+position. A set of atoms with positions is tested in pairs (`shareWith`): the tables of `runsShare` keep
+two atoms of each path by their `via` alone. *Research report 153 §5 and a blind round (#2548): a walk
+`[ b, …rest ] → loop rest (List.push acc (write b))` was refused, `disjoint`, as was `rest ++ [ x ]`
+(`twice`): `b` and `rest` read one summary location, and no atom said at which position.*
+
 ## 5. The write rule
 
 A write of the atoms W at time t is accepted when (`demand`, `finishDemands`):
@@ -594,8 +620,9 @@ pushed onto the same array.*
 Each rule keeps the invariants of §2. The argument is one sentence each.
 
 1. **Bind** (`binding`, `bindPattern`): a binding makes another holder of the same value and reads nothing.
-   A list pattern reads its list (`readsList`); a pattern a row does not describe binds `unknown` over the
-   scrutinee. *Invariant: the bound value's leaves are the scrutinee's part's leaves.*
+   A list pattern reads its list (`readsList`); its parts are apart where the list holds each cell once
+   (§4.4, `listParts`); a pattern a row does not describe binds `unknown` over the scrutinee. *Invariant:
+   the bound value's leaves are the scrutinee's part's leaves.*
 2. **Call** (`call`, `apply`): the callee's contract says, per parameter location, read, answered, written, escaped,
    handed to a function; each escaped location escapes and each function handed flows (`flow`, which can
    escape a function's answer) **before** each written location is a demand at the call with the other

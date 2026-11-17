@@ -264,6 +264,9 @@ pub const Mod = struct {
     var_place: PlaceId = undefined,
 
     next_frame: u32 = 1,
+    /// The next match of a list pattern whose parts are apart (`Frame.listParts`,
+    /// kernel §4.4): one for each run of its binding in the module's walks.
+    next_match: u32 = 0,
     /// Per local of the module: its value and its frame, while its declaration is walked.
     lv: []Frame.Val = &.{},
     lframe: []u32 = &.{},

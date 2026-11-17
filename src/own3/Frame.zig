@@ -94,7 +94,9 @@ pub const v_outside: Val = 1;
 pub const v_unbound: Val = std.math.maxInt(u32);
 
 const Tag = enum(u8) { none, outside, ref, built, join, closure, fnref, unknown, later };
-const Node = struct { tag: Tag, place: PlaceId = @fromBackingInt(0), a: u32 = 0, b: u32 = 0 };
+/// `pos` of a `ref`: the match and position every atom of it is read at
+/// (`Atom.pos`), or `none`.
+const Node = struct { tag: Tag, place: PlaceId = @fromBackingInt(0), a: u32 = 0, b: u32 = 0, pos: u32 = none };
 const Kid = struct { step: u32, val: Val };
 /// `via`: the root that the frame made through which this cell was read
 /// (a call's result that holds cells of its arguments), or `none`.
@@ -108,7 +110,10 @@ const Kid = struct { step: u32, val: Val };
 /// `via_path`, `via_e`: the part of `via` that was read (its path and entry), so
 /// that two reads of one part of a linear root are one cell and two reads of
 /// two parts of it are two (`viaApart`).
-pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none };
+/// `pos`: the match of a list pattern and the position in it that the cell
+/// was read at (`listParts`, kernel §4.4, *The parts of a list pattern are
+/// apart*), or `none`: two atoms of one match at two positions are two cells.
+pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none, pos: u32 = none };
 /// `outside`: root 0, the one root of every cell outside the frame (kernel
 /// §3.1). `fresh`: a cell a callee made, named by the call and the callee's
 /// allocation site (kernel §4.2); it has no layout and no value, only atoms.
@@ -714,8 +719,18 @@ fn freshId(f: *Frame, root: u32, e: u32) Error!u16 {
 const outside_atom: Atom = .{ .root = 0, .path = 0, .e = 0 };
 
 fn overlap(f: *const Frame, a: Atom, b: Atom) bool {
-    return a.root == b.root and a.root != 0 and a.e == b.e and f.comparable(a.path, b.path);
+    return a.root == b.root and a.root != 0 and a.e == b.e and !posApart(a, b) and f.comparable(a.path, b.path);
 }
+
+/// Whether two atoms were read at two positions of one match of a list
+/// pattern (`listParts`): two cells, though one location names both
+/// (kernel §4.4, *The parts of a list pattern are apart*).
+fn posApart(a: Atom, b: Atom) bool {
+    return a.pos != none and b.pos != none and a.pos != b.pos and a.pos >> pos_bits == b.pos >> pos_bits;
+}
+
+/// The bits of `Atom.pos` that hold the position; the rest hold the match.
+const pos_bits = 8;
 
 /// Whether one of two paths is a prefix of the other (`Loc.Table.comparable`).
 /// The climb of the deeper one to the other's depth is work (kernel §8): a
@@ -921,12 +936,19 @@ fn runsShare(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?[
 
 /// `runsShare`, counted when `charged` (a safe build's check counts
 /// nothing), with groups of more than `pairs_max` atoms tested by tables.
-fn shareWith(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?[]const bool, comptime charged: bool, pairs_max: u32) Error!bool {
+fn shareWith(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?[]const bool, comptime charged: bool, pairs_max_in: u32) Error!bool {
     const m = f.m;
     const gpa = m.gpa;
     const s = &m.share;
     s.clear();
     if (runs.len < 2) return false;
+    // The tables keep two atoms of a path by their `via` alone, and an atom
+    // with a position can be apart from one of them (`posApart`): a set
+    // that has one is tested in pairs (kernel §4.4).
+    var pairs_max = pairs_max_in;
+    for (runs) |r| for (atoms[r[0]..r[1]]) |a| if (a.pos != none) {
+        pairs_max = std.math.maxInt(u32);
+    };
     // The largest run is taken last: its atoms are only tested, never added.
     var last: usize = 0;
     for (runs, 0..) |r, ri| if (r[1] - r[0] > runs[last][1] - runs[last][0]) {
@@ -1123,7 +1145,7 @@ fn shareKeep(f: *const Frame, two: *[2]u32, i: u32, k: u32) void {
 fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
     if (charged) return f.overlap(x, y) and !f.viaApart(x, y);
     const loc = &f.m.loc;
-    if (!(x.root == y.root and x.root != 0 and x.e == y.e and loc.comparable(x.path, y.path))) return false;
+    if (!(x.root == y.root and x.root != 0 and x.e == y.e and !posApart(x, y) and loc.comparable(x.path, y.path))) return false;
     // `viaApart`, with no count and no assertion: the check reads what the test reads.
     if (x.via == none or x.via != y.via or f.roots.items[x.via].linear != .yes) return true;
     return !(x.via_e != y.via_e or !loc.comparable(x.via_path, y.via_path));
@@ -1261,7 +1283,7 @@ fn twiceAt(f: *const Frame, a: Atom) bool {
 }
 
 fn atomEql(a: Atom, b: Atom) bool {
-    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead;
+    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead and a.pos == b.pos;
 }
 
 /// Remove from `list.items[from..]` each atom that an earlier atom of the run
@@ -1570,6 +1592,11 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
     const n = f.nodes.items[v];
     switch (n.tag) {
         .ref => {
+            const first = out.items.len;
+            // The match and position of a list pattern's part, on each atom read (`listParts`).
+            defer if (n.pos != none) for (out.items[first..]) |*a| {
+                a.pos = n.pos;
+            };
             const p = m.loc.paths.items[n.b];
             var res: Entries = .{};
             var lost = false;
@@ -1906,7 +1933,16 @@ fn reachWalk(f: *Frame, v: Val, w: []const Atom) Error!bool {
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none, .outside, .fnref => return false,
-        .ref => return f.rootReach(n.a, n.b, w),
+        .ref => {
+            if (n.pos == none) return f.rootReach(n.a, n.b, w);
+            // A list pattern's part: its atoms carry their position, which
+            // `rootReach` does not read (kernel §4.4).
+            // A list of its own: `w` can be a slice of `f.atoms`.
+            var own: std.ArrayList(Atom) = .empty;
+            defer own.deinit(f.gpa);
+            _ = try f.allLeaves(v, &own);
+            return f.atomsReach(own.items, w);
+        },
         .built => {
             for (0..n.b) |ki| if (try f.reach(f.kids.items[n.a + ki].val, w)) return true;
             return false;
@@ -2245,6 +2281,8 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
             const np = (try f.m.loc.pathExtend(n.b, s)) orelse return f.unknownOf(n.place, &.{v});
             const child = f.m.loc.paths.items[np].place;
             if (try f.layoutLen(child) == 0) return v_outside;
+            // A part of a list pattern's part is at its position too (kernel §4.4).
+            if (n.pos != none) return f.node(.{ .tag = .ref, .place = child, .a = n.a, .b = np, .pos = n.pos });
             return f.refVal(n.a, np);
         },
         .built => {
@@ -2461,7 +2499,7 @@ fn useReaches(f: *Frame, u: Read, ws: []const Atom) Error!bool {
         // A part of a root: its atoms at `k` are read where they are, not
         // copied (`refReaches`), so a read of a name that holds every older
         // name of a chain of writes costs a step when they are all old.
-        if (n.tag == .ref) {
+        if (n.tag == .ref and n.pos == none) {
             if (try f.refReaches(n.a, n.b, k, ws)) return true;
             continue;
         }
@@ -3445,9 +3483,18 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
                 try f.bindPattern(p.int(), if (v == v_none) v_none else part);
             }
         },
-        .list => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |p| {
-            // The rest of a list pattern is a view of the list: the same storage, the same elements.
-            if (patTag(m.tags[p.int()]) == .spread) try f.bindPattern(m.datas[p.int()].lhs, v) else try f.bindPattern(p.int(), try f.project(v, Step.elem));
+        .list => {
+            const ps = m.bir.extraSlice(Bir.inlineRange(data), Inst.Index);
+            // Where the list holds each cell once, each part is at a position
+            // of one match: apart from the others (kernel §4.4).
+            const match = try f.listParts(v, ps.len);
+            for (ps, 0..) |p, k| {
+                // The rest of a list pattern is a view of the list: the same storage, the same elements.
+                const spread = patTag(m.tags[p.int()]) == .spread;
+                const part = if (spread) v else try f.project(v, Step.elem);
+                const at = if (match != none) try f.atPosition(part, match, k) else part;
+                if (spread) try f.bindPattern(m.datas[p.int()].lhs, at) else try f.bindPattern(p.int(), at);
+            }
         },
         .record => for (m.bir.extraSlice(Bir.inlineRange(data), u32)) |local| {
             const name = m.bir.locals[f.d.locals_start + local].name;
@@ -3461,6 +3508,49 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
         // A spread binds through its list (`.list`); met anywhere else it is no pattern the lowering makes.
         .spread, .not_a_pattern => f.failed = true,
     }
+}
+
+/// A new match of a list pattern of `n` parts over `v`, when the list holds
+/// each cell once (kernel §4.4, *The parts of a list pattern are apart*), or
+/// `none`: `v` is a part of one root that is a parameter (the
+/// apart-arguments rule), or a root the frame made that is `linear` with no
+/// `twice` entry. Any other value, and a pattern of more parts than a
+/// position can name, carries no position.
+fn listParts(f: *Frame, v: Val, n: usize) Error!u32 {
+    if (v == v_none or v == v_outside) return none;
+    const node_v = f.nodes.items[v];
+    if (node_v.tag != .ref) return none;
+    if (n >= (1 << pos_bits)) return none;
+    const r = f.roots.items[node_v.a];
+    switch (r.kind) {
+        .param => {},
+        .local => {
+            // Not decided yet is no.
+            if (r.linear != .yes) return none;
+            const len = f.m.loc.layouts.items[r.layout].len;
+            // The scan of the root's entries is work (kernel §8).
+            if (f.charge(Loc.scanUnits(len))) return none;
+            for (f.rents.items[r.ent..][0..len]) |ent| if (ent.twice) return none;
+        },
+        // No claim that a cell is at one place of it.
+        .capture, .answer, .fresh, .outside => return none,
+    }
+    // Past the matches a position can name, no position (the pessimistic side).
+    if (f.m.next_match >= (none >> pos_bits)) return none;
+    const match = f.m.next_match;
+    f.m.next_match += 1;
+    return match;
+}
+
+/// `part`, read at position `k` of match `match` (`listParts`): a part of a
+/// root, the same part with the position; any other value as it is.
+fn atPosition(f: *Frame, part: Val, match: u32, k: usize) Error!Val {
+    if (part == v_none or part == v_outside) return part;
+    const n = f.nodes.items[part];
+    if (n.tag != .ref) return part;
+    var at = n;
+    at.pos = match << pos_bits | @as(u32, @intCast(k));
+    return f.node(at);
 }
 
 /// Whether matching pattern `pat` reads a list's storage.
