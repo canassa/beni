@@ -5047,7 +5047,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         nonlinear = true;
     };
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0() };
     return c;
 }
 
@@ -7164,6 +7164,31 @@ fn narrowedAs(f: *Frame, v: Val, inst: u32, place: PlaceId, rty: ?Var, arg_ty: ?
     }
 }
 
+/// Whether every answer of the frame is its parameter 0 itself, whole: a
+/// reference to its root (an identity passes the value on as it is), or a
+/// join of such arms (`Contract.exact`).
+fn answersParam0(f: *Frame) bool {
+    if (f.own_params != 1 or f.params.items.len != 1 or f.failed) return false;
+    const r0 = f.params.items[0];
+    if (f.returns.items.len == 0) return false;
+    for (f.returns.items) |v| if (!f.isRootOf(v, r0, 0)) return false;
+    return true;
+}
+
+fn isRootOf(f: *Frame, v: Val, root: u32, depth: u32) bool {
+    if (depth > 8 or v == v_unbound) return false;
+    const n = f.nodes.items[v];
+    return switch (n.tag) {
+        .ref => n.a == root and n.b == f.roots.items[root].path,
+        .join => blk: {
+            for (0..n.b) |ki| if (!f.isRootOf(f.lists.items[n.a + 2 * ki], root, depth + 1)) break :blk false;
+            break :blk true;
+        },
+        .none, .outside, .built, .closure, .fnref, .unknown => false,
+        .later => unreachable, // read through `capVal` only
+    };
+}
+
 /// Whether a call of `code` answers its one argument as it is: its contract
 /// is an identity's (`isIdentity`) and does not cast, or the build writes the
 /// call as its argument (`Mod.emitsArgument`: `Js.from`, `Js.to`). A
@@ -7172,6 +7197,9 @@ fn narrowedAs(f: *Frame, v: Val, inst: u32, place: PlaceId, rty: ?Var, arg_ty: ?
 fn identityCall(f: *Frame, code: Code) bool {
     if (!f.isIdentity(code.contract)) return false;
     if (!code.contract.casts) return true;
+    // A walked body that answers its parameter itself: the cast it read the
+    // value at is the caller's reading of the same value (`narrowed`).
+    if (code.contract.exact) return true;
     return code.inst == none and code.decl[0] != none and f.m.emitsArgument(code.decl);
 }
 
