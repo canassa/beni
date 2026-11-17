@@ -31,7 +31,7 @@ module Html
   value pointerType : Pointer → String  -- impure
   value preventDefault : Event → ⊤  -- impure
   value shiftKey : Event → Bool  -- impure
-  value targetChecked : Event → Bool  -- impure
+  value targetChecked : Event → Maybe Bool  -- impure
   value targetSelection : Event → Maybe Selection  -- impure
   value targetValue : Event → Maybe String  -- impure
   value text : String → Html msg
@@ -431,7 +431,7 @@ module Html
   attribute "z" on "fePointLight" "feSpotLight" : String
   event "onBlur" : Event
   event "onChange" on "input" "select" "textarea" delegated via controlValue : String
-  event "onCheck" on "input" name "change" delegated via targetChecked : Bool
+  event "onCheck" on "input" name "change" delegated via controlChecked : Bool
   event "onClick" delegated : Event
   event "onDblClick" delegated : Event
   event "onDragEnd" delegated : Event
