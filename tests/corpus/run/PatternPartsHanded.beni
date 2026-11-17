@@ -1,0 +1,48 @@
+-- A function value handed a list that holds one record twice
+-- (`ownership-v3-kernel.md` §4.4, *The parts of a list pattern are apart*,
+-- and §5, test 1). The lambda's `[ a, …rest ]` is over its parameter, whose
+-- parts are apart by the apart-arguments rule, so its update of `a` is
+-- accepted; the call that hands it `[ r, r ]` through `app` must then refuse
+-- the write of the list's elements. It did not: the write reached the call
+-- below the handed location, the list itself, which is a single place, and
+-- its elements were not asked whether they hold a cell twice (research
+-- report 154's second review). The base refused the update in the lambda.
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+    xs : List Int
+
+
+mk : Int → R
+mk n = { x = n, xs = [ n ] }
+
+
+show : R → String
+show r = "${String.fromInt r.x}/${String.fromInt (List.length r.xs)}"
+
+
+showAll : List R → String
+showAll rs = String.join (List.map rs show) ","
+
+
+app : a, (a → b) → b
+app v f = f v
+
+
+firstUpdated : List R → String
+firstUpdated l =
+    case l of
+        [ a, …rest ] →
+            "${show { a | x = 99 }} ${showAll rest}"
+
+        [] →
+            "none"
+
+
+main : Program
+main =
+    r = mk 1
+    Node.print "${app [ mk 1, mk 2 ] firstUpdated} ${app [ r, r ] firstUpdated}"

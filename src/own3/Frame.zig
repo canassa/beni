@@ -8221,7 +8221,12 @@ const OwnSink = struct {
             const sig = h.use.c.layouts[h.a];
             loc = m.loc.layoutEntries(sig)[h.e].loc;
             for (h.suffix) |l| loc = try m.loc.extend(loc, @bitCast(l));
-            single = m.loc.layoutEntries(sig)[h.e].single;
+            // The written location, below the handed entry: a summary
+            // location there is no single place, though the entry is (a
+            // function value handed a whole list writes its elements; kernel
+            // §5, test 1). Research report 154's second review: `app [ r, r ]
+            // λl → …` wrote `r` at two places of the list.
+            single = !m.loc.loc_summary.items[loc];
         }
         try f.demand(h.start, .{
             .point = site.inst,

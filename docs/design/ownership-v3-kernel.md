@@ -545,7 +545,10 @@ two atoms of each path by their `via` alone. *Research report 153 §5 and a blin
 A write of the atoms W at time t is accepted when (`demand`, `finishDemands`):
 
 1. **permission**: no atom of W has root `outside`, `capture` or `answer` (a function parameter's answer is
-   never the frame's own), and W is not a `twice` summary location written by a callee;
+   never the frame's own), and W is not a `twice` summary location written by a callee. A function value
+   that writes below the location a callee hands it (a whole list, whose elements it writes) writes a
+   summary location where the written one is one, though the handed one is single (`OwnSink.atoms`;
+   research report 154: `app [ r, r ] λl → …` wrote `r` at two places, `run/PatternPartsHanded`);
 2. **no other operand**: no other operand that the operation reads or answers reaches W (`otherReaches`). A
    callee that answers a parameter location holds its cells in the result: where it writes the same cell
    through another parameter, the answer is the written cell, so the location is an operand of the call

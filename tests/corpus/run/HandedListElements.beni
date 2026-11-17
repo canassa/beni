@@ -1,0 +1,28 @@
+-- A function value handed a whole list whose elements it writes
+-- (`ownership-v3-kernel.md` §5, test 1): `app` hands `[ a, a ]` to a lambda
+-- that pushes onto each element, so `a` is written twice. The call must
+-- refuse, since the written location, the list's elements, holds one cell
+-- twice. v3 asked only whether the handed location, the list itself, was
+-- at one place, accepted the call, and the in-place build pushed onto `a`
+-- twice (research report 154's second review).
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+push1 : List Int → List Int
+push1 l = List.push l 1
+
+
+app : a, (a → b) → b
+app v f = f v
+
+
+main : Program
+main =
+    a = [ 1 ]
+    out = app [ a, a ] λl → List.map l push1
+    Node.print (String.join (List.map out show) ";")
