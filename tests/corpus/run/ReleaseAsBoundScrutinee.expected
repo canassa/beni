@@ -1,0 +1,22 @@
+tupAs 6
+listAs [0]
+listRest [0,4,5]
+listVar [1]
+pairInner [0]/0
+pairTested [0]/0
+pairVar [1]/0
+recordAs 1
+ctorAs A [0] 0
+ctorVar B
+deadCase 2
+tupAs 6
+listAs [3]
+listRest [3,4,5]
+listVar [1]
+pairInner [3]/3
+pairTested [3]/0
+pairVar [1]/0
+recordAs 4
+ctorAs A [3] 3
+ctorVar B
+deadCase 2

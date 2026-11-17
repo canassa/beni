@@ -1,0 +1,59 @@
+-- `backend.md` §9, *Reading off*, G8, under `--lists-in-place`: a `case`
+-- nothing reads, whose pattern binds the list itself (`p as w`, or a
+-- variable arm), beside a read and a write of that list.
+--
+-- The dead binding `w` holds the subject's very node, which the `case`'s
+-- length test holds too. The specialiser wrote that node over with
+-- `undefined`; a plain release then dropped the whole `case`, but in place
+-- the test is a call the specialiser keeps, and it read `undefined.length`
+-- (the blind round W's `RIPTRAP`). The release in-place pass must print what
+-- the development pass prints. `ReleaseUnreadAsList` (#2512) is the same bug
+-- where the arm reads the list; here nothing reads the `case`, and only the
+-- in-place lowering keeps its test.
+import List
+import Node exposing (Program)
+import String
+
+
+asDead : Int → String
+asDead n =
+    l0 = [ n, 4 ]
+    h =
+        case l0 of
+            ([ _, …_ ] as w) →
+                w
+
+            [] →
+                []
+    String.fromInt (List.length l0)
+
+
+asPushed : Int → String
+asPushed n =
+    v0 = [ n, 4 ]
+    h =
+        case v0 of
+            ([ _, …_ ] as w) →
+                w
+
+            [] →
+                []
+    v1 = List.push v0 9
+    String.fromInt (List.length v1)
+
+
+varDead : Int → String
+varDead n =
+    l0 = [ n, 4, 5 ]
+    h =
+        case l0 of
+            [] →
+                []
+
+            w →
+                w
+    String.fromInt (List.length l0)
+
+
+main : Program
+main = Node.print (asDead 3 ++ " " ++ asPushed 3 ++ " " ++ varDead (List.length (List.range 1 3)))

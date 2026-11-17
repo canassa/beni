@@ -2824,6 +2824,20 @@ const Case = struct {
                 if (separate) "release-expected" else "expected",
                 c.bless and separate,
             );
+            // A fixture of v3's list pass (`.sanitize-lists-v3`) is built
+            // once more as a release with its accepted list writes edited
+            // in place (`--lists-in-place`): the specialiser and the
+            // optimiser over the in-place lowering, which keeps a call
+            // where a plain release has a read it drops (research report
+            // 152). It must print the release golden; a fixture whose
+            // sanitised run must crash has no such golden.
+            if (c.goldenExists("sanitize-lists-v3") and !c.goldenExists("sanitize-lists-v3-crash")) {
+                var lists: std.ArrayList([]const u8) = .empty;
+                try lists.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership=v3", "--ownership-everywhere", "--lists-in-place", "--release", "--allow-debug", "--check-call-graph", "--out=release-lists-v3" });
+                if (c.cfg.mode == .pending) try lists.append(c.arena, "--diagnostics=json");
+                try lists.appendSlice(c.arena, try buildPaths(c.arena, sources));
+                try c.runOnce("release-lists-v3", .release, lists.items, if (separate) "release-expected" else "expected", false);
+            }
         }
     }
 
@@ -4951,6 +4965,7 @@ fn passName(out_dir: []const u8) []const u8 {
     if (std.mem.eql(u8, out_dir, "out-in-place")) return "dev-in-place";
     if (std.mem.eql(u8, out_dir, "out-stores")) return "dev-stores";
     if (std.mem.eql(u8, out_dir, "release-stores")) return "release-stores";
+    if (std.mem.eql(u8, out_dir, "release-lists-v3")) return "release-lists-v3";
     if (std.mem.eql(u8, out_dir, "release-library")) return "release-library";
     if (std.mem.eql(u8, out_dir, "out-library")) return "dev-library";
     return if (std.mem.eql(u8, out_dir, "release")) "release" else "dev";
