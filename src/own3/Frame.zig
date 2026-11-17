@@ -5865,7 +5865,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     const casts = c.casts or try f.argsCast(c, args);
     if (casts) f.casts = true;
     if (casts) try f.escapeHidden(&base, c, cov, place, inst);
-    if (casts) try f.escapeHandedOff(c, code, args, &site, inst);
+    if (c.casts and !(code.decl[0] != none and m.isWorded(code.decl))) try f.escapeHandedOff(c, code, args, &site, inst);
     try f.escapeWide(c, args, arg_insts, place, inst);
     // An answer of a type with no location holds `outside` (`rootVal`).
     if (es.len == 0) return v_outside;

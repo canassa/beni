@@ -343,11 +343,12 @@ escape:
   callee that casts can also hand a cast value on, to a function parameter (`feed x g = g (Js.to
   (Js.from x))`, whose argument the caller's function reads at its own type and casts back), or answer
   the answer of a function parameter below its answer (`ans g = Js.to (Js.from (g ⊤))`), where
-  `escapeHidden` reads the answer only as the caller's reading names it. So at a call of a callee that
-  casts, each cell that the contract hands a function parameter escapes (its supply: an argument's
+  `escapeHidden` reads the answer only as the caller's reading names it. So at a call of a walked callee
+  that casts, each cell that the contract hands a function parameter escapes (its supply: an argument's
   cells, and every cell another function argument's answer can hold), and so does every cell of a
   function argument's answer that the contract answers (`escapeHandedOff`, `escapeAnswer`; research
-  report 151's review). A row says the same in its words: a cast placement of a function parameter's
+  report 151's review). A row says it in its words, which say what is a cast, so its call needs no
+  more: a cast placement of a function parameter's
   answer (`once returned (⊤ → a) → b`) makes that answer escape (`Fn.ans_escapes`), and a supply of a
   type variable's or a `Js.Value`'s location at a function parameter location of another type (`feed :
   borrowed a, once returned (b → c) → c`) makes the location escape. The type at a constructor's
