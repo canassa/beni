@@ -1,0 +1,39 @@
+-- A fiber that throws stops a plain `Browser.program` (boundary.md
+-- §9.8.10 (c)), as it stops a hosted mount: the page stops, every
+-- program of it, and the next click applies no message. The development
+-- build shows the crash screen; the release build adds nothing
+-- (`DefectInFiber.release-expected`). The fiber is spawned by `update`
+-- with no `Tea`, so only the plain program's mount can give
+-- `Task.onDefect` its hook (#1994).
+import Browser
+import Html exposing (Html)
+import Task
+
+
+type Msg
+    = Go
+    | Inc
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Go →
+            _ = Task.spawnDetached λ⊤ → Debug.todo "a fiber threw"
+            n
+
+        Inc →
+            n + 1
+
+
+view : Int → Html Msg
+view count =
+    <main>
+        <p id="count">{String.fromInt count}</p>
+        <button id="go" onClick={Go}>go</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → 0, update = update, view = view }

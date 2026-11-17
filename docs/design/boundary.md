@@ -3755,7 +3755,25 @@ the branch the build takes, in reachability and in lowering.
   a throw out of a fiber stops it — no fiber runs again, as `Task`'s "a defect ends the program"
   says — and calls the hook a platform gave `Task.onDefect : (() -> ()) -> ()` (impure, core). A
   hosted mount hands it the page's stop, which reaches `Browser.beni` as the mount's fourth
-  argument, `h(root, flush, setPhase, stop)`, as the loop reaches it (§9.8.7).
+  argument, `h(root, flush, setPhase, stop)`, as the loop reaches it (§9.8.7). *Amended
+  2026-11-15 (#1994; as built):* a plain `Browser.program`'s `update` can start a fiber too
+  (`Task.spawnDetached`), and its throw left the page running, since no hosted mount had given
+  the hook. `Rt.beni`'s `run` now gives `Task.onDefect` the page's stop for every page, and the
+  page's stop shuts the runtime down (§9.8.14) for every page, not only once a hosted mount has
+  set the after-render phase: a plain program's fibers are cancelled by a defect as a hosted
+  mount's are. Pages: `browser/dom/DefectInFiber`, `browser/dom/DefectCancelsFibers`.
+- **A throw while the program's modules load stops the page too.** *Amended 2026-11-17 (#1994;
+  the owner's choice of 2026-11-16; as built):* a top-level value that throws ran when its module
+  was evaluated, before `run`, out of reach of the four guards, and the page showed no crash screen
+  on `browser`, `browser-tea` or `browser-inline`. A runtime module may now declare `pub
+  loadFailed : ⊤ → ⊤` (`Rt.beni` stops the page, `Inline.beni` takes its defect path). In a
+  development build the entry file then loads the program's module with `import()` inside a
+  `try … finally` that names no catch, and calls `loadFailed` when the load did not complete; the
+  throw goes on to the host, and the crash screen takes its message from the host's report as
+  for any defect. The cost is the development build's: the program's modules are fetched after
+  the runtime's, and the entry file uses top-level `await`. A release build is one hoisted file
+  and keeps its static `import`: nothing has mounted, and its stop adds nothing a page shows.
+  Pages: `browser/{dom,tea,inline}/DefectAtLoad`.
 - **An error a primitive did not expect is a throw in the fiber that waited on it** (rule 9):
   `Http`'s sibling names each failure `fetch` documents — a `TypeError` from `new URL` is
   `BadUrl`, a rejection with a `TypeError` is `NetworkError`, a `SyntaxError` from `JSON.parse`

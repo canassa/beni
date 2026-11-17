@@ -125,6 +125,14 @@ defect ⊤ =
         crashScreen ⊤
 
 
+--| What a development entry calls when a module of the program throws
+--| while it loads, a top-level value that crashed: the page stops, as for
+--| a throw while it mounts. The throw goes on to the host, which reports
+--| it (`boundary.md` §9.8.10 (c), #1994).
+pub loadFailed : ⊤ → ⊤
+loadFailed ⊤ = defect ⊤
+
+
 -- An overlay above the page, which it leaves in place to inspect: the
 -- error's text arrives with the host's report of the throw, which reaches
 -- the window after the guard's `finally`.

@@ -578,10 +578,9 @@ stop ⊤ =
     -- build's `stop` is only the write, as it was before the teardown.
     if Js.development ⊤ then
         if Js.read dead then ⊤ else crashScreen ⊤
-    -- Only a hosted mount runs fibers, and one sets the after-render
-    -- `phase` when it mounts: a page of `Browser.program`s never calls
-    -- `shutdown`, and its release build knows it.
-    if Js.isNull (Js.read phase) then ⊤ else Task.shutdown deadline stopped
+    -- A plain `Browser.program`'s `update` can start a fiber too
+    -- (`Task.spawnDetached`, #1994), so every page shuts the runtime down.
+    Task.shutdown deadline stopped
     Js.write dead True
 
 
@@ -720,9 +719,22 @@ flush ⊤ =
                 if Js.read ok then ⊤ else stop ⊤
 
 
--- `(program)`: start every program the array holds, in order.
+--| What a development entry calls when a module of the program throws
+--| while it loads, a top-level value that crashed: the page stops, as it
+--| does for a throw in `init`, before `run` is called. The throw goes on
+--| to the host, which reports it (`boundary.md` §9.8.10 (c), #1994).
+pub loadFailed : ⊤ → ⊤
+loadFailed ⊤ = stop ⊤
+
+
+-- `(program)`: start every program the array holds, in order. A fiber
+-- that throws stops the page whatever program started it: a plain
+-- `Browser.program`'s `update` can start one as a hosted mount's can, so
+-- the hook is given here, not only by `host` (`boundary.md` §9.8.10 (c),
+-- #1994).
 pub run : V → ⊤
 run program =
+    Task.onDefect λ⊤ → stop ⊤
     ok = Js.ref False
     Js.finally
         (λ⊤ →

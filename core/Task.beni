@@ -2280,7 +2280,8 @@ schedulers = Js.array []
 -- `scheduled`), how a drain is queued (`run`) and the drain to queue
 -- (`drain`), how the rest of a long drain is queued (`more`: the
 -- program's macrotask for `scheduler`, `run` again for `schedulerWith`),
--- its defect hook (`hook`), its stop (`stop`) and its
+-- its defect hook (`hook`), whether it contains a defect (`contains`:
+-- only a platform's `schedulerWith` does), its stop (`stop`) and its
 -- end (`ended`) as closures — so that the teardown below is reachable only
 -- from here, and a build that makes no scheduler keeps none of it in
 -- development either — and the teardown's state
@@ -2290,13 +2291,14 @@ schedulers = Js.array []
 -- it and have not ended, since one may be the child of a fiber of
 -- another scheduler and so out of reach of its roots; `lent` the fibers
 -- inside a `withScheduler` of it that belong to another.
-newScheduler : V, V, V → V
-newScheduler runner hook more =
+newScheduler : V, V, V, Bool → V
+newScheduler runner hook more contains =
     Js.write many True
 
     s =
         Js.from
             { abandoned = 0
+            , contains = contains
             , culprit = Js.null
             , deadline = 0
             , drain = Js.null
@@ -2332,16 +2334,20 @@ newScheduler runner hook more =
 
 --| A scheduler whose drains run in a microtask of their own, and go on in
 --| a macrotask after 64 resumptions, as the program's do, so a timer and
---| I/O get their turn. `hook` runs on a defect under it, in the stop,
---| before the throw goes on to the host, as `onDefect`'s does for the
---| program: the one piece of program code that runs there, and it may not
---| wait. `λ⊤ → ⊤` when nothing needs to know.
+--| I/O get their turn. It contains nothing: a defect under it stops it,
+--| then the program, as a defect under the program's own scheduler does
+--| (`transparent-effects-proposal.md` §17.5, amended 2026-11-05, #1994).
+--| `hook` runs on that defect, in the scheduler's stop and before the
+--| program's, as `onDefect`'s does for the program: the one piece of
+--| program code that runs there, and it may not wait. `λ⊤ → ⊤` when
+--| nothing needs to know.
 pub scheduler : sync (⊤ → ⊤) → Scheduler
 scheduler hook =
     Js.to
         (newScheduler (Js.from λd → Js.apply (Js.global "queueMicrotask") [ d ])
             (Js.from hook)
             (Js.from macrotask)
+            False
         )
 
 
@@ -2351,9 +2357,12 @@ scheduler hook =
 --| with the rest of a drain that has used its 64 resumptions, and must run
 --| it in a later turn of the host's event loop — a timer — so that a fiber
 --| that keeps yielding starves nothing (the Worker slice, P705-5); `hook`
---| is `scheduler`'s.
+--| is `scheduler`'s. Unlike `scheduler`'s, a defect under it stops it
+--| alone: the platform defines its unit of failure, a request or an object
+--| (`boundary.md` §9.12), and the program goes on.
 pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler
-schedulerWith runner more hook = Js.to (newScheduler (Js.from runner) (Js.from hook) (Js.from more))
+schedulerWith runner more hook =
+    Js.to (newScheduler (Js.from runner) (Js.from hook) (Js.from more) True)
 
 
 --| Run `work` with the calling fiber's scheduler slot set to `scheduler`,
@@ -2706,8 +2715,11 @@ drainFromS s count =
 
 -- `failed`, for a scheduler: the throw goes on to the host out of
 -- whatever `run` queued the drain in; the scheduler stops, its hook runs,
--- and its teardown is queued. One while it tears down is a cleanup's: the
--- fiber goes on to its next finaliser, the drain in a new turn.
+-- and its teardown is queued. A scheduler that contains nothing — every
+-- one a program makes, `scheduler`'s — then stops the program too, as
+-- `failed` does, and the platform's hook runs (#1994).
+-- One while it tears down is a cleanup's: the fiber goes on to its next
+-- finaliser, the drain in a new turn.
 failedS : V → ⊤
 failedS s =
     fiber = Js.read current
@@ -2722,6 +2734,12 @@ failedS s =
         stoppingS s
         hook = Js.get s "hook"
         if Js.isNull hook then ⊤ else Js.to (Js.apply hook [ Js.null ])
+        if Js.to (Js.get s "contains") || Js.read phase ≥ 2 then
+            ⊤
+        else
+            stopping ⊤
+            d = Js.read defect
+            if Js.isNull d then ⊤ else Js.to (Js.apply d [ Js.null ])
     else
         if not (Js.isNull fiber) && Js.isNull (Js.get fiber "outcome") then
             recover fiber

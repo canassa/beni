@@ -1,0 +1,25 @@
+-- load
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <button id="wait">"wait"</button>
+    <button id="boom">"boom"</button>
+  </main>
+</body>
+-- click #wait
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <button id="wait">"wait"</button>
+    <button id="boom">"boom"</button>
+  </main>
+</body>
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- throws click #boom
+(threw: Error: TODO: handler threw)
+(the DOM did not change)
+-- timers
+(timers: 0)
+(the DOM did not change)
