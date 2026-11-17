@@ -1,4 +1,5 @@
--- A row `returned a → b` whose JavaScript answers `{p: [], q: a}`, read at the
+-- A row `returned a → b` whose JavaScript answers `{p: [], q: a}` (with the record's own
+-- property names, which a release build shortens), read at the
 -- argument's own record type: the record is at the `Int` field `q`. A cast of
 -- `h.q` back reads the record that the update wrote in place (ownership-v3-kernel.md
 -- §3.4, §6 rule 10).
