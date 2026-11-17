@@ -2690,7 +2690,7 @@ handler the bare value, which is the defect 1.25 corrects; `inline` targets 1.25
 `Lowering.keeps_let`, which `let`s of a grouped root (`Root.lets`) the lowering keeps beyond the call of
 the function that made them, and reads at a later call (§9.4.8, *What a lowering keeps*). Its default
 keeps every one, and the ownership checker refuses every write of a kept `let`. `dom` says which it
-keeps (`keepsLet`), `inline` that it keeps none (`keepsNoLet`). A lowering that targets 1.28 or earlier is read as
+keeps (`keepsLet`), `inline` that it keeps none (`keepsNoLet`). A lowering that does not set `keeps_let` is read as
 keeping every `let` its root evaluates.
 
 #### 9.4.7 Diagnostics
