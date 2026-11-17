@@ -16,6 +16,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Bir = @import("../bir/Bir.zig");
+const OwnHoists = @import("Reads.zig");
 const TypeStore = @import("../check/TypeStore.zig");
 const Ast = @import("../parse/Ast.zig");
 const Ids = @import("../own2/Ids.zig");
@@ -144,6 +145,8 @@ pub const Line = struct {
     detail: []const u8 = "",
     /// The write is of a record's field slot (kernel §11).
     record: bool = false,
+    /// `update`: the later reads the lowering reads before the stores (kernel §11).
+    hoists: []const OwnHoists.Read = &.{},
 };
 
 /// A limit line (kernel §8) and the token it points at: the name of the
@@ -2605,6 +2608,7 @@ pub const Mod = struct {
             .cause = cause,
             .detail = if (d.detail.len != 0) d.detail else causeDetail(cause),
             .record = d.record or d.kind == .update,
+            .hoists = if (@hasField(@TypeOf(d), "hoists")) try m.arena.dupe(OwnHoists.Read, d.hoists) else &.{},
         });
     }
 

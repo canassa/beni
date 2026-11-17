@@ -76,6 +76,7 @@ const SchemaLower = @import("SchemaLower.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const Hoists = @import("../own/Hoists.zig");
+const V3Reads = @import("../own3/Reads.zig");
 const Channel = @import("../own2/Hoists.zig");
 const beni_markup = @import("beni_markup");
 
@@ -397,6 +398,8 @@ pub const Input = struct {
     /// place (`--lists-in-place`), or copied with its old object poisoned
     /// (`--sanitize-lists`, `recordUpdateSanitized`).
     records_v3: bool = false,
+    /// The v3 oracle's reads read before an update's stores (`own3/Reads.zig`).
+    v3_reads: []const V3Reads.Read = &.{},
     /// The specifier of `_core/_sanitize.mjs`, relative to this module's
     /// output file: what `sanitize_lists` imports.
     sanitize_runtime: []const u8 = "./_core/_sanitize.mjs",
@@ -1482,6 +1485,8 @@ pub const Lowerer = struct {
     hoist_ready: bool = false,
     hoist_at: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
     hoist_prefix: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
+    /// The rows `hoistsReady` read: v1's table, or the v3 oracle's channel's.
+    hoist_reads: ?[]const Hoists.Read = null,
     hoist_live: []HoistLive = &.{},
     /// Raised for each top-level lowering of a declaration: a temporary
     /// bound in another lowering is not this one's.
@@ -6860,11 +6865,26 @@ pub const Lowerer = struct {
     /// read (its instruction, binding and closure): two writes may
     /// invalidate one read at different depths, and the first placement the
     /// lowering meets binds it (§31.14, *before the first accepted write*).
+    /// The reads a module's channel has the lowering read before an
+    /// update's stores: v1's table where it is clean (§31.14), or the v3
+    /// oracle's (`ownership-v3-kernel.md` §11, *A read of a written field,
+    /// read first*), whose updates `recordWrittenV3` writes. Null: none.
+    fn hoistReads(l: *Lowerer) Allocator.Error!?[]const Hoists.Read {
+        if (l.in.ownership.clean) return l.in.ownership.reads;
+        if (!l.in.records_v3 or !l.sanitizesLists()) return null;
+        if (l.in.list_writes == null) return null;
+        // v3's rows, as v1's: a chain of field reads from a parameter, read whole.
+        const rows = try l.scratch.alloc(Hoists.Read, l.in.v3_reads.len);
+        for (l.in.v3_reads, rows) |r, *to| to.* = .{ .decl = r.decl, .demand = r.demand, .inst = r.inst, .holder = r.holder, .path_start = 0, .path_len = r.path_len, .prefix_len = r.path_len, .placement = r.placement, .phase = r.phase };
+        return rows;
+    }
+
     fn hoistsReady(l: *Lowerer) Allocator.Error!bool {
-        if (!l.in.ownership.clean) return false;
-        if (l.hoist_ready) return true;
+        if (l.hoist_ready) return l.hoist_reads != null;
         l.hoist_ready = true;
-        const t = l.in.ownership;
+        const reads = (try l.hoistReads()) orelse return false;
+        l.hoist_reads = reads;
+        const t = .{ .reads = reads };
         const groups = try l.scratch.alloc(u32, t.reads.len);
         var by_read: std.AutoHashMapUnmanaged([3]u32, u32) = .empty;
         for (t.reads, 0..) |r, i| {
@@ -6906,7 +6926,7 @@ pub const Lowerer = struct {
     fn placeHoists(l: *Lowerer, out: *StmtList, inst: Inst.Index, phase: u1) Allocator.Error!void {
         if (!try l.hoistsReady()) return;
         const rows = l.hoist_at.get((@as(u64, inst.int()) << 1) | phase) orelse return;
-        const t = l.in.ownership;
+        const t = .{ .reads = l.hoist_reads.? };
         const p = l.pos(inst);
         for (rows.items) |ri| {
             const r = t.reads[ri];
@@ -6973,7 +6993,7 @@ pub const Lowerer = struct {
     fn hoistedRead(l: *Lowerer, key: u64, p: u32) Allocator.Error!?Node.Index {
         if (!try l.hoistsReady()) return null;
         const rows = l.hoist_prefix.get(key) orelse return null;
-        const t = l.in.ownership;
+        const t = .{ .reads = l.hoist_reads.? };
         for (rows.items) |ri| {
             const live = l.hoist_live[l.hoist_groups[ri]];
             if (live.gen != l.hoist_gen) std.debug.panic("ownership: a hoisted record read is lowered before its placement (read row {d})", .{ri});
@@ -7017,6 +7037,9 @@ pub const Lowerer = struct {
         for (fields, values[1..]) |f, value| {
             try properties.append(l.scratch, try l.fieldProperty(l.bir.symbol(f.name), value, p));
         }
+        // The reads the channel has read before the stores (`ownership-v3-kernel.md`
+        // §11): before the copy, so they read the old object's fields unpoisoned.
+        try l.placeHoists(out, inst, 1);
         const copy = try l.object(properties.items, p);
         const site = try std.fmt.allocPrint(l.scratch, "an update in {s} (at byte {d})", .{ l.interner.slice(l.module_name), p });
         l.needs.sanitize = true;

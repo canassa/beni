@@ -7480,6 +7480,7 @@ const Emitter = struct {
                 .sanitize_lists = e.options.sanitize_lists or e.options.lists_in_place,
                 .identity_trap = e.options.sanitize_lists,
                 .records_v3 = e.session.options.ownership_v3 and (e.options.sanitize_lists or e.options.lists_in_place),
+                .v3_reads = if (e.session.options.ownership_v3 and e.session.enforce_ownership and m.int() < e.session.checked.hoist_reads.len) e.session.checked.hoist_reads[m.int()] else &.{},
                 .sanitize_runtime = slot.sanitize_runtime,
                 .clean_modules = e.clean_modules,
                 .boundary = if (e.boundary) |*b| b else null,

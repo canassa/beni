@@ -24,6 +24,7 @@ const Facts = @import("../own2/Facts.zig");
 const Message = @import("../own2/Message.zig");
 const Report = @import("../own2/Report.zig");
 const Hoists = @import("../own2/Hoists.zig");
+const Reads = @import("Reads.zig");
 const InternPool = @import("../InternPool.zig");
 const MarkupTree = @import("../js/MarkupTree.zig");
 const Check = @import("Check.zig");
@@ -217,6 +218,17 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     if (session.graph.modulePackage(m) != .app) {
         gpa.free(table.writes);
         table.writes = &.{};
+    }
+    // The reads the lowering reads first (kernel §11, item 10): of a module
+    // whose updates it writes, that is one whose channel lists its writes.
+    if (mi_u < d.hoist_reads.len) {
+        gpa.free(d.hoist_reads[mi_u]);
+        d.hoist_reads[mi_u] = &.{};
+    }
+    if (table.writes.len != 0 and mi_u < d.hoist_reads.len) {
+        var reads: std.ArrayList(Reads.Read) = .empty;
+        for (r.lines) |l| if (!l.refused) try reads.appendSlice(arena, l.hoists);
+        d.hoist_reads[mi_u] = try gpa.dupe(Reads.Read, reads.items);
     }
     if (mi_u < d.channels.len) d.channels[mi_u] = table else table.deinit(gpa);
 

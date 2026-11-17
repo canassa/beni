@@ -113,6 +113,7 @@ const Effects = @import("Effects.zig");
 const TypeKeys = @import("TypeKeys.zig");
 const Hoists = @import("../own/Hoists.zig");
 const Channel = @import("../own2/Hoists.zig");
+const Reads = @import("../own3/Reads.zig");
 
 /// Owned. The session-wide type table.
 types: Types,
@@ -140,6 +141,9 @@ hoists: []Hoists.Table = &.{},
 /// Owned: v2's lowering channel per module (`own2/Hoists.zig`), beside
 /// `hoists`; every slot empty unless the check ran `--ownership=v2`.
 channels: []Channel.Table = &.{},
+/// Owned: the v3 oracle's reads read first, per module (`own3/Reads.zig`);
+/// every slot empty unless the check ran `--ownership=v3`.
+hoist_reads: [][]const Reads.Read = &.{},
 counters: Counters,
 
 pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .type_keys = &.{}, .plans = &.{}, .counters = .{} };
@@ -149,6 +153,8 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
     gpa.free(check.hoists);
     for (check.channels) |*t| t.deinit(gpa);
     gpa.free(check.channels);
+    for (check.hoist_reads) |r| gpa.free(r);
+    gpa.free(check.hoist_reads);
     check.types.deinit(gpa);
     for (check.diagnostics) |d| gpa.free(d.message);
     gpa.free(check.diagnostics);
@@ -371,6 +377,8 @@ pub fn run(
     @memset(check.hoists, .empty);
     check.channels = try gpa.alloc(Channel.Table, modules);
     @memset(check.channels, .empty);
+    check.hoist_reads = try gpa.alloc([]const Reads.Read, modules);
+    @memset(check.hoist_reads, &.{});
     const type_keys = try gpa.alloc(TypeKeys.Artifact, modules);
     @memset(type_keys, .empty);
     check.type_keys = type_keys;
@@ -424,6 +432,7 @@ pub fn run(
         .kept = kept.items,
         .hoists = check.hoists,
         .channels = check.channels,
+        .hoist_reads = check.hoist_reads,
         .dispatch = dispatch,
         .type_keys = type_keys,
         .plans = plans,

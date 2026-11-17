@@ -70,6 +70,7 @@ const Check = @import("Check.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Edges = @import("../check/Edges.zig");
 const InternPool = @import("../InternPool.zig");
+const OwnHoists = @import("Reads.zig");
 
 const Contract = CMod.Contract;
 const Mod = Check.Mod;
@@ -336,6 +337,9 @@ const Demand = struct {
     record: bool = false,
     /// `supply`: the function is the runtime's `send`: the check has a line.
     send: bool = false,
+    /// `update`: the later reads of a written slot that the lowering reads
+    /// before the stores (kernel §11, *A read of a written field, read first*).
+    hoists: []const OwnHoists.Read = &.{},
 };
 
 m: *Mod,
@@ -346,6 +350,11 @@ decl: u32,
 d: Bir.Decl,
 is_lambda: bool,
 code_inst: u32,
+/// The body the frame walks (`walkBody`), for the hoist test (`hoistRow`).
+body_root: u32 = none,
+/// The parent of each instruction of the body, made when a hoist is first asked for.
+parents: []u32 = &.{},
+parents_made: bool = false,
 own_params: u32 = 0,
 depth: u32 = 0,
 failed: bool = false,
@@ -532,6 +541,7 @@ pub fn addParam(f: *Frame, place: PlaceId, pat: u32, ty: Var.Optional) Error!voi
 }
 
 pub fn walkBody(f: *Frame, body: u32) Error!void {
+    f.body_root = body;
     try f.returns.append(f.gpa, try f.eval(body, .value, true));
 }
 
@@ -3011,6 +3021,135 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
     try f.demands.append(f.gpa, d);
 }
 
+/// The row of the lowering channel that reads `u` before the stores of the
+/// accepted update `d` (kernel §11, *A read of a written field, read
+/// first*), or null where no rule places it there. The read is a chain of
+/// field reads from a parameter, which is bound before any expression of
+/// the body runs; and the update runs on every path that reaches the read,
+/// so a temporary bound just before its stores is in scope at the read
+/// and holds what the read reads in the copying program.
+fn hoistRow(f: *Frame, d: Demand, u: Read) Error!?OwnHoists.Read {
+    const bir = f.m.bir;
+    if (u.point >= bir.insts.len or d.point >= bir.insts.len) return null;
+    if (bir.instTag(@fromBackingInt(u.point)) != .field_access) return null;
+    if (bir.instTag(@fromBackingInt(d.point)) != .record_update) return null;
+    var x: Inst.Index = @fromBackingInt(u.point);
+    var len: u32 = 0;
+    while (bir.instTag(x) == .field_access) : (len += 1) x = @fromBackingInt(@intCast(bir.instData(x).lhs));
+    if (bir.instTag(x) != .local) return null;
+    const local = bir.instData(x).lhs;
+    if (f.d.locals_start + local >= bir.locals.len) return null;
+    if (bir.locals[f.d.locals_start + local].kind != .param) return null;
+    if (!try f.runsBefore(d.point, u.point)) return null;
+    return .{ .decl = f.decl, .demand = d.point, .inst = u.point, .holder = local, .path_len = len, .placement = d.point, .phase = 1 };
+}
+
+/// Whether the instruction `w` runs on every path of the body that reaches
+/// `r`, and before it, with a temporary bound where `w` runs in scope at
+/// `r`: below the two's nearest common instruction, `w` is in a part that
+/// is evaluated whenever that instruction is (a call's callee or argument,
+/// a construction's part, an update's base or value, a field read's
+/// record, a `case`'s scrutinee, a `let`'s definition), with no `let` of
+/// its own between (a block of its own is a scope of its own), and that part comes
+/// before the one that holds `r`. A `case`'s arm, a lambda, markup (whose
+/// holes a lowering can evaluate where it renders), and an argument of a
+/// callee that the lowering can short-circuit (`&&`, `||`) are not.
+fn runsBefore(f: *Frame, w: u32, r: u32) Error!bool {
+    const m = f.m;
+    const bir = m.bir;
+    if (f.body_root == none) return false;
+    if (!f.parents_made) {
+        f.parents_made = true;
+        f.parents = try f.gpa.alloc(u32, bir.insts.len);
+        @memset(f.parents, none);
+        var stack: std.ArrayList(u32) = .empty;
+        defer stack.deinit(f.gpa);
+        var kids: std.ArrayList(Inst.Index) = .empty;
+        defer kids.deinit(f.gpa);
+        try stack.append(f.gpa, f.body_root);
+        while (stack.pop()) |n| {
+            // Each instruction is work (kernel §8); past the budget no read is placed.
+            if (f.charge(1)) return false;
+            const tag = bir.instTag(@fromBackingInt(n));
+            // A lambda's body is another frame's.
+            if (tag == .lambda) continue;
+            kids.clearRetainingCapacity();
+            try bir.operands(f.gpa, @fromBackingInt(n), &kids);
+            for (kids.items) |k| {
+                if (k.int() < f.parents.len) f.parents[k.int()] = n;
+                try stack.append(f.gpa, k.int());
+            }
+        }
+    }
+    // The ancestors of `w`, up to the body.
+    var up: std.ArrayList(u32) = .empty;
+    defer up.deinit(f.gpa);
+    var x = w;
+    while (true) {
+        try up.append(f.gpa, x);
+        if (x == f.body_root) break;
+        if (x >= f.parents.len or f.parents[x] == none) return false;
+        x = f.parents[x];
+    }
+    // The nearest ancestor of `r` that is one of them, and the part of it that holds `r`.
+    var r_part: u32 = none;
+    x = r;
+    const lca = while (true) {
+        if (std.mem.indexOfScalar(u32, up.items, x) != null) break x;
+        if (x == f.body_root) return false;
+        if (x >= f.parents.len or f.parents[x] == none) return false;
+        const p = f.parents[x];
+        // A hole of markup can be evaluated where the markup renders.
+        if (bir.instTag(@fromBackingInt(p)) == .markup) return false;
+        r_part = x;
+        x = p;
+    };
+    if (lca == w or r_part == none) return false;
+    // `w`'s path up to the common instruction: every step runs whenever its parent does.
+    const at = std.mem.indexOfScalar(u32, up.items, lca).?;
+    for (up.items[0..at], 0..) |child, i| {
+        const parent = up.items[i + 1];
+        if (parent != lca and bir.instTag(@fromBackingInt(parent)) == .let) return false;
+        if (!try f.alwaysRuns(parent, child)) return false;
+    }
+    const w_part = up.items[at - 1];
+    var kids: std.ArrayList(Inst.Index) = .empty;
+    defer kids.deinit(f.gpa);
+    try bir.operands(f.gpa, @fromBackingInt(lca), &kids);
+    var wi: usize = none;
+    var ri: usize = none;
+    for (kids.items, 0..) |k, i| {
+        if (k.int() == w_part and wi == none) wi = i;
+        if (k.int() == r_part and ri == none) ri = i;
+    }
+    return wi != none and ri != none and wi < ri;
+}
+
+/// Whether the part `child` of `parent` is evaluated whenever `parent` is.
+fn alwaysRuns(f: *Frame, parent: u32, child: u32) Error!bool {
+    const bir = f.m.bir;
+    const p: Inst.Index = @fromBackingInt(parent);
+    const d = bir.instData(p);
+    return switch (bir.instTag(p)) {
+        .field_access, .tuple_index, .@"try", .let_stmt, .let_pattern, .tuple, .list, .record, .record_update, .interp, .method_call, .let => true,
+        // A local function's body runs where it is called.
+        .let_def => blk: {
+            const def = bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
+            break :blk def.params_start == def.params_end and child == d.rhs;
+        },
+        .case => child == d.lhs,
+        .call => blk: {
+            if (child == d.lhs) break :blk true;
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+            if (args.len != 0 and args[0].int() == child) break :blk true;
+            // A later argument of a declaration of this module: no lowering
+            // short-circuits it (`&&` and `||` are `Basics`', of core).
+            break :blk bir.instTag(@fromBackingInt(@intCast(d.lhs))) == .top and !f.m.in.isCore(f.m.in.module);
+        },
+        else => false,
+    };
+}
+
 const Ground = enum(u8) { fresh, call, param };
 
 /// What a line's acceptance rests on (kernel §5.2): the highest ground of
@@ -3103,6 +3242,10 @@ fn finishDemands(f: *Frame) Error!void {
                 d.refused = .limit;
                 d.detail = "the walk of this declaration gave up";
             }
+            // The later reads that the lowering reads first (kernel §11,
+            // *A read of a written field, read first*): kept only where the
+            // update is accepted.
+            var hoists: std.ArrayList(OwnHoists.Read) = .empty;
             if (d.refused == null) for (f.uses.items) |u| {
                 // A read at a later time: the walk goes in the program's order (`timeOf`).
                 if (u.at <= d.at) continue;
@@ -3114,11 +3257,16 @@ fn finishDemands(f: *Frame) Error!void {
                     break;
                 }
                 if (try f.useReaches(u, ws)) {
+                    if (d.op == .update) if (try f.hoistRow(d.*, u)) |row| {
+                        try hoists.append(f.gpa, row);
+                        continue;
+                    };
                     d.refused = .later_use;
                     d.detail = try f.m.useText(f, u.point);
                     break;
                 }
             };
+            if (d.refused == null) d.hoists = hoists.items;
             f.skip_answer = none;
             f.judge_ctx = none;
             f.judge_at = none;

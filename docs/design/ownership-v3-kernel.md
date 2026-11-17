@@ -1602,6 +1602,34 @@ cells, and an update is a write of some of them.
    snapshot of one of its own records (`loop (k + 1) { acc | snap = acc.cur }`, then a write of
    `acc.cur`'s field) is the same call.*
 
+10. **A read of a written field, read first** (`Frame.hoistRow`, `runsBefore`; the lowering channel's
+   `reads`, `Lower.hoistReads`). A later read of a slot `W` names, through an older name, refuses the
+   update by test 4, unless the lowering reads it before the stores: it binds a temporary to the read
+   just before the update's stores, after its values, and the read reads the temporary
+   (`ownership-checker.md` §31.14, the hoist v1 makes). Then the read is no read after the write: it is
+   a read at the update's time, of the old value, which is what the copying program reads. Test 4
+   skips such a read, and the update's line carries its row, where three facts hold:
+
+   - **the read is a chain of field reads from a parameter** (`p.f`, `p.a.f`): a field read is pure
+     and cannot fail (`language.md` §11.11), so reading it earlier changes no value and no effect, and
+     a parameter is bound before any expression of the body runs, so the temporary can read it there;
+   - **the update runs on every path that reaches the read, before it** (`runsBefore`): below the two's
+     nearest common instruction, the update is in a part that runs whenever that instruction does — a
+     call's callee or argument (only the first of a callee the lowering may short-circuit, `&&` and
+     `||` being `Basics`' of core), a construction's part, an update's base or value, a field read's
+     record, a `case`'s scrutinee, a `let`'s definition — with no `let` block of its own between (its
+     own scope), and that part comes before the one that holds the read. No `case` arm, lambda or
+     markup (whose holes a lowering can evaluate where it renders) is on the update's side, and none
+     of markup on the read's. So the temporary is bound and in scope wherever the read runs;
+   - **the read fails test 4 against every accepted write it reaches**, each of which carries the row;
+     the lowering binds the temporary at the first it lowers, which is the first to run.
+
+   Any other later read that reaches `W` refuses as before: a whole read, a call, a read through a
+   `let` or a pattern of the record, a capture, an update in a `case` arm whose read is after the
+   `case` (v1 places those; v3 does not yet). *Research report 153: TodoMVC's `changed { model |
+   nextId = model.nextId + 1 } (… model.nextId …)`, refused by v3 and accepted by v1 under
+   `--records-in-place` (#2517).*
+
 Every other rule applies to a slot as to a list's storage: a call's contract flags its slots (read,
 written, escaped), so a write in a helper of another module is a demand at its call (§6.2); a
 capture, an answer of a function parameter and a cell's contents are never `own`; a slot that escaped
