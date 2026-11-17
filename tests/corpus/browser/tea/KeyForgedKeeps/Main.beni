@@ -1,9 +1,12 @@
 -- A key made outside `Hosted.key` (`ownership-v3-kernel.md` §6 rule 10, *A
--- trusted row on `Hosted.compare`*): the project's own platform layer builds
--- a `Key` with `Js.to` whose comparer keeps the key it is handed. So
--- `Hosted.compare` runs code no rule follows, the list `ys` escapes there,
--- and the push onto it after is refused. A row that read `Hosted.compare`
--- as borrowing both keys accepted the push, which then trapped.
+-- platform's trusted row*; research report 153 §4): the project's own
+-- platform layer builds a `Key` with `Js.to` and puts in it a comparer
+-- that keeps the key it is handed. `Hosted.compare` reads the comparer of
+-- a type from its own table, which only `Hosted.key` writes, never from a
+-- key, so that comparer never runs: `ys` does not escape, and the push
+-- after is accepted and edits in place. Before, `compare` ran the comparer
+-- the key carried, and a row that read it as borrowing both keys let the
+-- push trap.
 import Cmd exposing (Cmd)
 import Evil
 import Hosted

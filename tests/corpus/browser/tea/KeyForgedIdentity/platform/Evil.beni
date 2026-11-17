@@ -1,0 +1,9 @@
+--! A project's own platform layer: a key of an identity no type has.
+
+import Hosted exposing (Key)
+import Js
+
+
+--| A key of `v` under the identity `"forged"`.
+pub forged : a → Key
+forged v = Js.to (Js.object [ ( "t", Js.from "forged" ), ( "v", Js.from v ) ])

@@ -342,5 +342,7 @@ platforms/browser-base/Listen.beni               Listen.on2                     
 platforms/browser-base/Listen.beni               Listen.callback                 0b409ff4f300866bdfe5d600108b346cb4929afa5632f9b8c32195f7a805729d
 platforms/browser-base/Listen.beni               Listen.withEntry                fe6c5ada5b705db0620c9144887ea829546a23040305eaec7b45e423154c6cbd
 platforms/browser-base/Listen.beni               Listen.direct                   40db7e59b6b53586657d04de30d3dc693bd1a941deb7db245b2d8a3028806af7
+# A trusted row on a walked body that runs the comparer `Hosted.key` stored for the key type (ownership-v3-kernel.md §6 rule 10, *A platform's trusted row*).
+platforms/browser-base/Hosted.beni              Hosted.compare                  b85aa05b9a9293b25f44120517b5137bf7305d8c4266db767f1afb80ea3888bb
 platforms/browser-inline/Inline.beni             Inline.subscribe d9c7373da3d53fd382c54a683fdc3b25130741477f7793d0be275db3253d7462
 platforms/browser-inline/Inline.beni             Inline.eventEntry e037867648728040ff8f1bfa1f5b542496749da2f23981b54cde6a3cbe90f56e

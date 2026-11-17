@@ -1,0 +1,14 @@
+{
+  "platform": true,
+  "name": "evil",
+  "platforms": [
+    "browser-tea"
+  ],
+  "reexports": [
+    "Browser",
+    "Cmd",
+    "Html",
+    "Sub",
+    "Tea"
+  ]
+}

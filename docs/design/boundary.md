@@ -3531,6 +3531,20 @@ builds `{ t, c, v }` with `Js.object` — the identity, the type's `compare` as 
 identities with `Js.lt` (§4.2), under `Js.pure` as the sibling was `foreign pure`; two keys of one
 type go through the stored `compare` with `Js.apply`, read back at `Order`.
 
+*Amended 2026-11-17 (#2552, research report 154):* **a key does not carry its comparer.** `Hosted`
+keeps a private `Map` from a type identity to that type's `compare`, and `key` is its only writer: it
+stores `comparer k` (the `where` clause's evidence) under `k`'s identity and builds `{ t, v }`.
+`compare` reads the comparer of two keys of one identity from that map, never from a key, so it runs
+only a comparer `key` stored, whatever a `Key` value is or has become: a value made with `Js.to`, or a
+real key whose properties a platform's code overwrote, cannot hand it a function. An identity the map
+has no comparer for is a defect: `compare` stops the program, never answers. Storing a comparer is
+idempotent and seen only through `compare`, so the store is `Js.pure` and `key` stays `pure`; it is
+handed the comparer and the identity, never the key, so the key's value is held by the key alone.
+This is the fact `compare`'s ownership words rest on (`ownership-v3-kernel.md` §6 rule 10, *A
+platform's trusted row*): `compare : borrowed Key, borrowed Key → Order`. What it does not close is
+`Js.to`'s general hazard, which every type has: a platform can make a value whose reads run its own
+code (a getter, a proxy), and a key's `v` is read.
+
 A function the platform hands a body — every `Send` — is `impure`, so a release build never
 drops a send. When `Hosted` is written in beni, a typed adapter calls the supplied send through
 `Js.apply` before erasing the body to `Js.Value`: that call gives the callback its impure rung.

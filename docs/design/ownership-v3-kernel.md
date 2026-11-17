@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §6 rule 10 revised again the same day (research report 154). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -770,18 +770,26 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     one (report 117 §10): `taken` names an element of a list, and v2's reader of rows knows no other
     value to take, so a row there changes v2's verdicts.
 
-    **A trusted row on `Hosted.compare`: not built** (#2508 item 1; research report 153 §4). The owner
-    approved `Hosted.compare : borrowed Key, borrowed Key → Order` on 2026-11-15 on one condition: that
-    `Key` is opaque, so the types guarantee every `Key` comes from `Hosted.key`, whose comparer is the key
-    type's own `compare`, judged as evidence where `key` is called. The condition does not hold. A
-    project may ship its own platform layer (`platform/`, layered on `browser-tea`), which may import
-    `Js` and `Hosted`, and build a `Key` with `Js.to` whose comparer is any function the program hands it:
-    one that keeps its key was accepted, and the program's later in-place push of that key's list trapped
-    (`browser/tea/KeyForgedKeeps`, refused without the row). The row stays out; `Hosted.compare` is
-    walked, and the comparer it runs is unknown code. A row would need the fact made true by the
-    checker or the compiler (no `Key` from a cast outside `Hosted`), which is the owner's to decide.
-    `browser/tea/KeyCompareKept` pins the evidence half: a key type whose `compare` writes its key is
-    refused where `Cmd.keyed` hands it to `Hosted.key`.
+    **A platform's trusted row** (the owner's decision of 2026-11-15, #2508; built on `Hosted`'s own
+    body by research report 154, #2552). A row may stand on a walked body that runs code the checker
+    cannot follow, where a fact of that body says what the code is. One does: `Hosted.compare : borrowed
+    Key, borrowed Key → Order` (`platforms/browser-base`). Its body runs a comparer (`Js.apply`), which no
+    rule follows. It reads that comparer from a `Map` private to `Hosted`, keyed by a type identity, never
+    from a key (`boundary.md` §9.8.3, amended 2026-11-17), and `Hosted.key` is the map's only writer: it
+    stores `comparer k`, a call of the key type's own `compare`, which `key`'s `where k.compare` hands as
+    evidence and which is judged there (rule 11): a `compare` that writes or keeps a parameter is refused
+    where `key` is called. So every comparer `compare` can run reads its two keys and keeps nothing, and
+    `compare` borrows both; an identity with no comparer stops the program. The fact is one of `Hosted`'s
+    code, so it holds whatever a `Key` value is: research report 153 §4 found a `Key` made with `Js.to`
+    whose comparer kept its key (`browser/tea/KeyForgedKeeps`), and a real key whose comparer property a
+    platform overwrites (`browser/tea/KeyAltered`) is the same; neither comparer runs now. (The owner
+    asked for every `Key` to come from `Hosted.key`; that alone would not close the second program, which
+    alters a real key.) What a forged key still has is `Js.to`'s general hazard, which every type has: a
+    value whose reads run a getter or a proxy's trap, the platform's duty (`boundary.md` §4.2). The words
+    are v1's too, and v1 reads them. The test is `browser/tea/KeyCompareKept`: a key type whose `compare`
+    writes its key is refused where `Cmd.keyed` hands it to `Hosted.key`. The platforms write nothing in
+    place of their own, so the row wins verdicts of `Tea`'s tables (`tableInsert`, `tableRemove`,
+    `tableGet`, `tableLower`, `tableMember`), not stores.
 
     A row of JavaScript is true only of what the operation can run. A property read (`Js.get`) runs a
     getter or a proxy's trap with the object as receiver, and turns an object name into a key with its

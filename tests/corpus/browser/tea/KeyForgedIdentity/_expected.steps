@@ -1,0 +1,4 @@
+click #inc
+throws click #boom
+# Stopped: the click is not applied.
+click #inc

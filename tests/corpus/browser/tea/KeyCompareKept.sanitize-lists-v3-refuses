@@ -1,2 +1,2 @@
 # The key type's `compare` writes its key: it is refused where `Cmd.keyed` hands it to `Hosted.key` (ownership-v3-kernel.md §6 rule 10).
-28:50 list_still_used value
+30:50 list_still_used value
