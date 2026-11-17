@@ -770,20 +770,18 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     one (report 117 §10): `taken` names an element of a list, and v2's reader of rows knows no other
     value to take, so a row there changes v2's verdicts.
 
-    **A platform's trusted row** (the owner's decision of 2026-11-15, #2508). A row may stand on a
-    walked body that runs code the checker cannot follow, where a fact of the types says what that code
-    is. One does: `Hosted.compare : borrowed Key, borrowed Key → Order` (`platforms/browser-base`). Its
-    body reads the comparer a key carries (`Js.get`) and runs it (`Js.apply`), which no rule follows. But
-    `Key` is a `foreign type`, and `Hosted.key` is the only function that makes one: no program can
-    write a `Key`'s constructor, and a cast of another value to `Key` is `Js.to`, which only `core/` and
-    the platforms can import. So the comparer of every `Key` is `comparer k`, a call of the key type's own
-    `compare`, which `key`'s `where k.compare` hands as evidence and which is judged there (rule 11): a
-    `compare` that writes or keeps a parameter is refused where `key` is called. That comparer reads its
-    two keys and keeps nothing, so `compare` borrows both. The words are v1's too, and v1 reads them. A
-    platform that builds a `Key` another way breaks the row. The test is `browser/tea/KeyCompareKept`:
-    a key type whose `compare` writes its key is refused where `Cmd.keyed` hands it to `Hosted.key`.
-    The platforms write nothing in place of their own, so the row wins verdicts of `Tea`'s tables
-    (`tableInsert`, `tableRemove`, `tableGet`, `tableLower`, `tableMember`), not stores.
+    **A trusted row on `Hosted.compare`: not built** (#2508 item 1; research report 153 §4). The owner
+    approved `Hosted.compare : borrowed Key, borrowed Key → Order` on 2026-11-15 on one condition: that
+    `Key` is opaque, so the types guarantee every `Key` comes from `Hosted.key`, whose comparer is the key
+    type's own `compare`, judged as evidence where `key` is called. The condition does not hold. A
+    project may ship its own platform layer (`platform/`, layered on `browser-tea`), which may import
+    `Js` and `Hosted`, and build a `Key` with `Js.to` whose comparer is any function the program hands it:
+    one that keeps its key was accepted, and the program's later in-place push of that key's list trapped
+    (`browser/tea/KeyForgedKeeps`, refused without the row). The row stays out; `Hosted.compare` is
+    walked, and the comparer it runs is unknown code. A row would need the fact made true by the
+    checker or the compiler (no `Key` from a cast outside `Hosted`), which is the owner's to decide.
+    `browser/tea/KeyCompareKept` pins the evidence half: a key type whose `compare` writes its key is
+    refused where `Cmd.keyed` hands it to `Hosted.key`.
 
     A row of JavaScript is true only of what the operation can run. A property read (`Js.get`) runs a
     getter or a proxy's trap with the object as receiver, and turns an object name into a key with its

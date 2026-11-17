@@ -1,9 +1,7 @@
--- The platform test of `Hosted.compare`'s trusted row
--- (`ownership-v3-kernel.md` §6 rule 10, *A platform's trusted row*): it
--- borrows both keys because every `Key` carries its type's own `compare`,
--- which is judged where `Hosted.key` is handed it. This key type's `compare`
--- writes its key, so `Cmd.keyed`, which hands it on, is refused
--- under `--ownership=v3`. The update of the model is accepted.
+-- A key type's `compare` is evidence that `Hosted.key` stores in the key
+-- (`ownership-v3-kernel.md` §6 rule 10, *A trusted row on `Hosted.compare`*).
+-- This one writes its key, so `Cmd.keyed`, which hands it to `Hosted.key`,
+-- is refused under `--ownership=v3`. The update of the model is accepted.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub

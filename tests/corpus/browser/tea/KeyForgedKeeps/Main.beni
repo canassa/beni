@@ -1,0 +1,51 @@
+-- A key made outside `Hosted.key` (`ownership-v3-kernel.md` §6 rule 10, *A
+-- trusted row on `Hosted.compare`*): the project's own platform layer builds
+-- a `Key` with `Js.to` whose comparer keeps the key it is handed. So
+-- `Hosted.compare` runs code no rule follows, the list `ys` escapes there,
+-- and the push onto it after is refused. A row that read `Hosted.compare`
+-- as borrowing both keys accepted the push, which then trapped.
+import Cmd exposing (Cmd)
+import Evil
+import Hosted
+import Html exposing (Html)
+import Ref
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+
+
+type alias Model =
+    n : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update Go model =
+    cell = Ref.make [ 0 ]
+    ys = [ 5 ]
+    o = Hosted.compare (Evil.byKey (λ_ b → keep cell b) [ 0 ]) (Hosted.key ys)
+    zs = List.push ys 7
+    k = Ref.get cell
+    ( { model | n = model.n * 100 + List.length k * 10 + List.length zs }, Cmd.none )
+
+
+keep : Ref.Ref (List Int), List Int → Order
+keep cell b =
+    Ref.set cell b
+    EQ
+
+
+view : Model → Html Msg
+view model = <button id="go" onClick={Go}>{model.n}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { n = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
