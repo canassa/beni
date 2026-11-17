@@ -1623,6 +1623,11 @@ cells, and an update is a write of some of them.
      of markup on the read's. So the temporary is bound and in scope wherever the read runs;
    - **the read fails test 4 against every accepted write it reaches**, each of which carries the row;
      the lowering binds the temporary at the first it lowers, which is the first to run.
+   - **no read with a row is a part of another's chain** (`hoistsApart`): `p.a` and `p.a.f` are two
+     reads, and each would be read first at its own update. Where `q = { p | a = … }` replaces `p.a` and
+     `r = { (p.a) | f = 77 }` writes the old `p.a`, the whole `p.a.f` would be bound at `r`'s update,
+     after `q`'s stores, and read the new `a`. So each update that carries a row of such a pair is
+     refused (`run/HoistChainTwoUpdates`; research report 153 §9, the review's fault).
 
    Any other later read that reaches `W` refuses as before: a whole read, a call, a read through a
    `let` or a pattern of the record, a capture, an update in a `case` arm whose read is after the

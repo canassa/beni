@@ -1,0 +1,3 @@
+# A part of the chain would be read first at one update and the whole at the other, after the first one's stores (ownership-v3-kernel.md §11 item 10).
+27:9 record_still_used update
+28:9 record_still_used update

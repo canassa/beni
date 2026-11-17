@@ -1,0 +1,33 @@
+-- Two updates of one chain of field reads (`ownership-v3-kernel.md` §11
+-- item 10): `q` replaces `p.a`, `r` writes the old `p.a`'s `f`, and then
+-- `p.a.f` is read. The part `p.a` would be read first at `q`'s update and
+-- the whole `p.a.f` at `r`'s, after `q`'s stores, so neither stands, and v3
+-- refuses both updates (research report 153 §9).
+import Node exposing (Program)
+import String
+
+
+type alias A =
+    f : Int
+    g : Int
+
+
+type alias P =
+    x : Int
+    y : Int
+    a : A
+
+
+mk : Int → P
+mk n = { x = n, y = n + 1, a = { f = n + 2, g = n + 3 } }
+
+
+t : P, Int → Int
+t p n =
+    q = { p | a = { f = n, g = n } }
+    r = { (p.a) | f = 77 }
+    r.f * 100 + p.a.f + q.a.g
+
+
+main : Program
+main = Node.print (String.fromInt (t (mk 1) 5))

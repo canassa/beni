@@ -3044,7 +3044,51 @@ fn hoistRow(f: *Frame, d: Demand, u: Read) Error!?OwnHoists.Read {
     return .{ .decl = f.decl, .demand = d.point, .inst = u.point, .holder = local, .path_len = len, .placement = d.point, .phase = 1 };
 }
 
-/// Whether the instruction `w` runs on every path of the body that reaches
+/// The rows of one chain of field reads stand apart (kernel §11 item 10):
+/// where one read of the rows is a part of another's chain (`p.a` of
+/// `p.a.f`), the lowering would bind each where its own update is, and the
+/// longer read would stand for the shorter one's temporary at a later
+/// update, after the first one's stores. No row then holds for the two:
+/// each update that carries one is refused, as its read refused it before.
+/// Research report 153 §9: `q = { p | a = … }`, `r = { (p.a) | f = 77 }`,
+/// then `p.a.f`.
+fn hoistsApart(f: *Frame) Error!void {
+    const bir = f.m.bir;
+    var reads: std.ArrayList(u32) = .empty;
+    defer reads.deinit(f.gpa);
+    for (f.demands.items) |d| if (d.refused == null) for (d.hoists) |r| try reads.append(f.gpa, r.inst);
+    if (reads.items.len < 2) return;
+    // The reads of a clash: each read with a part of its chain among the
+    // reads, and that part.
+    var clash: std.ArrayList(u32) = .empty;
+    defer clash.deinit(f.gpa);
+    for (reads.items) |ri| {
+        var x: Inst.Index = @fromBackingInt(@intCast(bir.instData(@fromBackingInt(ri)).lhs));
+        while (bir.instTag(x) == .field_access) : (x = @fromBackingInt(@intCast(bir.instData(x).lhs))) {
+            // Each read of the chain is work (kernel §8); past the budget no row stands.
+            if (f.charge(1)) {
+                for (f.demands.items) |*d| if (d.refused == null and d.hoists.len != 0) {
+                    d.refused = .limit;
+                    d.detail = "the walk of this declaration gave up";
+                    d.hoists = &.{};
+                };
+                return;
+            }
+            if (std.mem.indexOfScalar(u32, reads.items, x.int()) == null) continue;
+            try clash.appendSlice(f.gpa, &.{ ri, x.int() });
+        }
+    }
+    if (clash.items.len == 0) return;
+    for (f.demands.items) |*d| {
+        if (d.refused != null) continue;
+        for (d.hoists) |r| if (std.mem.indexOfScalar(u32, clash.items, r.inst) != null) {
+            d.refused = .later_use;
+            d.detail = try f.m.useText(f, r.inst);
+            d.hoists = &.{};
+            break;
+        };
+    }
+}
 /// `r`, and before it, with a temporary bound where `w` runs in scope at
 /// `r`: below the two's nearest common instruction, `w` is in a part that
 /// is evaluated whenever that instruction is (a call's callee or argument,
@@ -3271,6 +3315,10 @@ fn finishDemands(f: *Frame) Error!void {
             f.judge_ctx = none;
             f.judge_at = none;
         }
+    }
+    try f.hoistsApart();
+    for (f.demands.items) |*d| {
+        const ws = f.atoms.items[d.w..][0..d.wn];
         if (d.op == .supply) {
             if (d.refused != null and d.draft != none) f.drafts.items[d.draft].free[d.slot] = false;
             if (!d.send) continue;
