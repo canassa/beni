@@ -66,6 +66,7 @@ module Inline
   value loadAllShapedConst : V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadAllShapedPlanned : V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadAllShapedPlannedConst : V, V, V, (V, V → Result V V) → ⊤  -- impure
+  value loadFailed : ⊤ → ⊤  -- impure
   value loadPlanned : V, V, V, V → ⊤  -- impure
   value loadShaped : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadShapedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
