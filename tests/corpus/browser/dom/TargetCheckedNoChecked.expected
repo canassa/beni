@@ -1,0 +1,24 @@
+-- load
+<body>
+  <main>
+    <p id="out">""</p>
+    <div id="d">"x"</div>
+    <input id="c" type="checkbox" .value="on" .checked=false>
+  </main>
+</body>
+-- click #d
+<body>
+  <main>
+    <p id="out">"Nothing"</p>
+    <div id="d">"x"</div>
+    <input id="c" type="checkbox" .value="on" .checked=false>
+  </main>
+</body>
+-- click #c
+<body>
+  <main>
+    <p id="out">"Just True"</p>
+    <div id="d">"x"</div>
+    <input id="c" type="checkbox" .value="on" .checked=true>
+  </main>
+</body>

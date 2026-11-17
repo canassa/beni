@@ -44,14 +44,47 @@ pub markup text : String → Html msg
 pub markup map : Html a, (a → b) → Html b
 
 
---| The value of the form control an event came from.
-pub targetValue : Event → String
-targetValue ev = Js.to (Js.get (Js.get (Js.from ev) "target") "value")
+--| The value of the form control an event came from. `Nothing` when the
+--| target has no string `value`, as a `<div>` has none and an `<li>`'s is a
+--| number. A program that knows its target writes the default it wants:
+--|
+--|     onClick={λev → Picked (Maybe.withDefault "" (Html.targetValue ev))}
+pub targetValue : Event → Maybe String
+targetValue ev =
+    value = Js.get (Js.get (Js.from ev) "target") "value"
+    if Js.typeIs value "string" then
+        Just (Js.to value)
+    else
+        Nothing
 
 
---| Whether the checkbox an event came from is checked.
-pub targetChecked : Event → Bool
-targetChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
+-- The payload of `onInput` and `onChange`: the `value` of the control the
+-- event came from. The events are allowed only on `input`, `select` and
+-- `textarea`, and on each of them `value` is a string by the HTML
+-- specification, which is why the read is true of `String`
+-- (boundary.md §4.3 (a)). `targetValue` is the read for any other target.
+controlValue : Event → String
+controlValue ev = Js.to (Js.get (Js.get (Js.from ev) "target") "value")
+
+
+--| Whether the checkbox an event came from is checked. `Nothing` when the
+--| target has no boolean `checked`, as only an `<input>` has one.
+pub targetChecked : Event → Maybe Bool
+targetChecked ev =
+    checked = Js.get (Js.get (Js.from ev) "target") "checked"
+    if Js.typeIs checked "boolean" then
+        Just (Js.to checked)
+    else
+        Nothing
+
+
+-- The payload of `onCheck`: whether the control the event came from is
+-- checked. The event is allowed only on `input`, and every `input` has a
+-- boolean `checked` by the HTML specification, which is why the read is
+-- true of `Bool` (boundary.md §4.3 (a)). `targetChecked` is the read for
+-- any other target.
+controlChecked : Event → Bool
+controlChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
 
 
 --| A text field's selection, in code points as `String` counts them: where
@@ -1511,10 +1544,10 @@ pub attribute "accumulate" on "animate" "animateMotion" "animateTransform" : Str
 pub event "onBlur" : Event
 
 
-pub event "onChange" delegated via targetValue : String
+pub event "onChange" delegated via controlValue on "input" "select" "textarea" : String
 
 
-pub event "onCheck" name "change" delegated via targetChecked on "input" : Bool
+pub event "onCheck" name "change" delegated via controlChecked on "input" : Bool
 
 
 pub event "onClick" delegated : Event
@@ -1538,7 +1571,7 @@ pub event "onDrop" delegated : Event
 pub event "onFocus" : Event
 
 
-pub event "onInput" delegated via targetValue : String
+pub event "onInput" delegated via controlValue on "input" "select" "textarea" : String
 
 
 pub event "onKeyDown" delegated : Event

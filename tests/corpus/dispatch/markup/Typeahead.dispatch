@@ -39,7 +39,7 @@ module Typeahead
   markup 39 attr Html.class string
   markup 39 attr Html.value string
   markup 39 attr Html.placeholder string
-  markup 39 event Html.onInput payload via Html.targetValue
+  markup 39 event Html.onInput payload
   markup 39 hole html
   markup 50 element Html.p
   markup 50 attr Html.class string
