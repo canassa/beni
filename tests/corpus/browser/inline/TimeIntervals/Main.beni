@@ -1,0 +1,62 @@
+-- Literal duration helpers retain static timer identity. Negative/zero
+-- intervals clamp to 1 ms, and equal intervals share one scoped body.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+    slow : Int
+
+
+type Msg
+    = A Time.Posix
+    | B Time.Posix
+    | C Time.Posix
+    | Slow Time.Posix
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        A _ →
+            ( { model | a = model.a + 1 }, Cmd.none )
+
+        B _ →
+            ( { model | b = model.b + 1 }, Cmd.none )
+
+        C _ →
+            ( { model | c = model.c + 1 }, Cmd.none )
+
+        Slow _ →
+            ( { model | slow = model.slow + 1 }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ =
+    Sub.batch
+        [ Time.every (Time.millis (-5)) A
+        , Time.every (Time.millis 0) B
+        , Time.every (Time.millis 1) C
+        , Time.every (Time.seconds 1) Slow
+        , Time.every (Time.millis 1000) Slow
+        ]
+
+
+view : Model → Html Msg
+view model = <p>{model.a}, {model.b}, {model.c}; slow {model.slow}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { a = 0, b = 0, c = 0, slow = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

@@ -1,0 +1,31 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <output>"0"</output>
+  </main>
+</body>
+-- click #start
+console.log: started: ⊤
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- throws detail window rr-push 1
+console.log: reading an event: ⊤
+console.log: released: ⊤
+(threw: TypeError: a.noSuchMethod is not a function)
+(the DOM did not change)
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)
+-- detail window rr-push 2
+(the DOM did not change)
+-- stop
+(stopped)
+<body></body>
+-- timers
+(timers: 0)
+(the DOM did not change)

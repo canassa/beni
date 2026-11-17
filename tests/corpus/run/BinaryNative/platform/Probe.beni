@@ -3,11 +3,12 @@
 --! No production implementation is hidden here.
 
 import Binary
+import Binary.Region
 import Js
 
 
 --| Resizable and growable backing is refused by every Binary entry point,
---| even when the storage never resized.
+--| even when the storage never resized; a region refuses it when it is made.
 pub fixedRequirement : ⊤ → List String
 fixedRequirement ⊤ =
     options = Js.object [ ( "maxByteLength", Js.from 16 ) ]
@@ -19,6 +20,12 @@ fixedRequirement ⊤ =
     , Debug.toString (Binary.sourceInfo (Binary.WholeShared (Js.to shared)))
     , Debug.toString (Binary.view (Binary.Local (Js.to buffer)) Binary.U8 Binary.whole)
     , Debug.toString (Binary.transfer (Js.to buffer))
+    , Debug.toString (Binary.Region.region (Binary.Uint8Array (Js.to view)) ▷ Result.map λ_ → ⊤)
+    , Debug.toString
+        (Binary.Region.region
+            (Binary.DataView (Js.to (Js.construct (Js.global "DataView") [ shared ])))
+            ▷ Result.map λ_ → ⊤
+        )
     ]
 
 

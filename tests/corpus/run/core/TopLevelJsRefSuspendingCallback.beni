@@ -1,0 +1,80 @@
+-- run: a top-level `Js.ref` that holds a callback is one cell, and every use
+-- of it sees what another use wrote (transparent-effects-proposal.md §14.3
+-- rule 3 and §16.2, amended 2026-11-15; #1788). `Js.ref` is `pure`, so the
+-- value's evaluation was `pure` and its classes were copied fresh at every
+-- use: it had two bodies, `Main$direct` and `Main$direct$s`, the write went
+-- into one cell and the read came from the other, and the reader did not
+-- wait for the callback. Each cell starts with a callback that cannot
+-- suspend, and a declaration writes one that does: into a cell made by
+-- `Js.ref` itself, into one made by a helper function, and through a record
+-- of closures over a cell that a block makes. Another declaration reads the
+-- cell and calls what it holds.
+import Io
+import Js
+import Node
+import Task
+
+
+seen : Js.Ref Int
+seen = Js.ref 0
+
+
+sleeping : ⊤ → Int
+sleeping ⊤ =
+    Task.yieldNow ⊤
+    Js.write seen (Js.read seen + 1)
+    42
+
+
+direct : Js.Ref (⊤ → Int)
+direct = Js.ref λ⊤ → 0
+
+
+fireDirect : ⊤ → Int
+fireDirect ⊤ = (Js.read direct) ⊤
+
+
+cellOf : a → Js.Ref a
+cellOf x = Js.ref x
+
+
+helped : Js.Ref (⊤ → Int)
+helped = cellOf λ⊤ → 0
+
+
+fireHelped : ⊤ → Int
+fireHelped ⊤ = (Js.read helped) ⊤
+
+
+type alias Slot =
+    get : ⊤ → (⊤ → Int)
+    set : (⊤ → Int) → ⊤
+
+
+boxed : Slot
+boxed =
+    cell = Js.ref λ⊤ → 0
+    { get = λ⊤ → Js.read cell, set = λf → Js.write cell f }
+
+
+fireBoxed : ⊤ → Int
+fireBoxed ⊤ = (boxed.get ⊤) ⊤
+
+
+main : Node.Program
+main = Io.run λ⊤ →
+    Js.write direct sleeping
+    a = fireDirect ⊤
+    afterDirect = Js.read seen
+    Js.write helped sleeping
+    b = fireHelped ⊤
+    afterHelped = Js.read seen
+    boxed.set sleeping
+    c = fireBoxed ⊤
+    afterBoxed = Js.read seen
+
+    Node.printLines
+        [ "direct: ${a}, seen ${afterDirect}"
+        , "through a helper: ${b}, seen ${afterHelped}"
+        , "through a block's closures: ${c}, seen ${afterBoxed}"
+        ]

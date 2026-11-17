@@ -1,0 +1,32 @@
+-- ownership: the result of a block is taken by the block
+-- (`ownership-v2.md` §2.8, *Pending operands*, *a block's result*;
+-- #2449). The first arm of `pushed` has a `let` of its own, so the tuple
+-- that it returns is the result of a block. The pattern takes that tuple
+-- apart, and nothing holds it afterwards: the second push, onto the list
+-- that the tuple held, is accepted. `plain` is the same program with no
+-- `let` in the arm.
+roll : Int → Int × Int
+roll seed = ( seed, seed + 1 )
+
+
+pub pushed : Bool, List Int, Int → List Int × Int
+pushed t xs seed =
+    ( first, s2 ) =
+        if t then
+            ( shake, s ) = roll seed
+            ( List.push xs shake, s )
+        else
+            ( List.push xs 2, seed )
+    capped = if s2 > 700 then List.push first 0 else first
+    ( capped, s2 )
+
+
+pub plain : Bool, List Int, Int → List Int × Int
+plain t xs seed =
+    ( first, s2 ) =
+        if t then
+            ( List.push xs 1, seed )
+        else
+            ( List.push xs 2, seed )
+    capped = if s2 > 700 then List.push first 0 else first
+    ( capped, s2 )

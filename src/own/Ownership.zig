@@ -4854,7 +4854,7 @@ fn assertDictFocus(o: *Ownership, s: Summary) Allocator.Error!Summary {
     return o.normalize(out);
 }
 
-/// §23.3: the send positions — `browser`'s `Hosted` functions that hand a
+/// §23.3: the send positions — `browser-base`'s `Hosted` functions that hand a
 /// body to the runtime, which calls it with a send, and the taggers the
 /// runtime sends the results of.
 const HostedRow = enum {
@@ -4887,19 +4887,9 @@ const HostedRow = enum {
 };
 
 fn hostedRow(o: *const Ownership, m: u32, d: u32) ?HostedRow {
-    // `browser-inline`'s commands and subscriptions (#426): `Cmd.perform`
-    // hands its body a send as `job` does, `Sub.on` its start one as `tap`
-    // does, and `Sub.map` tags what a tagger made, as `mapTap`.
-    if (m < o.in.platform_names.len and std.mem.eql(u8, o.in.platform_names[m], "browser-inline")) {
-        const ib = o.in.birs[m];
-        const iname = o.in.interner.slice(ib.symbol(ib.decls[d].name));
-        const imod = o.in.module_names[m];
-        if (std.mem.eql(u8, imod, "Cmd") and std.mem.eql(u8, iname, "perform")) return .body;
-        if (std.mem.eql(u8, imod, "Sub") and std.mem.eql(u8, iname, "on")) return .sub_keyed;
-        if (std.mem.eql(u8, imod, "Sub") and std.mem.eql(u8, iname, "map")) return .map_borrowed;
-        return null;
-    }
-    if (m >= o.in.platform_names.len or !std.mem.eql(u8, o.in.platform_names[m], "browser")) return null;
+    // The shared opaque job/tap boundary owns these assertions for both
+    // renderers. A reexport does not change the defining package.
+    if (m >= o.in.platform_names.len or !std.mem.eql(u8, o.in.platform_names[m], "browser-base")) return null;
     if (!std.mem.eql(u8, o.in.module_names[m], "Hosted")) return null;
     const bir = o.in.birs[m];
     const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));

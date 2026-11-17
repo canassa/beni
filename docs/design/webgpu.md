@@ -1149,7 +1149,13 @@ Gpu.MappedRange.readBytes : MappedRange, Binary.ByteRange → Result ReadError B
 Gpu.MappedRange.writeBytes : MappedRange, Int, Binary.Source → Result InputError ⊤
 Gpu.MappedRange.readU32 : MappedRange, Int → Result InputError Int
 Gpu.MappedRange.writeF32 : MappedRange, Int, Float → Result InputError ⊤
+Gpu.MappedRange.region : MappedRange → Result InputError (Binary.Region.Region ReadWrite)
+Gpu.MappedRange.readRegion : MappedRange → Result InputError (Binary.Region.Region ReadOnly)
 ```
+
+`region` and `readRegion` (added 2026-11-09) are the range as a checked region,
+[binary.md](binary.md) §6: liveness and mode are checked once, and a region
+kept past the mapping gives `Detached`.
 
 Mapped ranges access native mapped storage directly through typed reads/writes;
 `readBytes` explicitly copies into a fresh fixed `Binary.Buffer`, and

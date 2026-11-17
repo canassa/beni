@@ -987,11 +987,13 @@ fork parent work sc from =
 --| Wait for a platform's callback: the one way a fiber suspends. The
 --| function is called at once with the `Resume` the platform hands its host
 --| callback, and returns what cancels the wait. When the host calls back
---| before the function returns, nothing waits at all.
+--| before the function returns, nothing waits at all. Neither function
+--| may suspend: the runtime calls the canceller synchronously, during
+--| cancellation.
 --|
 --|     sleep ms =
 --|         Task.callback λresume → startTimer ms resume
-pub callback : sync (Resume a → (⊤ → ⊤)) → a
+pub callback : sync (Resume a → sync (⊤ → ⊤)) → a
 callback register = suspend λwake →
     canceller = Js.from (register (Js.to wake))
     if Js.typeIs canceller "function" then canceller else Js.null

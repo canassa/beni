@@ -1,0 +1,17 @@
+--! A subscription whose reader of each event throws: layer code, run as
+--! each event is dispatched.
+
+import Js
+import Listen
+import Schema exposing (Value)
+
+
+--| Every `rr-push`, read by calling a method the event does not have.
+pub pushes : sync (Value → ⊤) → (⊤ → ⊤)
+pushes send = Listen.on "window" "rr-push" broken send
+
+
+broken : Js.Value → Value
+broken event =
+    Debug.log "reading an event" ⊤
+    Js.to (Js.call event "noSuchMethod" [])

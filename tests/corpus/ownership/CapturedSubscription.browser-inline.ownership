@@ -1,6 +1,6 @@
 module CapturedSubscription
   summary start: res λr{lost}
-  summary every: π1 RA; res #Sub.0 fresh2{excl π1}, #Sub.0[*] condition(fresh1), #Sub.0[*].0 condition(fresh3), #Sub.0[*].1 condition(fresh4) λ?r{lost}, #Sub.0[*].2 λ?r{lost}, #Sub.0[*].2◇⟨◇⟩◇ π1; xreq sep π1 π1
-  summary scalar: res #Sub.0 fresh2, #Sub.0[*] condition(fresh1), #Sub.0[*].0 condition(fresh3), #Sub.0[*].1 condition(fresh4) λ?r{lost}, #Sub.0[*].2 λ?r{lost}
+  summary every: π1 RA; res #Listen.0 fresh1{lost}r{lost}, #Listen.0[*] condition(fresh6), #Listen.0[*].0 fresh2{lost}r{lost}, #Listen.0[*].0⋆ ~condition(fresh4) ~fresh4{lost}r{lost} ~λr{lost}, #Listen.0[*].2 fresh3{lost}r{lost}, #Listen.0[*].2⋆ ~condition(fresh5) ~fresh5{excl π1} ~λ?r{lost} ~λr{lost} ~π1; xreq sep π1 π1
+  summary scalar: res #Listen.0 fresh1{lost}r{lost}, #Listen.0[*] condition(fresh6), #Listen.0[*].0 fresh2{lost}r{lost}, #Listen.0[*].0⋆ ~condition(fresh4) ~fresh4{lost}r{lost} ~λr{lost}, #Listen.0[*].2 fresh3{lost}r{lost}, #Listen.0[*].2⋆ ~condition(fresh5) ~fresh5 ~λ?r{lost} ~λr{lost}
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

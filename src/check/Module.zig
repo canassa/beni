@@ -73,6 +73,7 @@ const Retained = @import("Retained.zig");
 const Effects = @import("Effects.zig");
 const Sync = @import("Sync.zig");
 const Generalize = @import("Generalize.zig");
+const EnvFile = @import("Env.zig");
 const CallStyle = @import("CallStyle.zig");
 const Prepend = @import("Prepend.zig");
 const EffectPlan = @import("EffectPlan.zig");
@@ -356,7 +357,18 @@ pub fn check(in: Input) Error!Check.Counters {
     try @import("Realms.zig").seed(&effects, &cx, decl_scheme, &report);
     const effects_token = if (in.profile) |p| p.begin() else null;
     var derived_impure: []const bool = &.{};
-    const effect_units = try solveEffects(&effects, scratch, bir, decl_scheme, &groups, &solver.evidence, &eager, &solver.contexts, &derived_impure);
+    // Per declaration, whether its body may make something: its evaluation
+    // may make a cell even when it is `pure`, as `Js.ref` does
+    // (transparent-effects-proposal.md §14.3 rule 3, amended 2026-11-15).
+    const expansive = try scratch.alloc(bool, bir.decls.len);
+    for (bir.decls, expansive) |d, *x| {
+        const body = d.body.unwrap() orelse {
+            x.* = false;
+            continue;
+        };
+        x.* = !try makesNothing(&report.env, scratch, body);
+    }
+    const effect_units = try solveEffects(&effects, scratch, bir, decl_scheme, expansive, &groups, &solver.evidence, &eager, &solver.contexts, &derived_impure);
     // What the lowering reads of the bits (transparent-effects-proposal.md
     // §16.2), before P8 publishes the sensitive classes it finds.
     const effect_plan = try EffectPlan.build(&effects, .{
@@ -586,6 +598,34 @@ pub fn check(in: Input) Error!Check.Counters {
     };
 }
 
+/// Whether evaluating `inst` makes nothing (transparent-effects-proposal.md
+/// §14.3 rule 3, amended 2026-11-15): a value by checker-v2.md §8.4's
+/// syntax (`Generalize.isValue`), or a block whose every binding is a
+/// function or makes nothing and whose result makes nothing. A statement
+/// is work, so a block with one makes something.
+fn makesNothing(env: *const EnvFile.Env, scratch: Allocator, inst: Bir.Inst.Index) Error!bool {
+    const bir = env.bir;
+    var at = inst;
+    while (at.int() < bir.insts.len and bir.instTag(at) == .let) {
+        const data = bir.instData(at);
+        for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index)) |item| {
+            if (item.int() >= bir.insts.len) return false;
+            const item_data = bir.instData(item);
+            switch (bir.instTag(item)) {
+                .let_def => {
+                    const def = bir.extraData(@fromBackingInt(@intCast(item_data.lhs)), Bir.LetDef);
+                    if (def.params_start != def.params_end) continue;
+                    if (!try makesNothing(env, scratch, @fromBackingInt(@intCast(item_data.rhs)))) return false;
+                },
+                .let_pattern => if (!try makesNothing(env, scratch, @fromBackingInt(@intCast(item_data.rhs)))) return false,
+                else => return false,
+            }
+        }
+        at = @fromBackingInt(@intCast(data.rhs));
+    }
+    return Generalize.isValue(env, scratch, at);
+}
+
 /// Effect inference's solve (transparent-effects-proposal.md §14.4): each
 /// declaration's binding group, so the members of one are solved together,
 /// and what every answered wanted means for the bits — a derived answer's
@@ -596,7 +636,7 @@ pub fn check(in: Input) Error!Check.Counters {
 /// was seeded from the row's published bit when it was answered. After the
 /// solve, each row's bit is written to `derived_impure` (per local type ×
 /// method) for P8.
-fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_scheme: []const Var.Optional, groups: *Groups, evidence: *const Evidence, eager: *const Eager, contexts: *const Contexts, derived_impure: *[]const bool) Error![]const u32 {
+fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_scheme: []const Var.Optional, expansive: []const bool, groups: *Groups, evidence: *const Evidence, eager: *const Eager, contexts: *const Contexts, derived_impure: *[]const bool) Error![]const u32 {
     // Each declaration's binding group, kept in `scratch` for `EffectPlan`.
     const unit = try scratch.alloc(u32, bir.decls.len);
     for (unit, 0..) |*u, d| {
@@ -643,6 +683,7 @@ fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_sch
         .scratch = scratch,
         .bir = bir,
         .decl_scheme = decl_scheme,
+        .expansive = expansive,
         .unit = unit,
         .wanted_edges = edges.items,
         .wanted_joins = joins.items,

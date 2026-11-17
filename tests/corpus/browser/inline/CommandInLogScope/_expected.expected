@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <output>"0"</output>
+  </main>
+</body>
+-- click #go
+console.info: body {"request":"r1"}
+console.info: reply update
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <output>"2"</output>
+  </main>
+</body>

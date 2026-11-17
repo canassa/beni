@@ -4206,7 +4206,7 @@ const Emitter = struct {
         // Version 1.14: the platform's `Sub` and `Cmd` values, by name.
         var effects: ?Writes.Effects = null;
         if (findLowering(e.options.platform.lowering.?).?.effects) |fx| {
-            var found: Writes.Effects = .{};
+            var found: Writes.Effects = .{ .command_context = fx.command_context };
             for (0..n) |i| {
                 if (packages[i] != .platform) continue;
                 const m: Graph.Index = @fromBackingInt(@intCast(i));
@@ -4221,6 +4221,7 @@ const Emitter = struct {
                     found.sub_batch = ref(e, m, "batch");
                     found.sub_map = ref(e, m, "map");
                     found.sub_on = ref(e, m, "on");
+                    found.sub_listen = ref(e, m, "listen");
                 }
                 if (std.mem.eql(u8, names[i], fx.cmd)) {
                     found.cmd_none = ref(e, m, "none");
@@ -4775,6 +4776,51 @@ const Emitter = struct {
             }
         }
     }
+    /// A lowering names its own entry-capture helper. If source
+    /// reachability cannot reach it, no subscription can retain the entry
+    /// and the registration context is unnecessary. This is build-wide:
+    /// uncertain or mixed starts keep the context, never lose a guard.
+    fn subscriptionEntryNeeded(e: *Emitter) bool {
+        const lowering = findLowering(e.options.platform.lowering orelse return true) orelse return true;
+        const effects = lowering.effects orelse return true;
+        const capture = effects.entry_capture orelse return true;
+        for (0..e.graph().count()) |i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            if (e.session.store.package(e.graph().moduleFile(m)) != .platform) continue;
+            if (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), capture.module)) continue;
+            const decl = e.moduleValue(m, capture.name) orelse return true;
+            return e.live.decl(m, decl);
+        }
+        return false;
+    }
+
+    /// The lowering owns the complete writer set. A private declaration is
+    /// still a dependency: the application cannot import it, but can reach
+    /// it through a public wrapper. Unknown descriptions remain guarded.
+    fn updateContextNeeded(e: *Emitter) bool {
+        const lowering = findLowering(e.options.platform.lowering orelse return true) orelse return true;
+        const effects = lowering.effects orelse return true;
+        const writers = effects.update_writers orelse return true;
+        for (writers) |writer| {
+            for (0..e.graph().count()) |i| {
+                const m: Graph.Index = @fromBackingInt(@intCast(i));
+                const package = e.session.store.package(e.graph().moduleFile(m));
+                if ((writer.package == .core and package != .core) or
+                    (writer.package == .platform and package != .platform)) continue;
+                if (!std.mem.eql(u8, e.session.interner.slice(e.graph().moduleName(m)), writer.module)) continue;
+                const b = e.bir(m);
+                const live = for (b.decls, 0..) |decl, index| {
+                    if (!decl.kind.isValue()) continue;
+                    if (!std.mem.eql(u8, e.session.interner.slice(b.symbol(decl.name)), writer.name)) continue;
+                    break e.live.decl(m, @intCast(index));
+                } else return true;
+                if (live) return true;
+                break;
+            }
+        }
+        return false;
+    }
+
     fn buildDirect(e: *Emitter) !void {
         const a = e.scratch;
         const w = e.writes.?;
@@ -4784,6 +4830,8 @@ const Emitter = struct {
         }
         const calls = e.writes_calls;
         const effects = e.writes_effects;
+        const subscription_entry = e.subscriptionEntryNeeded();
+        const update_context = e.updateContextNeeded();
         const birs = e.writes_birs;
         const programs = try a.alloc(Lower.Direct.Program, calls.len);
         // Per program, its read sets and its keys' writes, for the root plan.
@@ -4792,7 +4840,7 @@ const Emitter = struct {
         var text: std.Io.Writer.Allocating = .init(a);
         for (calls, programs, plan_groups, plan_writes) |call, *out, *pg_out, *pw_out| {
             const prog = &call.program;
-            out.* = .{ .module = call.module, .inst = call.inst, .keys = &.{}, .steps = &.{}, .holes = &.{}, .groups = 0, .key_groups = &.{}, .written = &.{} };
+            out.* = .{ .update_context = update_context, .module = call.module, .inst = call.inst, .keys = &.{}, .steps = &.{}, .holes = &.{}, .groups = 0, .key_groups = &.{}, .written = &.{} };
             // The keys: the pass's leaves, or the one `*` key of a program
             // it does not recognise (`write-sets.md` §1.1).
             const star_writes = [_]Writes.Write{.{ .path = Writes.rho_path, .kind = .value }};
@@ -4870,7 +4918,7 @@ const Emitter = struct {
                         const set = try a.alloc(beni_markup.Program.Subscription, subs.decls.len);
                         const starts = try a.alloc(Lower.Direct.Start, subs.decls.len);
                         for (subs.decls, set, starts) |dcl, *s, *st| {
-                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst), .message = dcl.message, .whole = dcl.whole };
+                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst), .message = dcl.message, .whole = dcl.whole, .entry = subscription_entry, .waits = dcl.waits };
                             const info = try w.funInfo(dcl.start);
                             st.* = .{
                                 .kind = switch (info.kind) {

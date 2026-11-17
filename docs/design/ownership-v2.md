@@ -1270,6 +1270,14 @@ was pending at, compatible with, not read one by one for, and answers `under` fo
 each push met every earlier push as a pending operand: sib n = 10 / 80 cost 1 990 / 73 040 demands' records, now
 1 526 / 13 803.
 
+*Amended 2026-11-10 (#2449): a block's result.* A block `let … in e` has `e`'s value. The walk put `e` on the
+stack for its consumer, the block, and the block took the value and left the operand there. So the result of
+an `if` arm that has a `let` of its own stayed pending to the end of the frame, and every later write of what
+it held was refused `held-operand`: `( first, s2 ) = if t then ( ( shake, s ) = roll seed; ( List.push xs
+shake, s ) ) else …` followed by `List.push first 0`. Now the block removes its body's operand when it takes
+the value (`Walk`, `.let`), as a `case` removes each arm's. From there on the block's own instruction is the
+operand, while its consumer waits. Fixture `ownership/ArmLetResult`; mutant `block_result_pending`.
+
 **The escape index** (#1714, 2026-11-02). Step 2 reads the escapes through an index, never by a scan of
 every escape per target. Escapes are bucketed by their leaves' base keys, each bucket sorted by point, with a
 tree of the least `rank₂` over each range of it. For an escape `x` before `p`, `x` is compatible with `p`
@@ -4082,8 +4090,9 @@ at the adapter boundary; Prepass itself neither compares declaration-name string
      | Platform | Bodies | Why no program code runs inside a host call |
      |---|---|---|
      | `node` | `Http.Server.startListen`, `receive`, `takeUpgrade`, `WebSocket.fromUpgrade`, `Io.run`, `ChildProcess.listen`, `collectFrom` | an emitter's listener resumes a fiber (`Task.resume`), which queues it; `Io.run`'s `beforeExit` only reports; a child's `data` listener keeps a chunk, or closes the pipes and signals the child, and Node emits nothing back inside those calls (`boundary.md` §9.14) |
-     | `browser` | `Rt.turn`, `delegate`, `delegated`, `listen`, `watchEdits`, `crashScreen`, `Listen.on`, `on2`, `WebSocket.attach`, `Gpu.Engine.watchUncaptured` | a message a handler sends is queued for the turn's flush; a `Listen` value is queued for a fiber. A device's `uncapturederror` listener queues the event for its listener fibers and resumes the device's sentinel; a browser dispatches the event as a task of its own, never inside a call (`webgpu.md` §8). **One exception, #2006:** a DOM handler's own extractor runs at the dispatch, so under a `focus()` it runs inside that host call |
-     | `browser-inline` | `Inline.on`, `onArm`, `listen`, `crashScreen`, `Listen.on`, `Browser.Navigation.listen`, `listenOne` | the same, and the same exception |
+     | `browser` | `Rt.turn`, `delegate`, `delegated`, `listen`, `watchEdits`, `crashScreen`, `WebSocket.attach`, `Gpu.Engine.watchUncaptured` | a message a handler sends is queued for the turn's flush; a `Listen` value is queued for a fiber. A device's `uncapturederror` listener queues the event for its listener fibers and resumes the device's sentinel; a browser dispatches the event as a task of its own, never inside a call (`webgpu.md` §8). **One exception, #2006:** a DOM handler's own extractor runs at the dispatch, so under a `focus()` it runs inside that host call |
+     | `browser-inline` | `Inline.on`, `onArm`, `listen`, `crashScreen`, `Browser.Navigation.listen`, `listenOne`; shared `Listen` in `browser-base` | pinned `Inline.subscribe` binds registration to `eventEntry`: stopped callbacks do nothing; nested callbacks read synchronously under the existing guard, and sends join its queue. An outer callback enters `send` and drains after its reader returns. Neither helper adds ownership words or suspension; the same extractor exception applies. |
+     | `browser-base` | `Listen.on`, `on2`, with pinned `callback`, `withEntry` and `direct` helpers | captures a renderer-selected synchronous entry at listener installation, restores nested registration in `finally`, then reads and sends inside that entry; no additional list writes, ownership words or suspension. Renderer sends keep their existing queue rule; direct fiber listeners queue through the task boundary. Event readers retain the existing extractor exception above (`browser-capability-base.md` §4.1). |
      | `browser-tea`, `html` | none | no host code of their own |
      | `cloudflare` | `Worker.listenForAbort` | the listener stops the scheduler; a request's handlers are the host's calls with nothing beneath them, and resume fibers |
      Core's own half, `Task.schedule`, `drain` and `fromHost`, was pinned with `Task`.

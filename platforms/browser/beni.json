@@ -4,8 +4,8 @@
   "program": "Browser.Program",
   "html": "index.html",
   "entryHost": "window",
-  "platforms": ["html"],
-  "reexports": ["Html", "Html.Markdown"],
+  "platforms": ["browser-base"],
+  "reexports": ["Html", "Html.Markdown", "Cmd", "Sub", "Time", "Browser.Events", "Hosted"],
   "markup": { "lowering": "dom", "module": "Rt" },
   "zig": "zig/root.zig",
   "entryKinds": [{

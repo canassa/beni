@@ -1,0 +1,9 @@
+-- load
+<body>
+  <button>"0"</button>
+</body>
+-- click button
+console.info: body {"k":"v"}
+<body>
+  <button>"1"</button>
+</body>

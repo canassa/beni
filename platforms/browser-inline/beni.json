@@ -1,12 +1,12 @@
 {
   "platform": true,
   "name": "browser-inline",
-  "platforms": ["html"],
+  "platforms": ["browser-base"],
   "program": "Browser.Program",
   "html": "index.html",
   "entryHost": "window",
   "lists": "in-place",
   "markup": { "lowering": "inline", "module": "Inline" },
   "zig": "zig/root.zig",
-  "reexports": ["Html", "Html.Markdown", "Browser", "Cmd", "Sub", "Tea"]
+  "reexports": ["Html", "Html.Markdown", "Browser", "Cmd", "Sub", "Tea", "Time", "Browser.Events"]
 }

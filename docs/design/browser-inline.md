@@ -114,6 +114,14 @@ command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
 
 ## 5. What the lowering refuses
 
+*Amended 2026-11-10 (the owner).* A subscription may drop its value with a tagger
+returning a constructor with zero fields (`λ_ → Tick`). Call that handler with
+no arguments, including when update does not inspect its message. Zero-field
+and direct single-payload taggers are supported. The existing two-or-more-field
+compiler limit retains its text; other field-count mismatches name both the
+tagger's count and the selected handler's count.
+
+
 Strict, not coarse: what the lowering cannot compile exactly is a build error, `not_implemented`,
 at the program's call or at the construct, and never a fallback. Each message says which class it
 is, what the cause is, and what to write instead. There are four classes, of two kinds.

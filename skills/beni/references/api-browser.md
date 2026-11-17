@@ -10,7 +10,7 @@ needs. Effects are inferred and never written; a value whose result reaches the 
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
 module Browser
-  type Host a
+  alias Host a
   type Program
   alias Send a
   type UrlRequest
@@ -49,28 +49,6 @@ module Browser.Canvas
   value resizeOffscreen : OffscreenCanvas, Int, Int → Result Error ⊤  -- impure
   value size : Canvas → { height : Int, width : Int }  -- impure
   value snapshot : OffscreenCanvas → Result Error ImageBitmap  -- impure
-module Browser.Events
-  alias Size
-    Size
-  type Visibility
-    Visible
-    Hidden
-  value eachAnimationFrame : (Posix → ⊤) → ⊤  -- suspends
-  value eachAnimationFrameDelta : (Float → ⊤) → ⊤  -- suspends
-  value eachKeyDown : (Event → ⊤) → ⊤  -- suspends
-  value eachKeyPress : (Event → ⊤) → ⊤  -- suspends
-  value eachKeyUp : (Event → ⊤) → ⊤  -- suspends
-  value eachResize : (Size → ⊤) → ⊤  -- suspends
-  value eachVisibilityChange : (Visibility → ⊤) → ⊤  -- suspends
-  value onAnimationFrame : (Posix → msg) → Sub msg  -- impure
-  value onAnimationFrameDelta : (Float → msg) → Sub msg  -- impure
-  value onKeyDown : (Event → msg) → Sub msg  -- impure
-  value onKeyPress : (Event → msg) → Sub msg  -- impure
-  value onKeyUp : (Event → msg) → Sub msg  -- impure
-  value onResize : (Size → msg) → Sub msg  -- impure
-  value onVisibilityChange : (Visibility → msg) → Sub msg  -- impure
-  value size : ⊤ → Size  -- impure
-  value visibility : ⊤ → Visibility  -- impure
 module Browser.Image
   type Alpha
     DefaultAlpha
@@ -340,35 +318,6 @@ module Browser.WorkerStream
   value value : Chunk a → a
 module Browser.WorkerWire
   value normalize : V, Int, String, V → V  -- impure
-module Cmd
-  type Cmd a
-    Cmd
-  type Item a
-    Perform
-    Now
-    Keyed
-    KeyedNow
-    Cancel
-    CancelAll
-    After
-  type Policy
-    Restart
-    Ignore
-    Queue
-    Concurrent
-  alias Send a
-  value afterRender : (Send msg → ⊤) → Cmd msg  -- impure
-  value batch : List (Cmd msg) → Cmd msg
-  value cancel : k → Cmd msg where k.compare : k, k → Order
-  value cancelAll : Cmd msg
-  value do : (⊤ → ⊤) → Cmd msg  -- impure
-  value items : Cmd msg → List (Item msg)
-  value keyed : k, Policy, (Send msg → ⊤) → Cmd msg where k.compare : k, k → Order  -- impure
-  value log : Level, String → Cmd msg  -- impure
-  value map : Cmd a, k, (a → msg) → Cmd msg where k.compare : k, k → Order  -- impure
-  value none : Cmd msg
-  value perform : (Send msg → ⊤) → Cmd msg  -- impure
-  value task : (⊤ → a), (a → msg) → Cmd msg  -- impure
 module Dom
   type Align
     Start
@@ -1060,10 +1009,12 @@ module Gpu.MappedRange
   value readI16 : MappedRange, Int → Result InputError Int  -- impure
   value readI32 : MappedRange, Int → Result InputError Int  -- impure
   value readI8 : MappedRange, Int → Result InputError Int  -- impure
+  value readRegion : MappedRange → Result InputError (Region ReadOnly)  -- impure
   value readU16 : MappedRange, Int → Result InputError Int  -- impure
   value readU32 : MappedRange, Int → Result InputError Int  -- impure
   value readU8 : MappedRange, Int → Result InputError Int  -- impure
   value readWord64 : MappedRange, Int → Result InputError Word64  -- impure
+  value region : MappedRange → Result InputError (Region ReadWrite)  -- impure
   value size : MappedRange → Int  -- impure
   value writeBytes : MappedRange, Int, Source → Result InputError ⊤  -- impure
   value writeF16 : MappedRange, Int, Float → Result Error ⊤  -- impure
@@ -1976,42 +1927,6 @@ module Gpu.WgslFeature
   value has : WgslFeatures, String → Bool
   value size : WgslFeatures → Int
   value values : WgslFeatures → List String
-module Hosted
-  type Job a
-  type Key
-  type Kind
-    Waits
-    Hears
-  type Later a
-  type Outlet a
-  type Relay a
-  type Tap a
-  value afterRender : Host msg, Later msg → ⊤  -- impure
-  value callJob : Job msg, Send msg → ⊤  -- impure
-  value close : Outlet msg → ⊤  -- impure
-  value closeRelay : Relay msg → ⊤  -- impure
-  value compare : Key, Key → Order
-  value defect : String → a  -- impure
-  value emit : Outlet msg, msg → ⊤  -- impure
-  value eq : Key, Key → Bool
-  value fibered : ⊤ → Bool  -- impure
-  value hear : Relay msg → ⊤  -- impure
-  value hook : ((a → ⊤) → ⊤ → ⊤), (a → msg) → Tap msg  -- impure
-  value job : (Send msg → ⊤) → Job msg  -- impure
-  value key : k → Key where k.compare : k, k → Order
-  value later : (Send msg → ⊤) → Later msg  -- impure
-  value mapJob : Job a, (a → b) → Job b
-  value mapLater : Later a, (a → b) → Later b  -- impure
-  value mapTap : Tap a, (a → b) → Tap b  -- impure
-  value outlet : Host msg → Outlet msg  -- impure
-  value relay : Host msg, Tap msg → Relay msg  -- impure
-  value retap : Relay msg, List (Tap msg) → ⊤  -- impure
-  value run : Relay msg → ⊤  -- suspends
-  value runHeard : Relay msg → ⊤  -- suspends
-  value runJob : Job msg, Send msg → ⊤  -- suspends
-  value tap : (Send a → ⊤), (a → msg) → Tap msg  -- impure
-  value title : String → ⊤  -- impure
-  value unhear : Relay msg → ⊤  -- impure
 module Http
   opaque type Body
   type Error
@@ -2064,10 +1979,6 @@ module Http
   value stringBody : String, String → Body
   value stringPart : String, String → Part
   value track : String, (Progress → msg) → Sub msg  -- impure
-module Listen
-  value each : ((a → ⊤) → ⊤ → ⊤), (a → ⊤) → ⊤  -- suspends
-  value on : String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
-  value on2 : String, String, String, (Value → a), (a → ⊤) → ⊤ → ⊤  -- impure
 module Random
   alias Generator a
   alias Seed
@@ -2143,27 +2054,6 @@ module Storage
   value remove : Area, String → ⊤  -- impure
   value save : Area, String, String, (Error → msg) → Cmd msg  -- impure
   value set : Area, String, String → Result Error ⊤  -- impure
-module Sub
-  type Sub a
-    None
-    Listen
-  value batch : List (Sub msg) → Sub msg
-  value listen : k, (Send a → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
-  value map : Sub a, (a → msg) → Sub msg  -- impure
-  value none : Sub msg
-  value on : k, ((a → ⊤) → ⊤ → ⊤), (a → msg) → Sub msg where k.compare : k, k → Order  -- impure
-  value taps : Sub msg → List (Key × Kind × Tap msg)
-module Time
-  alias Duration
-  alias Posix
-  value every : Duration, (Posix → msg) → Sub msg  -- impure
-  value fromMillis : Int → Posix
-  value inMillis : Duration → Int
-  value millis : Int → Duration
-  value now : ⊤ → Posix  -- impure
-  value seconds : Int → Duration
-  value sleep : Duration → ⊤  -- suspends
-  value toMillis : Posix → Int
 module WebSocket
   alias Close
     Close

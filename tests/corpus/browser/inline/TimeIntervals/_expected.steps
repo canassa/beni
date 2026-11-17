@@ -1,0 +1,5 @@
+timers
+advance 1
+stop
+timers
+advance 2000

@@ -1,0 +1,76 @@
+-- load
+<body>
+  <main>
+    <button id="sleep">"sleep"</button>
+    <p>"0 ticks, 0 frames, 0.0 ms"</p>
+    <p>"0 resizes, 0 keys, asleep"</p>
+  </main>
+</body>
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- frames
+(frames: 1)
+(the DOM did not change)
+-- advance 10
+<body>
+  <main>
+    <button id="sleep">"sleep"</button>
+    <p>"1 ticks, 0 frames, 0.0 ms"</p>
+    <p>"0 resizes, 0 keys, asleep"</p>
+  </main>
+</body>
+-- frame 1
+(frame at 26 ms: 1 callback)
+<body>
+  <main>
+    <button id="sleep">"sleep"</button>
+    <p>"2 ticks, 1 frames, 26.0 ms"</p>
+    <p>"0 resizes, 0 keys, asleep"</p>
+  </main>
+</body>
+-- event window resize
+<body>
+  <main>
+    <button id="sleep">"sleep"</button>
+    <p>"2 ticks, 1 frames, 26.0 ms"</p>
+    <p>"1 resizes, 0 keys, asleep"</p>
+  </main>
+</body>
+-- key #sleep x
+<body>
+  <main>
+    <button id="sleep">"sleep"</button>
+    <p>"2 ticks, 1 frames, 26.0 ms"</p>
+    <p>"1 resizes, 1 keys, asleep"</p>
+  </main>
+</body>
+-- click #sleep
+(the DOM did not change)
+-- advance 4
+<body>
+  <main>
+    <button id="sleep">"sleep"</button>
+    <p>"3 ticks, 1 frames, 26.0 ms"</p>
+    <p>"1 resizes, 1 keys, asleep"</p>
+  </main>
+</body>
+-- advance 1
+<body>
+  <main>
+    <button id="sleep">"sleep"</button>
+    <p>"3 ticks, 1 frames, 26.0 ms"</p>
+    <p>"1 resizes, 1 keys, awake"</p>
+  </main>
+</body>
+-- stop
+(stopped)
+<body></body>
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- frames
+(frames: 0)
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

@@ -1,0 +1,169 @@
+-- Bulk operations (binary.md §7) on a view and on a region: one check per
+-- call, then every element. A typed array's `set` (aligned, host byte order)
+-- and the DataView loop (unaligned, or the other order) write the same
+-- bytes; a call that fails writes nothing. Every expected line is worked out
+-- by hand from ECMA-262's encodings.
+import Binary exposing (Big, Data, F32, Little, U16, U8)
+import Binary.Region as Region
+import Node exposing (Program)
+
+
+main : Program
+main = Node.printLines [ …writes ⊤, …reads ⊤, …failures ⊤, …ranges ⊤, …regions ⊤ ]
+
+
+-- Setup that must succeed; a failure here is a broken fixture, not a result.
+ok : Result e a → a
+ok result =
+    case result of
+        Ok value →
+            value
+        Err error →
+            Debug.todo (Debug.toString error)
+
+
+bytesOf : Binary.Buffer → String
+bytesOf buffer = Debug.toString (Binary.toList (Binary.WholeBuffer buffer))
+
+
+writes : ⊤ → List String
+writes ⊤ =
+    aligned = ok (Binary.allocate 8)
+    unaligned = ok (Binary.allocate 8)
+    big = ok (Binary.allocate 8)
+    floats = ok (Binary.allocate 12)
+    words = ok (Binary.allocate 16)
+    -- 258 is 0x0102, 772 is 0x0304.
+    ok
+        (Binary.writeU16s (ok (Binary.view (Binary.Local aligned) U16 Binary.whole)) 2 Little
+            [ 258, 772 ]
+        )
+    ok (Binary.writeU16s (ok (Binary.dataView (Binary.Local unaligned))) 1 Little [ 258, 772 ])
+    ok (Binary.writeU16s (ok (Binary.dataView (Binary.Local big))) 2 Big [ 258, 772 ])
+    -- 1.0 is 0x3F800000, -2.0 0xC0000000, 0.1 rounds to 0x3DCCCCCD.
+    ok
+        (Binary.writeF32s (ok (Binary.view (Binary.Local floats) F32 Binary.whole)) 0 Little
+            [ 1, -2, 0.1 ]
+        )
+    ok
+        (Binary.writeWord64s (ok (Binary.dataView (Binary.Local words))) 0 Big
+            [ ok (Binary.word64 1 2), ok (Binary.word64 4294967295 0) ]
+        )
+    signed = ok (Binary.allocate 4)
+    ok (Binary.writeI8s (ok (Binary.dataView (Binary.Local signed))) 0 [ -1, -128, 127, 0 ])
+    -- The rest of a list pattern is a view of the list, not a plain array.
+    tail = ok (Binary.allocate 3)
+    case [ 9, 8, 7, 6 ] of
+        [ _, …rest ] →
+            ok (Binary.writeU8s (ok (Binary.dataView (Binary.Local tail))) 0 rest)
+        [] →
+            ⊤
+    [ "aligned u16: " ++ bytesOf aligned
+    , "unaligned u16: " ++ bytesOf unaligned
+    , "big-endian u16: " ++ bytesOf big
+    , "f32: " ++ bytesOf floats
+    , "word64 big: " ++ bytesOf words
+    , "i8: " ++ bytesOf signed
+    , "rest of a list: " ++ bytesOf tail
+    ]
+
+
+reads : ⊤ → List String
+reads ⊤ =
+    buffer = ok (Binary.fromList [ 1, 2, 3, 4, 255, 255, 0, 128, 0, 0, 128, 63, 0, 0, 0, 64 ])
+    data = ok (Binary.dataView (Binary.Local buffer))
+    halves = ok (Binary.view (Binary.Local buffer) U16 Binary.whole)
+    [ Debug.toString (Binary.readU8s data 0 4)
+    , Debug.toString (Binary.readI8s data 4 4)
+    , Debug.toString (Binary.readU16s halves 0 2 Little)
+    , Debug.toString (Binary.readU16s data 1 2 Big)
+    , Debug.toString (Binary.readI16s data 4 2 Little)
+    , Debug.toString (Binary.readU32s data 0 1 Big)
+    , Debug.toString (Binary.readI32s data 4 1 Little)
+    , Debug.toString (Binary.readF32s data 8 2 Little)
+    , Debug.toString (Binary.readF64s data 8 1 Little)
+    , Debug.toString (Binary.readWord64s data 0 2 Big ▷ Result.map λws → List.map ws Binary.words)
+    , Debug.toString (Binary.readF16s data 10 1 Little)
+    , Debug.toString (Binary.readU8s data 16 0)
+    ]
+
+
+-- Each failure leaves the storage as it was.
+failures : ⊤ → List String
+failures ⊤ =
+    buffer = ok (Binary.fromList [ 0, 0, 0, 0, 0, 0, 0, 0 ])
+    data = ok (Binary.dataView (Binary.Local buffer))
+    value = Binary.writeU8s data 0 [ 1, 300, 2 ]
+    tooLow = Binary.writeI16s data 0 Little [ 1, -32769 ]
+    outside = Binary.writeU32s data 4 Little [ 1, 2 ]
+    floats = Binary.writeF64s data 1 Little [ 1 ]
+    count = Binary.readU8s data 0 (-1)
+    past = Binary.readF32s data 6 1 Little
+    moved = ok (Binary.allocate 4)
+    gone = ok (Binary.dataView (Binary.Local moved))
+    _ = ok (Binary.transfer moved)
+    [ Debug.toString value
+    , Debug.toString tooLow
+    , Debug.toString outside
+    , Debug.toString floats
+    , Debug.toString count
+    , Debug.toString past
+    , "after them: " ++ bytesOf buffer
+    , Debug.toString
+        ( Binary.readU8s gone 0 1, Binary.writeU8s gone 0 [ 1 ], Binary.fill gone Binary.whole 1 )
+    ]
+
+
+ranges : ⊤ → List String
+ranges ⊤ =
+    buffer = ok (Binary.fromList [ 1, 2, 3, 4, 5, 6, 7, 8 ])
+    -- A view of bytes 2 to 7: ranges count from its start.
+    inner = ok (Binary.view (Binary.Local buffer) U8 { byteOffset = 2, byteLength = Just 6 })
+    ok (Binary.fill inner { byteOffset = 1, byteLength = Just 2 } 0)
+    first = bytesOf buffer
+    -- Overlapping: bytes 0..3 of the view to 2.., as through a temporary.
+    ok (Binary.copyWithin inner 2 { byteOffset = 0, byteLength = Just 4 })
+    second = bytesOf buffer
+    ok (Binary.fill inner { byteOffset = 4, byteLength = Nothing } 9)
+    [ "fill: " ++ first
+    , "copyWithin: " ++ second
+    , "fill the rest: " ++ bytesOf buffer
+    , Debug.toString (Binary.fill inner Binary.whole 256)
+    , Debug.toString (Binary.fill inner { byteOffset = 5, byteLength = Just 2 } 0)
+    , Debug.toString (Binary.copyWithin inner 4 { byteOffset = 0, byteLength = Just 3 })
+    , Debug.toString (Binary.copyWithin inner 0 { byteOffset = 7, byteLength = Nothing })
+    , "after them: " ++ bytesOf buffer
+    ]
+
+
+regions : ⊤ → List String
+regions ⊤ =
+    buffer = ok (Binary.allocate 16)
+    region =
+        ok
+            (Region.region
+                (ok
+                    (Binary.view (Binary.Local buffer) Data { byteOffset = 4, byteLength = Nothing }
+                    )
+                )
+            )
+    reader = Region.readOnly region
+    ok (Region.writeF32s region 0 Big [ 1, -2 ])
+    ok (Region.fill region { byteOffset = 8, byteLength = Nothing } 7)
+    ok (Region.copyWithin region 9 { byteOffset = 0, byteLength = Just 2 })
+    ok (Region.copyInto region 11 (Binary.WholeBuffer (ok (Binary.fromList [ 5 ]))))
+    bytes = bytesOf buffer
+    floats = Region.readF32s reader 0 2 Big
+    invalid = Region.writeU32s region 0 Little [ 1, -1 ]
+    outside = Region.readU16s reader 10 2 Little
+    _ = ok (Binary.transfer buffer)
+    [ "region: " ++ bytes
+    , Debug.toString floats
+    , Debug.toString invalid
+    , Debug.toString outside
+    , Debug.toString
+        ( Region.readU8s reader 0 1
+        , Region.writeI16s region 0 Little [ 1 ]
+        , Region.fill region Binary.whole 0
+        )
+    ]

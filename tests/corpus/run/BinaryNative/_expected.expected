@@ -3,6 +3,8 @@ Err ResizableBacking
 Err ResizableBacking
 Err (ViewBacking ResizableBacking)
 Err (TransferBacking ResizableBacking)
+Err ResizableBacking
+Err ResizableBacking
 Err NotTransferable
 thrown
 Ok True

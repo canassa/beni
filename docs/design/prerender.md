@@ -188,6 +188,31 @@ by the causes §3.3 names, none of which is in the program.
    another module's method that logs) and `build/bad/prerender/` `DispatchImpure` (another
    module's method that reads the clock, named in that module) and `DispatchEvidence` (the
    clock read by the evidence a `compare` is passed, named at its call in that `compare`).
+   *Approved 2026-11-09 (the owner, browser capability base).* A platform’s
+   own command construction may appear in a prerendered `init`; the command
+   is constructed only in the client. This is a staged init proof, not a
+   declaration that context capture or a command constructor is pure.
+   The initial model and every eagerly evaluated app expression, command
+   argument and captured value retain the purity rule above. Every host
+   read stays refused, including a read whose value only the command uses.
+   A deferred command body runs after the client’s first render and may
+   perform host work then.
+
+   The build must prove that recognized platform-owned command metadata
+   construction cannot influence the initial model, view, routes or data
+   conversions. It emits the pure model computation in the prerender tree
+   and omits command construction, including its log-context capture;
+   executing the constructor under Node and discarding the result is not
+   sufficient. The client constructs it once at its source position and
+   retains construction-time log context. An arbitrary impure helper that
+   returns a command is not exempt. If the proof cannot separate the
+   computations, refuse the program as a compiler limit. Recognition uses
+   resolved platform declaration identity, never a textual module name.
+   The contract and focused acceptance fixtures are
+   [`browser-capability-base.md`](browser-capability-base.md) §4.2–§4.3.
+   This amendment changes neither the checker’s inferred effect bits nor
+   `view`, routes and data conversions’ full purity checks.
+
 2. **The input is the same value in both places.** The build passes the route it lists; the page
    carries that route (§6.1), and the client passes what the page carries, never what it reads
    from `location` (§7.3). The address the page was opened at reaches the program only after the

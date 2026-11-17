@@ -14,14 +14,11 @@ browser           platforms/browser/Rt.beni                       Rt.delegated
 browser           platforms/browser/Rt.beni                       Rt.listen
 browser           platforms/browser/Rt.beni                       Rt.watchEdits
 browser           platforms/browser/Rt.beni                       Rt.crashScreen
-browser           platforms/browser/Listen.beni                   Listen.on
-browser           platforms/browser/Listen.beni                   Listen.on2
 browser           platforms/browser/WebSocket.beni                WebSocket.attach
 browser-inline    platforms/browser-inline/Inline.beni            Inline.on
 browser-inline    platforms/browser-inline/Inline.beni            Inline.onArm
 browser-inline    platforms/browser-inline/Inline.beni            Inline.listen
 browser-inline    platforms/browser-inline/Inline.beni            Inline.crashScreen
-browser-inline    platforms/browser-inline/Listen.beni            Listen.on
 browser-inline    platforms/browser-inline/Browser/Navigation.beni  Browser.Navigation.listen
 browser-inline    platforms/browser-inline/Browser/Navigation.beni  Browser.Navigation.listenOne
 browser-tea       none                                            none
@@ -38,3 +35,5 @@ browser           platforms/browser/Browser/Worker.beni Browser.Worker.listen
 browser           platforms/browser/Browser/Worker.beni Browser.Worker.installFatal
 browser           platforms/browser/Browser/Worker.beni Browser.Worker.runDefinition
 browser           platforms/browser/Gpu/Engine.beni Gpu.Engine.watchUncaptured
+browser-base      platforms/browser-base/Listen.beni              Listen.on
+browser-base      platforms/browser-base/Listen.beni              Listen.on2

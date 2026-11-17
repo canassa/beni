@@ -1,0 +1,19 @@
+-- load
+<body>
+  <p>"0, 0, 0; slow 0"</p>
+</body>
+-- timers
+(timers: 2)
+(the DOM did not change)
+-- advance 1
+<body>
+  <p>"1, 1, 1; slow 0"</p>
+</body>
+-- stop
+(stopped)
+<body></body>
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- advance 2000
+(the DOM did not change)

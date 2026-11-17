@@ -24,6 +24,9 @@
 - Each operation checks the storage first. Detached storage is `Detached`.
   Resizable or growable storage is `ResizableBacking`, also when it is in bounds
   (`BackingError`, inside the other error types).
+- Shared storage is found in every realm, also storage from another realm. On a
+  host with the ES2024 `detached` and `growable` properties, this check reads two
+  properties and throws nothing.
 - `transfer` moves the storage to a new buffer in the same realm. After it, the old
   buffer and all its views are detached. Moving storage to a worker is not available.
 
@@ -47,6 +50,86 @@ bytes buffer exact =
     Binary.writeWord64 view 0 Binary.Little exact?
     Result.mapError (Binary.toList (Binary.ViewOf view)) Binary.AccessBacking
 ```
+
+## Regions
+
+`Binary.Region` makes a view that is checked once. Use a region in a loop that
+reads or writes many values.
+
+- `Region.region view` checks the storage. Detached storage is `Detached`.
+  Resizable or growable storage is `ResizableBacking`.
+- After that, a read or a write checks only the bounds and the value. The read
+  and write functions have the same names as in `Binary` (`readU8`, `writeF32`,
+  `readWord64`, …). Offsets are bytes from the start of the view. Give the
+  `Endian` for a value wider than one byte.
+- A region whose storage is detached later gives `Err Detached`. It never gives
+  a wrong value.
+- `Region.readOnly` makes a `Region ReadOnly`. It has no write functions. A write
+  to it is a type error.
+- `Region.view`, `Region.byteLength` and `Region.sourceInfo` read the region.
+- `Gpu.MappedRange.region` and `readRegion` make a region of mapped GPU memory.
+  `region` of a read mapping is `ReadOnlyMapping`.
+- The errors are `Region.AccessError`, `Region.WriteError` and
+  `Region.Float16Error`. They do not have `ResizableBacking`.
+
+```beni platform=node
+import Binary
+import Binary.Region as Region exposing (ReadWrite, Region)
+import Node exposing (Program)
+
+
+main : Program
+main =
+    case Binary.allocate 16 of
+        Ok buffer →
+            Node.print (Debug.toString (sum buffer))
+        Err _ →
+            Node.print "no storage"
+
+
+sum : Binary.Buffer → Result String Float
+sum buffer =
+    view = Result.mapError (Binary.dataView (Binary.Local buffer)) Debug.toString?
+    region = Result.mapError (Region.region view) Debug.toString?
+    fill region 0?
+    Result.mapError (total region 0 0) Debug.toString
+
+
+fill : Region ReadWrite, Int → Result String ⊤
+fill region index =
+    if index == 4 then
+        Ok ⊤
+    else
+        Result.mapError
+            (Region.writeF32 region (index * 4) Binary.Little (toFloat index))
+            Debug.toString?
+        fill region (index + 1)
+
+
+total : Region ReadWrite, Int, Float → Result Region.AccessError Float
+total region index acc =
+    if index == 4 then
+        Ok acc
+    else
+        value = Region.readF32 region (index * 4) Binary.Little?
+        total region (index + 1) (acc + value)
+```
+
+## Bulk operations
+
+`Binary` and `Binary.Region` have the same bulk functions. Each call checks the
+storage, the whole range and every value one time. Then it runs at host speed. A
+call that fails writes nothing.
+
+- `fill view range byte` sets all the bytes of a `ByteRange` to one byte value.
+- `copyWithin view to range` copies a byte range to another offset of the same view.
+  The ranges can overlap.
+- `writeU8s`, `writeI8s`, `writeU16s`, `writeI16s`, `writeU32s`, `writeI32s`,
+  `writeF16s`, `writeF32s`, `writeF64s` and `writeWord64s` write a `List` from a byte
+  offset. An integer out of range is `InvalidValueAt index value minimum maximum`.
+- `readU8s` to `readF64s` and `readWord64s` read a count of values from a byte offset
+  into a `List`.
+- Give the `Endian` for values wider than one byte. Offsets and errors are bytes.
 
 ## Exact 64-bit words
 
@@ -98,7 +181,7 @@ Each failure that the host documents for an operation is one typed error. An
 unexpected host failure stops the program; do not catch it. `Binary.shared` gives
 `Err IsolationRequired` in a page that is not cross-origin isolated.
 
-Sources: `docs/design/binary.md` §1–§5; `docs/design/browser-sources.md`;
+Sources: `docs/design/binary.md` §1–§8; `docs/design/browser-sources.md`;
 `docs/design/webgpu.md` §3.1, §3.2; `core/Binary.beni`; `core/Binary/Atomics.beni`;
-`core/Binary/Wgsl.beni`; `platforms/browser/Browser/Image.beni`, `Video.beni`,
-`Canvas.beni`, `Source.beni`.
+`core/Binary/Wgsl.beni`; `core/Binary/Region.beni`;
+`platforms/browser/Browser/Image.beni`, `Video.beni`, `Canvas.beni`, `Source.beni`.

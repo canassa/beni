@@ -1,0 +1,35 @@
+-- A subscription tagger may drop its raw value into a zero-field message.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Tick
+
+
+type Clock
+    = Clock
+
+
+update : Msg, Int → Int × Cmd Msg
+update _ n = ( n + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Tea.element
+            { init = λ⊤ → ( 0, Cmd.none )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.listen Clock (λsend → send ⊤) λ_ → Tick
+            }
+        )
+        [ "/" ]

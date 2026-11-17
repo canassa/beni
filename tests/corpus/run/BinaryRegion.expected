@@ -1,0 +1,29 @@
+Ok [0,0,0,0,0,0,0,0,0,0,128,63,0,0,0,255]
+Ok 1.0
+Ok 8
+F32
+Ok { byteLength = 8, byteOffset = 8, bytesPerElement = 4, elementLength = 2, shared = False }
+(Ok (-128),Ok 128)
+(Ok (-2),Ok 65279)
+(Ok 3735928559,Ok 4022250974,Ok (-559038737))
+Ok 2147483648
+(Ok (-1.5),Ok { high = 3220701184, low = 0 })
+Ok { high = 1, low = 2 }
+(Ok ⊤,Ok 65504.0,Ok 31743)
+Ok 0.10000000149011612
+Ok 513
+Err (OutOfBounds 5 4 8)
+Err (OutOfBounds (-1) 1 8)
+Err (OutOfBounds 1 8 8)
+Err (InvalidValue 256 0 255)
+Err (InvalidValue (-32769) (-32768) 32767)
+Err (WriteAccess (OutOfBounds 6 4 8))
+Err (OutOfBounds 1 8 8)
+Err (Float16Access (OutOfBounds 7 2 8))
+(Err Detached,Err Detached,Err Detached)
+(Err (WriteAccess Detached),Err Detached,Err (Float16Access Detached))
+(Err Detached,Err Detached,Err Detached)
+Err Detached
+Ok [0,0,0,0,7,0,0,0]
+Ok { byteLength = 8, byteOffset = 0, bytesPerElement = 1, elementLength = 8, shared = True }
+Ok 258

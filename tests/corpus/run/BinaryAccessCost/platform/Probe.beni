@@ -1,0 +1,241 @@
+--! What one scalar access costs the host (binary.md §1): it validates
+--! detachment and bounds, and nothing in it throws, asks whether storage is
+--! shared, or makes a DataView the view already is. A host without ES2024's
+--! `detached` and `growable` getters still tells the kinds apart.
+
+import Binary
+import Binary.Region as Region
+import Binary.Wgsl as Wgsl
+import Js
+
+
+--| A thousand byte writes and a thousand float reads through each kind of
+--| view, counting calls of SharedArrayBuffer.prototype's byteLength getter
+--| (the brand check, which throws for anything else) and DataViews made.
+pub perAccess : ⊤ → List String
+perAccess ⊤ =
+    [ cost "local DataView" λ⊤ → Binary.allocate 4096 ▷ Result.map Binary.Local ▷ dataViewOf
+    , cost "shared DataView" λ⊤ →
+        Binary.shared 4096 ▷ Result.mapError (λ_ → ⊤) ▷ Result.map Binary.Shared ▷ dataViewOf
+    , cost "local Uint8Array" λ⊤ →
+        Binary.allocate 4096
+            ▷ Result.mapError λ_ → ⊤
+            ▷ Result.andThen λbuffer →
+                Binary.view (Binary.Local buffer) Binary.U8 Binary.whole ▷ Result.mapError λ_ → ⊤
+    ]
+
+
+dataViewOf : Result e Binary.Backing → Result ⊤ Binary.View
+dataViewOf storage =
+    case storage of
+        Ok backing →
+            Binary.dataView backing ▷ Result.mapError λ_ → ⊤
+        Err _ →
+            Err ⊤
+
+
+cost : String, (⊤ → Result ⊤ Binary.View) → String
+cost name make =
+    counts = counted λ⊤ →
+        case make ⊤ of
+            Ok view →
+                "${Debug.toString (accesses view 0 0)}"
+            Err _ →
+                "no view"
+    "${name}: ${counts.value}, brand checks ${String.fromInt counts.brand}, DataViews ${String.fromInt counts.views}"
+
+
+accesses : Binary.View, Int, Float → Result String Float
+accesses view index total =
+    if index == 1000 then
+        Ok total
+    else
+        Result.mapError (Binary.writeU8 view index (Int.rem index 256)) Debug.toString?
+        number = Result.mapError (Binary.readF32 view (index * 4) Binary.Little) Debug.toString?
+        accesses view (index + 1) (total + number)
+
+
+-- The body's value, with the brand getter's calls and DataView constructions
+-- it caused; both are put back however the body ends.
+counted : (⊤ → String) → { value : String, brand : Int, views : Int }
+counted body =
+    brand = Js.ref 0
+    views = Js.ref 0
+    object = Js.global "Object"
+    prototype = Js.get (Js.global "SharedArrayBuffer") "prototype"
+    descriptor = Js.call object "getOwnPropertyDescriptor" [ prototype, Js.from "byteLength" ]
+    getter = Js.get descriptor "get"
+    original = Js.global "DataView"
+    spy =
+        Js.object
+            [ ( "configurable", Js.from True )
+            , ( "get"
+              , Js.method λself →
+                  Js.write brand (Js.read brand + 1)
+                  Js.call getter "call" [ self ]
+              )
+            ]
+    _ = Js.call object "defineProperty" [ prototype, Js.from "byteLength", spy ]
+    trap =
+        Js.object
+            [ ( "construct"
+              , Js.method λself target args newTarget →
+                  Js.write views (Js.read views + 1)
+                  Js.call (Js.global "Reflect") "construct" [ target, args, newTarget ]
+              )
+            ]
+    Js.set (Js.global "globalThis") "DataView" (Js.construct (Js.global "Proxy") [ original, trap ])
+    -- The fields are evaluated in written order (language.md, *Evaluation
+    -- order*): the counts are read after the body ran. A --release build
+    -- reads them first until #2430 is fixed.
+    Js.finally (λ⊤ → { value = body ⊤, brand = Js.read brand, views = Js.read views }) λ⊤ →
+        _ = Js.call object "defineProperty" [ prototype, Js.from "byteLength", descriptor ]
+        Js.set (Js.global "globalThis") "DataView" original
+
+
+--| A region (binary.md §6) of a Uint8Array view, made before counting: a
+--| thousand byte writes and a thousand float reads read neither `detached`
+--| nor a brand getter and make no DataView. Detachment is then found on the
+--| failure path only.
+pub regionAccess : ⊤ → List String
+regionAccess ⊤ =
+    case
+        Binary.allocate 4096
+            ▷ Result.mapError λ_ → ⊤
+            ▷ Result.andThen λbuffer →
+                Binary.view (Binary.Local buffer) Binary.U8 Binary.whole
+                    ▷ Result.andThen λview → Result.mapError (Region.region view) Binary.ViewBacking
+                    ▷ Result.mapError λ_ → ⊤
+                    ▷ Result.map λregion → ( buffer, region )
+    of
+        Ok ( buffer, region ) →
+            live = detachedReads λ⊤ → counted λ⊤ → "${Debug.toString (regionAccesses region 0 0)}"
+            _ = Binary.transfer buffer
+            gone = detachedReads λ⊤ → counted λ⊤ → "${Debug.toString (regionAccesses region 0 0)}"
+            [ line "region of Uint8Array" live, line "detached region" gone ]
+        Err _ →
+            [ "no region" ]
+
+
+line : String, { value : { value : String, brand : Int, views : Int }, reads : Int } → String
+line name counts =
+    "${name}: ${counts.value.value}, brand checks ${String.fromInt counts.value.brand}, DataViews ${String.fromInt counts.value.views}, detached reads ${String.fromInt counts.reads}"
+
+
+regionAccesses : Region.Region Region.ReadWrite, Int, Float → Result String Float
+regionAccesses region index total =
+    if index == 1000 then
+        Ok total
+    else
+        Result.mapError (Region.writeU8 region index (Int.rem index 256)) Debug.toString?
+        number = Result.mapError (Region.readF32 region (index * 4) Binary.Little) Debug.toString?
+        regionAccesses region (index + 1) (total + number)
+
+
+--| A thousand floats written and read back by `writeF32s` and `readF32s`
+--| (binary.md §7) through a Uint8Array view: one check per call, not one
+--| per element.
+pub bulkAccess : ⊤ → List String
+bulkAccess ⊤ =
+    floats = List.map (List.range 1 1000) toFloat
+    case
+        Binary.allocate 4096
+            ▷ Result.andThen λbuffer →
+                Binary.view (Binary.Local buffer) Binary.U8 Binary.whole
+                    ▷ Result.mapError λ_ → Binary.InvalidSize 0
+    of
+        Ok view →
+            counts = detachedReads λ⊤ →
+                counted λ⊤ →
+                    written = Binary.writeF32s view 0 Binary.Little floats
+                    back = Binary.readF32s view 0 1000 Binary.Little
+                    "${Debug.toString written}, read back ${Debug.toString (back == Ok floats)}"
+            [ line "bulk f32 x1000 on Uint8Array" counts ]
+        Err _ →
+            [ "no view" ]
+
+
+--| `Wgsl.encode` and `Wgsl.decode` of an array of 256 f32 check the
+--| backing once per call, through one region, not once per element.
+pub wgslAccess : ⊤ → List String
+wgslAccess ⊤ =
+    case Wgsl.array (Wgsl.scalar Wgsl.Float32) 256 of
+        Ok layout →
+            value = Wgsl.Composite (List.map (List.range 1 256) λi → Wgsl.Floating (toFloat i))
+            encoded = detachedReads λ⊤ → Wgsl.encode layout value
+            case
+                Result.andThen encoded.value λbuffer →
+                    Binary.dataView (Binary.Local buffer)
+                        ▷ Result.mapError λproblem → Wgsl.Access (Binary.AccessBacking problem)
+            of
+                Ok view →
+                    decoded = detachedReads λ⊤ → Wgsl.decode view 0 layout
+                    [ "Wgsl encode of 256 f32: detached reads ${String.fromInt encoded.reads}"
+                    , "Wgsl decode of 256 f32: ${Debug.toString (decoded.value == Ok value)}, detached reads ${String.fromInt decoded.reads}"
+                    ]
+                Err _ →
+                    [ "no encoding" ]
+        Err _ →
+            [ "no layout" ]
+
+
+-- The body's value with the calls of ArrayBuffer.prototype's `detached`
+-- getter it caused; the getter is put back however the body ends.
+detachedReads : (⊤ → a) → { value : a, reads : Int }
+detachedReads body =
+    reads = Js.ref 0
+    object = Js.global "Object"
+    prototype = Js.get (Js.global "ArrayBuffer") "prototype"
+    descriptor = Js.call object "getOwnPropertyDescriptor" [ prototype, Js.from "detached" ]
+    getter = Js.get descriptor "get"
+    spy =
+        Js.object
+            [ ( "configurable", Js.from True )
+            , ( "get"
+              , Js.method λself →
+                  Js.write reads (Js.read reads + 1)
+                  Js.call getter "call" [ self ]
+              )
+            ]
+    _ = Js.call object "defineProperty" [ prototype, Js.from "detached", spy ]
+    Js.finally (λ⊤ → { value = body ⊤, reads = Js.read reads }) λ⊤ →
+        _ = Js.call object "defineProperty" [ prototype, Js.from "detached", descriptor ]
+        ⊤
+
+
+--| With ArrayBuffer.prototype.detached and SharedArrayBuffer.prototype.growable
+--| removed, as on a host before ES2024: local, shared, detached and
+--| other-realm storage are still told apart.
+pub olderHost : ⊤ → List String
+olderHost ⊤ =
+    object = Js.global "Object"
+    reflect = Js.global "Reflect"
+    local = Js.get (Js.global "ArrayBuffer") "prototype"
+    shared = Js.get (Js.global "SharedArrayBuffer") "prototype"
+    detached = Js.call object "getOwnPropertyDescriptor" [ local, Js.from "detached" ]
+    growable = Js.call object "getOwnPropertyDescriptor" [ shared, Js.from "growable" ]
+    _ = Js.call reflect "deleteProperty" [ local, Js.from "detached" ]
+    _ = Js.call reflect "deleteProperty" [ shared, Js.from "growable" ]
+    Js.finally (λ⊤ → kinds ⊤) λ⊤ →
+        _ = Js.call object "defineProperty" [ local, Js.from "detached", detached ]
+        _ = Js.call object "defineProperty" [ shared, Js.from "growable", growable ]
+        ⊤
+
+
+kinds : ⊤ → List String
+kinds ⊤ =
+    vm = Js.module "node:vm"
+    foreignLocal = Js.call vm "runInNewContext" [ Js.from "new ArrayBuffer(8)" ]
+    foreignShared = Js.call vm "runInNewContext" [ Js.from "new SharedArrayBuffer(8)" ]
+    info = λsource → Debug.toString (Result.map (Binary.sourceInfo source) λi → i.shared)
+    case ( Binary.allocate 8, Binary.shared 8 ) of
+        ( Ok buffer, Ok storage ) →
+            before = info (Binary.WholeBuffer buffer)
+            moved = Binary.transfer buffer
+            after = info (Binary.WholeBuffer buffer)
+            [ "older host: local ${before}, after transfer ${after}, moved ${Debug.toString (Result.map moved λb → Binary.detached b)}"
+            , "older host: shared ${info (Binary.WholeShared storage)}"
+            , "older host: other realm local ${info (Binary.WholeBuffer (Js.to foreignLocal))}, shared ${info (Binary.WholeShared (Js.to foreignShared))}"
+            ]
+        _ →
+            [ "older host: no storage" ]

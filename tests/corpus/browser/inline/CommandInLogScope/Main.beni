@@ -1,0 +1,38 @@
+-- Shared Cmd supports commands made in a log scope (#1003).
+-- The body keeps its creator's context; reply update uses the program's.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Reply
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( n + 1
+                , Cmd.perform λsend →
+                    Log.info "body"
+                    send Reply
+                )
+
+        Reply →
+            Log.info "reply update"
+            ( n + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><button id="go" onClick={Go}>go</button><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

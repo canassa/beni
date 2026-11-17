@@ -2,6 +2,7 @@
 --! WGSL 14.4 and docs/design/binary.md own the byte and uniform constraints.
 
 import Binary
+import Binary.Region as Region exposing (ReadWrite, Region)
 import Js
 import List
 
@@ -203,7 +204,8 @@ encode layout value =
     size = valueSize layout value?
     buffer = Result.mapError (Binary.allocate size) Allocation?
     view = Result.mapError (Binary.dataView (Binary.Local buffer)) backingFailure?
-    writeValue view 0 layout value?
+    region = Result.mapError (Region.region view) backingFailure?
+    writeValue region 0 layout value?
     Ok buffer
 
 
@@ -211,21 +213,23 @@ encode layout value =
 pub write : Binary.View, Int, Layout, Value → Result CodecError ⊤
 write view offset layout value =
     size = valueSize layout value?
-    checkRange view offset size?
-    writeValue view offset layout value
+    region = Result.mapError (Region.region view) backingFailure?
+    checkRange region offset size?
+    writeValue region offset layout value
 
 
 --| Decode a layout from a view. For a runtime tail, remaining bytes determine
 --| the element count by floor division by its stride, as a buffer binding does.
 pub decode : Binary.View, Int, Layout → Result CodecError Value
 decode view offset layout =
-    info = viewInfo view?
-    (if offset < 0 || offset > info.byteLength || not (integer offset) then
-        Err (Access (Binary.OutOfBounds offset 0 info.byteLength))
+    region = Result.mapError (Region.region view) backingFailure?
+    total = Result.mapError (Region.byteLength region) fromAccess?
+    (if offset < 0 || offset > total || not (integer offset) then
+        Err (Access (Binary.OutOfBounds offset 0 total))
      else
         Ok ⊤
     )?
-    readValue view offset (info.byteLength - offset) layout
+    readValue region offset (total - offset) layout
 
 
 fixedSize : Layout → Int
@@ -439,22 +443,22 @@ validateMembers fields values =
             Err ValueShape
 
 
-writeValue : Binary.View, Int, Layout, Value → Result CodecError ⊤
+writeValue : Region ReadWrite, Int, Layout, Value → Result CodecError ⊤
 writeValue view offset layout value =
     case ( layout, value ) of
         ( Layout _ _ (Atom kind), Integer number ) →
             Result.mapError
                 (if kind == Signed32 || kind == AtomicSigned32 then
-                    Binary.writeI32 view offset Binary.Little number
+                    Region.writeI32 view offset Binary.Little number
                  else
-                    Binary.writeU32 view offset Binary.Little number
+                    Region.writeU32 view offset Binary.Little number
                 )
                 fromWrite
         ( Layout _ _ (Atom kind), Floating number ) →
             if kind == Float16 then
-                Result.mapError (Binary.writeF16 view offset Binary.Little number) fromFloat16
+                Result.mapError (Region.writeF16 view offset Binary.Little number) fromFloat16
             else
-                Result.mapError (Binary.writeF32 view offset Binary.Little number) Access
+                Result.mapError (Region.writeF32 view offset Binary.Little number) fromAccess
         ( Layout _ _ (Sequence element _ step), Composite values ) →
             writeSequence view offset element step values
         ( Layout _ _ (FixedArray element _ step), Composite values ) →
@@ -467,7 +471,7 @@ writeValue view offset layout value =
             Err ValueShape
 
 
-writeSequence : Binary.View, Int, Layout, Int, List Value → Result CodecError ⊤
+writeSequence : Region ReadWrite, Int, Layout, Int, List Value → Result CodecError ⊤
 writeSequence view offset element step values =
     case values of
         [] →
@@ -477,7 +481,7 @@ writeSequence view offset element step values =
             writeSequence view (offset + step) element step rest
 
 
-writeMembers : Binary.View, Int, List Member, List Value → Result CodecError ⊤
+writeMembers : Region ReadWrite, Int, List Member, List Value → Result CodecError ⊤
 writeMembers view offset fields values =
     case ( fields, values ) of
         ( [], [] ) →
@@ -489,7 +493,7 @@ writeMembers view offset fields values =
             Err ValueShape
 
 
-readValue : Binary.View, Int, Int, Layout → Result CodecError Value
+readValue : Region ReadWrite, Int, Int, Layout → Result CodecError Value
 readValue view offset available layout =
     checkRange view offset (fixedSize layout)?
     case layout of
@@ -497,27 +501,27 @@ readValue view offset available layout =
             case kind of
                 Signed32 →
                     Result.map
-                        (Result.mapError (Binary.readI32 view offset Binary.Little) Access)
+                        (Result.mapError (Region.readI32 view offset Binary.Little) fromAccess)
                         Integer
                 AtomicSigned32 →
                     Result.map
-                        (Result.mapError (Binary.readI32 view offset Binary.Little) Access)
+                        (Result.mapError (Region.readI32 view offset Binary.Little) fromAccess)
                         Integer
                 Unsigned32 →
                     Result.map
-                        (Result.mapError (Binary.readU32 view offset Binary.Little) Access)
+                        (Result.mapError (Region.readU32 view offset Binary.Little) fromAccess)
                         Integer
                 AtomicUnsigned32 →
                     Result.map
-                        (Result.mapError (Binary.readU32 view offset Binary.Little) Access)
+                        (Result.mapError (Region.readU32 view offset Binary.Little) fromAccess)
                         Integer
                 Float32 →
                     Result.map
-                        (Result.mapError (Binary.readF32 view offset Binary.Little) Access)
+                        (Result.mapError (Region.readF32 view offset Binary.Little) fromAccess)
                         Floating
                 Float16 →
                     Result.map
-                        (Result.mapError (Binary.readF16 view offset Binary.Little) fromFloat16)
+                        (Result.mapError (Region.readF16 view offset Binary.Little) fromFloat16)
                         Floating
         Layout _ _ (Sequence element count step) →
             Result.map (readSequence view offset element count step) Composite
@@ -531,11 +535,18 @@ readValue view offset available layout =
             Result.map (readMembers view offset available fields) Composite
 
 
-readSequence : Binary.View, Int, Layout, Int, Int → Result CodecError (List Value)
+readSequence : Region ReadWrite, Int, Layout, Int, Int → Result CodecError (List Value)
 readSequence view offset element count step = readSequenceLoop view offset element count step []
 
 
-readSequenceLoop : Binary.View, Int, Layout, Int, Int, List Value → Result CodecError (List Value)
+readSequenceLoop :
+      Region ReadWrite
+    , Int
+    , Layout
+    , Int
+    , Int
+    , List Value
+    → Result CodecError (List Value)
 readSequenceLoop view offset element count step output =
     if count == 0 then
         Ok output
@@ -544,11 +555,17 @@ readSequenceLoop view offset element count step output =
         readSequenceLoop view (offset + step) element (count - 1) step [ …output, first ]
 
 
-readMembers : Binary.View, Int, Int, List Member → Result CodecError (List Value)
+readMembers : Region ReadWrite, Int, Int, List Member → Result CodecError (List Value)
 readMembers view offset available fields = readMembersLoop view offset available fields []
 
 
-readMembersLoop : Binary.View, Int, Int, List Member, List Value → Result CodecError (List Value)
+readMembersLoop :
+      Region ReadWrite
+    , Int
+    , Int
+    , List Member
+    , List Value
+    → Result CodecError (List Value)
 readMembersLoop view offset available fields output =
     case fields of
         [] →
@@ -559,20 +576,11 @@ readMembersLoop view offset available fields output =
             readMembersLoop view offset available rest [ …output, first ]
 
 
-viewInfo : Binary.View → Result CodecError Binary.SourceInfo
-viewInfo view = Result.mapError (Binary.sourceInfo (Binary.ViewOf view)) backingFailure
-
-
-checkRange : Binary.View, Int, Int → Result CodecError ⊤
-checkRange view offset size =
-    info = viewInfo view?
-    if
-        offset < 0
-            || not (integer offset)
-            || offset > info.byteLength
-            || size > info.byteLength - offset
-    then
-        Err (Access (Binary.OutOfBounds offset size info.byteLength))
+checkRange : Region ReadWrite, Int, Int → Result CodecError ⊤
+checkRange region offset size =
+    total = Result.mapError (Region.byteLength region) fromAccess?
+    if offset < 0 || not (integer offset) || offset > total || size > total - offset then
+        Err (Access (Binary.OutOfBounds offset size total))
     else
         Ok ⊤
 
@@ -614,21 +622,32 @@ powerOfTwo value =
         Int.rem value 2 == 0 && powerOfTwo (value // 2)
 
 
-fromWrite : Binary.WriteError → CodecError
+-- The codec reads and writes through one region per call (binary.md §8,
+-- choice 8); its failures keep Binary's public types.
+fromAccess : Region.AccessError → CodecError
+fromAccess error =
+    case error of
+        Region.Detached →
+            Access (Binary.AccessBacking Binary.Detached)
+        Region.OutOfBounds offset length available →
+            Access (Binary.OutOfBounds offset length available)
+
+
+fromWrite : Region.WriteError → CodecError
 fromWrite error =
     case error of
-        Binary.WriteAccess access →
-            Access access
-        Binary.InvalidValue value _ _ →
+        Region.WriteAccess access →
+            fromAccess access
+        Region.InvalidValue value _ _ →
             IntegerRange value
 
 
-fromFloat16 : Binary.Float16Error → CodecError
+fromFloat16 : Region.Float16Error → CodecError
 fromFloat16 error =
     case error of
-        Binary.Float16Access access →
-            Access access
-        Binary.NoFloat16 →
+        Region.Float16Access access →
+            fromAccess access
+        Region.NoFloat16 →
             NoFloat16
 
 

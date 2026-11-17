@@ -1,0 +1,3 @@
+direct: 42, seen 1
+through a helper: 42, seen 2
+through a block's closures: 42, seen 3

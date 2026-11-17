@@ -342,6 +342,8 @@ pub const Name = enum {
     entry_held_off,
     /// G1: an argument of an entry is not marked.
     entry_mark_off,
+    /// §2.8, *Pending operands* (#2449): a block's result stays a pending operand after the block took its value.
+    block_result_pending,
     /// O9: a row's word `aliased` is ignored.
     word_aliased,
     /// O9: a row's word `builderdone` is ignored.

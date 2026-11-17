@@ -75,10 +75,15 @@ const std = @import("std");
 /// Version 1.25 adds `Program.Subscription.whole`, a declaration whose key's
 /// handler takes the message itself (`browser-inline.md` §3, amended
 /// 2026-11-09, #2258).
-/// Version 1.26 adds `Lowering.keeps_let`: which `let`s of a grouped root
+/// Version 1.26 adds the lowering's entry-capture dependency and the
+/// subscription fact that says whether that dependency is reachable.
+/// Version 1.27 distinguishes scoped subscription bodies from native
+/// listener installation (`Program.Subscription.waits`).
+/// Version 1.28 adds the update-context writer dependencies and absence fact.
+/// Version 1.29 adds `Lowering.keeps_let`: which `let`s of a grouped root
 /// the lowering keeps beyond the call of the function that made them
 /// (`boundary.md` §9.4.8, *What a lowering keeps*).
-pub const version: Version = .{ .major = 1, .minor = 26 };
+pub const version: Version = .{ .major = 1, .minor = 29 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -185,7 +190,7 @@ pub const Lowering = struct {
     /// chain that names it may prerender. False: a prerendering build is
     /// refused.
     prerenders: bool = false,
-    /// 1.26 (`boundary.md` §9.4.8, *What a lowering keeps*): whether the
+    /// 1.29 (`boundary.md` §9.4.8, *What a lowering keeps*): whether the
     /// lowering keeps the value of root `root`'s `k`-th `let` (`Root.lets`,
     /// which it evaluates itself because it `groups`) beyond the call of
     /// the function that made it, and reads it at a later call: a `let`
@@ -203,10 +208,28 @@ pub const Lowering = struct {
     /// what the platform rule of §9.4.8 lets a runtime keep.
     keeps_let: *const fn (tree: *const Tree, root: Root.Index, k: u32) bool = keepsEveryLet,
 
-    pub const Effects = struct { sub: []const u8, cmd: []const u8 };
+    pub const Effects = struct {
+        sub: []const u8,
+        cmd: []const u8,
+        /// 1.26: the platform helper that captures a subscription's entry.
+        /// When unreachable, registration needs no renderer context.
+        entry_capture: ?Dependency = null,
+        /// 1.27: command construction preserves its creator's log context.
+        command_context: bool = false,
+        /// 1.28: every function that can write context/finalizer state.
+        /// No reachable writer proves updates need no context wrapper.
+        /// Null or an unresolved declaration keeps the wrapper.
+        update_writers: ?[]const Dependency = null,
+
+        pub const Dependency = struct {
+            module: []const u8,
+            name: []const u8,
+            package: enum { core, platform } = .platform,
+        };
+    };
 };
 
-/// 1.26: `Lowering.keeps_let`'s default: every `let` is kept.
+/// 1.29: `Lowering.keeps_let`'s default: every `let` is kept.
 pub fn keepsEveryLet(tree: *const Tree, root: Root.Index, k: u32) bool {
     _ = tree;
     _ = root;
@@ -214,7 +237,7 @@ pub fn keepsEveryLet(tree: *const Tree, root: Root.Index, k: u32) bool {
     return true;
 }
 
-/// 1.26: `Lowering.keeps_let` of a lowering that evaluates a `let` again in
+/// 1.29: `Lowering.keeps_let` of a lowering that evaluates a `let` again in
 /// each piece of code that reads it, as a local of that code, and keeps none.
 pub fn keepsNoLet(tree: *const Tree, root: Root.Index, k: u32) bool {
     _ = tree;
@@ -323,6 +346,8 @@ pub const Ctor = struct {
 };
 
 pub const Program = struct {
+    /// 1.28: false only if no declared context/finalizer writer is reachable.
+    update_context: bool = true,
     /// Which of `Lowering.programs` is called.
     constructor: u32,
     /// The argument is a record literal written at the call, whose fields
@@ -643,6 +668,13 @@ pub const Program = struct {
         /// (`Context.programSubscriptionMessage`), not as the fields
         /// (`browser-inline.md` §3, amended 2026-11-09, #2258).
         whole: bool = false,
+        /// 1.26: a native callback can capture the renderer entry in this
+        /// build. False only when the lowering's capture helper is absent
+        /// from source reachability; timer-only builds pay no context cost.
+        entry: bool = true,
+        /// 1.27: the start is a body run in the program's task scope,
+        /// rather than an installer returning its own remover.
+        waits: bool = false,
     };
 
     /// 1.14: what `Context.programSubscriptions` says of the set.
