@@ -1,0 +1,2 @@
+# v3 refuses the push: the row `wrap : returned a → b` casts, so the list escapes at the call (ownership-v3-kernel.md §3.4; research report 151).
+19:22 list_still_used List.push

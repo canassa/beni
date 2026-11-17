@@ -5228,7 +5228,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     for (args, 0..) |a, k| {
         // An argument at a function parameter flows to that parameter's
         // contract (`apply`). The argument of an identity is the call's value.
-        const is_fn = if (code) |c| k < c.contract.arity and (c.contract.fns[k] != null or f.isIdentity(c.contract)) else false;
+        const is_fn = if (code) |c| k < c.contract.arity and (c.contract.fns[k] != null or f.identityCall(c)) else false;
         try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
     }
     // A call in a hole of markup can run after the other holes (`markup`).
@@ -5765,7 +5765,13 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // A function that answers its one parameter as it is (`Js.from`, `Js.to`,
     // `identity`): the value keeps its shape through a type that has none.
     // A function value stays the function that it is: nothing consumed it.
-    if (f.isIdentity(c)) {
+    // A contract that casts (`returned a → b`) answers the parameter
+    // somewhere at or below its answer, not as it is: no words say where
+    // (`[a]` is as true of it), so it is a call. `Js.from` and `Js.to` cast
+    // by their types, and the build writes their calls as the argument
+    // itself (`Mod.emitsArgument`): that fact, not the words, makes them
+    // identities (kernel §3.4; research report 151).
+    if (f.identityCall(code)) {
         try f.readBy(args[0], inst, c.layouts[0], c.flags);
         // A value read at another type of parts (a tuple or a constructor
         // read as a record, a list of tuples as a list of records) holds a
@@ -5775,7 +5781,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // type of no location is `outside`: the cells the reading has no
         // location for escape here too (`narrowed`; research report 150).
         if (try f.punned(args[0], if (arg_insts.len != 0) arg_insts[0].int() else none, place)) {
-            try f.narrowed(args[0], inst, place);
+            try f.narrowed(args[0], inst, place, if (arg_insts.len != 0) arg_insts[0].int() else none);
             return f.unknownOf(place, args[0..1]);
         }
         // A value read at a type with fewer places than its own (a list
@@ -5783,7 +5789,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // cells at its own locations that no location of the reading names
         // are held by a value no reader can name, so they escape here
         // (kernel §3.4; research report 148).
-        try f.narrowed(args[0], inst, place);
+        try f.narrowed(args[0], inst, place, if (arg_insts.len != 0) arg_insts[0].int() else none);
         return args[0];
     }
     // `Record.copy` (kernel §11): a new object whose fields hold the argument's values.
@@ -5859,7 +5865,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     const casts = c.casts or try f.argsCast(c, args);
     if (casts) f.casts = true;
     if (casts) try f.escapeHidden(&base, c, cov, place, inst);
-    try f.escapeWide(c, args, place, inst);
+    try f.escapeWide(c, args, arg_insts, place, inst);
     // An answer of a type with no location holds `outside` (`rootVal`).
     if (es.len == 0) return v_outside;
     // The contract is written for arguments of which no cell is at two
@@ -6051,7 +6057,13 @@ fn escapeHidden(f: *Frame, base: *const Use, c: *const Contract, cov: []const u3
 /// the argument's cells there escape: honest code answers a value of the
 /// variable at the variable, and the two places are one type (research
 /// report 150; `Maybe.withDefault m []` read as `List Int` gives nothing).
-fn escapeWide(f: *Frame, c: *const Contract, args: []const Val, place: PlaceId, inst: u32) Error!void {
+/// A `Js.Value` at the parameter's place is what it was made from, not its
+/// type (`partAt`: `Just (Js.from ( x, x ))` has the type `Maybe Js.Value`
+/// and the pair as its part), and is read so (`narrowed`, `readAtVar`);
+/// where no step names its part, a `Js.Value` the caller made of parts lets
+/// them escape where the caller reads it at its own type variable (research
+/// report 151).
+fn escapeWide(f: *Frame, c: *const Contract, args: []const Val, arg_insts: []const Inst.Index, place: PlaceId, inst: u32) Error!void {
     const m = f.m;
     const rsig = c.layouts[c.arity];
     const rses = m.loc.layoutEntries(rsig);
@@ -6064,13 +6076,34 @@ fn escapeWide(f: *Frame, c: *const Contract, args: []const Val, place: PlaceId, 
             const pe = m.loc.layoutEntries(psig)[s.e];
             if (!pe.kind.wide()) continue;
             if (pe.loc == 0 and re.loc == 0) {
-                try f.narrowed(args[s.a], inst, place);
+                try f.narrowed(args[s.a], inst, place, if (s.a < arg_insts.len) arg_insts[s.a].int() else none);
                 continue;
             }
-            const read_at = (try m.loc.placeAt(place, re.loc)) orelse continue;
             // A value of no cell gives nothing; a function value's captures are
             // read where it flows (`flow`), not by its place.
             if (args[s.a] == v_none or args[s.a] == v_outside) continue;
+            const read_at_or = try m.loc.placeAt(place, re.loc);
+            // A `Js.Value` at the parameter's place is what it was made from
+            // (`partAt`), read so. Where no step names the part (a cycle's
+            // deep level, a row, the inside of a `Dict`), an argument the
+            // caller made of parts (a construction, the answer of a call;
+            // not a parameter, which the caller's caller reads) can hold its
+            // cells below the `Js.Value`'s place, so they escape where the
+            // reading has a type variable or a part of no location there.
+            if (pe.kind == .@"opaque") {
+                if (read_at_or) |r| if (try f.partAt(args[s.a], pe.loc)) |part| {
+                    try f.narrowedAs(part, inst, r, try m.typeAt(m.typeOfInst(inst).unwrap(), re.loc), null);
+                    continue;
+                };
+                const hides_here = if (read_at_or) |r| m.places.kind(r) == .@"var" or try m.loc.holeAt(place, re.loc) else true;
+                if (hides_here and try f.madeOfParts(args[s.a], 0)) {
+                    const start: u32 = @intCast(f.atoms.items.len);
+                    _ = try f.argLeaves(args[s.a], psig, s.e, &.{}, false, &f.atoms);
+                    try f.noteEscape(start, inst);
+                    continue;
+                }
+            }
+            const read_at = read_at_or orelse continue;
             const own = f.placeOfVal(args[s.a]) orelse continue;
             switch (m.places.kind(own)) {
                 // A value of the caller's own type variable: the caller's caller
@@ -6085,7 +6118,7 @@ fn escapeWide(f: *Frame, c: *const Contract, args: []const Val, place: PlaceId, 
             if (own_at == read_at) continue;
             // Read at this frame's own type variable, a value of another type
             // than the variable: the frame casts, and its caller reads it
-            // (`escapeHidden`). A `Js.Value` is core's arrays (`narrowed`).
+            // (`escapeHidden`). A `Js.Value` is read above.
             if (m.places.kind(read_at) == .@"var") switch (m.places.kind(own_at)) {
                 .@"var", .@"opaque", .closure => {},
                 .record, .tuple, .ctor, .list, .dict, .ref, .cross => f.casts = true,
@@ -6096,6 +6129,206 @@ fn escapeWide(f: *Frame, c: *const Contract, args: []const Val, place: PlaceId, 
             try f.noteEscape(start, inst);
         }
     }
+}
+
+/// A value `v` read at a type `rty` of the place of its own type, where the
+/// place has a type variable (`b`, `List b`): the place graph has one place
+/// for every type variable, so the types must be one as well, or the frame
+/// casts (`Contract.casts`). The value's type is what the walk knows of it
+/// (`valIs`), or the type of the expression it is (`arg_ty`): a value has
+/// the type of its expression unless an identity read it at another type,
+/// and each identity of the frame was judged so already (this function, or
+/// `readAtVar`), with the frame not casting. A value whose type is not known
+/// is read as a cast, the pessimistic side (research report 151).
+fn varAtVar(f: *Frame, v: Val, rty: ?Var, arg_ty: ?Var) void {
+    if (f.casts) return;
+    const rt = rty orelse {
+        f.casts = true;
+        return;
+    };
+    if (arg_ty) |at| if (f.m.sameType(at, rt, 0)) return;
+    if (!f.valIs(v, rt, 0)) f.casts = true;
+}
+/// The type of a parameter's pattern in the body: a variable's local, or
+/// the pattern's own type; `null` where neither is known.
+fn patType(f: *Frame, pat: u32) ?Var {
+    const m = f.m;
+    if (pat == none) return null;
+    if (m.tags[pat] == .pat_var) if (m.typeOfLocal(f.d, m.datas[pat].lhs).unwrap()) |t| return t;
+    return m.typeOfInst(pat).unwrap();
+}
+
+/// Whether the walk knows that `v` is a value of type `t`: a part of a
+/// parameter, a capture or a root the frame made, by the type of the root
+/// (a parameter's pattern, a capture's local, the instruction that made it)
+/// and the steps of the path (`Mod.typeAtPath`); a tuple or a record built
+/// of parts of the types of `t`'s parts; a join of such arms. A value of no
+/// cell (`none`, `outside`) holds nothing a type can hide. Else no.
+fn valIs(f: *Frame, v: Val, t: Var, depth: u32) bool {
+    if (depth > 8) return false;
+    const m = f.m;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .none, .outside => return true,
+        .ref => {
+            const r = f.roots.items[n.a];
+            const at_root: ?Var = switch (r.kind) {
+                // A parameter by the type of its pattern in the body (the
+                // scheme's variables are other variables of the store).
+                .param => f.patType(r.inst),
+                .capture => if (r.index < f.param_ty.items.len) f.param_ty.items[r.index].unwrap() else null,
+                .local, .answer => if (r.inst != none) m.typeOfInst(r.inst).unwrap() else null,
+                .outside, .fresh => null,
+            };
+            const vt = m.typeAtPath(at_root orelse return false, r.path, n.b) orelse return false;
+            return m.sameType(vt, t, 0);
+        },
+        .join => {
+            for (0..n.b) |ki| if (!f.valIs(f.lists.items[n.a + 2 * ki], t, depth + 1)) return false;
+            return true;
+        },
+        .built => {
+            const store = m.in.store;
+            _, const c = store.resolved(t);
+            const s = switch (c) {
+                .structure => |x| x,
+                .flex, .rigid, .alias, .err => return false,
+            };
+            for (f.kids.items[n.a..][0..n.b]) |kid| {
+                const st = Step.fromWord(kid.step);
+                const pt: Var = switch (st.kind) {
+                    .index => switch (s) {
+                        .tuple => |r| blk: {
+                            const xs = store.vars(r);
+                            if (st.payload >= xs.len) return false;
+                            break :blk xs[st.payload];
+                        },
+                        .unit, .empty_record, .func, .app, .record => return false,
+                    },
+                    .field => switch (s) {
+                        .record => |r| blk: {
+                            for (store.fields(r.fields)) |fd| {
+                                const sym = @backingInt(fd.name);
+                                if (sym < m.in.ranks.len and m.in.ranks[sym] == st.payload) break :blk fd.value;
+                            }
+                            return false;
+                        },
+                        .unit, .empty_record, .func, .app, .tuple => return false,
+                    },
+                    .ctor_arg, .elem, .contents, .env, .slot, .level, .row => return false,
+                };
+                if (!f.valIs(kid.val, pt, depth + 1)) return false;
+            }
+            return true;
+        },
+        .closure, .fnref, .unknown => return false,
+        .later => unreachable, // read through `capVal` only
+    }
+}
+
+/// The value `v` read at a type variable of the frame (`narrowed`,
+/// `escapeWide`): a value of another type than the variable casts (the
+/// contract says so, `Contract.casts`, and each caller reads it); a
+/// `Js.Value` the frame made of parts lets them escape (`madeOfParts`); a
+/// value of a type variable, or a `Js.Value` the caller handed, is read as
+/// it is (kernel §3.4; research reports 150, 151).
+fn readAtVar(f: *Frame, v: Val, inst: u32) Error!void {
+    const own = f.placeOfVal(v) orelse return;
+    switch (f.m.places.kind(own)) {
+        .@"var" => {},
+        .@"opaque" => if (try f.madeOfParts(v, 0)) {
+            try f.escape(v, inst);
+            if (std.debug.runtime_safety) try f.checkMadeEscaped(v);
+        },
+        .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => f.casts = true,
+    }
+}
+
+/// Safe builds (kernel §9): every cell of a `Js.Value` that the frame made of
+/// parts and read at a type variable, or at a type with one below its place,
+/// escaped (`readAtVar`, `narrowed`): no cell of the frame is below a
+/// variable a caller fills in with a type of no location there. It reads
+/// the leaves again and compares them with every escape of the frame, and
+/// counts no work. With the escape turned off (research report 151's fault,
+/// `Js.to (Js.array [ Js.from x ])` read at `b`), the first such read panics.
+fn checkMadeEscaped(f: *Frame, v: Val) Error!void {
+    const m = f.m;
+    if (m.steps_over or f.failed) return;
+    const steps = m.steps;
+    const units = m.module_units;
+    const over = m.steps_over;
+    const failed = f.failed;
+    var xs: std.ArrayList(Atom) = .empty;
+    defer xs.deinit(f.gpa);
+    _ = try f.allLeaves(v, &xs);
+    m.steps = steps;
+    m.module_units = units;
+    m.steps_over = over;
+    f.failed = failed;
+    for (xs.items) |a| {
+        if (a.root == 0) continue;
+        const held = for (f.esc_atoms.items) |x| {
+            if (f.overlap(x, a)) break true;
+        } else false;
+        if (!held) std.debug.panic("own3: a Js.Value made of parts and read at a type variable holds a cell of root {d} that did not escape (kernel §3.4, §9)", .{a.root});
+    }
+}
+
+/// Whether `v`, a `Js.Value` of the frame, was made by the frame of parts it
+/// holds below its place: a root the frame made (the answer of a call, of a
+/// function parameter, a cell it made), a construction, a function value or
+/// an `unknown`, that holds a cell other than `outside`; or a join with such
+/// an arm. A parameter's or a capture's value, or a part of one, is the
+/// caller's, as the caller made it (kernel §3.4, *What a value was made
+/// from*; research report 151). The leaves are work (kernel §8).
+fn madeOfParts(f: *Frame, v: Val, depth: u32) Error!bool {
+    if (depth > 8) return true;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .none, .outside, .fnref => return false,
+        .join => {
+            for (0..n.b) |ki| if (try f.madeOfParts(f.lists.items[n.a + 2 * ki], depth + 1)) return true;
+            return false;
+        },
+        .ref => switch (f.roots.items[n.a].kind) {
+            .param, .capture, .outside => return false,
+            .local, .answer, .fresh => {},
+        },
+        .built, .closure, .unknown => {},
+        .later => unreachable, // read through `capVal` only
+    }
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    _ = try f.allLeaves(v, &f.atoms);
+    _ = f.charge(Loc.scanUnits(f.atoms.items.len - start));
+    for (f.atoms.items[start..]) |a| if (a.root != 0) return true;
+    return false;
+}
+
+/// The part of `v` at the location `loc` of another layout of its type (a
+/// callee's parameter), step by step from the place of each part reached
+/// (`Loc.stepOf`, `project`), or `null` where a label has no step of that
+/// place (a slot, a row, a cycle's deep level, the inside of a `Dict`, a
+/// function value's). It is the value the part was made from: a
+/// construction's part is the value it was built of. Counted (kernel §8).
+fn partAt(f: *Frame, v: Val, loc: u32) Error!?Val {
+    if (loc == 0) return v;
+    var ls: std.ArrayList(u64) = .empty;
+    defer ls.deinit(f.gpa);
+    try f.m.loc.labels(loc, &ls, f.gpa);
+    _ = f.charge(Loc.scanUnits(ls.items.len));
+    var cur = v;
+    for (ls.items) |w| {
+        if (cur == v_none or cur == v_outside) return cur;
+        // A label of a cycle's deep level is one or more levels below, at a
+        // depth no step of the value names: no part (the type is read).
+        const l: Loc.Label = @bitCast(w);
+        if (l.cyc or l.kind == .member) return null;
+        const p = f.placeOfVal(cur) orelse return null;
+        const s = f.m.loc.stepOf(p, w) orelse return null;
+        cur = try f.project(cur, s);
+    }
+    return cur;
 }
 
 /// Whether a value of the place `own` read at the place `view` has a cell
@@ -6770,10 +7003,32 @@ fn punned(f: *Frame, v: Val, arg_inst: u32, place: PlaceId) Error!bool {
 /// with fewer places than its own*; research report 148). A type variable or
 /// an opaque type of the reading is a wide entry, which covers every cell
 /// below it. The scan of the map is work (kernel §8).
-fn narrowed(f: *Frame, v: Val, inst: u32, place: PlaceId) Error!void {
+fn narrowed(f: *Frame, v: Val, inst: u32, place: PlaceId, arg_inst: u32) Error!void {
+    return f.narrowedAs(v, inst, place, f.m.typeOfInst(inst).unwrap(), if (arg_inst != none) f.m.typeOfInst(arg_inst).unwrap() else null);
+}
+
+/// `narrowed`, where the reading's type is `rty` (`null`: not known).
+///
+/// The place graph has one place for every type variable, so a value of
+/// one type variable read at another (`Js.to (Js.from v)` with `v : a`
+/// answered at `b`, `fm : Maybe a → b`) is one place read at itself: the
+/// types tell them apart (`varAtVar`). Before research report 151 no rule
+/// did, so the frame did not cast, and a caller that filled `a` with a pair
+/// and `b` with `List Int × Int` read the second list as an `Int`.
+fn narrowedAs(f: *Frame, v: Val, inst: u32, place: PlaceId, rty: ?Var, arg_ty: ?Var) Error!void {
     const m = f.m;
     const own = f.placeOfVal(v) orelse return;
-    if (own == place) return;
+    if (own == place) {
+        // One place, and a type variable in it (`b`, `List b`): two types
+        // where the variables are two.
+        const es = m.loc.layoutEntries(try m.loc.layoutOf(place));
+        _ = f.charge(Loc.scanUnits(es.len));
+        for (es) |e| if (e.kind == .@"var") {
+            f.varAtVar(v, rty, arg_ty);
+            break;
+        };
+        return;
+    }
     switch (m.places.kind(place)) {
         // A value read at a type variable of another type than its own: the
         // variable is a wide entry here, which holds every cell, but a caller
@@ -6781,12 +7036,21 @@ fn narrowed(f: *Frame, v: Val, inst: u32, place: PlaceId) Error!void {
         // no location the value's cells can be there. The contract says so
         // (`Contract.casts`), and each caller reads it (`applyAt`,
         // `escapeHidden`; research report 150).
-        // A `Js.Value` read at a type variable is the code of `core/` that
-        // keeps values in arrays and objects of JavaScript: the value is
-        // wide already, and the caller that made it is judged where it reads
-        // the answer (`escapeWide`).
+        // A `Js.Value` read at a type variable is what it was made from. A
+        // value of the frame read through an identity (`Js.from x`) is that
+        // value, not a `Js.Value`, and is read above. A `Js.Value` the
+        // caller handed (a parameter, a capture, a part of one) is the
+        // caller's value, which the caller reads as it made it where it
+        // reads the answer (`escapeWide`, `narrowed`); no mark: `core/`
+        // reads the values it keeps in JavaScript arrays back so, and a
+        // mark made every function of `core/List` cast (research report
+        // 150). A `Js.Value` the frame made of parts (`Js.array [ Js.from x
+        // ]`, `Js.object`, the answer of a call, of unknown code) holds them
+        // below its place, at a depth no type names: what it holds escapes
+        // here (`madeOfParts`; research report 151). The answer of unknown
+        // code escaped already, so this costs nothing there.
         .@"var" => {
-            if (m.places.kind(own) != .@"opaque") f.casts = true;
+            try f.readAtVar(v, inst);
             return;
         },
         .@"opaque" => return,
@@ -6810,6 +7074,37 @@ fn narrowed(f: *Frame, v: Val, inst: u32, place: PlaceId) Error!void {
         try f.escape(v, inst);
         return;
     }
+    // A type variable inside the reading (`List b`, `b × Int`) is filled in
+    // by a caller, as one at its root is (the `.var` case above): a location
+    // of the value's own layout at or below it that is not a type variable
+    // at its place is a value of another type read there, a cast; a
+    // `Js.Value` the frame made of parts holds them below its place, which
+    // the reading's variable can be, so they escape (research report 151).
+    var made: ?bool = null;
+    for (cov, 0..) |c, k| {
+        if (c == none or c == Loc.all) continue;
+        const ok = own_es[k].kind;
+        if (ok == .@"opaque") {
+            // Its parts are below its place: any variable of the reading
+            // at or below the place the map gives it.
+            const at = view_es[c].loc;
+            const under_var = for (view_es) |ve| {
+                if (ve.kind == .@"var" and m.loc.isPrefix(at, ve.loc)) break true;
+            } else false;
+            _ = f.charge(Loc.scanUnits(view_es.len));
+            if (!under_var) continue;
+            if (made == null) made = try f.madeOfParts(v, 0);
+            if (made.?) {
+                try f.escape(v, inst);
+                if (std.debug.runtime_safety) try f.checkMadeEscaped(v);
+                break;
+            }
+            continue;
+        }
+        if (view_es[c].kind != .@"var") continue;
+        if (ok == .@"var" and own_es[k].loc == view_es[c].loc) continue;
+        f.casts = true;
+    }
     // A location of the value's own layout that no location of the reading
     // is at, nor a wide one above (`none`, or `Loc.all` where the reading has
     // locations elsewhere), is at a part of the reading of no location, or at
@@ -6828,6 +7123,17 @@ fn narrowed(f: *Frame, v: Val, inst: u32, place: PlaceId) Error!void {
         _ = try f.leaves(v, @intCast(k), &f.atoms);
         try f.noteEscape(start, inst);
     }
+}
+
+/// Whether a call of `code` answers its one argument as it is: its contract
+/// is an identity's (`isIdentity`) and does not cast, or the build writes the
+/// call as its argument (`Mod.emitsArgument`: `Js.from`, `Js.to`). A
+/// contract that casts places its parameter at or below its answer, at a
+/// depth no word names (research report 151).
+fn identityCall(f: *Frame, code: Code) bool {
+    if (!f.isIdentity(code.contract)) return false;
+    if (!code.contract.casts) return true;
+    return code.inst == none and code.decl[0] != none and f.m.emitsArgument(code.decl);
 }
 
 /// Whether the contract is that of a function that answers its one parameter

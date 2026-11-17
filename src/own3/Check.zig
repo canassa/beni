@@ -818,11 +818,219 @@ pub const Mod = struct {
     /// at the same path of the place `dst` reads it there at another type
     /// (`returned a → b`): a cast, which a caller can fill in with a type
     /// that hides its cells (`Contract.casts`, research report 150).
-    fn castsAt(m: *Mod, src: PlaceId, dst: PlaceId, from: Loc.Entry) Allocator.Error!bool {
+    ///
+    /// The place graph has one place for every type variable (`a` and `b`
+    /// are one place), so two equal places are no proof of one type: the
+    /// types (`src_ty`, `dst_ty`, the parameter's and the result's at the
+    /// place of the word) must be one type as well, the same variable or the
+    /// same structure of the same types (`sameType`). A type the test cannot
+    /// name (`null`) is another type: the pessimistic side, a cast. Before
+    /// research report 151 the places alone were compared, and `returned a →
+    /// b` was no cast: a caller that filled both variables with `List Int`
+    /// read the row as an identity, and an answer `[a]` hid the argument at
+    /// an `Int` element.
+    fn castsAt(m: *Mod, src: PlaceId, dst: PlaceId, src_ty: ?Var, dst_ty: ?Var, from: Loc.Entry) Allocator.Error!bool {
         if (!from.kind.wide()) return false;
         const a = (try m.loc.placeAt(src, from.loc)) orelse return true;
         const b = (try m.loc.placeAt(dst, from.loc)) orelse return true;
-        return a != b;
+        if (a != b) return true;
+        const st = (try m.typeAt(src_ty, from.loc)) orelse return true;
+        const dt = (try m.typeAt(dst_ty, from.loc)) orelse return true;
+        return !m.sameType(st, dt, 0);
+    }
+
+    /// The type at location `loc` of a value of type `v`: its labels read
+    /// one by one through an element (`elemType`), a tuple's index or a
+    /// record's field. Any other label (a constructor's argument, a cell's
+    /// contents, a row, a cycle's level), or a type that has no part there,
+    /// is `null`: no type the test can name.
+    pub fn typeAt(m: *Mod, v: ?Var, loc: u32) Allocator.Error!?Var {
+        var t = v orelse return null;
+        if (loc == 0) return t;
+        var ls: std.ArrayList(u64) = .empty;
+        defer ls.deinit(m.gpa);
+        try m.loc.labels(loc, &ls, m.gpa);
+        const store = m.in.store;
+        for (ls.items) |w| {
+            const l: Loc.Label = @bitCast(w);
+            if (l.cyc) return null;
+            _, const c = store.resolved(t);
+            const s = switch (c) {
+                .structure => |s| s,
+                .flex, .rigid, .alias, .err => return null,
+            };
+            t = switch (l.kind) {
+                .elem => m.elemType(t) orelse return null,
+                .index => switch (s) {
+                    .tuple => |r| blk: {
+                        const xs = store.vars(r);
+                        if (l.payload >= xs.len) return null;
+                        break :blk xs[l.payload];
+                    },
+                    .unit, .empty_record, .func, .app, .record => return null,
+                },
+                .field => switch (s) {
+                    .record => |r| blk: {
+                        for (store.fields(r.fields)) |fd| {
+                            const sym = @backingInt(fd.name);
+                            if (sym < m.in.ranks.len and m.in.ranks[sym] == l.payload) break :blk fd.value;
+                        }
+                        return null;
+                    },
+                    .unit, .empty_record, .func, .app, .tuple => return null,
+                },
+                .ctor_arg, .contents, .row, .member, .env, .slot, .fslot => return null,
+            };
+        }
+        return t;
+    }
+
+    /// Whether `aliased` puts the location `loc` of a parameter of type
+    /// `pty` at a type variable of the result (of type `rty`, entries
+    /// `res_es`) whose type is not the location's: the word places it at any
+    /// place of the result, and a type variable is filled in by the caller,
+    /// so the JavaScript can answer it below the variable's place, where the
+    /// caller's type has a part of no location (`Contract.casts`). An opaque
+    /// result (`Js.array : aliased elements → fresh Value`) is no type
+    /// variable: a `Js.Value` is read back as what it was made of
+    /// (`Frame.madeOfParts`).
+    fn aliasedCasts(m: *Mod, pty: Var, loc: u32, rty: ?Var, res_es: []const Loc.Entry) Allocator.Error!bool {
+        for (res_es) |re| {
+            if (re.kind != .@"var") continue;
+            const a = (try m.typeAt(pty, loc)) orelse return true;
+            const b = (try m.typeAt(rty, re.loc)) orelse return true;
+            if (!m.sameType(a, b, 0)) return true;
+        }
+        return false;
+    }
+
+    /// The type at the path `path` of a root of type `t` whose own path is
+    /// `root` (a path of `Loc.paths`, below it by steps): each step read as
+    /// `typeAt` reads a label (an element, a tuple's index, a record's field
+    /// by its rank). `null` past any other step, or where the path is not
+    /// below `root`.
+    pub fn typeAtPath(m: *Mod, t: Var, root: u32, path: u32) ?Var {
+        var steps: [32]Step = undefined;
+        var k: usize = 0;
+        var p = path;
+        while (p != root) {
+            if (k == steps.len) return null;
+            const pp = m.loc.paths.items[p];
+            if (pp.depth == 0) return null;
+            steps[k] = Step.fromWord(pp.step);
+            k += 1;
+            p = pp.parent;
+        }
+        const store = m.in.store;
+        var cur = t;
+        while (k > 0) {
+            k -= 1;
+            const s = steps[k];
+            _, const c = store.resolved(cur);
+            const st = switch (c) {
+                .structure => |x| x,
+                .flex, .rigid, .alias, .err => return null,
+            };
+            cur = switch (s.kind) {
+                .elem => m.elemType(cur) orelse return null,
+                .index => switch (st) {
+                    .tuple => |r| blk: {
+                        const xs = store.vars(r);
+                        if (s.payload >= xs.len) return null;
+                        break :blk xs[s.payload];
+                    },
+                    .unit, .empty_record, .func, .app, .record => return null,
+                },
+                .field => switch (st) {
+                    .record => |r| blk: {
+                        for (store.fields(r.fields)) |fd| {
+                            const sym = @backingInt(fd.name);
+                            if (sym < m.in.ranks.len and m.in.ranks[sym] == s.payload) break :blk fd.value;
+                        }
+                        return null;
+                    },
+                    .unit, .empty_record, .func, .app, .tuple => return null,
+                },
+                .ctor_arg, .contents, .env, .slot, .level, .row => return null,
+            };
+        }
+        return cur;
+    }
+
+    /// Whether the types `a` and `b` are one type: one variable of the
+    /// store, or one structure whose parts are one type each. An alias is
+    /// read through (`resolved`); a record, an error or a structure deeper
+    /// than 16 is another type (the pessimistic side, `castsAt`).
+    pub fn sameType(m: *Mod, a: Var, b: Var, depth: u32) bool {
+        if (depth > 16) return false;
+        const store = m.in.store;
+        const ra, const ca = store.resolved(a);
+        const rb, const cb = store.resolved(b);
+        if (ra == rb) return true;
+        const sa = switch (ca) {
+            .structure => |s| s,
+            .flex, .rigid, .alias, .err => return false,
+        };
+        const sb = switch (cb) {
+            .structure => |s| s,
+            .flex, .rigid, .alias, .err => return false,
+        };
+        switch (sa) {
+            .unit => return sb == .unit,
+            .empty_record => return sb == .empty_record,
+            .func => |fa| {
+                const fb = switch (sb) {
+                    .func => |x| x,
+                    else => return false,
+                };
+                return m.sameVars(store.vars(fa.params), store.vars(fb.params), depth) and m.sameType(fa.result, fb.result, depth + 1);
+            },
+            .app => |aa| {
+                const ab = switch (sb) {
+                    .app => |x| x,
+                    else => return false,
+                };
+                return aa.type == ab.type and m.sameVars(store.vars(aa.args), store.vars(ab.args), depth);
+            },
+            .tuple => |ta| {
+                const tb = switch (sb) {
+                    .tuple => |x| x,
+                    else => return false,
+                };
+                return m.sameVars(store.vars(ta), store.vars(tb), depth);
+            },
+            .record => return false,
+        }
+    }
+
+    fn sameVars(m: *Mod, xs: []const Var, ys: []const Var, depth: u32) bool {
+        if (xs.len != ys.len) return false;
+        for (xs, ys) |x, y| if (!m.sameType(x, y, depth + 1)) return false;
+        return true;
+    }
+
+    /// The element type of a sequence type (`List a`, `Builder a`: an
+    /// application of one argument), or `null`.
+    fn elemType(m: *Mod, v: ?Var) ?Var {
+        const t = v orelse return null;
+        const store = m.in.store;
+        _, const c = store.resolved(t);
+        switch (c) {
+            .structure => |s| switch (s) {
+                .app => |ap| {
+                    const args = store.vars(ap.args);
+                    return if (args.len == 1) args[0] else null;
+                },
+                .unit, .empty_record, .func, .tuple, .record => return null,
+            },
+            .flex, .rigid, .alias, .err => return null,
+        }
+    }
+
+    /// The type of the answer of the function type `v`, or `null`.
+    fn answerType(m: *Mod, v: Var) ?Var {
+        const ft = m.fnType(v.toOptional()) orelse return null;
+        return ft.result;
     }
 
     /// Whether `place` is a record's.
@@ -1054,6 +1262,22 @@ pub const Mod = struct {
     pub fn isWorded(m: *const Mod, t: [2]u32) bool {
         const d = m.declOf(t) orelse return false;
         return m.in.birs[t[0]].ownSlotsV2(d).len != 0;
+    }
+
+    /// Whether the build emits a saturated call of declaration `t` as its
+    /// one argument: `Js.from` and `Js.to` of the core package, which the
+    /// backend writes as nothing (`js/JsIntrinsic.zig`, the same key: the
+    /// core package, the module `Js`, the declaration's name; a module of
+    /// another package named `Js` is an ordinary module). The call's value
+    /// is the argument itself, a fact of the code the build writes, which no
+    /// word says: `returned a → Value` is as true of a row that answers
+    /// `[a]` (kernel §3.4, *What a value was made from*; research report 151).
+    pub fn emitsArgument(m: *const Mod, t: [2]u32) bool {
+        if (t[0] == none or !m.in.isCore(t[0]) or t[0] >= m.names.module_names.len) return false;
+        if (!std.mem.eql(u8, m.names.module_names[t[0]], "Js")) return false;
+        if (m.declOf(t) == null) return false;
+        const name = m.names.declName(t[0], t[1]);
+        return std.mem.eql(u8, name, "from") or std.mem.eql(u8, name, "to");
     }
 
     /// Whether the declaration is a function: a reference to it is a function value.
@@ -1307,6 +1531,11 @@ pub const Mod = struct {
 
     const Sig = struct { params: []PlaceId, result: PlaceId, vars: []const Var, fnt: ?TypeStore.Structure.Func };
 
+    /// The type of a signature's result, or `null`.
+    fn sigResult(sig: Sig) ?Var {
+        return if (sig.fnt) |ft| ft.result else null;
+    }
+
     fn sigOf(m: *Mod, di: u32) Allocator.Error!?Sig {
         const scheme: Var.Optional = if (di < m.in.decl_scheme.len) m.in.decl_scheme[di] else .none;
         const ft = m.fnType(scheme) orelse return null;
@@ -1474,6 +1703,10 @@ pub const Mod = struct {
                     c.nonlinear = true;
                     for (res) |*r| try r.append(gpa, src);
                     if (!try m.placedAnywhere(sig.result, res_es)) fl.* |= Contract.flag_e;
+                    // At any place of the result: at a type variable of the
+                    // result of another type than the location's, a cast
+                    // (`aliased a → b`, JavaScript `[a]`; research report 151).
+                    if (has(w, .aliased) and try m.aliasedCasts(sig.vars[j], pe.loc, sigResult(sig), res_es)) c.casts = true;
                 }
                 if (has(w, .returned)) {
                     described = true;
@@ -1484,13 +1717,13 @@ pub const Mod = struct {
                     };
                     if (!found) for (res) |*r| try r.append(gpa, src);
                     if (!try m.placedSafely(sig.result, res_es, pe)) fl.* |= Contract.flag_e;
-                    if (try m.castsAt(sig.params[j], sig.result, pe)) c.casts = true;
+                    if (try m.castsAt(sig.params[j], sig.result, sig.vars[j], sigResult(sig), pe)) c.casts = true;
                 }
                 if (has(w, .stored)) {
                     described = true;
                     if (!try m.intoElems(res, sig.result, relem, pe, src)) fl.* |= Contract.flag_e;
                     if (relem) |pr| {
-                        if (try m.castsAt(sig.params[j], pr.child, pe)) c.casts = true;
+                        if (try m.castsAt(sig.params[j], pr.child, sig.vars[j], m.elemType(sigResult(sig)), pe)) c.casts = true;
                     } else if (pe.kind.wide()) c.casts = true;
                 }
             }
@@ -1543,7 +1776,7 @@ pub const Mod = struct {
                 };
                 if (!found) for (res) |*r| try r.append(gpa, src);
                 if (!try m.placedSafely(sig.result, res_es, pe)) flags[c.off[0] + e] |= Contract.flag_e;
-                if (try m.castsAt(sig.params[0], sig.result, pe)) c.casts = true;
+                if (try m.castsAt(sig.params[0], sig.result, sig.vars[0], sigResult(sig), pe)) c.casts = true;
             }
         }
         if ((has(rw, .elementof) or has(rw, .taken)) and arity > 0) {
@@ -1567,7 +1800,7 @@ pub const Mod = struct {
                     // An element answered at a type of no location (`elementof
                     // Int`): it escapes (research report 150).
                     if (!try m.placedSafely(sig.result, res_es, ce)) flags[c.off[0] + pr.up[k]] |= Contract.flag_e;
-                    if (try m.castsAt(pr.child, sig.result, ce)) c.casts = true;
+                    if (try m.castsAt(pr.child, sig.result, m.elemType(sig.vars[0]), sigResult(sig), ce)) c.casts = true;
                 }
             } else try m.undescribed(c, res, sig.result, true);
         }
@@ -1577,7 +1810,64 @@ pub const Mod = struct {
         const out = @constCast(c.res);
         for (out, res) |*o, r| o.* = try Contract.normal(m.arena, r.items);
         if (std.debug.runtime_safety) try m.checkWordedPlaced(sig, c, pw, rw);
+        if (std.debug.runtime_safety) try m.checkWordedCasts(sig, c, pw, rw);
         return c;
+    }
+
+    /// Safe builds: a row whose word puts a parameter's wide location (a
+    /// type variable, a `Js.Value`) at a place of the result of another type
+    /// than the location's casts (`Contract.casts`): `returned` and
+    /// `builderdone` at the same place of the result, `stored` at that place
+    /// of its elements, `elementof` and `taken` an element of parameter 0 at
+    /// that place of the result, `aliased` at any type variable of the
+    /// result. The types are read again from the store, apart from the code
+    /// that marked the row (`castsAt`, `aliasedCasts`): with the types not
+    /// compared (research report 151's fault, the places alone), the first
+    /// row of `returned a → b` panics. Kernel §6 rule 10, §9. Counts no work.
+    fn checkWordedCasts(m: *Mod, sig: Sig, c: *const Contract.Contract, pw: []const u32, rw: u32) Allocator.Error!void {
+        if (c.casts) return;
+        const units = m.loc.units;
+        defer m.loc.units = units;
+        const rty = sigResult(sig);
+        const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
+        for (0..c.arity) |j| {
+            const w = pw[j];
+            if (m.fnType(sig.vars[j].toOptional()) != null) continue;
+            for (m.loc.layoutEntries(c.layouts[j])) |pe| {
+                if (!pe.kind.wide()) continue;
+                const pt = try m.typeAt(sig.vars[j], pe.loc);
+                var other = false;
+                if (has(w, .returned) or (j == 0 and has(rw, .builderdone))) {
+                    if (try m.loc.placeAt(sig.result, pe.loc) != null) other = other or !try m.typesOne(pt, try m.typeAt(rty, pe.loc));
+                }
+                if (has(w, .stored)) {
+                    if (try m.loc.proj(sig.result, Step.elem)) |pr| {
+                        if (try m.loc.placeAt(pr.child, pe.loc) != null) other = other or !try m.typesOne(pt, try m.typeAt(m.elemType(rty), pe.loc));
+                    } else other = true;
+                }
+                if (has(w, .aliased)) for (res_es) |re| {
+                    if (re.kind == .@"var") other = other or !try m.typesOne(pt, try m.typeAt(rty, re.loc));
+                };
+                if (other) std.debug.panic("own3: a row puts a wide location of parameter {d} at a place of the result of another type, and does not cast (kernel §6 rule 10, §9)", .{j});
+            }
+        }
+        if ((has(rw, .elementof) or has(rw, .taken)) and c.arity > 0) {
+            if (try m.loc.proj(sig.params[0], Step.elem)) |pr| {
+                for (m.loc.layoutEntries(try m.loc.layoutOf(pr.child))) |ce| {
+                    if (!ce.kind.wide()) continue;
+                    if (try m.loc.placeAt(sig.result, ce.loc) == null) continue;
+                    if (!try m.typesOne(try m.typeAt(m.elemType(sig.vars[0]), ce.loc), try m.typeAt(rty, ce.loc)))
+                        std.debug.panic("own3: a row answers an element's wide location at a place of the result of another type, and does not cast (kernel §6 rule 10, §9)", .{});
+                }
+            }
+        }
+    }
+
+    /// Whether two types read by `typeAt` are one: both known, and one type.
+    fn typesOne(m: *Mod, a: ?Var, b: ?Var) Allocator.Error!bool {
+        const x = a orelse return false;
+        const y = b orelse return false;
+        return m.sameType(x, y, 0);
     }
 
     /// Safe builds: each parameter location that a word puts in the result
@@ -1737,7 +2027,7 @@ pub const Mod = struct {
             // whose cells can be at a part of the result of no location escapes
             // too (`placedSafely`).
             if (!placed or (pe.kind.wide() and !try m.placedSafely(sig.result, res_es, pe))) @constCast(c.flags)[c.off[j] + e] |= Contract.flag_e;
-            if (try m.castsAt(sig.params[j], sig.result, pe)) @constCast(c).casts = true;
+            if (try m.castsAt(sig.params[j], sig.result, sig.vars[j], sigResult(sig), pe)) @constCast(c).casts = true;
         }
     }
 
@@ -1818,12 +2108,12 @@ pub const Mod = struct {
                 };
                 if (!found) for (res) |*r| try r.append(m.gpa, src);
                 if (!try m.placedSafely(sig.result, res_es, ae)) unplaced = true;
-                if (try m.castsAt(rplace, sig.result, ae)) @constCast(c).casts = true;
+                if (try m.castsAt(rplace, sig.result, ft.result, sigResult(sig), ae)) @constCast(c).casts = true;
             }
             if (has(w, .stored)) {
                 if (!try m.intoElems(res, sig.result, relem, ae, src)) unplaced = true;
                 if (relem) |pr| {
-                    if (try m.castsAt(rplace, pr.child, ae)) @constCast(c).casts = true;
+                    if (try m.castsAt(rplace, pr.child, ft.result, m.elemType(sigResult(sig)), ae)) @constCast(c).casts = true;
                 } else if (ae.kind.wide()) @constCast(c).casts = true;
             }
             if (has(w, .aliased)) {

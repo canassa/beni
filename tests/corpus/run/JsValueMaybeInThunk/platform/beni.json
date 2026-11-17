@@ -1,0 +1,1 @@
+{ "platform": true, "name": "jsvaluemaybeinthunk", "platforms": ["node"], "reexports": ["Node"] }

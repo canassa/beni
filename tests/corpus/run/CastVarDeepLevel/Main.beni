@@ -1,0 +1,24 @@
+-- Research report 150 §11's residual: a cast of one type variable to another, of a
+-- value found at a path that no step of the place graph names (the deep level of
+-- a recursive type). `deepCast` reads the payload `v : a` of the second node at
+-- `b`: the place graph has one place for every type variable, so this was no cast,
+-- and the call's escape test skipped the path. The types tell the two variables
+-- apart now (ownership-v3-kernel.md §3.4).
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    h : List Int × Int
+    h = Pun.deepCast (Pun.Node ( [], [] ) (Pun.Node ( x0, x0 ) Pun.Leaf))
+    ( _, hq ) = h
+    z : List Int
+    z = Pun.conv hq
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

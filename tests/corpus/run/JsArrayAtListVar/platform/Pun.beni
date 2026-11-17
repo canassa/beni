@@ -1,0 +1,13 @@
+--! A test platform for research report 151.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| The argument in a new JavaScript array, read as a list.
+pub arrL : a → List b
+arrL x = Js.to (Js.array [ Js.from x ])

@@ -1,0 +1,1 @@
+{ "platform": true, "name": "castrowaliased", "platforms": ["node"], "reexports": ["Node"] }

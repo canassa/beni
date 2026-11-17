@@ -1,0 +1,12 @@
+--! A test platform for research report 151.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| JavaScript `(a) => [a]`.
+pub foreign pure keep : aliased a → b

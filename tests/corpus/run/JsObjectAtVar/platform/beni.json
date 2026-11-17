@@ -1,0 +1,1 @@
+{ "platform": true, "name": "jsobjectatvar", "platforms": ["node"], "reexports": ["Node"] }

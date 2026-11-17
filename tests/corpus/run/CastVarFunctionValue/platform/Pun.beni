@@ -1,0 +1,19 @@
+--! A test platform for research report 151.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| The value in the `Maybe`, read at `b`.
+pub fm : Maybe a → b
+fm m =
+    case m of
+        Just v →
+            Js.to (Js.from v)
+
+        Nothing →
+            Js.to (Js.from 0)

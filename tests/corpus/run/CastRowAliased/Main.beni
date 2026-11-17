@@ -1,0 +1,20 @@
+-- A row `aliased a → b`, whose word puts the argument at any place of the answer,
+-- and whose JavaScript answers `[a]`, read at `List Int`: a cast at the type
+-- variable, though both are `List Int` (ownership-v3-kernel.md §6 rule 10).
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    h : List Int
+    h = Pun.keep x0
+    z : List Int
+    z = Pun.conv (Maybe.withDefault (List.head h) 0)
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

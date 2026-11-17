@@ -1,0 +1,24 @@
+--! A test platform for research report 151.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+pub type Tree a
+    = Leaf
+    | Node a (Tree a)
+
+
+--| The second node's payload, read at `b`.
+pub deepCast : Tree a → b
+deepCast t =
+    case t of
+        Node _ (Node v _) →
+            Js.to (Js.from v)
+
+        _ →
+            Js.to (Js.from 0)

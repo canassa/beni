@@ -1,0 +1,2 @@
+# v3 refuses the push: the row casts, and `List.map` answers its answers (ownership-v3-kernel.md §3.4; research report 151).
+18:22 list_still_used List.push

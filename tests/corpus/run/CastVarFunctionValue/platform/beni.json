@@ -1,0 +1,1 @@
+{ "platform": true, "name": "castvarfunctionvalue", "platforms": ["node"], "reexports": ["Node"] }

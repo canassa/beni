@@ -413,6 +413,24 @@ pub const Table = struct {
     /// The place that `loc`'s labels reach from `place`, step by step, or
     /// null where `place` has no step of it, or the path names a slot, a row
     /// or a member of a cycle's deep level, which no place step names.
+    /// The step of `place` that the label `w` of a location names, as
+    /// `placeAtWalk` finds it (and of the same type, where the label names
+    /// one: a constructor's argument, an opaque type's slot), or `null` (a
+    /// slot of a record, a row, a member or a step of a cycle's deep level,
+    /// or a label `place` has no step for). Counted.
+    pub fn stepOf(t: *Table, place: PlaceId, w: u64) ?Step {
+        const l: Label = @bitCast(w);
+        if (l.cyc or l.kind == .fslot or l.kind == .member or l.kind == .row) return null;
+        const st = t.places.steps(place);
+        t.units +|= st.steps.len;
+        for (st.steps) |s| {
+            if (s.kind == .level) continue;
+            const sl = t.stepLabel(place, s, false);
+            if (sl.kind == l.kind and sl.payload == l.payload and sl.head == l.head) return s;
+        }
+        return null;
+    }
+
     pub fn placeAt(t: *Table, place: PlaceId, loc: u32) Allocator.Error!?PlaceId {
         const key: [2]u32 = .{ place.int(), loc };
         if (t.place_at_memo.get(key)) |hit| return if (hit == none) null else @fromBackingInt(hit);

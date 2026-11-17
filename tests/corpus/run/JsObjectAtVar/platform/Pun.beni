@@ -1,0 +1,13 @@
+--! A test platform for research report 151.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| The argument at field `q` of a new JavaScript object.
+pub boxR : a → b
+boxR x = Js.to (Js.object [ ( "q", Js.from x ), ( "p", Js.array [] ) ])

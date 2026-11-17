@@ -1,0 +1,24 @@
+--! A test platform for research report 151.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| The value itself, as a `Js.Value`.
+pub wrapV : a → Js.Value
+wrapV x = Js.from x
+
+
+--| A `Js.Value` in a `Maybe`, read at `b`.
+pub fromMaybeV : Maybe Js.Value → b
+fromMaybeV m =
+    case m of
+        Just v →
+            Js.to v
+
+        Nothing →
+            Js.to (Js.from 0)

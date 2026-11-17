@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -282,7 +282,8 @@ callee that does not cast answers at a type variable only values of that variabl
 reading names where the argument's own type does: `Maybe.withDefault m []` read as `List Int` is no
 cast. The flag is the pessimistic side: it is set for the whole contract, and a caller of a function
 that casts casts too. A `Js.Value` read at a type variable does not set it: `core/` keeps values in
-JavaScript arrays and objects and reads them back so, and the flag made every list function cast.
+JavaScript arrays and objects and reads them back so, and the flag made every list function cast. What
+the `Js.Value` was made from decides instead (*What a value was made from*, below).
 
 **A wide parameter answered at a wide result location** is the argument, or its part there, as it is,
 read at the caller's type (`Frame.escapeWide`): where both are roots, as an identity's (`narrowed`);
@@ -295,10 +296,64 @@ shape that meets a holder which reads its wide answer location at a location tha
 it holds escape, unless the holder's parameter and answer are one layout and the two locations one place (`List.reverse` held as `List Int → List Int`)
 (`escapeUnplacedAnswer`). At a call of a callee that casts, the escape of a
 wide location covers every cell of a parameter at its entry (`allSrcs`), not the part a reading would
-take: where the body cast, the part is not where the types say. *What this does not cover* (research report 150 §11): a
+take: where the body cast, the part is not where the types say. *What this did not cover* (research report 150 §11): a
 path that no place step names (a deep level of a cycle, a row, the inside of a `Dict`), an argument of
 the caller's own type variable or a function value, and a `Js.Value` inside a container cast at a type
-variable in a frame whose own result is that variable (`λ⊤ → fromMaybeV (Just v)`).
+variable in a frame whose own result is that variable (`λ⊤ → fromMaybeV (Just v)`). Research report 151
+covers them by the three facts below: every cast of one type variable to another is seen where it is
+written, so a callee that does not cast answers at its type variable only values of that variable, and
+the paths that `escapeWide` skips hide nothing a type can; a `Js.Value` at the parameter's location is
+read as what it was made from.
+
+**What a value was made from** (research report 151). Where a value's cells sit is a fact of the walk,
+not of the types alone, and three facts say it; where one does not hold, the frame casts, or the cells
+escape:
+
+- **A type variable is a type, not a place.** The place graph has one place for every type variable:
+  `a` and `b` are one place, and so are `List a` and `List b`. Two places that are one are one type only
+  where their types are one: one variable of the store, or one structure whose parts are one type each
+  (`Mod.sameType`; the type at a location is read through elements, a tuple's parts and a record's
+  fields, `Mod.typeAt`, `typeAtPath`, and any other step is another type, the pessimistic side). So a
+  row whose word puts a wide location at a place of another type casts by its types (`returned a → b`,
+  `stored a → List b`, `aliased a → b`: `Check.castsAt`, `aliasedCasts`; rule 10), at every instance:
+  before, the places said "one type", the row had no mark, and a caller that filled both variables
+  with `List Int` read it as an identity, though its JavaScript `(a) => [a]` puts the argument at an
+  `Int` element (`run/CastRowSameLayout`, `CastRowSameRecord`, `CastRowAliased`). And a value read
+  through an identity at the place it has, where that place has a type variable (`Js.to (Js.from v)`
+  with `v : a` read at `b`; `fm : Maybe a → b`), casts unless the walk knows the value is of the
+  reading's type (`Frame.varAtVar`): a part of a parameter, a capture or a root the frame made, by the
+  type of the root (a parameter's pattern, a capture's local, the instruction that made it) and the
+  steps of its path; a tuple or a record built of values of the types of its parts; a join of such
+  arms; or a value of the expression's type, since a value has the type of its expression unless an
+  identity read it at another type, and each identity is judged so where it is (`valIs`, the argument
+  instruction's type). Before, `own == place` read as one type, and a callee that cast `a` to `b` did
+  not cast (`run/CastVarDeepLevel`, `CastVarFunctionValue`). A type variable inside the reading (`List
+  b`, `b × Int`) is filled in by a caller as one at its root is: a location of the value's own layout
+  at or below it that is not a type variable at its place casts (`narrowed`).
+- **An identity is what the build writes, not what the words say.** `returned a → Js.Value` is as true
+  of `(a) => [a]` as of `(a) => a`. A call answers its argument as it is (`Frame.identityCall`; the
+  argument read at the reading's type, `narrowed`) where its contract is an identity's and does not
+  cast, or where the build writes the call as its argument: `Js.from` and `Js.to` of the core package,
+  which the backend compiles to nothing (`Mod.emitsArgument`, keyed as `js/JsIntrinsic.zig` keys them:
+  the core package, the module `Js`, the declaration's name; a module of another package of that name
+  is an ordinary module). That is a fact of the code the build writes, and the one place the kernel
+  reads a declaration by its name (rule 11). A row that casts is a call: its answer is read where
+  `escapeHidden` and `escapeUnplacedAnswer` read a cast's (`run/CastRowMapped`, `CastRowGeneric`).
+- **A `Js.Value` is what it was made from.** A value read through an identity is the value it was:
+  `Js.from x` is `x`, and `Just (Js.from ( x, x ))`, of type `Maybe Js.Value`, has the pair as its part,
+  which a reader of the part reads (`Frame.partAt`, step by step from the place of each part reached;
+  `escapeWide` reads it at the caller's type, `run/JsValueMaybeInThunk`). A `Js.Value` the caller
+  handed (a parameter, a capture, a part of one) is the caller's: the caller reads it as it made it,
+  where it reads the answer. A `Js.Value` the frame made of parts — the root of a call that put cells
+  in it (`Js.array [ Js.from x ]`, `Js.object`, a function that answers one), a construction, an
+  `unknown` — holds them below its place, at a depth no type names (`madeOfParts`): read at a type
+  variable, or at a type with a type variable at or below the place of the `Js.Value`, each cell it
+  holds escapes there (`readAtVar`, `narrowed`; `run/JsArrayAtVar`, `JsObjectAtVar`,
+  `JsArrayAtListVar`). Where no step names the part (a cycle's deep level, the inside of a `Dict`), an
+  argument the caller made of parts lets its cells at the parameter's location escape where the
+  reading has a type variable or a part of no location there (`escapeWide`). The answer of unknown
+  code (`Js.get`, `Js.call`, `Js.at`) escaped already, so `core/` loses nothing: every demand of the
+  2 796 ownership roots has the verdict it had (research report 151 §7).
 
 *Research report 150: a worded row whose result had no location dropped the parameter it put there
 (`run/WordedReturnedNoLocation`, and `stored`, `elementof`, `taken`, `copyof` and a function parameter's
@@ -651,7 +706,19 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     Int`, whose JavaScript answers `{a: a, b: a}`; `stored a → List a × Int`; `returned a → { l : a,
     n : Int }`), unless a wide location of the result holds it whole (`Check.placedSafely`; `aliased`
     and an answer anywhere, `placedAnywhere`). A word that puts a wide location at the place of
-    another type (`returned a → b`) casts (`Contract.casts`, `Check.castsAt`, §3.4). The JavaScript value is what the word says it is, and a cast reads it back; "at
+    another type (`returned a → b`) casts (`Contract.casts`, `Check.castsAt`, §3.4): another type by
+    the types of the store, not by the places, since every type variable is one place (`a` and `b`,
+    `List a` and `List b`); `stored` at the place of the result's elements, `elementof`, `taken` and
+    `builderdone` likewise, and `aliased`, which puts the location at any place, casts where the result
+    has a type variable of another type than the location's (`aliasedCasts`). A row that casts answers
+    its parameter at or below its answer, at a depth no word names: its call is no identity, however its
+    caller fills the variables in (`run/CastRowSameLayout`: `returned a → b` read at `List Int → List
+    Int`, JavaScript `(a) => [a]`); `Js.from` and `Js.to`, which cast by their types, are identities by
+    the code the build writes (§3.4, *What a value was made from*). Safe builds read the words and the
+    types again (`Check.checkWordedCasts`, §9). No row of `core/` or of a shipped platform casts that
+    did not before (research report 151): `Js.from`, `Js.to`, `Ref.update` and `Ref.modify` cast by
+    their places already, and `Task.raceOk` (`many aliased List (⊤ → Result e a)`) casts now. The
+    JavaScript value is what the word says it is, and a cast reads it back; "at
     every location of the result" is at none when there are none, and a location placed nowhere was
     gone. A result of no location that no word describes holds no parameter: each parameter has a word
     that does not put it there (`List.length : borrowed List a → Int`), and those words are the
@@ -706,7 +773,11 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     parameter is refused where it is handed, and so is one with no contract. The runtime's `send` is
     the alias with the word `sender` (`platforms/browser/Browser.beni`), followed through aliases of it;
     a message sent is given up, so each cell of it is a demand (`callParam`). No declaration is read by
-    its name, and no method is read as read-only because it is derived. *Report 118 §4.6: the text said
+    its name, and no method is read as read-only because it is derived, but one: a call of `Js.from` or
+    `Js.to` of the core package is its argument, since the build writes it so (`Mod.emitsArgument`, the
+    key of `js/JsIntrinsic.zig`; §3.4, *What a value was made from*). The fact is of the code the build
+    writes, which no word of the rows can say (`returned a → Js.Value` is as true of a row that answers
+    `[a]`); the value of such a call is read at the reading's type where it is read (`narrowed`). *Report 118 §4.6: the text said
     that a derived method calls its evidence, and the walk read it as code that only reads its operands;
     a derived `eq` of a tuple or of `type W = W T Int` calls `T.eq`, which no walk saw.*
 12. **Markup** (`evalInner .markup`, `formCalls`, `runtimeCall`, `call` of a markup primitive): the value
@@ -1403,6 +1474,8 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a construction at a record's place holds the record's object (a part at the object's step): no rule makes a record of its fields alone, whose slots would hold no cell (a record alias's constructor did); the check counts no work | `Frame.built` | §6.4, §11.2 |
 | each location that a reader of a value asks for at another reading than the value's own (`leavesSet`, `argEntries`) is placed in the value's own layout: an entry is at it (the map, or `Loc.all`), a wide entry above it holds it (`Loc.holes`), or the value's own place has its steps and they reach a type of no cell (`Loc.emptyAlong`; a slot, a row and a deep level's member are read by other rules). With `Loc.holes` turned off (research report 146's fault), the first program the gates build panics. The check counts no work | `Frame.checkPlaced` | §3.4 |
 | each parameter location that a worded row's word puts in the result (`returned`, `stored`, `aliased`, `builderdone`, `elementof`, `taken`, the elements and storage of `copyof` and its kin, `Record.copy`'s values, a function parameter's answer under `returned`, `stored` or `aliased`) is a source of some location of the result, or has the escape flag: a placement never lands on no location without an escape; and a wide location that `returned` places and does not let escape is held by a wide result location at or above its place, or at its place where the result has no part of no location below it. It reads the words again, apart from the code that placed them. With the escape of `returned` turned off (research report 150's fault), the first program with `returned a → Int` panics. The check counts no work | `Check.checkWordedPlaced`, in `wordedContract` | §6.10 |
+| a row whose word puts a wide location of a parameter (a type variable, a `Js.Value`) at a place of the result whose type is not the location's — `returned` or `builderdone` at the same place, `stored` at that place of the result's elements, `elementof` and `taken` an element at that place, `aliased` at any type variable of the result — casts. It reads the words and the types of the store again, apart from the code that marked the row (`castsAt`, `aliasedCasts`). With the types not compared (research report 151's fault: the places alone, which are one for every type variable), the first row of `returned a → b` panics. The check counts no work | `Check.checkWordedCasts`, in `wordedContract` | §3.4, §6 rule 10 |
+| every cell of a `Js.Value` that the frame made of parts and read at a type variable, or at a type with one at or below its place, escaped: each leaf of the value is held by an escape of the frame. With that escape turned off (research report 151's fault: `Js.to (Js.array [ Js.from x ])` read at `b`), the first such read panics. The check counts no work | `Frame.checkMadeEscaped`, in `readAtVar` and `narrowed` | §3.4 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 
 ## 10. What the kernel costs
