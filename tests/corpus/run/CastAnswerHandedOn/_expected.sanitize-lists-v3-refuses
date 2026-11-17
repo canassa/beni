@@ -1,0 +1,2 @@
+# v3 refuses the push: `feedA` casts, and hands the first function's answer to the second, so that answer escapes at the call (ownership-v3-kernel.md §3.4; research report 151).
+15:22 list_still_used List.push

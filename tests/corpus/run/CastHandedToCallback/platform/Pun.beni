@@ -1,0 +1,13 @@
+--! A test platform for research report 151.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| Hands its argument, read at the callback's type, to the callback.
+pub feed : a, (b → c) → c
+feed x g = g (Js.to (Js.from x))
