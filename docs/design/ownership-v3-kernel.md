@@ -789,7 +789,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     (`type_dispatch`) runs its callee the same way. Evidence (`where`) is called by code the walk does
     not follow, any number of times, with values it does not own: a function that writes or keeps a
     parameter is refused where it is handed, and so is one with no contract. The runtime's `send` is
-    the alias with the word `sender` (`platforms/browser/Browser.beni`), followed through aliases of it;
+    the alias with the word `sender` (`platforms/browser/Browser.beni`, and `platforms/browser-base/Hosted.beni`, whose `Send` every renderer's `Cmd.Send` aliases), followed through aliases of it;
     a message sent is given up, so each cell of it is a demand (`callParam`). No declaration is read by
     its name, and no method is read as read-only because it is derived, but one: a call of `Js.from` or
     `Js.to` of the core package is its argument, since the build writes it so (`Mod.emitsArgument`, the

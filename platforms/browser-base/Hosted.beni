@@ -21,8 +21,10 @@ import Task
 pub foreign type Host msg
 
 
---| A synchronous send into a running program.
-pub type alias Send msg =
+--| A synchronous send into a running program. The word `sender` is the
+--| ownership row: a message is given up to the runtime, so each list in it
+--| must be the sender's own.
+pub sender type alias Send msg =
     msg → ⊤
 
 
