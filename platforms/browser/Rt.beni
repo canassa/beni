@@ -719,6 +719,14 @@ flush ⊤ =
                 if Js.read ok then ⊤ else stop ⊤
 
 
+--| What a development entry calls when a module of the program throws
+--| while it loads, a top-level value that crashed: the page stops, as it
+--| does for a throw in `init`, before `run` is called. The throw goes on
+--| to the host, which reports it (`boundary.md` §9.8.10 (c), #1994).
+pub loadFailed : ⊤ → ⊤
+loadFailed ⊤ = stop ⊤
+
+
 -- `(program)`: start every program the array holds, in order. A fiber
 -- that throws stops the page whatever program started it: a plain
 -- `Browser.program`'s `update` can start one as a hosted mount's can, so
