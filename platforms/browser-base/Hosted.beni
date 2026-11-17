@@ -84,7 +84,14 @@ comparer _ = λa b → a.compare b
 --| page that compares no other string then never ships. Reading the
 --| key's fields and calling its `compare` run no effect, so the body is
 --| `Js.pure`, as the sibling was `foreign pure`.
-pub compare : Key, Key → Order
+--|
+--| The words are a trusted row (`ownership-v3-kernel.md` §6 rule 10, *A
+--| platform's trusted row*): the body runs the comparer a key carries,
+--| which the checker cannot follow, but `Key` is a `foreign type` that
+--| only `key` builds, so that comparer is the key type's own `compare`,
+--| judged as evidence where `key` is called: it writes and keeps nothing
+--| it is handed.
+pub compare : borrowed Key, borrowed Key → Order
 compare a b = Js.pure λ⊤ →
     if Js.same a b then
         EQ
