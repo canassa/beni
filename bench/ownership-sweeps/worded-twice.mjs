@@ -15,6 +15,9 @@
 //   List PR`). Carrier: a local, a parameter, a parameter two calls deep, a wrapper in a second module, a
 //   generic wrapper, a record field. Pattern: `[ b, …rest ]`, `[ …rest, b ]`. Write: the item's slot, or a
 //   push of its nested list in a new record. Each reads `rest` after the write (`live`) or not (`dead`).
+// - `pair.<row>.<carrier>.<write>`: a `fresh` row answering one new record at two locations of a new value
+//   (both parts of a pair, a record's field and its list), written at one and read at the other.
+// - `entry.<maker>`: a page whose `init` makes the model's list with a row, and whose `update` writes an item.
 // - `core.<maker>.<carrier>.<pattern>.<write>`: the safe twins over the rows of `core/` whose words state
 //   positions (`push`, `insertAt`, `set`, `cons` through `[ x, …l ]`, `copy`, `++`, `take`, `reverse`, `map`):
 //   two new records, so each is `SAME` where accepted.
