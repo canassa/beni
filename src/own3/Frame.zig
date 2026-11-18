@@ -450,6 +450,13 @@ fresh_esc: std.AutoHashMapUnmanaged([3]u32, [3]u32) = .empty,
 /// scans them: a frame makes few).
 pos_keys: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
 pos_info: std.ArrayList([5]u32) = .empty,
+/// The walk is over (`finish`): a value of no claim, or a closure, has the
+/// atoms that its first walk found, kept by the value (`whole_at`: where they
+/// start in `whole_buf`, and how many), so that `finish`, which reads the
+/// result once for each of its locations, walks each such value once.
+finished: bool = false,
+whole_at: std.ArrayList([2]u32) = .empty,
+whole_buf: std.ArrayList(Atom) = .empty,
 /// The atoms of the write in judgement, grouped by root and entry, when
 /// there are more than `w_index_min` of them (`indexWrite`).
 w_ix: WIndex = .{},
@@ -1401,6 +1408,18 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
         .closure, .unknown => {
             if (try f.leafHit(v, &.{}, true, out)) |dup| return dup;
             const start = out.items.len;
+            // Once the walk is over (`finish`), each such value's atoms are
+            // what a walk of them found the first time: a value never
+            // changes once it is made, and every capture is bound by then.
+            // `finish` reads the result once for each of its locations, and
+            // a value of no claim holds the same cells at each (kernel §8;
+            // research report 159).
+            if (f.finished and v < f.whole_at.items.len and f.whole_at.items[v][0] != none) {
+                const hit = f.whole_at.items[v];
+                _ = f.charge(hit[1]);
+                try out.appendSlice(f.gpa, f.whole_buf.items[hit[0]..][0..hit[1]]);
+                return false;
+            }
             f.leaf_nest += 1;
             if (n.tag == .closure) {
                 const c = f.codes.items[n.a];
@@ -1411,6 +1430,12 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
                 for (0..n.b) |ki| _ = try f.allLeaves(f.lists.items[n.a + ki], out);
             }
             try f.leafKeep(v, &.{}, true, out, start, false);
+            if (f.finished and !f.m.steps_over) {
+                const at: u32 = @intCast(f.whole_buf.items.len);
+                try f.whole_buf.appendSlice(f.gpa, out.items[start..]);
+                if (v >= f.whole_at.items.len) try f.whole_at.appendNTimes(f.gpa, .{ none, 0 }, f.nodes.items.len - f.whole_at.items.len);
+                f.whole_at.items[v] = .{ at, @intCast(out.items.len - start) };
+            }
             return false;
         },
         .later => unreachable, // read through `capVal` only
@@ -1796,14 +1821,28 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
     const holes = try f.m.loc.holes(view, own);
     var coarse_dup = false;
     var ks: Entries = .{};
-    // Each entry of the map is a step (kernel §8). A large set of entries is
-    // a mark for each entry of the view, so that the map is read once.
-    _ = f.charge(cov.len);
+    // A few entries are looked up in the map read the other way, which is
+    // made once for each pair of layouts in a frame (`coverHits`), so that a
+    // reader that asks for each entry of a large layout in turn (`finish`)
+    // costs the entries it reads and not the square of the layout; each
+    // entry found is a step (kernel §8; research report 159). A large set of
+    // entries is a mark for each entry of the view, so that the map is read
+    // once, and each entry of the map is a step.
     if (js.len <= 8) {
-        for (cov, 0..) |c, k| for (js) |j| if (Loc.hits(c, j) or (holes != null and holes.?.read[j] == k)) {
-            try ks.add(f.gpa, @intCast(k));
-            break;
-        };
+        var hit: std.ArrayList(u32) = .empty;
+        defer hit.deinit(f.gpa);
+        var one: std.ArrayList(u32) = .empty;
+        defer one.deinit(f.gpa);
+        for (js) |j| {
+            one.clearRetainingCapacity();
+            try f.coverHits(view, own, cov, j, &one);
+            try hit.appendSlice(f.gpa, one.items);
+            if (holes) |h| if (h.read[j] != none) try hit.append(f.gpa, h.read[j]);
+        }
+        _ = f.charge(js.len + hit.items.len);
+        // In ascending order, each once, as a scan of the map finds them.
+        std.mem.sort(u32, hit.items, {}, std.sort.asc(u32));
+        for (hit.items, 0..) |k, i| if (i == 0 or hit.items[i - 1] != k) try ks.add(f.gpa, k);
         if (holes) |h| for (js, 0..) |j, i| if (h.above[j] != none) {
             // A summary below a wide entry, or two locations below one.
             if (!f.m.loc.layoutEntries(view)[j].single) coarse_dup = true;
@@ -1813,7 +1852,7 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
         };
     } else {
         const vn = f.m.loc.layoutEntries(view).len;
-        _ = f.charge(vn + js.len);
+        _ = f.charge(cov.len + vn + js.len);
         const in_js = try f.m.gpa.alloc(bool, vn);
         defer f.m.gpa.free(in_js);
         @memset(in_js, false);
@@ -5400,6 +5439,7 @@ fn runsTwice(f: *Frame, all: []const Atom, runs: []const [2]u32) Error!bool {
 pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const m = f.m;
     try f.finishDemands();
+    f.finished = true;
     // What the body reads of each parameter.
     var tmp: std.ArrayList(Atom) = .empty;
     defer tmp.deinit(f.gpa);

@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4 and §6 rule 10 revised again the same day (research report 159). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rule 10 and §8 revised again the same day (research report 159). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1596,6 +1596,25 @@ paths:
   No test costs more units than the one it replaces, so no budget moves toward a limit (the review of
   research report 145 found a declaration at its cap that gave up earlier when an index was charged up
   front).
+
+  **The result is read once for each of its locations, and costs what it reads** (research report 159,
+  #2532). `finish` reads the frame's result at each location of its layout in turn (`leavesAs`). Two
+  loops cost the result's whole layout at each, so a result of many locations cost the square of them:
+  `Gpu.Make.checkedIn`'s `Result Error.Error V` has 711, and the declaration passed its budget there.
+  - **A value of no claim, or a closure, is walked once after the walk** (`Frame.finished`,
+    `whole_at`): its atoms are the same at every location (`leaves` reads it whole), a value never
+    changes once it is made, and every capture is bound when the walk is over. The first walk keeps
+    them, and each later read copies them, one unit for each atom, as a hit of the walk of values does.
+  - **A reading of a few locations through a map looks them up** (`leavesSet`): the map read the
+    other way is made once for each pair of layouts in a frame (`coverHits`, which costs the map), and
+    each location asked costs the entries it finds, not a scan of the map.
+
+  The answers are the ones the scans gave; the units are fewer. `checkedIn` now does 1.1 million units
+  of its 2.5 million, and `inBatch` and `tests/platforms/gpu`'s `readAt` pass theirs too. The module is
+  still not judged: `checked`, which calls `checkedIn`, passes its budget in its walk, where each of the
+  711 locations of `checkedIn`'s answer holds every location of its parameters (the answer of unknown
+  code, §3.2) and each is expanded at the call (`expandSrcs`); a contract that says "these sources at
+  every location" once would be the fix, and is not built.
 
   **Whether a cell the frame made escaped is asked once for each cell** (`freshSrc`, research report 146).
   Each atom of a frame's result that names a cell the frame made asks whether an escape holds it, and
