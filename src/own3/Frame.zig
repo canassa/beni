@@ -3477,10 +3477,19 @@ fn bindPattern(f: *Frame, pat: u32, v: Val) Error!void {
                 }
                 return;
             }
+            // Where the value holds each cell once, each argument is a part of
+            // one match at its own position: apart from the others, though a
+            // recursive type's two children read one deep level (kernel §4.4,
+            // *The parts of a constructor pattern are apart*). A value that is
+            // a part of a list pattern's match keeps that match: its parts
+            // are apart from the list's other parts by it.
+            const keeps = v != v_none and v != v_outside and f.nodes.items[v].pos != none;
+            const match = if (info != null and args.len > 1 and !keeps) try f.listParts(v, args.len) else none;
             for (args, 0..) |p, k| {
                 // A constructor that the walk has no row for: its argument can be any part of `v`.
                 const part = if (info) |ci| try f.project(v, try m.ctorStep(ci.ordinal, @intCast(k))) else try f.unknownOf(try m.placeOfInst(p.int()), &.{v});
-                try f.bindPattern(p.int(), if (v == v_none) v_none else part);
+                const at = if (match != none) try f.atPosition(part, match, k) else part;
+                try f.bindPattern(p.int(), if (v == v_none) v_none else at);
             }
         },
         .list => {
@@ -3871,10 +3880,18 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             const c = (try m.declContract(t)) orelse return v_outside;
             if (c.arity != 0) return v_outside;
             const cov = try m.loc.cover(c.layouts[0], layout);
-            // The two scans of the map are work (kernel §8).
-            _ = f.charge(2 * Loc.scanUnits(cov.len));
+            // The two scans of the map, and the one of the result, are work (kernel §8).
+            _ = f.charge(2 * Loc.scanUnits(cov.len) + Loc.scanUnits(c.res.len));
+            // A location that every entry of the contract's result covers
+            // (`Loc.all`: a deep level read through a type variable, §4.1)
+            // holds a cell only where some entry does: an entry with no
+            // source holds none, as a fact of the body's walk (`Dict.empty`'s
+            // values read as `Dict Int R`).
+            const every = for (c.res) |r| {
+                if (r.len != 0) break true;
+            } else false;
             var any = false;
-            for (cov) |cr| if (cr >= Loc.all or c.res[cr].len != 0) {
+            for (cov) |cr| if (topHolds(c, cr, every)) {
                 any = true;
             };
             if (!any) return v_none;
@@ -3882,7 +3899,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             const ent0 = f.roots.items[root].ent;
             const start: u32 = @intCast(f.atoms.items.len);
             try f.atoms.append(f.gpa, outside_atom);
-            for (cov, 0..) |cr, e| f.rents.items[ent0 + e] = if (cr >= Loc.all or c.res[cr].len != 0) .{ .kind = .alias, .start = start, .len = 1 } else .{ .kind = .alias };
+            for (cov, 0..) |cr, e| f.rents.items[ent0 + e] = if (topHolds(c, cr, every)) .{ .kind = .alias, .start = start, .len = 1 } else .{ .kind = .alias };
             try f.deriveLinear(root, null, &.{});
             return f.rootVal(root);
         },
@@ -5242,6 +5259,53 @@ fn capVal(f: *Frame, code: Code, k: usize) Error!Val {
 }
 
 /// The frame's contract, once its body is walked.
+/// Whether a cell of a parameter can be at two locations of `v` read at
+/// `place` (`rn` entries): one of a join's values at a time, since a run
+/// answers one of them (kernel §4.4, *One value of a join at a time*), and
+/// any other value by its runs. Only two entries that each hold an atom can
+/// share one: each pair of them costs its comparisons (`dupOverlap`, kernel
+/// §8), and past the budget the answer is yes. A join nested deeper than 8
+/// is tested whole, the merged runs of its values: a superset of each.
+fn atTwoLocations(f: *Frame, v: Val, place: PlaceId, rn: usize, depth: u32) Error!bool {
+    if (v == v_none) return false;
+    const n = f.nodes.items[v];
+    if (n.tag == .join and depth < 8) {
+        for (0..n.b) |ki| if (try f.atTwoLocations(f.lists.items[n.a + 2 * ki], place, rn, depth + 1)) return true;
+        return false;
+    }
+    var runs: std.ArrayList([2]u32) = .empty;
+    defer runs.deinit(f.gpa);
+    var all: std.ArrayList(Atom) = .empty;
+    defer all.deinit(f.gpa);
+    _ = f.charge(rn);
+    for (0..rn) |e| {
+        const start: u32 = @intCast(all.items.len);
+        _ = try f.leavesAs(v, place, @intCast(e), &all);
+        try f.uniqueTail(&all, start);
+        try runs.append(f.gpa, .{ start, @intCast(all.items.len) });
+    }
+    return f.runsTwice(all.items, runs.items);
+}
+
+/// Whether one cell is in two of `runs` of `all`, the runs of a value's
+/// entries. Only two entries that each hold an atom can share one: each
+/// pair of them costs its comparisons (`dupOverlap`, kernel §8), and past
+/// the budget the answer is yes. The test stops at the first pair that
+/// shares a cell; a large set is tested by `runsShare`, linear in its atoms.
+fn runsTwice(f: *Frame, all: []const Atom, runs: []const [2]u32) Error!bool {
+    var held: std.ArrayList(u32) = .empty;
+    defer held.deinit(f.gpa);
+    for (runs, 0..) |r, e| if (r[1] > r[0]) try held.append(f.gpa, @intCast(e));
+    if (all.len > share_small) return f.runsShare(all, runs, null);
+    if (held.items.len > 1) try f.checkShare(all, runs, null);
+    for (held.items, 0..) |e1, i| {
+        for (held.items[i + 1 ..]) |e2| {
+            if (f.dupOverlap(all[runs[e1][0]..runs[e1][1]], all[runs[e2][0]..runs[e2][1]])) return true;
+        }
+    }
+    return false;
+}
+
 pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const m = f.m;
     try f.finishDemands();
@@ -5356,29 +5420,14 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             x.* |= flag_r;
         };
     }
-    // Whether a cell of a parameter can be at two locations of the result.
-    // Only two entries that each hold an atom can share one: each pair of
-    // them costs its comparisons (`dupOverlap`, kernel §8), and past the
-    // budget the answer is yes. The test stops at the first pair that shares
-    // a cell.
-    var nonlinear = false;
-    var held: std.ArrayList(u32) = .empty;
-    defer held.deinit(f.gpa);
-    for (runs.items, 0..) |r, e| if (r[1] > r[0]) try held.append(f.gpa, @intCast(e));
-    // A large set is tested by `runsShare`, linear in its atoms.
-    if (all.items.len > share_small) {
-        if (try f.runsShare(all.items, runs.items, null)) nonlinear = true;
-    } else if (held.items.len > 1) try f.checkShare(all.items, runs.items, null);
-    if (all.items.len <= share_small) {
-        pairs: for (held.items, 0..) |e1, i| {
-            for (held.items[i + 1 ..]) |e2| {
-                if (f.dupOverlap(all.items[runs.items[e1][0]..runs.items[e1][1]], all.items[runs.items[e2][0]..runs.items[e2][1]])) {
-                    nonlinear = true;
-                    break :pairs;
-                }
-            }
-        }
-    }
+    // Whether a cell of a parameter can be at two locations of the result,
+    // on the runs read above (`runsTwice`). Where they say so and the result
+    // is a join, each of its values is asked on its own: the result is one
+    // of them at a time (kernel §4.4, *One value of a join at a time*), so
+    // a cell at one location in one value and at another in another is at
+    // one place of each.
+    var nonlinear = try f.runsTwice(all.items, runs.items);
+    if (nonlinear and result != v_none and f.nodes.items[result].tag == .join) nonlinear = try f.atTwoLocations(result, result_place, rn, 0);
     for (dups.items) |d| if (d) {
         nonlinear = true;
     };
@@ -6220,7 +6269,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     for (0..es.len) |e| {
         const cr = cov[e];
         const start: u32 = @intCast(f.atoms.items.len);
-        var st: SrcState = .{ .inst = inst };
+        var st: SrcState = .{ .inst = inst, .typed = !casts };
         // No entry of the callee's result covers this one (its result type
         // has no object at all, and the caller's has): nothing is known of
         // it, so it is the lost answer, outside and every argument (§3.2).
@@ -6948,6 +6997,11 @@ const SrcState = struct {
     nseen: u32 = 0,
     /// Each part of the answer is asked for, not the one at `suffix`.
     whole: bool = false,
+    /// Neither the callee nor a function argument casts (`Contract.casts`,
+    /// `argsCast`): it answers a value only at a location of the value's own
+    /// type, so an argument of a type of no location is at no location the
+    /// reading has (kernel §3.4, *A value of no location in a typed answer*).
+    typed: bool = false,
     /// The answer can hold a cell that the holder handed on: a cell of the
     /// call's arguments or of what it read through them (`resolve`), or one
     /// of a lost or the frame's own answer. An answer that holds none holds
@@ -7010,6 +7064,12 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
                     try f.lostAnswer(base, st);
                 } else {
                     const ai = if (s.a < base.site.arg_insts.len) base.site.arg_insts[s.a].int() else none;
+                    // An argument of a type of no location holds `outside`
+                    // (§3.4); a callee that does not cast answers it only at
+                    // a location of its type, which no reading has, so it is
+                    // not at entry `e` (kernel §3.4, *A value of no location
+                    // in a typed answer*).
+                    if (st.typed and args[s.a] == v_outside and ai != none and try f.layoutLen(try f.m.placeOfInst(ai)) == 0) continue;
                     if (try f.pairedLeaves(args[s.a], ai, c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
                     if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
                 }
@@ -9460,4 +9520,13 @@ fn entryAt(sorted: []const [2]u32, want: u32) u32 {
         if (sorted[mid][0] < want) lo = mid + 1 else hi = mid;
     }
     return if (lo < sorted.len and sorted[lo][0] == want) sorted[lo][1] else none;
+}
+
+/// Whether a top-level value read through the call map `cr` of its
+/// contract holds a cell there (`evalInner .top`): an entry with a source,
+/// a location no entry covers, or, at `Loc.all`, a location every entry
+/// covers where some entry has a source (`every`).
+fn topHolds(c: *const Contract, cr: u32, every: bool) bool {
+    if (cr == Loc.all) return every;
+    return cr == none or c.res[cr].len != 0;
 }

@@ -1,0 +1,1 @@
+Dict.eq walks its two trees with recursive helpers over regular types, read at their own layouts, so it keeps nothing it is handed and is accepted as evidence (ownership-v3-kernel.md §4.1, *A reading with the signature's own layout*).

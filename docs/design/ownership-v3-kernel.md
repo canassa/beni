@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -74,6 +74,14 @@ the program and holds nothing that any frame made (`evalInner .top`); a function
 named declaration, a constructor, a function in the default state) holds nothing of the frame
 (`ctorValue`, `project .fnref`); a part of an outside value is outside (`project .outside`). Its one atom is
 `outside_atom` (root 0), which refuses a write (§5, test 1) and overlaps nothing.
+
+A top-level value is read through its contract (`evalInner .top`): it holds `outside` at each location
+where an entry of its contract has a source, and nothing where none has, since a location with no source
+holds none as a fact of the body's walk (`Dict.empty`'s values). A location that every entry of the
+contract covers (`Loc.all`: a deep level that the contract reads through a type variable, §4.1) holds
+`outside` where some entry has a source, and nothing where no entry has one (`topHolds`). *Research report
+158: such a location held `outside` whatever the contract said, so `Dict.empty` read as `Dict Int R` had
+`outside` at its deep level, and a write of a value taken out of it was refused.*
 
 `Contract.Src.outside` is the same fact in a contract: a cell of a top-level value, a cell's contents, or
 JavaScript's. What went into a cell or to JavaScript escaped in the frame that put it there (§5, test 3), so
@@ -285,6 +293,19 @@ that casts casts too. A `Js.Value` read at a type variable does not set it: `cor
 JavaScript arrays and objects and reads them back so, and the flag made every list function cast. What
 the `Js.Value` was made from decides instead (*What a value was made from*, below).
 
+**A value of no location in a typed answer** (research report 158). An argument of a type of no location
+holds `outside` (above), and a call reads a parameter source of the callee's result as the argument's
+leaves (`expandSrcs`), so a callee whose places put the parameter at a location of the result put
+`outside` there: `Dict.insert`'s walk reads the key and the value of a tree at one place (`k` and `v` are
+one place, and a deep level read through a type variable is `Loc.all`, §4.1), and every value of a
+dictionary built by `insert` with an `Int` key held `outside`, which refuses its write. A callee that does
+not cast, handed no function value whose code casts (`Contract.casts`, `argsCast`), answers a value only at
+a location of the value's own type (*What a value was made from*, below); the reading has a location at
+the entry, and the argument's type has none, so the two are two types and the argument is not there. So
+at such a call **a parameter source whose argument is of a type of no location gives nothing at an entry
+of the reading** (`SrcState.typed`). A call of a callee that casts reads it as before: the cast can put the
+argument anywhere, and whatever a cast put in the `Int` escaped where it was cast.
+
 **A wide parameter answered at a wide result location** is the argument, or its part there, as it is,
 read at the caller's type (`Frame.escapeWide`): where both are roots, as an identity's (`narrowed`);
 elsewhere (`Maybe a → b`, `List Js.Value → b`, `{ r | v : a } → b`), where the argument's own type at
@@ -433,6 +454,20 @@ signature has a variable or a row there, a type argument can name the container 
 caller can hold cells that the signature names at several entries; a location can stand for several
 places, so no sample path decides it. Every match the map can take inside that deep level — the location
 itself, a wide entry above it, or a row that holds its field — then answers `Loc.all`.
+
+**A reading with the signature's own layout** (research report 158). The danger above is a caller whose
+layout splits what a wide entry of the signature names: its places name the container again below the
+variable. A reading whose layout is the signature's own, one layout of one place (`cover(sig, of)` with
+`sig == of`), has no such split, so each of its locations is the signature's location of the same label
+path, a deep level's included (`Loc.cover`): a recursive call at the type the function declares, or a
+helper of the same module over the same type (`balance` called by `insertHelp`). This holds only where the
+type is regular: a non-regular type's family has one place for all of its instantiations, whose payload
+names cells at every depth (`ownership-v2.md` §2.1, *A family*), so `T (List a)` and `T a` are one place of
+two shapes. So the place must have no family below it (`Loc.familyBelow`: no `var` place other than the
+one place of every type variable, `plain_var`, and none with a step, which a family's payload and a knot
+of a type with no name are). *Before, the recursive call of a generic tree's insert was `Loc.all` at its
+deep level: each deep location of the answer held every source of the result, keys and values, both
+levels, and the answer was `twice` there.*
 
 *Research report 124 F1: the entry compared a
 model location with a contract's location by label prefix, so a function over `{ r | n : Int }` held
@@ -588,6 +623,28 @@ position. A set of atoms with positions is tested in pairs (`shareWith`): the ta
 two atoms of each path by their `via` alone. *Research report 153 §5 and a blind round (#2548): a walk
 `[ b, …rest ] → loop rest (List.push acc (write b))` was refused, `disjoint`, as was `rest ++ [ x ]`
 (`twice`): `b` and `rest` read one summary location, and no atom said at which position.*
+
+**The parts of a constructor pattern are apart** (research report 158). A constructor pattern `C p₁ … pₙ`
+(n ≥ 2, a constructor with a row) binds n arguments of one object: where the value holds each cell once,
+no cell is in two of them. Each is one location of the value's layout, but in a recursive type two
+children (`Node k v l r`'s `l` and `r`) read one deep level, so only a position says they are two. So under
+the same condition as a list pattern's (the scrutinee is a part of a parameter, or of a `linear` root the
+frame made with no `twice` entry: `listParts`), each argument is bound at a position of one new match
+(`bindPattern .ctor`). A scrutinee that carries a position already, a part of a list pattern's match
+(`[ Rose l k, …rest ]`), keeps it and starts no match: its parts are apart from the list's other parts by
+the outer match, which an inner one would give up (`run/CycleLinkReadAfter`'s walk).
+
+**One value of a join at a time** (research report 158). A contract says it is `nonlinear` where a cell of a
+parameter can be at two locations of its result (`finish`). The result is a `join` of the values of its
+`case` arms and its return points, and a run answers one of them: a cell at the entry level in one arm
+(`Leaf → Node x Leaf Leaf`) and at the deep level in another (`Node v l r → Node v (go l x) r`) is at one
+place of each. So where the runs of the merged result say a cell is at two locations, and the result is a
+join, each of its values is tested on its own (`atTwoLocations`, joins nested to depth 8; deeper, the merged
+runs, a superset of each), and the contract is `nonlinear` only where one of them has a cell at two
+locations. A location's own `twice` (one cell at two places of one summary location) is read as before.
+*Before, a recursive insert into a tree was `nonlinear` because its argument was at the root in one arm
+and below it in the other; its caller then read the deep level as `twice`, and a write of a list the tree
+holds was refused (`ownership/ReturnedKids`, `LevelFresh`, `FoldLevels`).*
 
 ## 5. The write rule
 

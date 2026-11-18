@@ -1,0 +1,2 @@
+# accA answers its tree at two places of one value: the answer holds each list twice, and the call that hands it to incAll is refused (ownership-v3-kernel.md §4.4).
+34:19 list_still_used call

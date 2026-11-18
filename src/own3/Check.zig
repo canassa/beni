@@ -3044,6 +3044,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         error.OutOfMemory => return error.OutOfMemory,
         else => @panic("ownership v3: the place of a type variable"),
     };
+    m.loc.plain_var = m.var_place.int();
     var prepass_arena: std.heap.ArenaAllocator = .init(gpa);
     defer prepass_arena.deinit();
     m.prepass = try Prepass.run(gpa, prepass_arena.allocator(), .{ .bir = bir, .dispatch = in.dispatch });

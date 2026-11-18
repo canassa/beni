@@ -1,0 +1,56 @@
+-- The live twin of `TreePartsApart`: a tree that holds one record in both
+-- children and at its root holds a cell at two places, so its parts carry
+-- no position (`ownership-v3-kernel.md` §4.4, *The parts of a constructor
+-- pattern are apart*), and the call that hands it to `rootKids` is refused:
+-- the other places of the record are read after the write.
+import List
+import Node exposing (Program)
+import String
+
+
+type Tree a
+    = Node (Tree a) a (Tree a)
+    | Leaf
+
+
+type alias R =
+    n : Int
+    xs : List Int
+
+
+bumpAll : Tree R → Tree R
+bumpAll t =
+    case t of
+        Node l v r →
+            Node (bumpAll l) { v | n = v.n + 1, xs = List.push v.xs v.n } (bumpAll r)
+
+        Leaf →
+            Leaf
+
+
+rootKids : Tree R → Tree R
+rootKids t =
+    case bumpAll t of
+        Node l v r →
+            Node l { v | xs = List.push v.xs 0 } r
+
+        Leaf →
+            Leaf
+
+
+show : Tree R → String
+show t =
+    case t of
+        Node l v r →
+            sep = ","
+            "(${show l} ${String.fromInt v.n}:${String.join (List.map v.xs String.fromInt) sep} ${show r})"
+
+        Leaf →
+            "."
+
+
+main : Program
+main =
+    r = { n = 1, xs = [ 1 ] }
+    t = Node (Node Leaf r Leaf) r (Node Leaf r Leaf)
+    Node.print "${show (rootKids t)} ${show t}"

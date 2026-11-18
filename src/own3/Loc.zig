@@ -210,6 +210,14 @@ pub const Table = struct {
     covers: std.AutoHashMapUnmanaged(CoverKey, []const u32) = .empty,
     /// `holeBelow`'s answer for each place, a column by place: 0 not asked, 1 no, 2 yes.
     hole_memo: std.ArrayList(u8) = .empty,
+    /// `familyBelow`'s answer for each place, as `hole_memo`.
+    family_memo: std.ArrayList(u8) = .empty,
+    /// The one place of every type variable (`Check.Mod.var_place`): any
+    /// other `var` place is a family's payload or a knot (`familyBelow`).
+    plain_var: u32 = none,
+    /// Per layout: the place it is the layout of, or `none` (a layout a
+    /// contract of another module was read into, the empty and the over layout).
+    layout_place: std.ArrayList(u32) = .empty,
     /// `placeAt`'s answer for each (place, location) asked, `none` for no place.
     place_at_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
     /// Per pair of layouts, `holes`' answer.
@@ -246,6 +254,8 @@ pub const Table = struct {
     pub fn deinit(t: *Table) void {
         const gpa = t.gpa;
         t.hole_memo.deinit(gpa);
+        t.family_memo.deinit(gpa);
+        t.layout_place.deinit(gpa);
         t.place_at_memo.deinit(gpa);
         t.loc_parent.deinit(gpa);
         t.loc_label.deinit(gpa);
@@ -327,6 +337,7 @@ pub const Table = struct {
         const id: u32 = @intCast(t.layouts.items.len);
         try t.layouts.append(t.gpa, try t.arena.dupe(Entry, es));
         try t.reps.append(t.gpa, &.{});
+        try t.layout_place.append(t.gpa, none);
         t.units +|= es.len;
         if (es.len > small_layout) for (es, 0..) |e, i| try t.entry_index.put(t.gpa, .{ .layout = id, .loc = e.loc }, @intCast(i));
         return id;
@@ -497,6 +508,41 @@ pub const Table = struct {
         return false;
     }
 
+    /// Whether layout `id` is the layout of a place with no family below it
+    /// (`cover`): a layout no place was read into says nothing, and is not.
+    fn regularLayout(t: *Table, id: u32) Allocator.Error!bool {
+        if (id >= t.layout_place.items.len) return false;
+        const p = t.layout_place.items[id];
+        if (p == none) return false;
+        return !try t.familyBelow(@fromBackingInt(p));
+    }
+
+    /// Whether a family's payload, or a knot of a type with no name, is at or
+    /// below `place`: a `var` place that is not the one place of every type
+    /// variable (`plain_var`), or one with a step (`ownership-v2.md` §2.1, *A
+    /// family*). A cycle is visited once, and each place's answer is kept.
+    fn familyBelow(t: *Table, place: PlaceId) Allocator.Error!bool {
+        const pi = place.int();
+        if (pi < t.family_memo.items.len and t.family_memo.items[pi] != 0) return t.family_memo.items[pi] == 2;
+        var seen = try std.DynamicBitSetUnmanaged.initEmpty(t.gpa, t.places.count());
+        defer seen.deinit(t.gpa);
+        const b = try t.familyWalk(place, &seen);
+        if (pi >= t.family_memo.items.len) try t.family_memo.appendNTimes(t.gpa, 0, @as(usize, t.places.count()) + 1 - t.family_memo.items.len);
+        t.family_memo.items[pi] = if (b) 2 else 1;
+        return b;
+    }
+
+    fn familyWalk(t: *Table, p: PlaceId, seen: *std.DynamicBitSetUnmanaged) Allocator.Error!bool {
+        if (p.int() >= seen.capacity()) try seen.resize(t.gpa, @as(usize, t.places.count()) + 1, false);
+        if (seen.isSet(p.int())) return false;
+        seen.set(p.int());
+        const st = t.places.steps(p);
+        t.units +|= 1 + st.steps.len;
+        if (t.places.kind(p) == .@"var" and (p.int() != t.plain_var or st.steps.len != 0)) return true;
+        for (st.children) |c| if (try t.familyWalk(c, seen)) return true;
+        return false;
+    }
+
     /// `holeBelow` of the place that `loc` names from `place`; a path that
     /// names no place (a slot, a row, a deep level, a step `place` does not
     /// have) is a hole: nothing says what is there.
@@ -565,6 +611,7 @@ pub const Table = struct {
             const reps = try t.arena.alloc([]const u32, b.out.items.len);
             for (reps, b.rep_at.items) |*r, at| r.* = try t.arena.dupe(u32, b.rep_steps.items[at[0]..][0..at[1]]);
             t.reps.items[id] = reps;
+            t.layout_place.items[id] = pi;
         }
         t.layout_of.items[pi] = id;
         return id;
@@ -1001,6 +1048,19 @@ pub const Table = struct {
         const se = t.layoutEntries(sig);
         const oe = t.layoutEntries(of);
         const m = try t.arena.alloc(u32, oe.len);
+        // A reading with the signature's own layout, of a place with no
+        // family below it: each location is the signature's, a deep level's
+        // included. A type with no family is regular, so a caller's graph is
+        // the callee's under the substitution (`ownership-v2.md` §2.1, *A
+        // family*), and the same place names the same cells in both (kernel
+        // §4.1, *A reading with the signature's own layout*). A family's
+        // payload names cells at every depth, so its place is no such fact.
+        if (sig == of and try t.regularLayout(sig)) {
+            t.units +|= scanUnits(oe.len);
+            for (m, 0..) |*x, e| x.* = @intCast(e);
+            try t.covers.put(t.gpa, key, m);
+            return m;
+        }
         const row: Label = .{ .kind = .row, .payload = 0, .cyc = false, .head = 0 };
         for (m, oe) |*x, e| {
             x.* = none;
