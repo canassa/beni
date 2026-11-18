@@ -6717,3 +6717,21 @@ its own bucket or a lower one, so the provisional rank is never above its old ra
 change only lowers a read on a cycle, and a program whose ranks met I15 checks as before.
 `check/good/RankOfReceiverReachedFromLowerBucket`, `check/bad/RankOfReceiverNotEquatable` and
 `check/bad/RankOfReceiverMethodTypeReachesBack` pin it.
+
+**An escaped root is lowered when a lower bucket reaches it.** The first form of this
+amendment left a second stale rank. `adjustRanks` marked an escaped root (a flex or rigid
+below the young rank) `visit` before any walk, so that its own bucket would not walk it again
+(the note on escaped roots in §35). But a walk of a lower bucket can reach it by structure: unification does
+not lower a structure's children (Elm's design), so `[ z ]` merged with an outer `a` has `z`'s
+escaped root below it. The `visit` mark made `settled` return that root's rank unchanged. The
+walk then gave a rank above its group's, the I15 assert fired, and a variable without
+requirements stayed generalisable while an outer variable held it:
+`check/bad/RankOfEscapedVariableLoweredFromOuterBucket` checked, and crashed in JavaScript.
+
+**The rule.** An escaped root is not marked. At its own bucket, `settled` answers it without a
+walk, so the saving is kept. A walk of a lower bucket lowers it, as it lowers an outer node absent
+from the pool. When the lowered node is a variable with requirements (`Generalize.descends`), the
+walk enters it at the group's rank and walks its `owned` successors, as `lowerTo` would, so
+its method types and dependants are lowered with it (I15). Elm does not need this step, because
+in Elm a variable has no successors. `check/good/RankOfEscapedReceiverLoweredFromOuterBucket`
+pins the method forms.

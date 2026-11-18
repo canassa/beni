@@ -519,12 +519,16 @@ pub fn adjustRanks(
         // An escaped variable is already an outer node: I15 lowered its
         // complete owned closure when attaching or lowering its rank.
         // Mutation sites assert each new/lowered dependency. Its own
-        // boundary still walks the set; this one cannot quantify it.
+        // boundary still walks the set; this one cannot quantify it. It is
+        // left unmarked, as an outer node absent from the pool is: at its
+        // own bucket it is settled without a walk, and a walk of a lower
+        // bucket that reaches it lowers it, and its owned closure with it
+        // (`descends`, §39).
         const escaped = store.rank(root) != TypeStore.generalized and store.rank(root) < young and switch (store.content(root)) {
             .flex, .rigid => true,
             else => false,
         };
-        store.setMark(root, if (escaped) visit_mark else young_mark);
+        if (!escaped) store.setMark(root, young_mark);
         e.* = .{ .v = root, .bucket = @min(store.rank(root), young) };
         all_young = all_young and e.bucket == young;
     }
@@ -656,7 +660,7 @@ fn enter(
 ) Error!?u32 {
     const root = store.find(v);
     const mark = store.mark(root);
-    if (mark != young_mark) return settled(store, root, mark, visit_mark, group_rank);
+    if (!descends(store, root, mark, young_mark, visit_mark, group_rank)) return settled(store, root, mark, visit_mark, group_rank);
     store.setMark(root, visit_mark);
     // Provisional: an `owned` successor that comes back to this node while it
     // is still being walked reads its group's rank, not its pre-walk one.
@@ -722,6 +726,22 @@ fn isLeaf(content: TypeStore.Content) bool {
     };
 }
 
+/// Whether the walk enters `root` and walks its successors: a young node,
+/// and an outer variable that carries requirements and is reached from a
+/// bucket lower than its rank. Lowering that variable alone would leave its
+/// method types and dependants above it (I15), and an escaped root is
+/// never walked at its own bucket, so it is walked here, at the group's
+/// rank, as `lowerTo` would walk it (§39).
+fn descends(store: *TypeStore, root: Var, mark: u32, young_mark: u32, visit_mark: u32, group_rank: u32) bool {
+    if (mark == young_mark) return true;
+    if (mark == visit_mark or store.rank(root) <= group_rank) return false;
+    const content = store.content(root);
+    return switch (content) {
+        .flex, .rigid => !isLeaf(content),
+        else => false,
+    };
+}
+
 /// The rank of a node that is not young: one already visited keeps its own
 /// (final, or an ancestor's still being walked), an older one is lowered to
 /// the group's rank at most.
@@ -752,7 +772,7 @@ const Successor = struct {
     pub inline fn add(s: *Successor, c: Var) Error!void {
         const root = s.store.find(c);
         const mark = s.store.mark(root);
-        const rank = if (mark != s.young_mark)
+        const rank = if (!descends(s.store, root, mark, s.young_mark, s.visit_mark, s.group_rank))
             settled(s.store, root, mark, s.visit_mark, s.group_rank)
         else if (isLeaf(s.store.content(root))) blk: {
             s.store.setMark(root, s.visit_mark);

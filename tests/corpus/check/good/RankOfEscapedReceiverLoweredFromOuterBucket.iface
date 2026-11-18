@@ -1,0 +1,4 @@
+module RankOfEscapedReceiverLoweredFromOuterBucket
+  value compared : List number → (Bool × Bool) × List number
+  value dotCalled : List number → (List number × Bool) × List number
+  value mapped : List number → (Bool × Bool) × List number
