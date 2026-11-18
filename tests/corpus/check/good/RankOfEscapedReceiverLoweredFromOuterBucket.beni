@@ -1,0 +1,27 @@
+-- An escaped receiver reached from an outer bucket is lowered with its
+-- owned closure: `y` escapes `h` through `z`, `[ z ]` meets the outer `a`,
+-- and the walk of `a`'s bucket must lower `y` and the method types that
+-- ride on it. Before, each of these panicked: an I15 rank panic, or an
+-- evidence tree that did not add up (checker-v2.md §39, §13.1).
+import List
+
+
+pub compared a =
+    g y =
+        h z = ( a == [ z ], y == z )
+        h y
+    ( g 1, a )
+
+
+pub dotCalled a =
+    g y =
+        h z = ( if True then a else [ z ], z.eq y )
+        h y
+    ( g 1, a )
+
+
+pub mapped a =
+    g y =
+        h z = ( a == List.map [ z ] λx → x, y == z )
+        h y
+    ( g 1, a )
