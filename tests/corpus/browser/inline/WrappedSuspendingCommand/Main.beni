@@ -1,7 +1,8 @@
 -- A `Cmd.perform` body that passes through a higher-order function is read
 -- by what it is applied to (browser/inline/CommandBodyWrapped). Here the
--- wrapped body waits, so the command needs the task kernel: refused, class 2
--- (docs/design/browser-inline.md §4, §5; issue #1003).
+-- wrapped body waits, so the command runs as a fiber and its reply arrives
+-- after the wait (docs/design/browser-inline.md §4, §5; boundary.md §9.8;
+-- issue #1003).
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub
@@ -35,7 +36,7 @@ update msg model =
 
 
 view : Int → Html Msg
-view model = <button onClick={Go}>{model}</button>
+view model = <button id="go" onClick={Go}>{model}</button>
 
 
 main : Tea.Program
