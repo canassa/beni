@@ -8697,6 +8697,14 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
     if (use.kind == .top or depth > 8 or code.own_params != use.fnc.arity) return f.lostAnswer(use, st);
     const fnc = use.fnc;
     const lc = code.contract;
+    // A function that casts answers what it was handed at a depth no type
+    // names, and its holder hands it values through the holder's own
+    // layout, which can have no location for them (an `Int` that a cast made
+    // of a list): where the holder reads the answer at a location that is not
+    // wide, nothing names what is there, and the answer is lost (kernel §3.4,
+    // *A cast function in a holder*). Research report 158's second review:
+    // `(λy → k y) n` with `k = Pun.conv` answered a list nobody held.
+    if (lc.casts and !m.loc.layoutEntries(fnc.layouts[fnc.arity])[ae].kind.wide()) return f.lostAnswer(use, st);
     const cov = try m.loc.cover(fnc.layouts[fnc.arity], lc.layouts[lc.arity]);
     // The known function's result entry at the same part below the answer, when it has one.
     var want: ?u32 = m.loc.layoutEntries(fnc.layouts[fnc.arity])[ae].loc;

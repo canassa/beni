@@ -46,5 +46,4 @@ show t =
 
 
 main : Program
-main =
-    Node.print (show (twiceAtBase 1 (Node Leaf [ 7 ] Leaf)))
+main = Node.print (show (twiceAtBase 1 (Node Leaf [ 7 ] Leaf)))

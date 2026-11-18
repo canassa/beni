@@ -56,5 +56,4 @@ show t =
 
 
 main : Program
-main =
-    Node.print (show (rootKids (Node (Node Leaf (mk 1) Leaf) (mk 2) (Node Leaf (mk 3) Leaf))))
+main = Node.print (show (rootKids (Node (Node Leaf (mk 1) Leaf) (mk 2) (Node Leaf (mk 3) Leaf))))

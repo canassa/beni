@@ -48,5 +48,4 @@ show t =
 
 
 main : Program
-main =
-    Node.print (show (wrapped 2 (Node Leaf [ 7 ] (Node Leaf [ 8 ] Leaf))))
+main = Node.print (show (wrapped 2 (Node Leaf [ 7 ] (Node Leaf [ 8 ] Leaf))))

@@ -28,4 +28,8 @@ show l = String.join (List.map l String.fromInt) ","
 
 main : Program
 main =
-    Node.printLines [ show (bumped seeded 3), show (bumped Dict.empty 3), show (Maybe.withDefault (Dict.get seeded 3) []) ]
+    Node.printLines
+        [ show (bumped seeded 3)
+        , show (bumped Dict.empty 3)
+        , show (Maybe.withDefault (Dict.get seeded 3) [])
+        ]

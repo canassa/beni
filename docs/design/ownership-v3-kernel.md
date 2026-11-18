@@ -306,6 +306,17 @@ at such a call **a parameter source whose argument is of a type of no location g
 of the reading** (`SrcState.typed`). A call of a callee that casts reads it as before: the cast can put the
 argument anywhere, and whatever a cast put in the `Int` escaped where it was cast.
 
+**A cast function in a holder** (research report 158). A function value that casts (`Contract.casts`) answers
+what it was handed at a depth no type names, and a holder hands it values through the holder's own layout
+of the function's type, which can have no location for them: an `Int` that a cast made of a list, handed by
+`λy → k y` to a captured `k = Pun.conv` (a supply at a location of no location is no source). Read at the
+holder's answer, the function's sources then named nothing, and the answer was a list nobody held: the lambda's
+caller wrote it in place while the list it was cast from was read after. So where the code of a function in
+a holder casts and the holder reads its answer at a location that is not wide, the answer is lost
+(`answerOfCode`, `lostAnswer`: `outside` and every argument in sight). A holder that reads the answer at a
+wide location keeps it whole there, and `escapeUnplacedAnswer` applies as before. *The second review of
+research report 158 found it on the base: `run/CastCapturedLambda`, a lambda and `Maybe.map`.*
+
 **A wide parameter answered at a wide result location** is the argument, or its part there, as it is,
 read at the caller's type (`Frame.escapeWide`): where both are roots, as an identity's (`narrowed`);
 elsewhere (`Maybe a → b`, `List Js.Value → b`, `{ r | v : a } → b`), where the argument's own type at

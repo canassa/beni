@@ -1,0 +1,13 @@
+--! A test platform for research report 158.
+
+import Js
+
+
+--| A list read as an `Int`.
+pub hide : List Int → Int
+hide xs = Js.to (Js.from xs)
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
