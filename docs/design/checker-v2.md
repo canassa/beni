@@ -6696,3 +6696,24 @@ counter `generalisations` counts the roots that step 5 quantifies, so a shared n
 node budget (`Render.Namer.unlimited`). Its text is the size of the tree, so at depth 24 it is
 hundreds of megabytes. A diagnostic keeps its budget of 4 096 nodes. The ownership pass of
 `src/own/` on a `pub` wrapper is outside the checker: #2356 holds it.
+
+## 39. Amendment of 2026-11-18: a node is at its group's rank while it is walked (#2560, #2537)
+
+§8.1 step 2 is Elm's `adjustRank`, and Elm reads a node on a cycle at its old rank mid-walk:
+in Elm a cycle is an infinite type. Here a cycle is ordinary. Every method type rides back to
+its receiver through `owned` (§4.1), as `x.eq : x, x → Bool` does. A young receiver can be
+reached from a pool root of a lower bucket than its own: `w == List.map w (λx → x)` in a `let`
+binds an outer `w` to `List x`, and the bucket of `w` reaches `x` first. The walk then read the
+old, higher rank of `x` from inside its method type, so the method type kept that rank while
+`x` took its group's. That broke I15, and the method type could be quantified at a `let` whose
+receiver had escaped it. The same holds when the method type comes back through a structure,
+as `y.foo x` with `x : Maybe y` does.
+
+**The rule.** `Generalize.enter` sets a node's rank to its group's rank when it marks the node
+`visit`, before it walks the successors. A node that the walk comes back to reads that rank. The
+pop of its frame writes the final rank, which is no higher. Every rank that a walk gives is at
+most its group's rank, which is the I15 assert's premise. A young root is not entered until
+its own bucket or a lower one, so the provisional rank is never above its old rank. Thus the
+change only lowers a read on a cycle, and a program whose ranks met I15 checks as before.
+`check/good/RankOfReceiverReachedFromLowerBucket`, `check/bad/RankOfReceiverNotEquatable` and
+`check/bad/RankOfReceiverMethodTypeReachesBack` pin it.

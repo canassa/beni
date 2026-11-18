@@ -1,0 +1,61 @@
+-- A receiver whose method type rides back to it through `owned` is reached
+-- by rank adjustment from a node of a lower bucket than its own: here the
+-- element type of `List.map`'s lambda, a young variable whose `eq` method
+-- type mentions it, reached from the outer parameter `w` once `w` is bound to
+-- `List x`. The walk must hand the method type the group's rank, not the
+-- receiver's old one, which it still held while being walked (checker-v2.md
+-- §39, I15). Each shape below made the checker panic. Issues #2560, #2537.
+import List
+
+
+-- The program the issue reports: a local function, a `let`, `==` against a
+-- call that takes a lambda.
+f : Int → Int
+f l =
+    g w =
+        v = w == List.map w λx → x
+        v
+    if g [ l ] then 1 else 0
+
+
+-- The same at the top level: the scheme keeps its requirement.
+pub sameAfterMap w =
+    v = w == List.map w λx → x
+    v
+
+
+-- `<` in place of `==`.
+pub belowAfterMap w =
+    v = w < List.map w λx → x
+    v
+
+
+-- Two lambdas, one each side.
+pub twoMaps w =
+    v = List.map w (λx → x) == List.map w λy → y
+    v
+
+
+-- Nested `let`s: the receiver sits two ranks above its holder.
+pub nested w =
+    v =
+        u = w == List.map w λx → x
+        u
+    v
+
+
+-- A record field compared inside a `let`, its receiver the parameter
+-- (reduced from core/Binary/Wgsl.beni checked as a project, #2537).
+pub hasSize current =
+    ok = current.size ≠ Nothing
+    ok
+
+
+-- An annotated local function, checked against its annotation.
+h : Int → Int
+h l =
+    g : List Int → Bool
+    g w =
+        v = w == List.map w λx → x
+        v
+    if g [ l ] then 1 else 0
