@@ -3,8 +3,8 @@
 -- The write-set pass reads such a body with its real synchronous sender,
 -- so each of these commands is accepted and runs (docs/design/browser-inline.md
 -- §4; transparent-effects-proposal.md §16.2; issue #1003). The same shapes
--- with a callback that suspends stay refused:
--- build/bad/inline/WrappedSuspendingCommand.
+-- with a callback that suspends are in
+-- browser/inline/WrappedSuspendingCommand.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Log

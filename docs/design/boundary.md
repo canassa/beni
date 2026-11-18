@@ -3203,7 +3203,7 @@ queued there, and the guard runs it before the dispatch ends. A body that sends 
 puts that message on the same queue, so the message is applied after the body returns, in this
 dispatch, never re-entrantly; a body that sends nothing ends the dispatch. Rule 4 holds in this
 form: the page that shows the message's model is written before any body of that message runs.
-`Cmd.none` writes nothing at all, not even an empty call. A command that may suspend is refused
+`Cmd.none` writes nothing at all, not even an empty call. *Amended 2026-11-18, the owner:* a command that may suspend runs too (§9.8, amended 2026-11-10); it was refused
 when the program is built, with `browser-inline.md` §5's text. Two events in one task are two
 dispatches, each with its own write pass: nothing coalesces them.
 
