@@ -21,6 +21,8 @@ tests/corpus/run/SanitiserAnswerWholeApart.beni SanitiserAnswerWholeApart 61:9 #
 #     <root> <module> limit <declaration>  <owner and why>
 #
 # v2 accepts where v1 refused.
+tests/corpus/run/WordedStoredBelowElement Main 43:9 #0 :: Main.first <call>[*][*] :: rejected :: accepted  v1 reads the row as unknown code; v2 reads a stored `List Int` at the element of a list of `List (List Int)`, at its own label path, where the row puts it below it, twice (v3 refuses it, research report 157)
+tests/corpus/run/WordedStoredBelowElement Main 45:9 #0 :: Main.first <call>[*][*] :: rejected :: accepted  v1 reads the row as unknown code; v2 reads `prepended`'s `List Int` item at the element of a list of `List (List Int)`, at its own label path, where the row puts it below it, twice (v3 refuses it, research report 157)
 tests/corpus/ownership/Copy.beni [node] Copy 24:27 #0 :: construction first :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
 tests/corpus/ownership/Split.beni [node] Split 38:27 #0 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `List.length rows` reads the outer list, not the element written
 tests/corpus/ownership/core/HeldIntoTypeVariable.beni [node] HeldIntoTypeVariable 33:27 #0 :: construction r :: rejected :: accepted  R-4.3.5 (#1072): `borrowed List a` reads the outer list only; the contrast to a bare `a` (#1105)
@@ -219,6 +221,9 @@ tests/corpus/run/SanitiserLevelResultEscaped.beni SanitiserLevelResultEscaped 82
 tests/corpus/browser/tea/BallMachine Main 26:40 #0 :: value <lambda> :: absent :: rejected  v2 refuses the command `Cmd.keyed` stores: `start` edits, through its cells, what it sends to the dispatcher, and the dispatcher is an entry no caller discharges; conservative (§2.11.3, a need on a supply, #2393; #2401)
 #
 # A demand only one side reports.
+tests/corpus/run/WordedStoredRecordDest Main 41:13 #0 :: Dest.intoRec <record> :: absent :: accepted  v1 reads none of v2's words (`written`, `stored`), so the row is unknown code to it with no demand; v2 writes the record literal, which nothing reads after
+tests/corpus/run/WordedStoredBelowElement Main 43:16 #0 :: Dest.nest <literal> :: absent :: accepted  v1 reads none of v2's words (`written`, `stored`), so the row is unknown code to it with no demand; v2 writes the list literal, which nothing reads after
+tests/corpus/run/WordedStoredBelowElement Main 44:16 #0 :: Dest.focusNest <literal> :: absent :: accepted  v1 reads none of v2's words (`written`, `stored`), so the row is unknown code to it with no demand; v2 writes the list literal, which nothing reads after
 tests/corpus/run/SanitiserFoldKeepsAnswerApart.beni SanitiserFoldKeepsAnswerApart 48:9 #0 :: List.foldl <call> :: absent :: accepted  v2 words the cell and makes this demand; v1 reads a cell supply as `⊤` (§2.13.7)
 tests/corpus/run/SanitiserFoldKeepsAnswerApart.beni SanitiserFoldKeepsAnswerApart 48:39 #0 :: cell n◆ :: absent :: accepted  v2 words the cell and makes this demand; v1 reads a cell supply as `⊤` (§2.13.7)
 tests/corpus/run/SanitiserFoldKeepsAnswerApart.beni SanitiserFoldKeepsAnswerApart 49:9 #0 :: Ref.update n◆ :: absent :: accepted  v2 words the cell and makes this demand; v1 reads a cell supply as `⊤` (§2.13.7)

@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -502,7 +502,8 @@ are not apart (`rootLeaves` reads a part of it as all of it), and a callee that 
 its result is tested against another, and nothing derives that a cell is at one place of a summary location
 of its result: `(a) => [a, a]` is as true of `stored a → fresh List a` as `(a) => [a]` is, and the words say
 no count. So each summary location of a row's result that holds a cell is `Src.twice` (`Check.wordedContract`),
-unless a word states the positions of what it puts there (`Check.statesPositions`):
+unless a word states the positions of what it puts there (`Check.statesPositions`, which the marker and
+the safe-build check of §9 both read, so the two cannot read the list below two ways):
 
 - `returned`, `builderdone`, the list of `prepended` and the elements of `copyof` and `concatenated` put a
   location of a parameter at the result's location of the **same place**: the result there is the parameter's
@@ -512,7 +513,26 @@ unless a word states the positions of what it puts there (`Check.statesPositions
   argument, which the apart-arguments rule refuses at the call;
 - `stored` beside a `written returned` parameter is one write at one position of that list (`put`, `push`,
   `set`, `insertAt`, `focus`'s stored answer: "stores parameter 3 into `[*]`, computing κ by §2.9 at every
-  store"), and the first parameter of `prepended` is the one item in front;
+  store"), and the first parameter of `prepended` is the one item in front. Each puts the location at the
+  result's element location or below it, nowhere else. "That list" exists only where the row writes one
+  list and answers it: exactly one other parameter is `written returned`, it is a list at its root (its
+  place has an element step: a `sequence`, `List` or `Builder`), and so is the result. The stored value
+  (or the callback's answer, or `prepended`'s item) is an element: its type is the element type of the
+  result and of that parameter. A value of another type is put below an element, inside a container no
+  word names (`l.push([a, a])` for `stored List Int` into a `List (List (List Int))`), with no count: it
+  is at every element location, never at the one its label path names (`intoElems`), and `twice` there.
+  `stored` is "a value retained at the result's `[*]`" (`ownership-v2.md` §2.13.6), and `written` is a write of the parameter's own storage at `ε`. Where
+  the `written returned` parameter is no list at its root (a record, a tuple, `Maybe`, a scalar, a type
+  variable), the row writes no list that a word names: `written returned { items : List a }, stored a →
+  { items : List a }` writes the record's own storage, and no word says that the item goes into `items`,
+  or how many times. Where two parameters are `written returned`, it can write two lists. Where the result
+  is no list at its root, it has no `[*]`, and the row puts the location at every location of the result
+  (`intoElems`): a placement below another place. Each of these is `twice`. *Before research report 157
+  the marker read `stored` beside any `written returned` parameter as one store, at any location of the
+  result, and the safe-build check read it at element locations only: the check panicked on such a row
+  (#2559, `run/WordedStoredRecordDest`). Both read a store beside a `written returned` `Int` as one
+  (`run/WordedStoredScalarDest`), and a value of another type at the element by its label path
+  (`run/WordedStoredBelowElement`): each wrote in place while a copy the words did not count was read;*
 - `exclusive` says outright that each new cell of the result is at one place.
 
 Any other placement states no count, and is `twice`: `stored` into a new list, `fresh` without
@@ -783,7 +803,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     (`run/WordedFreshShared`).* A `foreign`
     with no word has no contract: unknown code. *The missing fact is the pessimistic one.* A word that
     puts a parameter's location in the result (`returned`, `stored`, `elementof`, `taken`,
-    `builderdone`, the elements of `copyof`) puts it at the result's location of the same place and,
+    `builderdone`, the elements of `copyof`) puts it at the result's location of the same place (for
+    `stored`, of the result's element, where the value is of the element's type, and at every element
+    location where it is not: §4.4) and,
     where the parameter's location is wide, at every result location below it (`Check.holdsAt`, §3.4):
     a word that matched the place alone gave the locations below a wide entry no source. No row of
     `core/` or of a platform has such a pair today (research report 146). A location of a parameter
@@ -831,9 +853,11 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     **A row's summary location is `twice` unless a word states positions** (§4.4, *A worded row builds no
     run*; research report 156): the words say where a location goes, not how many times, so only the
     words whose definitions name positions — the same place for `returned`, `builderdone`, `copyof`,
-    `concatenated` and `prepended`'s list, one store for `stored` beside a `written returned` parameter
-    and for `prepended`'s item, and `exclusive` — leave a summary location of the result without `twice`.
-    Safe builds read the words again (`Check.checkWordedTwice`, §9). No row of `core/` or of a shipped
+    `concatenated` and `prepended`'s list, one store for `stored` beside the one `written returned` parameter, where it and the result are
+    lists at their roots, and for `prepended`'s item, each a value of the element type at the result's elements, and `exclusive` — leave a
+    summary location of the result without `twice` (research report 157: `stored` beside a `written
+    returned` record states no position). Safe builds check what the marker did with that reading
+    (`Check.checkWordedTwice`, §9). No row of `core/` or of a shipped
     platform changes a verdict (every demand of the 2 856 ownership roots has the verdict it had).
 
     The words are shared: a signature with a word that only v2 and v3 read is kept in a column of its
@@ -1609,7 +1633,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | each parameter location that a worded row's word puts in the result (`returned`, `stored`, `aliased`, `builderdone`, `elementof`, `taken`, the elements and storage of `copyof` and its kin, `Record.copy`'s values, a function parameter's answer under `returned`, `stored` or `aliased`) is a source of some location of the result, or has the escape flag: a placement never lands on no location without an escape; and a wide location that `returned` places and does not let escape is held by a wide result location at or above its place, or at its place where the result has no part of no location below it. It reads the words again, apart from the code that placed them. With the escape of `returned` turned off (research report 150's fault), the first program with `returned a → Int` panics. The check counts no work | `Check.checkWordedPlaced`, in `wordedContract` | §6.10 |
 | a row whose word puts a wide location of a parameter (a type variable, a `Js.Value`) at a place of the result whose type is not the location's — `returned` or `builderdone` at the same place, `stored` at that place of the result's elements, `elementof` and `taken` an element at that place, `aliased` at any type variable of the result — casts. It reads the words and the types of the store again, apart from the code that marked the row (`castsAt`, `aliasedCasts`). With the types not compared (research report 151's fault: the places alone, which are one for every type variable), the first row of `returned a → b` panics. The check counts no work | `Check.checkWordedCasts`, in `wordedContract` | §3.4, §6 rule 10 |
 | every cell of a `Js.Value` that the frame made of parts and read at a type variable, or at a type with one at or below its place, escaped: each leaf of the value is held by an escape of the frame. With that escape turned off (research report 151's fault: `Js.to (Js.array [ Js.from x ])` read at `b`), the first such read panics. The check counts no work | `Frame.checkMadeEscaped`, in `readAtVar` and `narrowed` | §3.4 |
-| a summary location of a worded row's result that is not `twice` holds only sources that a word puts there at stated positions: the same place for `returned`, `builderdone`, `copyof`, `concatenated` and `prepended`'s list; an element location for `stored` beside a `written returned` parameter and `prepended`'s item; every location for an `exclusive` row's new cells; and a row without `exclusive` (or a cell's handle) names one site for all its new cells. It reads the words again, word by word, apart from the code that marked the locations. With the `twice` of a row turned off (research report 156's fault), or its `fresh` sites split, the first program checked under `--ownership=v3` panics (core's `Schema` rows answer new lists of issues with `fresh` alone). The check counts no work | `Check.checkWordedTwice`, in `wordedContract` | §4.4, §6 rule 10 |
+| a summary location of a worded row's result that is not `twice` holds only sources that a word puts there at stated positions, by `statesPositions`, the one reading of §4.4's list that the marker uses too (the same place for `returned`, `builderdone`, `copyof`, `concatenated` and `prepended`'s list; an element location for a value of the element type that `stored` puts beside the one `written returned` list, and for `prepended`'s item; every location for an `exclusive` row's new cells); and a row without `exclusive` (or a cell's handle) names one site for all its new cells. It reads the contract the marker built, after `Contract.normal`, so it checks the marking loop and the sites, not the reading: the two readings of research report 156 disagreed on `stored` beside a `written returned` record, and this check panicked on a row the word validator accepts (research report 157, #2559). With the `twice` of a row turned off (research report 156's fault), or its `fresh` sites split, the first program checked under `--ownership=v3` panics (core's `Schema` rows answer new lists of issues with `fresh` alone). The check counts no work | `Check.checkWordedTwice`, in `wordedContract` | §4.4, §6 rule 10 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 
 ## 10. What the kernel costs

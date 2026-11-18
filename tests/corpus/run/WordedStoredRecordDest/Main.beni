@@ -1,0 +1,43 @@
+-- Rows that store an item beside a `written returned` parameter that is no
+-- list at its root (a record, an `Int`), into a list below a field of the
+-- result. `stored` is one write at one position of the one list the row
+-- writes and answers; here the row writes no list a word names, and the
+-- result has no `[*]` at its root, so the words state no position and the
+-- result's elements are `twice` (ownership-v3-kernel.md §4.4, §6 rule 10).
+-- Before, the marker read `stored` beside any `written returned` parameter
+-- as one store and the safe-build check did not: every build of the
+-- platform under `--ownership=v3` panicked in `checkWordedTwice`. Now the
+-- parts of `gg`'s pattern are not apart, and the update of `b` is refused.
+import Dest
+import Node exposing (Program)
+
+
+type alias R =
+    x : Int
+    xs : List Int
+
+
+mk : Int → R
+mk n = { x = n, xs = [ n ] }
+
+
+total : List R → Int
+total rs = List.sum (List.map rs λq → q.x)
+
+
+gg : List R → String
+gg list =
+    case list of
+        [ b, …rest ] →
+            w = { b | x = 99 }
+            "${String.fromInt w.x} ${String.fromInt (total rest)}"
+
+        _ →
+            "none"
+
+
+main : Program
+main =
+    a = gg (Dest.intoRec { items = [] } (mk 1)).items
+    c = gg (Dest.intoIntRec 0 (mk 1)).items
+    Node.print "${a} | ${c}"

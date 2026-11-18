@@ -1771,7 +1771,8 @@ pub const Mod = struct {
                 }
                 if (has(w, .stored)) {
                     described = true;
-                    if (!try m.intoElems(res, sig.result, relem, pe, src)) fl.* |= Contract.flag_e;
+                    const elem_typed = try m.typesOne(sig.vars[j], m.elemType(sigResult(sig)));
+                    if (!try m.intoElems(res, sig.result, relem, pe, src, elem_typed)) fl.* |= Contract.flag_e;
                     if (relem) |pr| {
                         if (try m.castsAt(sig.params[j], pr.child, sig.vars[j], m.elemType(sigResult(sig)), pe)) c.casts = true;
                     } else if (pe.kind.wide()) c.casts = true;
@@ -1864,7 +1865,7 @@ pub const Mod = struct {
         }
         // A result that comes from behind a cell or from JavaScript, or
         // that no word describes: the pessimistic row (`undescribed`).
-        const pessimistic = has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown) or !described;
+        const pessimistic = pessimisticRow(rw) or !described;
         if (pessimistic) try m.undescribed(c, res, sig.result, has(rw, .unknown));
         // A worded row builds no run (kernel §4.4): no part is tested against
         // another, so nothing derives that a cell is at one place of a summary
@@ -1872,10 +1873,10 @@ pub const Mod = struct {
         // `twice`, unless a word states the positions of what it puts there
         // (`statesPositions`): `(a) => [a, a]` is as true of `stored a →
         // fresh List a` as `(a) => [a]` is (research report 156).
-        for (res, res_es) |*r, re| {
+        for (res, res_es, 0..) |*r, re, ri| {
             if (re.single) continue;
             const twice = for (r.items) |s| {
-                if (pessimistic or !m.statesPositions(c, pw, rw, re, s)) break true;
+                if (pessimistic or !try m.statesPositions(sig, c, pw, rw, ri, s)) break true;
             } else false;
             if (twice) try r.append(gpa, Src.twice);
         }
@@ -1888,80 +1889,114 @@ pub const Mod = struct {
     }
 
     /// Whether a word of a row states where source `s` is at the summary
-    /// location `re` of the result, so that a cell it names is at one of the
+    /// location `ri` of the result, so that a cell it names is at one of the
     /// location's places when the arguments are apart (kernel §4.4, §6 rule
-    /// 10; research report 156). The words that do, each by its definition
+    /// 10; research reports 156, 157). The one reading of these words: the
+    /// marker (`wordedContract`) and the safe-build check
+    /// (`checkWordedTwice`) both call it, so they cannot read the words two
+    /// ways (#2559: they did, on `stored` beside a `written returned`
+    /// record). The words that state positions, each by its definition
     /// (`language.md` §5.4, `ownership-v2.md` §2.13.6):
     ///
     /// - `returned`, `builderdone`, the list of `prepended` and the elements of
     ///   `copyof` and `concatenated` put a location at the result's location
     ///   of the same place: the result there is the parameter's own positions,
     ///   or a copy of them, or the two lists one after the other;
-    /// - `stored` beside a `written returned` parameter (`put`, `push`,
-    ///   `set`, `insertAt`, `focus`) is one write of one position of that
-    ///   parameter's list, and the first parameter of `prepended` is the one
-    ///   item in front;
+    /// - `stored` beside the one `written returned` parameter (`put`,
+    ///   `push`, `set`, `insertAt`, `focus`), where that parameter and the
+    ///   result are lists at their roots (`oneStore`), is one write of one
+    ///   position of that list, and the first parameter of `prepended` is the
+    ///   one item in front: each at the result's element location or below it;
     /// - `exclusive` says that each new cell of the result is at one place.
     ///
     /// Any other placement — a word that puts a location below another place
-    /// (a wide one over the result's parts), `stored` into a new list,
+    /// (a wide one over the result's parts), `stored` into a new list or
+    /// beside a `written returned` parameter that is no list at its root,
     /// `elementof`, `taken`, `aliased`, a parameter with no word, `fresh`
-    /// without `exclusive`, `Record.copy`'s values — states no count.
-    fn statesPositions(m: *Mod, c: *const Contract.Contract, pw: []const u32, rw: u32, re: Loc.Entry, s: Src) bool {
+    /// without `exclusive`, `Record.copy`'s values, every placement of a row
+    /// whose result comes from behind a cell or from JavaScript — states no count.
+    fn statesPositions(m: *Mod, sig: Sig, c: *const Contract.Contract, pw: []const u32, rw: u32, ri: usize, s: Src) Allocator.Error!bool {
+        if (c.record_copy or pessimisticRow(rw)) return false;
+        const re = m.loc.layoutEntries(c.layouts[c.arity])[ri];
         switch (s.kind) {
             .outside, .twice => return true,
             .fresh => return has(rw, .exclusive),
             .answer => {
                 const w = pw[s.a];
                 const fnc = c.fns[s.a] orelse return false;
+                if (has(w, .aliased)) return false;
                 const ae = m.loc.layoutEntries(fnc.layouts[fnc.arity])[s.e];
-                if (has(w, .aliased) or (has(w, .returned) and has(w, .stored))) return false;
-                if (has(w, .returned) and ae.loc != re.loc) return false;
-                if (has(w, .stored) and !inPlace(pw, s.a)) return false;
-                return has(w, .returned) or has(w, .stored);
+                const at_place = has(w, .returned) and !has(w, .stored) and ae.loc == re.loc;
+                const ft = m.fnType(sig.vars[s.a].toOptional()) orelse return false;
+                const one_store = has(w, .stored) and !has(w, .returned) and try m.oneStore(sig, pw, s.a, ri, ft.result);
+                return at_place or one_store;
             },
             .param => {
                 const j = s.a;
                 const w = pw[j];
+                if (w == 0 or has(w, .unknown) or has(w, .aliased)) return false;
+                if (j == 0 and (has(rw, .elementof) or has(rw, .taken))) return false;
                 const pe = m.loc.layoutEntries(c.layouts[j])[s.e];
-                if (w == 0 or has(w, .unknown) or has(w, .aliased) or c.record_copy or (has(w, .returned) and has(w, .stored))) return false;
-                if ((has(rw, .elementof) or has(rw, .taken)) and j == 0) return false;
-                if (has(w, .returned) and pe.loc != re.loc) return false;
-                if (has(w, .stored) and !(inPlace(pw, j) or (j == 0 and has(rw, .prepended)))) return false;
-                const same_place = (j == 0 and (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .builderdone))) or
+                const by_place = has(w, .returned) or
+                    (j == 0 and (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .builderdone))) or
                     (j == 1 and (has(rw, .concatenated) or has(rw, .prepended)));
-                if (same_place and pe.loc != re.loc) return false;
-                return same_place or has(w, .returned) or has(w, .stored);
+                const by_store = has(w, .stored);
+                if (by_place and by_store) return false;
+                if (by_place) return pe.loc == re.loc;
+                if (!by_store) return false;
+                // `prepended`'s item: the validator makes the result a list.
+                if (j == 0 and has(rw, .prepended)) return isElem(try m.loc.proj(sig.result, Step.elem), ri) and try m.typesOne(sig.vars[j], m.elemType(sigResult(sig)));
+                return m.oneStore(sig, pw, j, ri, sig.vars[j]);
             },
         }
     }
 
-    /// Whether a parameter other than `j` is `written returned`: the result
-    /// is that list, written in place.
-    fn inPlace(pw: []const u32, j: usize) bool {
-        for (pw, 0..) |w, k| if (k != j and has(w, .written) and has(w, .returned)) return true;
-        return false;
+    /// A row whose result comes from behind a cell or from JavaScript: the
+    /// pessimistic row (`undescribed`), and no placement of it states
+    /// positions (kernel §4.4).
+    fn pessimisticRow(rw: u32) bool {
+        return has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown);
+    }
+
+    /// Whether `stored` on parameter `j`, a value of type `t`, is one write
+    /// at one position of "that list" at result location `ri` (kernel §4.4):
+    /// exactly one other parameter is `written returned`, it is a list at its
+    /// root, the result is a list at its root, `t` is the element type of
+    /// both, and `ri` is the result's element location or below it. A value
+    /// of another type is not an element: the row puts it below one, inside
+    /// a container no word names (`l.push([a, a])` for `stored List Int`
+    /// into a `List (List (List Int))`), where the words say no count. A `written returned` record, tuple, `Maybe`, scalar or type
+    /// variable writes no list a word names, two can write two lists, and a
+    /// result with no `[*]` at its root holds the location at every place
+    /// (`intoElems`): none of them states a position (research report 157).
+    fn oneStore(m: *Mod, sig: Sig, pw: []const u32, j: usize, ri: usize, t: Var) Allocator.Error!bool {
+        var dest: ?usize = null;
+        for (pw, 0..) |w, k| if (k != j and has(w, .written) and has(w, .returned)) {
+            if (dest != null) return false;
+            dest = k;
+        };
+        const k = dest orelse return false;
+        if (try m.loc.proj(sig.params[k], Step.elem) == null) return false;
+        if (!isElem(try m.loc.proj(sig.result, Step.elem), ri)) return false;
+        return try m.typesOne(t, m.elemType(sigResult(sig))) and try m.typesOne(t, m.elemType(sig.vars[k]));
     }
 
     /// Safe builds: a summary location of a worded row's result that is not
     /// `twice` holds only sources that a word puts there at stated positions
-    /// (`statesPositions`, kernel §4.4, §6 rule 10). It reads the words again
-    /// from the side of each word, apart from the code that marked the
-    /// locations: per word, the pairs of a source and a location it states
-    /// (the same place for `returned`, `builderdone`, `copyof`,
-    /// `concatenated` and `prepended`'s list, every element location for
-    /// `stored` beside a `written returned` parameter and `prepended`'s item,
-    /// every location for an `exclusive` row's new cells), and a source that
-    /// any word places without positions (`aliased`, no word, `unknown`,
-    /// `elementof`, `taken`, `Record.copy`) is in no pair. With the `twice` of
-    /// a row turned off (research report 156's fault), core's first `fresh`
-    /// row of a list of records (`Schema`'s issues) panics. Counts no work.
+    /// (`statesPositions`, kernel §4.4, §6 rule 10), and a row without
+    /// `exclusive` (or a cell's handle) names one site for all its new cells.
+    /// It reads the contract the marker built, after `Contract.normal`, by the
+    /// one reading of the words the marker uses: it checks the marking loop
+    /// and the sites, not the reading. Two readings of the words, one here and
+    /// one in the marker, disagreed on `stored` beside a `written returned`
+    /// record and panicked on a row the validator accepts (research report
+    /// 157, #2559). With the `twice` of a row turned off (research report
+    /// 156's fault), core's first `fresh` row of a list of records
+    /// (`Schema`'s issues) panics. Counts no work.
     fn checkWordedTwice(m: *Mod, sig: Sig, c: *const Contract.Contract, pw: []const u32, rw: u32) Allocator.Error!void {
         const units = m.loc.units;
         defer m.loc.units = units;
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
-        const relem = try m.loc.proj(sig.result, Step.elem);
-        const lost = c.record_copy or has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown);
         // A row that does not say `exclusive` (or make a cell's handle)
         // names one site for all its new cells: two locations can be one cell.
         const sites = has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty);
@@ -1973,35 +2008,8 @@ pub const Mod = struct {
                 if (s.kind == .twice) break true;
             } else false;
             if (marked) continue;
-            for (srcs) |s| {
-                const ok = switch (s.kind) {
-                    .outside, .twice => true,
-                    .fresh => has(rw, .exclusive),
-                    .answer => blk: {
-                        const w = pw[s.a];
-                        const fnc = c.fns[s.a] orelse break :blk false;
-                        if (has(w, .aliased)) break :blk false;
-                        const ae = m.loc.layoutEntries(fnc.layouts[fnc.arity])[s.e];
-                        const at_place = has(w, .returned) and ae.loc == re.loc and !has(w, .stored);
-                        const one_store = has(w, .stored) and !has(w, .returned) and inPlace(pw, s.a) and isElem(relem, ri);
-                        break :blk at_place or one_store;
-                    },
-                    .param => blk: {
-                        const j = s.a;
-                        const w = pw[j];
-                        if (lost or w == 0 or has(w, .unknown) or has(w, .aliased)) break :blk false;
-                        if (j == 0 and (has(rw, .elementof) or has(rw, .taken))) break :blk false;
-                        const pe = m.loc.layoutEntries(c.layouts[j])[s.e];
-                        const by_place = has(w, .returned) or
-                            (j == 0 and (has(rw, .copyof) or has(rw, .concatenated) or has(rw, .builderdone))) or
-                            (j == 1 and (has(rw, .concatenated) or has(rw, .prepended)));
-                        const by_store = has(w, .stored) and (inPlace(pw, j) or (j == 0 and has(rw, .prepended)));
-                        if (by_place and by_store) break :blk false;
-                        break :blk (by_place and pe.loc == re.loc) or (by_store and isElem(relem, ri));
-                    },
-                };
-                if (!ok) std.debug.panic("own3: a summary location of a row's result holds a source that no word puts at stated positions, and is not twice (kernel §4.4, §6 rule 10, §9)", .{});
-            }
+            for (srcs) |s| if (!try m.statesPositions(sig, c, pw, rw, ri, s))
+                std.debug.panic("own3: a summary location of a row's result holds a source that no word puts at stated positions, and is not twice (kernel §4.4, §6 rule 10, §9)", .{});
         }
     }
 
@@ -2175,8 +2183,11 @@ pub const Mod = struct {
     /// name it (`placedSafely` at the element's place, `placedAnywhere`
     /// where the result has no element): where not (a result of no location,
     /// one with no element, an element of no location), the caller makes it
-    /// escape (research report 150).
-    fn intoElems(m: *Mod, res: []std.ArrayList(Src), result: PlaceId, relem: ?*const Loc.Proj, from: Loc.Entry, src: Src) Allocator.Error!bool {
+    /// escape (research report 150). A value that is no element (`elem_typed`
+    /// false: `stored List Int` beside a list of `List (List Int)`) is put
+    /// below an element, at a depth no word names: it is at every element
+    /// location, never at the one its label path names (research report 157).
+    fn intoElems(m: *Mod, res: []std.ArrayList(Src), result: PlaceId, relem: ?*const Loc.Proj, from: Loc.Entry, src: Src, elem_typed: bool) Allocator.Error!bool {
         const pr = relem orelse {
             for (res) |*r| try r.append(m.gpa, src);
             return m.placedAnywhere(result, m.loc.layoutEntries(try m.loc.layoutOf(result)));
@@ -2184,7 +2195,7 @@ pub const Mod = struct {
         const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
         var found = false;
         var placed = false;
-        for (child, 0..) |ce, k| if (m.holdsAt(from, ce) and pr.up[k] != none) {
+        if (elem_typed) for (child, 0..) |ce, k| if (m.holdsAt(from, ce) and pr.up[k] != none) {
             if (ce.loc == from.loc) found = true;
             placed = true;
             try res[pr.up[k]].append(m.gpa, src);
@@ -2330,7 +2341,8 @@ pub const Mod = struct {
                 }
             }
             if (has(w, .stored)) {
-                if (!try m.intoElems(res, sig.result, relem, ae, src)) unplaced = true;
+                const elem_typed = try m.typesOne(ft.result, m.elemType(sigResult(sig)));
+                if (!try m.intoElems(res, sig.result, relem, ae, src, elem_typed)) unplaced = true;
                 if (relem) |pr| {
                     if (try m.castsAt(rplace, pr.child, ft.result, m.elemType(sigResult(sig)), ae)) {
                         @constCast(c).casts = true;

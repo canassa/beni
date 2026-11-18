@@ -1,0 +1,38 @@
+-- A row that stores an item beside a `written returned` `Int` and answers a
+-- list. `stored` is one write at one position of the one list the row writes
+-- and answers; an `Int` is no list, so the list is new and the words state no
+-- count: `(v, n) => [v, v]` is true of them, and the result's elements are
+-- `twice` (ownership-v3-kernel.md §4.4, §6 rule 10). Before, both readers
+-- took `stored` beside any `written returned` parameter as one store: the
+-- parts of `gg`'s pattern were apart, the update of `b` was accepted, and in
+-- place it wrote the record `rest` holds (`99 99`).
+import Dest
+import Node exposing (Program)
+
+
+type alias R =
+    x : Int
+    xs : List Int
+
+
+mk : Int → R
+mk n = { x = n, xs = [ n ] }
+
+
+total : List R → Int
+total rs = List.sum (List.map rs λq → q.x)
+
+
+gg : List R → String
+gg list =
+    case list of
+        [ b, …rest ] →
+            w = { b | x = 99 }
+            "${String.fromInt w.x} ${String.fromInt (total rest)}"
+
+        _ →
+            "none"
+
+
+main : Program
+main = Node.print (gg (Dest.intoInt (mk 1) 0))

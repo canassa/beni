@@ -1,0 +1,23 @@
+--! A test platform: rows that store a value that is no element of the list
+--! they write, so they put it below an element, inside a new list, twice.
+
+--| JavaScript `(l, a) => { l.push([a, a]); return l; }`.
+pub foreign pure nest :
+      written returned List (List (List Int))
+    , stored (List Int)
+    → List (List (List Int))
+
+
+--| JavaScript `(l, i, g) => { const a = g(l[i][0]); l[i] = [a, a]; return l; }`.
+pub foreign pure focusNest :
+      written returned List (List (List Int))
+    , borrowed Int
+    , once taken stored (List Int → List Int)
+    → List (List (List Int))
+
+
+--| JavaScript `(a, l) => [[a, a], ...l]`.
+pub foreign pure consNest :
+      stored (List Int)
+    , returned List (List (List Int))
+    → prepended List (List (List Int))

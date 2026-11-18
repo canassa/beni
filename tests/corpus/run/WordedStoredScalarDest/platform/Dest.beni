@@ -1,0 +1,5 @@
+--! A test platform: a row that stores an item beside a `written returned`
+--! `Int` into a new list, twice.
+
+--| JavaScript `(v, n) => [v, v]`.
+pub foreign pure intoInt : stored a, written returned Int → List a
