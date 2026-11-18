@@ -1,0 +1,50 @@
+-- The rows of `core/` whose words state positions: `push`, `insertAt` and
+-- `set` store one value at one position of the list they write (`stored`
+-- beside `written returned`), `[ x, …l ]` puts its item in front
+-- (`prepended`), `copy` and `take` copy the positions (`copyof`), and `++`
+-- puts two lists one after the other (`concatenated`). Of apart arguments
+-- each answers a list that holds each record once, so the parts of a list
+-- pattern over it are apart and the update of `b` is written in place
+-- (ownership-v3-kernel.md §4.4, §6 rule 10). A row whose words state no
+-- positions is `twice` (`run/WordedStoredTwice`).
+import Node exposing (Program)
+
+
+type alias R =
+    x : Int
+    xs : List Int
+
+
+mk : Int → R
+mk n = { x = n, xs = [ n ] }
+
+
+total : List R → Int
+total rs = List.sum (List.map rs λq → q.x)
+
+
+gg : List R → String
+gg list =
+    case list of
+        [ b, …rest ] →
+            w = { b | x = 99 }
+            "${String.fromInt w.x}/${String.fromInt (total rest)}"
+
+        _ →
+            "none"
+
+
+consOn : R, List R → List R
+consOn h t = [ h, …t ]
+
+
+main : Program
+main =
+    a = gg (List.push (List.push [] (mk 1)) (mk 2))
+    b = gg (List.insertAt [ mk 1 ] 0 (mk 3))
+    c = gg (List.set [ mk 1, mk 1 ] 0 (mk 4))
+    d = gg (consOn (mk 5) [ mk 6 ])
+    v = gg (List.copy [ mk 7, mk 8 ])
+    f = gg (List.take [ mk 9, mk 10, mk 11 ] 2)
+    g = gg ([ mk 12 ] ++ [ mk 13 ])
+    Node.print "${a} ${b} ${c} ${d} ${v} ${f} ${g}"

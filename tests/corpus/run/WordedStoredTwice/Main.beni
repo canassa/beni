@@ -1,0 +1,67 @@
+-- Rows whose words are true of JavaScript that puts one value at two
+-- places of the new list: `stored a → fresh List a` answering `[a, a]`,
+-- `stored a, stored a → fresh List a` answering `[a, b, a]`, and a row
+-- with no parameter cell answering one new record twice. A row builds no
+-- run, so no rule derives that each cell is at one place of the list's
+-- elements: the elements are `twice`, and the parts of a list pattern
+-- over the list are not apart (ownership-v3-kernel.md §4.4, §6 rule 10).
+-- Before, `gg`'s parts were apart by the apart-arguments rule and the
+-- callers' lists were read as holding each record once: the update of
+-- `b` was accepted, and in place it wrote the record `rest` holds.
+import Node exposing (Program)
+import Twice
+
+
+type alias R =
+    x : Int
+    xs : List Int
+
+
+mk : Int → R
+mk n = { x = n, xs = [ n ] }
+
+
+total : List R → Int
+total rs = List.sum (List.map rs λq → q.x)
+
+
+gg : List R → String
+gg list =
+    case list of
+        [ b, …rest ] →
+            w = { b | x = 99 }
+            "${String.fromInt w.x} ${String.fromInt (total rest)}"
+
+        _ →
+            "none"
+
+
+last : List R → String
+last list =
+    case list of
+        [ …rest, b ] →
+            w = { b | x = 99 }
+            "${String.fromInt w.x} ${String.fromInt (total rest)}"
+
+        _ →
+            "none"
+
+
+fresh : Int → String
+fresh n =
+    list = Twice.mkW n
+    case list of
+        [ b, …rest ] →
+            w = { x = 0, xs = List.push b.xs 7 }
+            "${String.fromInt (List.length w.xs)} ${String.fromInt (List.sum (List.concatMap rest λq → q.xs))}"
+
+        _ →
+            "none"
+
+
+main : Program
+main =
+    a = gg (Twice.dupW (mk 1))
+    b = last (Twice.tripW (mk 1) (mk 2))
+    c = fresh 1
+    Node.print "${a} | ${b} | ${c}"
