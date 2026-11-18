@@ -16,7 +16,7 @@ import path from 'path';
 const [out, filter] = [process.argv[2], process.argv[3] || ''];
 if (!out) { console.error('usage: node bench/ownership-sweeps/precision-159.mjs <outdir> [filter]'); process.exit(2); }
 const progs = [];
-const add = (name, main) => { if (name.includes(filter)) progs.push({ name, main }); };
+const add = (name, main, files) => { if (name.includes(filter)) progs.push({ name, main, files }); };
 const ind = (s, n) => s.split('\n').map((l) => (l ? ' '.repeat(n) + l : l)).join('\n');
 
 const GETSET = `import List
@@ -244,12 +244,99 @@ main =
   }
 }
 
+// `entry.<arm>.<twin>`: a page of `browser-tea` whose `update` answers a record of the model at one place
+// in one arm and at another in another (kernel §6 rule 13, *One value of the answer at a time*), then
+// writes it in place in a `Bump` arm. `<arm>`: `swap` (`w` and `w2` swapped), `rotate` (three
+// records turned), `copy` (`w2` a copy of `w`), `swapnested` (the records of a nested record
+// swapped), `share` (`w` at both places in one arm), `rotatedup` (one record at two places of a
+// rotation), `swaplist` (`w` swapped and put in a list of the model too), `swaprow` (the swap made by a
+// helper over `{ r | w : Wm, w2 : Wm }`). `<twin>`: `dead` where each run answers each record at one place
+// (safe), `live` where one does not (in place, `Bump` changes the other place too).
+const ENTRY = (arm, extra) => `import Html exposing (Html)
+import Record
+import Tea
+
+
+type alias Wm =
+    c : Int
+    t : String
+
+
+type alias Inner =
+    a : Wm
+    b : Wm
+
+
+type alias Model =
+    w : Wm
+    w2 : Wm
+    w3 : Wm
+    inner : Inner
+    ws : List Wm
+
+
+type Msg
+    = Arm
+    | Bump
+
+
+${extra}
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Arm →
+            ${arm}
+
+        Bump →
+            w = model.w
+            inner = model.inner
+            a = inner.a
+            { model | w = { w | c = w.c + 10 }, inner = { inner | a = { a | c = a.c + 100 } } }
+
+
+show : Wm → String
+show x = "\${String.fromInt x.c}\${x.t}"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="arm" onClick={Arm}>arm</button>
+        <button id="bump" onClick={Bump}>bump</button>
+        <p id="s">{show model.w} {show model.w2} {show model.w3} {show model.inner.a} {show model.inner.b} {String.join (List.map model.ws show) ","}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { w = { c = 1, t = "a" }, w2 = { c = 2, t = "b" }, w3 = { c = 3, t = "c" }, inner = { a = { c = 4, t = "d" }, b = { c = 5, t = "e" } }, ws = [] }
+        , update = update
+        , view = view
+        }
+`;
+const ARMS = {
+  swap: ['dead', '{ model | w = model.w2, w2 = model.w }', ''],
+  rotate: ['dead', '{ model | w = model.w2, w2 = model.w3, w3 = model.w }', ''],
+  copy: ['dead', '{ model | w2 = Record.copy model.w }', ''],
+  swapnested: ['dead', 'inner = model.inner\n            { model | inner = { inner | a = inner.b, b = inner.a } }', ''],
+  swaprow: ['dead', 'swapW model', 'swapW : { r | w : Wm, w2 : Wm } → { r | w : Wm, w2 : Wm }\nswapW m = { m | w = m.w2, w2 = m.w }\n\n'],
+  share: ['live', '{ model | w2 = model.w }', ''],
+  rotatedup: ['live', '{ model | w = model.w2, w2 = model.w3, w3 = model.w2 }', ''],
+  swaplist: ['live', '{ model | w = model.w2, w2 = model.w, ws = [ model.w2 ] }', ''],
+  innerout: ['live', '{ model | w2 = model.inner.a }', ''],
+};
+for (const [k, [twin, arm, extra]] of Object.entries(ARMS)) {
+  add(`entry.${k}.${twin}`, ENTRY(arm, extra), { PLATFORM: 'platforms/browser-tea\n', steps: 'click #arm\nclick #bump\nclick #arm\nclick #bump\nclick #bump\n' });
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 for (const p of progs) {
   const d = path.resolve(out, p.name);
   fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, 'Main.beni'), p.main);
+  for (const [f, text] of Object.entries(p.files ?? {})) fs.writeFileSync(path.join(d, f), text);
   list.push(d);
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');

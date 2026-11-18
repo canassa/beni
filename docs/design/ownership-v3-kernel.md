@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rule 10 and §8 revised again the same day (research report 159). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1160,6 +1160,17 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
       (`freshOwn`, as rule 8); or
     - a location of the producer's own model parameter that is `own` in its turn, that the producer
       did not let escape, answers at no other location and hands to no function (`paramOwn`).
+
+    **One value of the answer at a time** (research report 159, #2550). "At no other location" is a
+    fact of one run: a run answers one value of the producer's join, and the producer's contract says,
+    where it is not `nonlinear`, that no cell of a parameter is at two locations of any one of them
+    (§4.4, *One value of a join at a time*). So where the contract is not `nonlinear`, a location the
+    producer answers at two locations in two arms (`Swap → { m | w = m.w2, w2 = m.w }`, `Bump → { m |
+    w = … }`) is at one of them in each run, and the other is no holder of it; where it is, every
+    other location that holds it is another holder, as before. *Before, a field swap in one arm of
+    `update` took every record of the swap out of `own`, and every later write of them was refused
+    (`browser/tea/EntrySwapArms`; the live twin, an arm that answers `w` at both places, is
+    `browser/tea/EntrySwapShared`).*
 
     Every other source has another holder or no fact, and is not `own`: a top-level value
     (`outside`), the answer of a function, a capture (the record holds it for as long as the program

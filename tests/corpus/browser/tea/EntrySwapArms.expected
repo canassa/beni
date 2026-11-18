@@ -1,0 +1,95 @@
+-- load
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+    <p id="w2">
+      "2"
+      ":"
+      "b"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "2"
+      ":"
+      "b"
+      <!---->
+    </p>
+    <p id="w2">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "12"
+      ":"
+      "b"
+      <!---->
+    </p>
+    <p id="w2">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+    <p id="w2">
+      "12"
+      ":"
+      "b"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "11"
+      ":"
+      "a"
+      <!---->
+    </p>
+    <p id="w2">
+      "12"
+      ":"
+      "b"
+      <!---->
+    </p>
+  </main>
+</body>

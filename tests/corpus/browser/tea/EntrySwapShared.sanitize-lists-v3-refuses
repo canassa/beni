@@ -1,0 +1,2 @@
+# The Share arm answers the model's w at two places: w is not update's own, and Bump's write of it is refused (ownership-v3-kernel.md §6 rule 13).
+49:5 list_still_used entry

@@ -1,0 +1,1 @@
+Each arm of update answers each record of the model at one place, so w is update's own and Bump writes it in place (ownership-v3-kernel.md §6 rule 13).

@@ -1,0 +1,55 @@
+-- One value of `update`'s answer at a time (`ownership-v3-kernel.md` §6
+-- rule 13): the `Swap` arm answers the model's `w` record at `w2` and its
+-- `w2` at `w`, and the `Bump` arm answers `w` at `w`. Each run answers each
+-- record at one place, as the contract of `update` says (no cell of a
+-- parameter at two places of its answer), so `w` is `update`'s own and
+-- `Bump` writes its `c` in place under `--ownership=v3`. Before, `w` was
+-- answered at two places across the arms, and no write of it was `own`.
+
+import Html exposing (Html)
+import Tea
+
+
+type alias Wm =
+    c : Int
+    t : String
+
+
+type alias Model =
+    w : Wm
+    w2 : Wm
+
+
+type Msg
+    = Swap
+    | Bump
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Swap →
+            { model | w = model.w2, w2 = model.w }
+
+        Bump →
+            w = model.w
+            { model | w = { w | c = w.c + 10 } }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="bump" onClick={Bump}>bump</button>
+        <p id="w">{model.w.c}:{model.w.t}</p>
+        <p id="w2">{model.w2.c}:{model.w2.t}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { w = { c = 1, t = "a" }, w2 = { c = 2, t = "b" } }
+        , update = update
+        , view = view
+        }

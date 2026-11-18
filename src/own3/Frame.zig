@@ -8925,10 +8925,16 @@ fn freshOwn(m: *Mod, lc: *const Contract, re: u32, ls: Src) bool {
 /// function (kernel §6.13).
 fn paramOwn(lc: *const Contract, re: u32, ls: Src) bool {
     if (ls.a >= lc.arity or lc.flags[lc.off[ls.a] + ls.e] & flag_e != 0) return false;
-    for (lc.res, 0..) |srcs, k| {
+    // A contract that says no cell of a parameter is at two locations of
+    // its result answers the location at one of them in each run, though
+    // its arms answer it at two (`{ m | w = m.w2, w2 = m.w }` in one arm,
+    // `m.w` at `.w` in another): kernel §6 rule 13, *One value of a join at a
+    // time*; research report 159. Where it can be, every other entry that
+    // holds it is another holder.
+    if (lc.nonlinear) for (lc.res, 0..) |srcs, k| {
         if (k == re) continue;
         for (srcs) |x| if (x.kind == .param and x.a == ls.a and x.e == ls.e) return false;
-    }
+    };
     return !handsOn(lc, ls.a, ls.e);
 }
 
