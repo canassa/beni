@@ -3342,6 +3342,7 @@ const Case = struct {
         // platform: built under the ownership prototype and the list
         // sanitiser (`v3Page`), against the same golden.
         const v3_pages = [1]?PagePlan{if (pages[0] != null and (c.goldenExists("sanitize-lists-v3") or c.goldenExists("sanitize-lists-v3-refuses"))) try c.v3Page(platform_arg, sources) else null};
+        if (pages[0] != null and c.goldenExists("sanitize-lists-refuses")) try c.v1Refuses(platform_arg, sources);
         if (pages[0] != null) try c.checkCompiledSchemas(pageOut(.dev));
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
@@ -3474,6 +3475,24 @@ const Case = struct {
             .entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out}),
             .skip = false,
         };
+    }
+
+    /// A page with a `.sanitize-lists-refuses` file: a fixed soundness
+    /// defect, as `.sanitize-lists-v3-refuses` is, for the ownership
+    /// checker v1. It must refuse exactly the writes the file names. The
+    /// page of the default build runs as every page does.
+    fn v1Refuses(c: Case, platform_arg: []const u8, sources: []const []const u8) !void {
+        const flags: []const []const u8 = &.{"--ownership-everywhere"};
+        if (try c.ownershipRefusals(platform_arg, flags, sources)) |got| {
+            const want = try c.expectedRefusals("sanitize-lists-refuses");
+            if (std.mem.eql(u8, got, want)) return;
+            detail("{s}: v1 refuses, but not what sanitize-lists-refuses names\n--- expected ---\n{s}--- refused ---\n{s}", .{ c.fixture.name, want, got });
+            because("[v1] refuses other writes than sanitize-lists-refuses names", .{});
+            return error.SanitisedRefusalDiffers;
+        }
+        detail("{s}: v1 accepts a page it must refuse (sanitize-lists-refuses)\n", .{c.fixture.name});
+        because("[v1] accepts a page it must refuse", .{});
+        return error.SanitisedRefusalAccepted;
     }
 
     /// The page of a fixture with a `.sanitize-lists-v3` file (its reason):

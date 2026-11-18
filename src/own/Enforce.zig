@@ -150,7 +150,10 @@ pub fn checkModule(ctx: *const Context, d: *@import("../check/Driver.zig"), m: G
     // With no public value there is no callable summary to compute. On a
     // platform that does not enforce, private bodies cannot affect an
     // importer. Keep this cache report uncertified so enforcement rechecks it.
-    const private_only = !report and session.ownership_sites.len == 0 and d.interfaces[m.int()].values.len == 0;
+    // A refusal of evidence stops the build of every package (§16.5), so a
+    // module of core or a platform is walked when the build enforces.
+    const evidence_only = session.enforce_ownership and ctx.ins.packages[m.int()] != .app;
+    const private_only = !report and !evidence_only and session.ownership_sites.len == 0 and d.interfaces[m.int()].values.len == 0;
     const private_token = if (private_only) session.profile.begin() else null;
     defer if (private_token) |t| session.profile.end(tid, t, .ownership_module, @backingInt(d.graph.moduleFile(m)), 0);
     const reports = try o.run(if (private_only) &.{} else &.{m.int()});
@@ -183,7 +186,7 @@ pub fn checkModule(ctx: *const Context, d: *@import("../check/Driver.zig"), m: G
     }
     ctx.ins.blocks[m.int()] = d.interfaces[m.int()].ownership;
 
-    if (report) try diagnostics(session, reports, &d.per_module[m.int()]);
+    if (report) try diagnostics(session, reports, &d.per_module[m.int()], false) else if (evidence_only) try diagnostics(session, reports, &d.per_module[m.int()], true);
 }
 
 /// Whether a module's report has no rejected or pending line and reached
@@ -195,7 +198,11 @@ fn allAccepted(r: Ownership.ModuleReport) bool {
     return true;
 }
 
-fn diagnostics(session: *Session, reports: []const Ownership.ModuleReport, dest: *std.ArrayList(CheckDiagnostics.Item)) Allocator.Error!void {
+/// `evidence_only`: a module of core or a platform, whose writes the build
+/// does not enforce: only a function handed as evidence that writes or keeps
+/// a parameter is a refusal there, since it may run later on another
+/// package's values.
+fn diagnostics(session: *Session, reports: []const Ownership.ModuleReport, dest: *std.ArrayList(CheckDiagnostics.Item), evidence_only: bool) Allocator.Error!void {
     const gpa = session.gpa;
     // The errors (§28.5), one per root cause.
     var items: std.ArrayList(CheckDiagnostics.Item) = .empty;
@@ -212,7 +219,7 @@ fn diagnostics(session: *Session, reports: []const Ownership.ModuleReport, dest:
     var any_limit = false;
     for (reports) |r| {
         if (!r.checked) continue;
-        for (r.limits) |h| {
+        for (if (evidence_only) &.{} else r.limits) |h| {
             any_limit = true;
             const text = try Message.limit(scratch.allocator(), src, r.module, h);
             try items.ensureUnusedCapacity(gpa, 1);
@@ -241,6 +248,7 @@ fn diagnostics(session: *Session, reports: []const Ownership.ModuleReport, dest:
             defer i = j;
             // A record demand is enforced as a list's, with §31.9's codes.
             if (d.verdict == .accepted) continue;
+            if (evidence_only and !(d.verdict == .pending and std.mem.eql(u8, d.detail, Ownership.evidence_detail))) continue;
             if (any_limit and d.verdict == .rejected and d.verdict.rejected == .limit) continue;
             var group: std.ArrayList(Ownership.Demand) = .empty;
             for (r.demands[i..j]) |x| {

@@ -434,6 +434,10 @@ pub const LimitLine = struct { decl: u32, name: []const u8, limit: Limit, at: u3
 // Summaries (§16.2)
 // ---------------------------------------------------------------------------
 
+/// The detail of the pending line of a function handed as evidence that
+/// writes or keeps a parameter (§16.5); every package's build enforces it.
+pub const evidence_detail = "it is passed as evidence, whose calls the checker does not see";
+
 pub const bit_r: u16 = 1;
 pub const bit_a: u16 = 2;
 pub const bit_e: u16 = 4;
@@ -966,6 +970,11 @@ pub const Summary = struct {
     fn funOf(s: *const Summary, j: u32) ?FunFacts {
         for (s.funs) |f| if (f.param == j) return f;
         return null;
+    }
+
+    fn keepsAny(s: *const Summary) bool {
+        for (s.uses) |u| if (u.bits & bit_e != 0) return true;
+        return false;
     }
 
     fn writesAny(s: *const Summary) bool {
@@ -15581,8 +15590,8 @@ const Walker = struct {
             try seen.append(w.a, ti);
             const t = dt.term(ti);
             if (w.termTarget(t)) |target| {
-                if (try w.o.ensureSummary(target.m, target.d)) |s| if (s.writesAny()) {
-                    try w.valueLine(tok, try w.qualified(target), .pending, "it is passed as evidence, whose calls the checker does not see", "", false);
+                if (try w.o.ensureSummary(target.m, target.d)) |s| if (s.writesAny() or s.keepsAny()) {
+                    try w.valueLine(tok, try w.qualified(target), .pending, evidence_detail, "", false);
                 };
             }
             const args = dt.argsOfTerm(ti);

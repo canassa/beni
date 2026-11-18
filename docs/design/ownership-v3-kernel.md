@@ -812,7 +812,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     of every platform, a project's own layer included, as it stops the program's, though their writes are
     not enforced: evidence can be kept and run later on another package's values, as `key` keeps it
     (`Enforce.checkModule`; `browser/tea/KeyLayerKeeps`, a layer that made a key of its own type whose
-    `compare` kept its list, which the first review of research report 154 found accepted and trapping).
+    `compare` kept its list, which the first review of research report 154 found accepted and trapping). Checker v1 reads the same words, so it does the same: a function handed as evidence that writes or keeps a parameter is a pending line in every package (`Ownership.evidence_detail`), and `Enforce.checkModule` stops the build of core and every platform on it (a v1 line of the same kind as v3's; `KeyLayerKeeps`'s `.sanitize-lists-refuses`).
     So every comparer `compare` can run reads its two keys and keeps nothing, and `compare` borrows both;
     an identity with no comparer stops the program. The fact is one of `Hosted`'s code (and of the host's
     `Map`, whose methods a platform could change for every module at once, as it could change the
