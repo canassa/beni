@@ -1,0 +1,46 @@
+-- Rows whose words are true of JavaScript that puts one new record at two
+-- places of a new value: a pair of one record, and a record whose field
+-- and list hold one record. `fresh` says the cells are new, not that two
+-- locations hold two of them, and a row builds no run, so the locations
+-- of a row's result are one site (ownership-v3-kernel.md §4.2, §4.4, §6
+-- rule 10). Before, each location was a site of its own: the parts were
+-- two cells, the update of one was accepted, and in place it wrote the
+-- record the other part holds.
+import Node exposing (Program)
+import Shared
+
+
+type alias R =
+    x : Int
+
+
+first : R × R → R
+first t =
+    case t of
+        ( a, _ ) →
+            { a | x = 99 }
+
+
+second : R × R → Int
+second t =
+    case t of
+        ( _, b ) →
+            b.x
+
+
+pair : Int → String
+pair n =
+    t = Shared.mkTup n
+    w = first t
+    "${String.fromInt w.x} ${String.fromInt (second t)}"
+
+
+mixed : Int → String
+mixed n =
+    m = Shared.mkMixed n
+    w = { (m.a) | x = 99 }
+    "${String.fromInt w.x} ${String.fromInt (List.sum (List.map m.items λq → q.x))}"
+
+
+main : Program
+main = Node.print "${pair 1} | ${mixed 1}"

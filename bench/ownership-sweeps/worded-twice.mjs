@@ -88,6 +88,14 @@ castL l =
 pub foreign pure mkV : unused Int → fresh Js.Value
 
 
+--| JavaScript one new record at both parts: {a: r, b: r}.
+pub foreign pure mkTup : unused Int → fresh PR × PR
+
+
+--| JavaScript {a: r, items: [r]}.
+pub foreign pure mkMixed : unused Int → fresh { a : PR, items : List PR }
+
+
 --| The first part of a pair.
 pub firstOf : a × b → a
 firstOf p =
@@ -110,6 +118,8 @@ export const elemG = (l, i) => [l[i][0], l[i][0]];
 export const shareW = (l) => [{ x: 1, xs: l }, { x: 2, xs: l }];
 export const nestW = (a) => [[a], [a]];
 export const recW = (a) => ({ items: [a, a], k: 0 });
+export const mkTup = (n) => { const r = { x: n, xs: [n] }; return { a: r, b: r }; };
+export const mkMixed = (n) => { const r = { x: n, xs: [n] }; return { a: r, items: [r] }; };
 export const mkV = (n) => { const r = { x: n, xs: [n] }; return [r, r]; };
 `;
 
@@ -297,6 +307,81 @@ for (const [kind, makers] of [['row', rows], ['core', cores]]) {
   for (const [m, maker] of Object.entries(makers)) for (const c of carriers) for (const p of Object.keys(patterns)) for (const w of Object.keys(writes)) for (const live of [true, false]) {
     add(`${kind}.${m}.${c}.${p}.${w}.${live ? 'live' : 'dead'}`, program(maker, c, p, w, live));
   }
+}
+
+// Two locations of a `fresh` row's result that hold one new record: a pair, and a record's field and list.
+const pairWrites = { slot: (v) => `{ ${v} | x = 99 }`, npush: (v) => `{ x = 0, xs = List.push ${v}.xs 7 }` };
+for (const [w, wr] of Object.entries(pairWrites)) for (const live of [true, false]) {
+  const tw = live ? 'live' : 'dead';
+  const head = `import Node exposing (Program)
+import Probe exposing (PR)
+
+
+show : PR → String
+show r =
+    sep = ":"
+    "\${String.fromInt r.x}/\${String.join (List.map r.xs String.fromInt) sep}"
+
+
+ident : a → a
+ident v =
+    v
+
+`;
+  const firstOf = `first : PR × PR → PR
+first t =
+    case t of
+        ( a, _ ) →
+            ${wr('a')}
+
+
+second : PR × PR → String
+second t =
+    case t of
+        ( _, b ) →
+            show b
+`;
+  for (const [c, make] of [['local', 'Probe.mkTup n'], ['generic', 'ident (Probe.mkTup n)']]) {
+    add(`pair.mkTup.${c}.${w}.${tw}`, { 'Main.beni': `${head}
+run : Int → String
+run n =
+    t = ${make}
+    case t of
+        ( a, b ) →
+            w = ${wr('a')}
+            "\${show w} ${live ? '\${show b}' : ''}"
+
+
+main : Program
+main = Node.print (run 1)
+` });
+  }
+  add(`pair.mkTup.param.${w}.${tw}`, { 'Main.beni': `${head}
+${firstOf}
+
+run : Int → String
+run n =
+    t = Probe.mkTup n
+    w = first t
+    "\${show w} ${live ? '\${second t}' : ''}"
+
+
+main : Program
+main = Node.print (run 1)
+` });
+  add(`pair.mkMixed.local.${w}.${tw}`, { 'Main.beni': `${head}
+run : Int → String
+run n =
+    m = Probe.mkMixed n
+    a = m.a
+    w = ${wr('a')}
+    sep = ","
+    "\${show w} ${live ? '\${String.join (List.map m.items show) sep}' : ''}"
+
+
+main : Program
+main = Node.print (run 1)
+` });
 }
 
 // The entry: a page whose `init` makes the model's list with a row, and whose `update` writes an item of

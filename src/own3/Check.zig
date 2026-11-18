@@ -1779,12 +1779,20 @@ pub const Mod = struct {
             }
         }
         // The result's own words. `fresh` says that each location of the
-        // result holds new cells: one allocation site for each location, so a
-        // builder's storage and its elements are two cells, not one. A row
-        // that makes one new list (`copyof` and its kin) has one site, `0`.
+        // result holds new cells, and nothing more: a row builds no run, so no
+        // rule derives that two locations hold two cells (`(n) => { const r =
+        // {}; return {a: r, b: r}; }` is as true of `fresh { a : R, b : R }`
+        // as two objects are). They are one site, `0`, so the cells of two
+        // locations are one cell to the caller (kernel §4.2, §4.4; research
+        // report 156). `exclusive` says that no new cell is at two places or
+        // two paths: one site for each location, so a builder's storage and
+        // its elements are two cells. A cell's handle (`cellnew`,
+        // `cellempty`) is one new cell at each location of its own. A row that
+        // makes one new list (`copyof` and its kin) has one site, `0`.
         if (has(rw, .fresh) or has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty)) {
             described = true;
-            for (res, 0..) |*r, ri| try r.append(gpa, Src.fresh(@intCast(ri), false));
+            const sites = has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty);
+            for (res, 0..) |*r, ri| try r.append(gpa, Src.fresh(if (sites) @intCast(ri) else 0, false));
         }
         // `copyof` of a record (`Record.copy`, kernel §11): a new object
         // whose fields hold parameter 0's values. The result's locations
@@ -1954,6 +1962,11 @@ pub const Mod = struct {
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
         const relem = try m.loc.proj(sig.result, Step.elem);
         const lost = c.record_copy or has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown);
+        // A row that does not say `exclusive` (or make a cell's handle)
+        // names one site for all its new cells: two locations can be one cell.
+        const sites = has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty);
+        if (!sites) for (c.res) |srcs| for (srcs) |s| if (s.kind == .fresh and s.a != 0)
+            std.debug.panic("own3: a row's new cells are at two sites with no word that says they are two cells (kernel §6 rule 10, §9)", .{});
         for (res_es, c.res, 0..) |re, srcs, ri| {
             if (re.single) continue;
             const marked = for (srcs) |s| {

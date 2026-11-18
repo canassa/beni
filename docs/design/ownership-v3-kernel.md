@@ -468,7 +468,8 @@ declaration (a round of the declaration's group) starts the next walk's rounds, 
 run too: read as a finished contract, the cells of its own recursive call had new names in each walk, and
 the group never settled (`TailModConsBranches.chunks`, 66 walks; research report 138). Collapsing two cells into one name is on the pessimistic side.
 
-A worded row's new cells are one site, `0` (`Check.wordedContract`).
+A worded row's new cells are one site, `0` (`Check.wordedContract`), but where the row says `exclusive` or
+makes a cell's handle (§6 rule 10).
 
 ### 4.3 The frame's own cells
 
@@ -771,8 +772,15 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     ownership words is not walked; its words are its contract, a trusted row. A result the words do not
     describe is `undescribed`: `outside` (no frame may write it) and every cell of every parameter at any
     place (`nonlinear`). A function parameter the words do not describe is handed every cell of every
-    parameter, not `free`. The word `fresh` names one site for each location of the result (a builder's
-    storage and its elements are two cells); `copyof` and its kin name one site, the new list. A `foreign`
+    parameter, not `free`. The word `fresh` names one site, `0`, for every location of the result: it says
+    that the cells are new, not that two locations hold two of them, and a row builds no run (§4.4), so
+    `(n) => { const r = {}; return {a: r, b: r}; }` is as true of `fresh R × R` as two objects are.
+    `fresh exclusive` names one site for each location (a builder's storage and its elements are two
+    cells), since `exclusive` says that no new cell is at two places or two paths; so do `cellnew` and
+    `cellempty`, whose handle is one new cell. `copyof` and its kin name one site, the new list. *Before
+    research report 156 every `fresh` row named a site for each location, so the two parts of such a pair
+    were two cells, and an update of one was accepted while the other held the record
+    (`run/WordedFreshShared`).* A `foreign`
     with no word has no contract: unknown code. *The missing fact is the pessimistic one.* A word that
     puts a parameter's location in the result (`returned`, `stored`, `elementof`, `taken`,
     `builderdone`, the elements of `copyof`) puts it at the result's location of the same place and,
@@ -1601,7 +1609,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | each parameter location that a worded row's word puts in the result (`returned`, `stored`, `aliased`, `builderdone`, `elementof`, `taken`, the elements and storage of `copyof` and its kin, `Record.copy`'s values, a function parameter's answer under `returned`, `stored` or `aliased`) is a source of some location of the result, or has the escape flag: a placement never lands on no location without an escape; and a wide location that `returned` places and does not let escape is held by a wide result location at or above its place, or at its place where the result has no part of no location below it. It reads the words again, apart from the code that placed them. With the escape of `returned` turned off (research report 150's fault), the first program with `returned a → Int` panics. The check counts no work | `Check.checkWordedPlaced`, in `wordedContract` | §6.10 |
 | a row whose word puts a wide location of a parameter (a type variable, a `Js.Value`) at a place of the result whose type is not the location's — `returned` or `builderdone` at the same place, `stored` at that place of the result's elements, `elementof` and `taken` an element at that place, `aliased` at any type variable of the result — casts. It reads the words and the types of the store again, apart from the code that marked the row (`castsAt`, `aliasedCasts`). With the types not compared (research report 151's fault: the places alone, which are one for every type variable), the first row of `returned a → b` panics. The check counts no work | `Check.checkWordedCasts`, in `wordedContract` | §3.4, §6 rule 10 |
 | every cell of a `Js.Value` that the frame made of parts and read at a type variable, or at a type with one at or below its place, escaped: each leaf of the value is held by an escape of the frame. With that escape turned off (research report 151's fault: `Js.to (Js.array [ Js.from x ])` read at `b`), the first such read panics. The check counts no work | `Frame.checkMadeEscaped`, in `readAtVar` and `narrowed` | §3.4 |
-| a summary location of a worded row's result that is not `twice` holds only sources that a word puts there at stated positions: the same place for `returned`, `builderdone`, `copyof`, `concatenated` and `prepended`'s list; an element location for `stored` beside a `written returned` parameter and `prepended`'s item; every location for an `exclusive` row's new cells. It reads the words again, word by word, apart from the code that marked the locations. With the `twice` of a row turned off (research report 156's fault), the first program the gates build panics (core's `Schema` rows answer new lists of issues with `fresh` alone). The check counts no work | `Check.checkWordedTwice`, in `wordedContract` | §4.4, §6 rule 10 |
+| a summary location of a worded row's result that is not `twice` holds only sources that a word puts there at stated positions: the same place for `returned`, `builderdone`, `copyof`, `concatenated` and `prepended`'s list; an element location for `stored` beside a `written returned` parameter and `prepended`'s item; every location for an `exclusive` row's new cells; and a row without `exclusive` (or a cell's handle) names one site for all its new cells. It reads the words again, word by word, apart from the code that marked the locations. With the `twice` of a row turned off (research report 156's fault), the first program the gates build panics (core's `Schema` rows answer new lists of issues with `fresh` alone). The check counts no work | `Check.checkWordedTwice`, in `wordedContract` | §4.4, §6 rule 10 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 
 ## 10. What the kernel costs
