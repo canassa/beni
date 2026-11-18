@@ -36,7 +36,7 @@ Kernel §4.4, *A worded row builds no run*: each summary location of a row's res
 `twice`, unless a word states the positions of what it puts there (`Check.statesPositions`). Rule 10: a
 `fresh` row's locations are one site, `0`; `fresh exclusive` and a cell's handle keep one site each. Safe
 builds read the words again, word by word (`Check.checkWordedTwice`, §9): with the `twice` turned off, or
-the sites split, the first program the gates build panics.
+the sites split, the first program checked under `--ownership=v3` panics (`run/PatternPartsApart` was tried).
 
 ## 3. Where "once" was assumed with no run
 
@@ -47,7 +47,7 @@ the sites split, the first program the gates build panics.
 | a page's model made by such a row in `init` | `update`'s pattern parts apart | refused (`unknown`) |
 | a walked body, a literal, `partDup` | derived from runs | unchanged |
 | `Js` casts (`Js.array`, `Js.object`, `Js.to` of a row's `fresh Js.Value`), a `fresh a` read as a list, `elementof a` read as a list of lists | refused (§3.4: a summary below a wide entry is no single place) | unchanged |
-| a cell's contents (`lent`, `cellread`), `Task`/`Deferred` rows | pessimistic row | `twice` too |
+| a cell's contents (`lent`, `cellread`), `Task`/`Deferred` rows | pessimistic row | `twice` too (by the code; not probed) |
 | another module, a generic wrapper, a callback (`List.map`), a record field, a nested list, `Dict.values` | the callee's `twice` read at the call | carries the row's `twice` |
 
 ## 4. What the fix reads, and what it leaves
