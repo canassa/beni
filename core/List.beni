@@ -256,7 +256,7 @@ compareFrom a i b j =
 --|
 --| A copy up to 256 elements; above, near O(1) after one O(n) conversion
 --| per list.
-pub set : written returned List a, borrowed Int, stored a → List a
+pub set : written returned List a, borrowed position Int, stored a → List a
 set xs i v = Js.pure λ⊤ →
     n = length xs
     if outside i n then
@@ -445,7 +445,7 @@ swap xs i j =
 --| of range it would read `undefined` as a value of any type, which is why
 --| it is not `pub` (`backend.md` §4). The code generator imports it for a
 --| list pattern's elements.
-unsafeGet : borrowed List a, borrowed Int → elementof a
+unsafeGet : borrowed List a, borrowed position Int → elementof a
 unsafeGet xs i = Js.pure λ⊤ →
     v = Js.from xs
     if isPlain v then

@@ -86,7 +86,7 @@ tests/platforms/page/runtime.js              Page.run                 94db922d68
 # `Deferred`, each worded beside its type (R-5.10.8), and the pinned
 # `sortWith` row with the helpers its body runs [O 2026-10-26].
 core/List.beni                List.append         6e39f6d0822a5711c55490f1af9c28f48d9406020dbfd9fdd9b8d263eecc9f14
-core/List.beni                List.set            9f93fd9937b4c6ab335fa31ed78e8806ba643b081c4f034b5d451e8da9b347d9
+core/List.beni                List.set            da4956db5a7b3aa2902254dd790e01580d29e8adbee25de191052d42730b414a
 core/List.beni                List.push           2170601ff25beadcb284fcde4d942dc9646300cf7f53795fac00a5e7ad681af2
 core/List.beni                List.pop            9eed252fc467416fb0eae7e896899864320851572d47fb1a150b9a97da36fef0
 core/List.beni                List.insertAt       e85544e8292143165cd9627aac47c4eed1a9f5c4d099b679dc2bf9a9cc5ad52b
@@ -262,7 +262,7 @@ core/List.beni                List.flatHead       d0492c898af706767bf565e1b2e5c6
 core/List.beni                List.flatTree       f6830376677670d5e6fc72ed46ce281c703176d2d516c455b970f643c3b765a1
 core/List.beni                List.copyTo         705002e88d04202788e469f625722809c16800c026a533f615797359d4e3a0b6
 core/List.beni                List.outside        0594d03e19da6c6293ae524e0143cf29eafd9a36a0d7bcde586add1e96ba3ee5
-core/List.beni                List.unsafeGet      6408f56503e532c9cc8dbc5d5be617c6662b82ec60cdb90addcc7ca3eae68149
+core/List.beni                List.unsafeGet      5b80345c2f1743091c69bfabe9476def1723de286662feb2d4626c23d1c42c59
 core/List.beni                List.trieSet        4cd662e6be3cbc64a1218ff95e1001b411315599be9fc06c32e8751ec12fd13f
 core/List.js                  List.at             718de89caa80d73751fbec4b523d6a71a63100d7a8f1a7c7aded3796c827c80a
 core/List.beni                List.fromPlain      530f3b09f32cd999fdec18f474cf5420d60edef5c307504ca98847aa95053292

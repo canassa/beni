@@ -1867,6 +1867,25 @@ pub const Mod = struct {
         // that no word describes: the pessimistic row (`undescribed`).
         const pessimistic = pessimisticRow(rw) or !described;
         if (pessimistic) try m.undescribed(c, res, sig.result, has(rw, .unknown));
+        // `position` on parameter `q` (kernel §6 rule 10, *A position*): an
+        // element that `elementof` answers is the one at the position `q`
+        // names, and where parameter 0 is `written returned` beside a `stored`
+        // value, the result's other elements are parameter 0's at the other
+        // positions. Only where the words read parameter 0 as a list whole:
+        // a row that casts, places a location anywhere or is pessimistic says
+        // no position.
+        if (!pessimistic and !c.casts and !c.nonlinear and arity > 0) if (positionParam(m.bir.ownSlotsV3(d), arity)) |q| {
+            const stores = for (pw, 0..) |w, j| {
+                if (j != 0 and has(w, .stored)) break true;
+            } else false;
+            const at = has(rw, .elementof) and !has(rw, .taken);
+            const other = !at and has(pw[0], .written) and has(pw[0], .returned) and stores;
+            if (at or other) if (try m.loc.proj(sig.params[0], Step.elem)) |pr| {
+                for (res) |*r| for (r.items) |*s| if (s.kind == .param and s.a == 0 and std.mem.indexOfScalar(u32, pr.up, s.e) != null) {
+                    s.p = Src.posOf(q, if (at) 0 else 1);
+                };
+            };
+        };
         // A worded row builds no run (kernel §4.4): no part is tested against
         // another, so nothing derives that a cell is at one place of a summary
         // location of its result. Each such location that holds a cell is
@@ -1949,6 +1968,14 @@ pub const Mod = struct {
                 return m.oneStore(sig, pw, j, ri, sig.vars[j]);
             },
         }
+    }
+
+    /// The parameter that the word `position` stands on (`Bir.ownSlotsV3`,
+    /// kernel §6 rule 10), or null: lowering keeps at most one, after the
+    /// first parameter.
+    fn positionParam(slots: []const [2]u32, arity: u32) ?usize {
+        for (slots) |s| if (s[0] != 0 and s[0] < arity and s[1] & Ast.OwnWord3.position.bit() != 0) return s[0];
+        return null;
     }
 
     /// A row whose result comes from behind a cell or from JavaScript: the
@@ -2866,7 +2893,11 @@ pub const Mod = struct {
         for (srcs) |s| switch (s.kind) {
             .fresh => w.print(" fresh{d}{s}", .{ s.a, if (s.e != 0) "!" else "" }) catch return error.OutOfMemory,
             .outside => w.writeAll(" outside") catch return error.OutOfMemory,
-            .param => w.print(" π{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory,
+            .param => {
+                w.print(" π{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory;
+                // At the position parameter `q` names (`[πq]`), or at the others (`[≠πq]`).
+                if (s.p != 0) w.print("[{s}π{d}]", .{ if ((s.p - 1) % 2 == 0) "" else "≠", (s.p - 1) / 2 + 1 }) catch return error.OutOfMemory;
+            },
             .answer => w.print(" answer{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory,
             .twice => w.writeAll(" twice") catch return error.OutOfMemory,
         };

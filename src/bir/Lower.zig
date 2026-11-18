@@ -191,6 +191,9 @@ own_slot: u32 = no_own_slot,
 sig_root: u32 = no_own_slot,
 /// The words met while lowering one signature: position, word, token.
 own_seen: std.ArrayList([3]u32) = .empty,
+/// The words only the ownership checker v3 reads (`Ast.OwnWord3`), met
+/// while lowering one signature: position, word, token.
+own3_seen: std.ArrayList([3]u32) = .empty,
 /// The current declaration's spread chains (`Bir.Spread`, three words
 /// each), written to `extra` when the declaration is done.
 spreads: std.ArrayList(u32) = .empty,
@@ -406,6 +409,7 @@ pub fn lower(
         l.type_param_index.deinit(scratch);
         l.annotation_vars.deinit(scratch);
         l.own_seen.deinit(scratch);
+        l.own3_seen.deinit(scratch);
         l.spreads.deinit(scratch);
         l.rows.deinit(scratch);
         scratch.free(l.decl_stamp);
@@ -2177,11 +2181,13 @@ fn typeFnArity(l: *const Lower, inst: Index) u32 {
 /// erased from the type itself.
 fn lowerSignature(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     l.own_seen.clearRetainingCapacity();
+    l.own3_seen.clearRetainingCapacity();
     l.sig_root = node.int();
     const t = try l.lowerRootType(node);
     l.sig_root = no_own_slot;
     l.own_slot = no_own_slot;
     if (l.own_seen.items.len != 0) try l.recordOwnWords(t);
+    if (l.own3_seen.items.len != 0) try l.recordOwnWords3(t);
     return t;
 }
 
@@ -2387,6 +2393,66 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
     }
 }
 
+/// The words `own3_seen` holds (`Ast.OwnWord3`, `ownership-v3-kernel.md` §6
+/// rule 10, *A position*), checked against their positions and the
+/// signature's other words, and kept in the v3 column
+/// (`Bir.Decl.own3_start`). The other words are recorded already
+/// (`recordOwnWords`) and are not touched: v1 and v2 read the signature as
+/// before. `position` stands on one parameter after the first, a value, in a
+/// signature whose first parameter is a list the words read: the result is
+/// `elementof` it, or it is `written returned` beside a `stored` parameter.
+/// A refused word is reported and dropped.
+fn recordOwnWords3(l: *Lower, t: Index) Allocator.Error!void {
+    const seen = l.own3_seen.items;
+    if (!l.options.core and !l.options.platform) {
+        // One message per signature: `recordOwnWords` gave it already.
+        if (l.own_seen.items.len != 0) return;
+        return l.reportOwn(seen[0][2], .own_outside_platform);
+    }
+    const W = Ast.OwnWord;
+    const d = &l.decls.items[l.cur_decl];
+    // The signature's other words, as recorded.
+    const recorded = if (d.own2_end != d.own2_start) l.extra.items[d.own2_start..d.own2_end] else l.extra.items[d.own_start..d.own_end];
+    var first: u32 = 0;
+    var result: u32 = 0;
+    var stored = false;
+    var at: usize = 0;
+    while (at + 1 < recorded.len) : (at += 2) {
+        if (recorded[at] == 0) first = recorded[at + 1];
+        if (recorded[at] == Bir.own_result) result = recorded[at + 1];
+        if (recorded[at] != 0 and recorded[at] != Bir.own_result and recorded[at + 1] & W.stored.bit() != 0) stored = true;
+    }
+    const container = (result & W.elementof.bit() != 0) or
+        (first & W.written.bit() != 0 and first & W.returned.bit() != 0 and stored);
+    const is_fn_type = l.insts.items(.tag)[t.int()] == .type_fn;
+    const arity = l.typeFnArity(t);
+    const mark = l.scratchMark();
+    defer l.shrinkScratch(mark);
+    var kept: u32 = 0;
+    for (seen) |s| {
+        const slot = s[0];
+        const ok = blk: {
+            if (!container or !is_fn_type or slot == Bir.own_result or slot == 0 or slot >= arity) break :blk false;
+            const at_ = l.insts.items(.data)[t.int()].lhs;
+            const param_type = l.extra.items[l.extra.items[at_] + slot];
+            if (l.insts.items(.tag)[param_type] == .type_fn) break :blk false;
+            break :blk kept == 0;
+        };
+        if (!ok) {
+            try l.reportOwn(s[2], .own_position_word);
+            continue;
+        }
+        kept += 1;
+        try l.pushScratch(slot);
+        try l.pushScratch(@as(Ast.OwnWord3, @fromBackingInt(@intCast(s[1]))).bit());
+    }
+    const pairs = l.scratchSince(mark);
+    if (pairs.len == 0) return;
+    d.own3_start = @intCast(l.extra.items.len);
+    try l.extra.appendSlice(l.gpa, pairs);
+    d.own3_end = @intCast(l.extra.items.len);
+}
+
 /// The roles v2's words fix by position (ownership-v2.md §2.13.6's table):
 /// a cell operation is parameter 1's, what it stores or the callback it
 /// runs parameter 2's, and a result word that reads parameter 1 needs the
@@ -2540,7 +2606,9 @@ fn lowerType(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         // without it. One where no position takes it is `nested`.
         .type_own => {
             if (own_slot != no_own_slot) {
-                try l.own_seen.append(l.scratch_allocator, .{ own_slot, @backingInt(Ast.OwnWord.inSignature(l.tokenText(main_token)).?), main_token });
+                if (Ast.OwnWord3.inSignature(l.tokenText(main_token))) |w3| {
+                    try l.own3_seen.append(l.scratch_allocator, .{ own_slot, @backingInt(w3), main_token });
+                } else try l.own_seen.append(l.scratch_allocator, .{ own_slot, @backingInt(Ast.OwnWord.inSignature(l.tokenText(main_token)).?), main_token });
                 l.own_slot = own_slot;
             } else {
                 try l.diagnostics.append(l.gpa, .{ .code = .misplaced_ownership_word, .start = l.starts[main_token], .end = l.tokenEnd(main_token), .markup = .own_nested });

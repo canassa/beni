@@ -57,6 +57,19 @@ pub keepAll : borrowed List a → copyof List a
 keepAll xs = List.copy xs
 ```
 
+The ownership checker v3 reads one more word, `position`. It goes in front
+of one parameter after the first, a value, and says that the parameter names
+one position of the list in the first parameter. The element that
+`elementof` gives is the element at that position. A `stored` value next to
+a `written returned` first parameter replaces the element at that position:
+`set : written returned List a, borrowed position Int, stored a → List a`.
+At another place it causes `misplaced_ownership_word`.
+
+```beni refused=misplaced_ownership_word
+pub pick : borrowed List a, borrowed position Int → Int
+pick xs i = i
+```
+
 
 ## Raise the ownership summary size
 
@@ -91,4 +104,4 @@ pub small : List Int
 small = [ 1 ]
 ```
 
-Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4.
+Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4; `docs/design/ownership-v3-kernel.md` §6 rule 10.

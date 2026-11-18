@@ -46,6 +46,15 @@ pub const Src = struct {
     kind: Kind,
     a: u16 = 0,
     e: u16 = 0,
+    /// A `param` source whose cells are at positions of the list that
+    /// parameter `a` is (kernel §6 rule 10, *A position*): 0 for none, else
+    /// `1 + 2·q + k`, where parameter `q` names one position of that list
+    /// and `k` is 0 for the element at it, 1 for every other element. A
+    /// caller reads the cells of its argument there at those positions of
+    /// its own match for the argument and the index (`Frame.posKey`). A
+    /// reader that does not read it reads the cells with no position: the
+    /// pessimistic side.
+    p: u8 = 0,
 
     pub const Kind = enum(u8) { outside, fresh, param, answer, twice };
     pub const outside: Src = .{ .kind = .outside };
@@ -55,8 +64,14 @@ pub const Src = struct {
         return .{ .kind = .fresh, .a = @intCast(@min(k, std.math.maxInt(u16))), .e = @intFromBool(escaped) };
     }
 
+    /// `p` for parameter `q` and position `k` (0 or 1), or 0 when `q` cannot be named.
+    pub fn posOf(q: usize, k: u32) u8 {
+        if (q >= 127) return 0;
+        return @intCast(1 + 2 * q + k);
+    }
+
     pub fn key(s: Src) u64 {
-        return (@as(u64, @backingInt(s.kind)) << 32) | (@as(u64, s.a) << 16) | s.e;
+        return (@as(u64, s.p) << 40) | (@as(u64, @backingInt(s.kind)) << 32) | (@as(u64, s.a) << 16) | s.e;
     }
     pub fn eql(x: Src, y: Src) bool {
         return x.key() == y.key();

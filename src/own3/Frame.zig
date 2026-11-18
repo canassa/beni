@@ -439,6 +439,12 @@ built_parted: std.AutoHashMapUnmanaged(Val, bool) = .empty,
 /// of those escapes. Escapes only grow, so the answer for the escapes tested
 /// stands (kernel §8).
 fresh_esc: std.AutoHashMapUnmanaged([3]u32, [3]u32) = .empty,
+/// The matches of the positions of a `get` and a `set` (`posKey`, kernel §6
+/// rule 10, *A position*): by the list (its root, path and position) and the
+/// index local, and each match with its key, in the order made (`posSrc`
+/// scans them: a frame makes few).
+pos_keys: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
+pos_info: std.ArrayList([5]u32) = .empty,
 /// The atoms of the write in judgement, grouped by root and entry, when
 /// there are more than `w_index_min` of them (`indexWrite`).
 w_ix: WIndex = .{},
@@ -3530,26 +3536,82 @@ fn listParts(f: *Frame, v: Val, n: usize) Error!u32 {
     const node_v = f.nodes.items[v];
     if (node_v.tag != .ref) return none;
     if (n >= (1 << pos_bits)) return none;
-    const r = f.roots.items[node_v.a];
+    if (!try f.holdsEachOnce(node_v.a)) return none;
+    return f.newMatch();
+}
+
+/// Whether root `root` holds each cell once (kernel §4.4): a parameter, by
+/// the apart-arguments rule, or a root the frame made that is `linear` with
+/// no `twice` entry. No other root has the claim.
+fn holdsEachOnce(f: *Frame, root: u32) Error!bool {
+    const r = f.roots.items[root];
     switch (r.kind) {
-        .param => {},
+        .param => return true,
         .local => {
             // Not decided yet is no.
-            if (r.linear != .yes) return none;
+            if (r.linear != .yes) return false;
             const len = f.m.loc.layouts.items[r.layout].len;
             // The scan of the root's entries is work (kernel §8).
-            if (f.charge(Loc.scanUnits(len))) return none;
-            for (f.rents.items[r.ent..][0..len]) |ent| if (ent.twice) return none;
+            if (f.charge(Loc.scanUnits(len))) return false;
+            for (f.rents.items[r.ent..][0..len]) |ent| if (ent.twice) return false;
+            return true;
         },
         // No claim that a cell is at one place of it.
-        .capture, .answer, .fresh, .outside => return none,
+        .capture, .answer, .fresh, .outside => return false,
     }
-    // Past the matches a position can name, no position (the pessimistic side).
+}
+
+/// A new match, or `none` past the matches a position can name (the pessimistic side).
+fn newMatch(f: *Frame) u32 {
     if (f.m.next_match >= (none >> pos_bits)) return none;
     const match = f.m.next_match;
     f.m.next_match += 1;
     return match;
 }
+
+/// The match of the positions of the list `v` that the index local of
+/// instruction `idx` names (kernel §6 rule 10, *A position*): position 0 is
+/// the element at that index (`pos_at`), position 1 every other element
+/// (`pos_other`). One match for each list and local in the frame, so a
+/// `get` and a `set` at one index of one list read one match. The list is
+/// a part of a root at a location that names one value (no element step or
+/// deep level on the way: `Loc.Entry.single`), and with the position it was
+/// read at, if any (a list pattern's spread is a view of other indices than
+/// its list's); the root holds each cell once (`holdsEachOnce`); the index is
+/// a local this frame bound, which a frame binds once. Else `none`.
+fn posKey(f: *Frame, v: Val, idx: u32) Error!u32 {
+    if (idx == none or v == v_none or v == v_outside) return none;
+    const m = f.m;
+    if (m.tags[idx] != .local) return none;
+    const local = m.datas[idx].lhs;
+    if (m.lframe[f.d.locals_start + local] != f.id) return none;
+    const n = f.nodes.items[v];
+    if (n.tag != .ref) return none;
+    if (!try f.holdsEachOnce(n.a)) return none;
+    const r = f.roots.items[n.a];
+    const p = m.loc.paths.items[n.b];
+    const pes = m.loc.layoutEntries(try m.loc.layoutOf(p.place));
+    // The scan of the part's layout and of the root's is work (kernel §8).
+    if (f.charge(Loc.scanUnits(pes.len))) return none;
+    const self = for (pes, 0..) |pe, k| {
+        if (pe.loc == 0) break k;
+    } else return none;
+    const re = p.to_root[self];
+    if (re == none or !m.loc.layoutEntries(r.layout)[re].single) return none;
+    const key: [4]u32 = .{ n.a, n.b, n.pos, local };
+    const got = try f.pos_keys.getOrPut(f.gpa, key);
+    if (got.found_existing) return got.value_ptr.*;
+    const match = f.newMatch();
+    got.value_ptr.* = match;
+    if (match != none) try f.pos_info.append(f.gpa, .{ match, key[0], key[1], key[2], key[3] });
+    return match;
+}
+
+/// The position of a `get` (`elementof` with `position`) in its match.
+const pos_at: u32 = 0;
+/// The positions of the other elements of a `set` (`returned` beside
+/// `stored`, with `position`) in its match.
+const pos_other: u32 = 1;
 
 /// `part`, read at position `k` of match `match` (`listParts`): a part of a
 /// root, the same part with the position; any other value as it is.
@@ -5489,7 +5551,7 @@ fn atomSrcsIn(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
         const r = f.roots.items[x.root];
         switch (r.kind) {
             .outside => try out.append(f.gpa, Src.outside),
-            .param, .capture => try out.append(f.gpa, .{ .kind = .param, .a = @intCast(r.index), .e = @intCast(x.e) }),
+            .param, .capture => try out.append(f.gpa, .{ .kind = .param, .a = @intCast(r.index), .e = @intCast(x.e), .p = try f.posSrc(x) }),
             .answer => try out.append(f.gpa, .{ .kind = .answer, .a = @intCast(f.roots.items[f.drafts.items[r.index].root].index), .e = @intCast(x.e) }),
             // A cell a callee made is a cell this frame made, for its caller.
             .fresh => try out.append(f.gpa, try f.freshSrc(x)),
@@ -5511,6 +5573,32 @@ fn atomSrcsIn(f: *Frame, a: Atom, out: *std.ArrayList(Src)) Error!void {
             },
         }
     }
+}
+
+/// `Src.p` of a parameter's atom `x` (kernel §6 rule 10, *A position*): the
+/// atom was read at a position of a match of `posKey` whose list is that
+/// parameter whole, read at no position, whose index is the local that
+/// another parameter's pattern binds, and the atom is at or below an element
+/// of that list. Then its caller can read it at the same position of its own
+/// arguments. Else 0.
+fn posSrc(f: *Frame, x: Atom) Error!u8 {
+    if (x.pos == none or f.pos_info.items.len == 0) return 0;
+    // The scan of the frame's matches is work (kernel §8).
+    if (f.charge(Loc.scanUnits(f.pos_info.items.len))) return 0;
+    const key = for (f.pos_info.items) |k| {
+        if (k[0] == x.pos >> pos_bits) break k[1..5].*;
+    } else return 0;
+    const r = f.roots.items[x.root];
+    if (key[0] != x.root or r.kind != .param or key[1] != r.path or key[2] != none) return 0;
+    const pr = (try f.m.loc.proj(r.place, Step.elem)) orelse return 0;
+    // The scans are work (kernel §8).
+    if (f.charge(Loc.scanUnits(pr.up.len) + f.params.items.len)) return 0;
+    if (std.mem.indexOfScalar(u32, pr.up, x.e) == null) return 0;
+    for (f.params.items, 0..) |root, q| {
+        const pat = f.roots.items[root].inst;
+        if (pat != none and f.m.tags[pat] == .pat_var and f.m.datas[pat].lhs == key[3]) return Src.posOf(q, x.pos & ((1 << pos_bits) - 1));
+    }
+    return 0;
 }
 
 /// The source of the own cell that atom `a` names: its allocation site in
@@ -6259,7 +6347,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // sources are two cells have no ground: no two locations of the result
     // are apart, and a summary location fed by two sources, or by an
     // answer, is `twice`.
-    const args_apart = try f.argsApart(args) and !try f.argsSplit(args, c);
+    const args_apart = try f.argsApartAt(args, c, arg_insts) and !try f.argsSplit(args, c);
     const root = try f.newRoot(.local, place, inst);
     f.roots.items[root].call = true;
     const ent0 = f.roots.items[root].ent;
@@ -6860,6 +6948,82 @@ fn argsApart(f: *Frame, args: []const Val) Error!bool {
     return try f.runsApart(buf.items, runs.items);
 }
 
+/// `argsApart` for a call of contract `c`: where the contract reads a list
+/// parameter only at the positions other than the one another parameter
+/// names (`positionedParam`, kernel §6 rule 10, *A position*: `set`'s list
+/// beside its stored value), its element at that position is in no part of
+/// the result, and the callee's claims about the result do not rest on it.
+/// So the argument's elements are read at the other positions of the match
+/// of the argument and the index (`posKey`): a stored value that holds the
+/// element the call replaces is apart from them.
+fn argsApartAt(f: *Frame, args: []const Val, c: *const Contract, arg_insts: []const Inst.Index) Error!bool {
+    var buf: std.ArrayList(Atom) = .empty;
+    defer buf.deinit(f.gpa);
+    var runs: std.ArrayList([2]u32) = .empty;
+    defer runs.deinit(f.gpa);
+    for (args, 0..) |v, j| {
+        const match = if (j < c.arity) if (positionedParam(f.m, c, j)) |q| (if (q < args.len and q < arg_insts.len) try f.posKey(v, arg_insts[q].int()) else none) else none else none;
+        if (match == none) {
+            if (!try f.partsOf(v, &buf, &runs, 0)) return false;
+            continue;
+        }
+        // `posKey` read `v` as a part of a root that holds each cell once.
+        const n = f.nodes.items[v];
+        const m = f.m;
+        const es = m.loc.layoutEntries(try m.loc.layoutOf(n.place));
+        const pr = (try m.loc.proj(n.place, Step.elem)) orelse {
+            if (!try f.partsOf(v, &buf, &runs, 0)) return false;
+            continue;
+        };
+        // The scan of the layout is work (kernel §8).
+        _ = f.charge(Loc.scanUnits(es.len) + pr.up.len);
+        var elems: std.ArrayList(u32) = .empty;
+        defer elems.deinit(f.gpa);
+        var rest: std.ArrayList(u32) = .empty;
+        defer rest.deinit(f.gpa);
+        for (0..es.len) |e| {
+            if (std.mem.indexOfScalar(u32, pr.up, @intCast(e)) != null) try elems.append(f.gpa, @intCast(e)) else try rest.append(f.gpa, @intCast(e));
+        }
+        const start: u32 = @intCast(buf.items.len);
+        if (elems.items.len != 0) _ = try f.leavesOwn(v, elems.items, &buf);
+        for (buf.items[start..]) |*a| if (a.root != 0) {
+            a.pos = match << pos_bits | pos_other;
+        };
+        if (rest.items.len != 0) _ = try f.leavesOwn(v, rest.items, &buf);
+        if (buf.items.len != start) try runs.append(f.gpa, .{ start, @intCast(buf.items.len) });
+    }
+    return try f.runsApart(buf.items, runs.items);
+}
+
+/// The parameter `q` whose position parameter `j`'s list is read beside
+/// (kernel §6 rule 10, *A position*), where contract `c` holds parameter
+/// `j` in its result and its supplies only at its storage (the location of
+/// its root) and at its elements at the positions other than `q`'s
+/// (`Src.p`), and at some such element. Else null.
+fn positionedParam(m: *Mod, c: *const Contract, j: usize) ?usize {
+    var q: ?usize = null;
+    const pes = m.loc.layoutEntries(c.layouts[j]);
+    const Scan = struct {
+        fn one(srcs: []const Src, jj: usize, es: []const Loc.Entry, at: *?usize) bool {
+            for (srcs) |s| {
+                if (s.kind != .param or s.a != jj) continue;
+                if (s.p == 0) {
+                    if (s.e >= es.len or es[s.e].loc != 0) return false;
+                    continue;
+                }
+                if ((s.p - 1) % 2 != pos_other) return false;
+                const sq: usize = (s.p - 1) / 2;
+                if (at.*) |x| if (x != sq) return false;
+                at.* = sq;
+            }
+            return true;
+        }
+    };
+    for (c.res) |srcs| if (!Scan.one(srcs, j, pes, &q)) return null;
+    for (c.fns) |fo| if (fo) |g| for (g.supply) |srcs| if (!Scan.one(srcs, j, pes, &q)) return null;
+    return q;
+}
+
 /// Whether an argument is read at its parameter's layout through a wide
 /// entry of its own that stands for two locations of the parameter, or for
 /// a summary location (`Loc.holes`, kernel §3.4): the callee sees one cell
@@ -7072,6 +7236,8 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
                     if (st.typed and args[s.a] == v_outside and ai != none and try f.layoutLen(try f.m.placeOfInst(ai)) == 0) continue;
                     if (try f.pairedLeaves(args[s.a], ai, c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
                     if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
+                    // At positions of the argument's list (kernel §6 rule 10, *A position*).
+                    if (s.p != 0) try f.atPositions(base, s, before);
                 }
             },
             .twice => st.twice = true,
@@ -7123,6 +7289,22 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
         }
         if (alternatives(c, x.src, y.src)) continue;
         if (f.dupOverlap(f.atoms.items[x.start..x.end], f.atoms.items[y.start..y.end])) st.twice = true;
+    };
+}
+
+/// The atoms `f.atoms[from..]` of a source at positions of its argument's
+/// list (`Src.p`, kernel §6 rule 10, *A position*): each is read at that
+/// position of the match of the argument and the index argument (`posKey`).
+/// Where the two name no match, the atoms keep what they were read at.
+fn atPositions(f: *Frame, base: *const Use, s: Src, from: usize) Error!void {
+    const q = (s.p - 1) / 2;
+    const k: u32 = (s.p - 1) % 2;
+    if (s.a >= base.args.len or q >= base.args.len or q >= base.site.arg_insts.len) return;
+    const match = try f.posKey(base.args[s.a], base.site.arg_insts[q].int());
+    if (match == none) return;
+    _ = f.charge(f.atoms.items.len - from);
+    for (f.atoms.items[from..]) |*a| if (a.root != 0) {
+        a.pos = match << pos_bits | k;
     };
 }
 

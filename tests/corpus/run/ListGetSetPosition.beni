@@ -1,0 +1,74 @@
+-- `List.get` and then `List.set` at one index of one list replace the
+-- element that the `get` read (`ownership-v3-kernel.md` §6 rule 10, *A
+-- position*): `unsafeGet` and `set` say that their `Int` is a `position`,
+-- so the element read is at that position and `set`'s answer holds the
+-- list's other elements at the others. A copy of the element read
+-- (`Record.copy`) shares its `coord` record with it alone, and the element
+-- leaves the list, so the `coord` records of the new list are each at one
+-- place: `move` writes the first one in place, after a fold of `setOcc`
+-- (the shape of Sternhalma's `setOccupant`). Before, the list's `coord`
+-- records were `twice`, and v3 refused the fold.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias P =
+    x : Int
+
+
+type alias Cell =
+    coord : P
+    occ : Int
+
+
+type alias Board =
+    cells : List Cell
+
+
+setOcc : Int, Int, Board → Board
+setOcc index occ board =
+    case List.get board.cells index of
+        Just cell →
+            { board | cells = List.set board.cells index { Record.copy cell | occ = occ } }
+
+        Nothing →
+            board
+
+
+fill : List Int, Board → Board
+fill indices board = List.foldl indices board λi b → setOcc i (i + 1) b
+
+
+move : Board → Board
+move board =
+    case board.cells of
+        [ c, …rest ] →
+            p = c.coord
+            { board | cells = [ { c | coord = { p | x = p.x + 100 } }, …rest ] }
+
+        [] →
+            board
+
+
+show : Board → String
+show board =
+    String.join
+        (List.map board.cells λc → "${String.fromInt c.coord.x}/${String.fromInt c.occ}")
+        ","
+
+
+board0 : ⊤ → Board
+board0 ⊤ =
+    { cells =
+        [ { coord = { x = 1 }, occ = 0 }
+        , { coord = { x = 2 }, occ = 0 }
+        , { coord = { x = 3 }, occ = 0 }
+        ]
+    }
+
+
+main : Program
+main =
+    b = fill [ 0, 2 ] (board0 ⊤)
+    Node.print "${show b} ${show (move b)}"

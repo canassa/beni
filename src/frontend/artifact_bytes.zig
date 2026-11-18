@@ -139,7 +139,10 @@ pub const magic = "BENIFE\x00\x00";
 /// 29 (2026-11-04): remove the unreachable star_in_type parse construct.
 /// 30 (2026-11-05): `^^` (language.md §6.5) — `Token.Tag` gained
 /// `op_caret_caret` and `Ast.Node.Tag` `int_pow`, which shifted later tags.
-pub const format_version: u32 = 30;
+/// 31 (2026-11-18): a declaration row carries the v3 column
+/// `own3_start`/`own3_end` (`Ast.OwnWord3`, `ownership-v3-kernel.md` §6 rule
+/// 10), and lowering's `misplaced_ownership_word` has a new reading.
+pub const format_version: u32 = 31;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///
@@ -896,7 +899,7 @@ test "the row encoder's widths are the structures', with the padding gone" {
     // 110 since it carries the v2 column, two words, and the type word.
     // 118 since it carries its spread chains' range, two words.
     // 122 since it carries its raised ownership summary size, one word.
-    try testing.expectEqual(@as(u32, 122), rowBytes(Bir.Decl));
+    try testing.expectEqual(@as(u32, 130), rowBytes(Bir.Decl));
     // 21 since a constructor carries its `failure` mark.
     try testing.expectEqual(@as(u32, 21), rowBytes(Bir.Ctor));
     try testing.expectEqual(@as(u32, 9), rowBytes(Bir.Ref));

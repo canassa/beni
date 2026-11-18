@@ -707,6 +707,24 @@ pub const OwnWord = enum(u5) {
     }
 };
 
+/// The ownership words only the ownership checker v3 reads
+/// (`ownership-v3-kernel.md` §6 rule 10, *A position*): `Ast.OwnWord` is
+/// `enum(u5)` and full, and v1 and v2 must read every signature as before,
+/// so lowering keeps these in a column of their own (`Bir.Decl.own3_start`),
+/// beside the signature's other words, which stay where they were.
+pub const OwnWord3 = enum(u5) {
+    /// The parameter names one position of the list that parameter 0 is.
+    position,
+
+    pub fn inSignature(text: []const u8) ?OwnWord3 {
+        return std.meta.stringToEnum(OwnWord3, text);
+    }
+
+    pub fn bit(w: OwnWord3) u32 {
+        return @as(u32, 1) << @backingInt(w);
+    }
+};
+
 /// The ownership words in front of a type declaration (ownership-v2.md
 /// §2.13.5, §2.13.6), contextual and core's and the platforms' alone:
 /// `sequence` before `foreign type` (storage of kind list, one `[*]` child

@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §6 rule 10 revised again the same day (research report 159). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -927,6 +927,58 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     returned` record states no position). Safe builds check what the marker did with that reading
     (`Check.checkWordedTwice`, §9). No row of `core/` or of a shipped
     platform changes a verdict (every demand of the 2 856 ownership roots has the verdict it had).
+
+    **A position** (research report 159, #2563). `List.get l i` … `List.set l i v` replaces the
+    element that the `get` read, and no word said so: `set : written returned List a, borrowed Int,
+    stored a → List a` is as true of `insertAt`, which keeps it, and no rule reads `set` by its name
+    (rule 11). The word **`position`** on parameter `q` says that `q` names one position of the list
+    that parameter 0 is: the element that `elementof` answers is the one at that position
+    (`unsafeGet : borrowed List a, borrowed position Int → elementof a`), and where parameter 0 is
+    `written returned` beside a `stored` parameter, the stored value goes into that position in
+    place of the element there, and the result's other elements are parameter 0's at the other
+    positions (`set : written returned List a, borrowed position Int, stored a → List a`). Only v3
+    reads it: it is kept in a column of its own (`Ast.OwnWord3`, `Bir.ownSlotsV3`), beside the
+    signature's other words, which stay in v1's or v2's column, so v1 and v2 read the row as before.
+    Lowering accepts it on one parameter after the first, a value, in a signature whose parameter 0
+    the words read so (`own_position_word`). The row marks each source of parameter 0 at or below
+    its element location (`Src.p`; the dump writes `π1@1[π2]` at the position and `π1@1[≠π2]` at the
+    others), unless the row casts, places a location at any place, or is pessimistic
+    (`Check.wordedContract`).
+
+    A caller reads such a source at the positions of a **match**, as a list pattern's parts
+    (§4.4): one match for each list and index local of the frame (`Frame.posKey`), whose position
+    0 is the element at the index and position 1 the others. The list is a part of a root that
+    holds each cell once (a parameter, or a `linear` root the frame made with no `twice` entry,
+    `holdsEachOnce`), at a location that names one value (no element step or deep level on the
+    way), read at the position of a list pattern it was read at, if any (a spread is a view of
+    other indices than its list's); the index is a local this frame bound, and a frame binds a
+    local once. So two calls of one match name one array at one index, and that array is the
+    same between them: a write of it in place is accepted only where nothing reads it after
+    (§5, test 4), and the second call reads it; a callee that writes it and answers it gives the
+    answer a new root, and so a new match. Two facts then hold. The element at the index is one
+    cell and the elements at the other positions are others, since the list holds each cell
+    once, so atoms at the two positions are apart (`posApart`). And the cells that `set` answers
+    at the other positions do not include the element it replaced. A walked body publishes the
+    mark where the list is one of its parameters, whole, and the index the local that another
+    parameter's pattern binds (`Frame.posSrc`): `List.get`'s answer is `#Just.0 π1@1[π2]`, and its
+    caller reads it at a match of its own arguments.
+
+    The apart-arguments rule (§4.4) at such a call: the stored value can hold parts of the element
+    that the call replaces (`{ Record.copy c | occ = 5 }` holds `c`'s `coord`), which the list holds
+    at the index, so the arguments are not apart. But the callee's claims about its result do not
+    rest on that element, which is in no part of the result. So where a contract holds a parameter
+    in its result and in its supplies only at its storage and at its elements at the other
+    positions (`Frame.positionedParam`), the argument's elements are read at the other positions
+    of its match when the arguments are tested (`argsApartAt`).
+
+    What it does not cover. `focus` (`List.update`) needs no position: its `taken` element and its
+    callback's stored answer are alternatives already (`alternatives`). A read of a list by such a
+    callee is a flag of the whole location, not of positions, so an element written in place
+    between the `get` and the `set` is still read by the `set`, and refused. An index computed
+    again (`i + 0`), or bound again to another local (`k = i`), names no match. A `Dict` has no
+    such row: its `get` and `insert` are walked bodies over a tree, and `insert` writes nothing in
+    place, so no `written returned` row describes it. *Before, Sternhalma's `setOccupant` answered
+    its board's `coord` records `twice`, and a fold of it was refused (#2532 item 4).*
 
     The words are shared: a signature with a word that only v2 and v3 read is kept in a column of its
     own, which v2 and v3 read and v1 does not; any other signature is in v1's column, which all three

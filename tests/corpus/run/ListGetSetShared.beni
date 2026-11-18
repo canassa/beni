@@ -1,0 +1,80 @@
+-- The live twin of `ListGetSetPosition`: a `get` at one index and a `set`
+-- at another (`copyTo`) put the copy of an element, whose `coord` record is
+-- the element's own, at a second position of the list, and a `set` into
+-- another list (`copyInto`) keeps the element read in its own list. Each
+-- position is of one list and one index local (`ownership-v3-kernel.md` §6
+-- rule 10, *A position*), so neither replaces the element it read: the
+-- `coord` record is at two places, and `move`'s write of it in place is
+-- refused, since the other place is read after.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias P =
+    x : Int
+
+
+type alias Cell =
+    coord : P
+    occ : Int
+
+
+type alias Board =
+    cells : List Cell
+
+
+copyTo : Int, Int, Board → Board
+copyTo from to board =
+    case List.get board.cells from of
+        Just cell →
+            { board | cells = List.set board.cells to { Record.copy cell | occ = 9 } }
+
+        Nothing →
+            board
+
+
+copyInto : Int, Board, Board → Board
+copyInto index source board =
+    case List.get source.cells index of
+        Just cell →
+            { board | cells = List.set board.cells index { Record.copy cell | occ = 7 } }
+
+        Nothing →
+            board
+
+
+move : Board → Board
+move board =
+    case board.cells of
+        [ c, …rest ] →
+            p = c.coord
+            { board | cells = [ { c | coord = { p | x = p.x + 100 } }, …rest ] }
+
+        [] →
+            board
+
+
+show : Board → String
+show board =
+    String.join
+        (List.map board.cells λc → "${String.fromInt c.coord.x}/${String.fromInt c.occ}")
+        ","
+
+
+board0 : ⊤ → Board
+board0 ⊤ =
+    { cells =
+        [ { coord = { x = 1 }, occ = 0 }
+        , { coord = { x = 2 }, occ = 0 }
+        , { coord = { x = 3 }, occ = 0 }
+        ]
+    }
+
+
+main : Program
+main =
+    b = copyTo 0 1 (board0 ⊤)
+    s = board0 ⊤
+    c = copyInto 0 s (board0 ⊤)
+    Node.print "${show (move b)} ${show (move c)} ${show s}"

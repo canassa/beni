@@ -990,6 +990,14 @@ pub fn ownSlotsV2(b: *const Bir, d: Decl) []const [2]u32 {
     return @as([*]const [2]u32, @ptrCast(words.ptr))[0 .. words.len / 2];
 }
 
+/// The words of declaration `d` that only the ownership checker v3 reads
+/// (`Ast.OwnWord3`), as `OwnSlot` pairs in position order: read beside
+/// `ownSlotsV2`, never in place of it.
+pub fn ownSlotsV3(b: *const Bir, d: Decl) []const [2]u32 {
+    const words = b.extra[d.own3_start..d.own3_end];
+    return @as([*]const [2]u32, @ptrCast(words.ptr))[0 .. words.len / 2];
+}
+
 /// A spread literal `[ x, …xs, y ]` as one fact (ownership-v2.md §2.13.2):
 /// `root` is the outermost `List.cons`/`List.append` call the literal
 /// lowered to, one per fact (`[ …xs ]` is `xs` and records none),
@@ -1078,6 +1086,14 @@ pub const Decl = struct {
     /// one only the ownership checker v2 reads. Empty otherwise.
     own2_start: u32 = 0,
     own2_end: u32 = 0,
+    /// The v3 column (`ownSlotsV3`): `OwnSlot` pairs in
+    /// `extra[own3_start..own3_end]` of the words only the ownership checker
+    /// v3 reads (`Ast.OwnWord3`, `ownership-v3-kernel.md` §6 rule 10), bit
+    /// `@intFromEnum(w)` of `Ast.OwnWord3`. The signature's other words stay
+    /// in v1's or v2's column, so v1 and v2 read it as before. Empty for
+    /// every declaration without one.
+    own3_start: u32 = 0,
+    own3_end: u32 = 0,
     /// `sequence`, `cell` or `sender` (`OwnKind`), else `none`.
     own_kind: OwnKind = .none,
     /// `@ownership_summary_size(n)` on this declaration (§4.4): its growth
@@ -1386,6 +1402,7 @@ pub fn verify(bir: *const Bir, token_count: u32) bool {
         // declaration.
         if (!inRange(d.own_start, d.own_end, bir.extra.len) or (d.own_end - d.own_start) % 2 != 0) return false;
         if (!inRange(d.own2_start, d.own2_end, bir.extra.len) or (d.own2_end - d.own2_start) % 2 != 0) return false;
+        if (!inRange(d.own3_start, d.own3_end, bir.extra.len) or (d.own3_end - d.own3_start) % 2 != 0) return false;
         if (!inRange(d.spreads_start, d.spreads_end, bir.extra.len) or (d.spreads_end - d.spreads_start) % 3 != 0) return false;
         for (bir.spreads(d)) |s| {
             if (s.root < d.inst_start.int() or s.root >= d.inst_end.int()) return false;
