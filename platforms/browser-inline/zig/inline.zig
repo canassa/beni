@@ -2161,7 +2161,7 @@ const Page = struct {
     }
 
     /// Whether key `key`'s command — or `init`'s, for null — runs; one that
-    /// may suspend, or that the pass could not read, is refused.
+    /// may suspend also runs; one the pass could not read is refused.
     fn command(pg: *Page, key: ?u32) m.Error!bool {
         const cx = pg.cx;
         switch (cx.programCommand(key)) {

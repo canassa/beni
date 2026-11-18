@@ -152,7 +152,7 @@ by its type — hides nothing: it is written exactly, and accepted.
 1. **Not compiled yet** (a compiler limit) — a construct a later slice of
    `plans/direct-rewrite.md` §5 adds (S1: events and holes beyond the one text binding; S2:
    `For`; S3: a `view`'s `let`s; S4: a set of subscriptions that changes — moved here from class 3
-   on 2026-10-17 — `Show`, branches; S6: the task kernel). The message says *"A limit of the
+   on 2026-10-17 — `Show`, branches). The message says *"A limit of the
    compiler: … does not compile … yet"* and what to write instead; it names no slice and no
    plan, which are this document's and not the user's.
    *Amended 2026-10-25 (S2's design pass, §9; not built):* S2's `For` is a `For` over a `Dict` that
@@ -843,7 +843,7 @@ R5 alone must never be treated as authority to retain an arbitrary source captur
 Ownership rejects sharing, payload edits, old whole holders, escapes and unknown origins with
 §31.9's existing record errors and explicit `Record.copy`/restructure fixes. A known valid shape
 whose retention or group projection the compiler cannot represent is §5 class 4; a construct
-reserved for a later slice is class 1 (or a suspending command class 2). The existing language
+reserved for a later slice is class 1 (class 2 no longer refuses a suspending command; *amended 2026-11-18*). The existing language
 rules, including undeclared exact `*` replacement of a multi-field model, remain class 3.
 No rejection selects `browser-tea`, spreads, polling or a broad pass automatically.
 
