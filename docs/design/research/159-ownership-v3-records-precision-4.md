@@ -3,7 +3,7 @@
 *Research report, 2026-11-18. The fourth lane of the records precision round of the checker v3
 (`--ownership=v3`, `src/own3/`): the walls research report 158 located, turned into wins. Issues #2563,
 #2564, #2532 (item 2) and #2550 (item 1). It revises kernel (`ownership-v3-kernel.md`) §4.4, §6 rules 10 and
-13, §8 and §9.*
+13, §8 and §9. The second review's fault is §5's, fixed (§9).*
 
 ---
 
@@ -22,7 +22,11 @@
   which had no line (the module passed its budget). v3 refusals at positions v1 has no line for: 18 before and after.
 - **Verdicts on every ownership root** (§7): refused → accepted 2 lines (Sternhalma's `value <call List.foldl>`
   at 114:13, in two roots, now absent), absent → accepted 3; **accepted → refused 0**.
-- **Sweeps** (§8), **reviews** (§9), **timing** (§10).
+- **Sweeps** (§8): 90 320 programs under the four legs, the three known faults only.
+- **Reviews** (§9): the first found no fault; the second found one in §5 (a consumer's kept location taken away
+  after the taking away), fixed with a fixture (`browser/tea/EntrySwapKept`).
+- **Timing** (§10): `platforms/browser` takes longer, as its `Gpu` modules are now walked to the end.
+- The straight-line chains of writes the blind reader of report 158 added to #2534 are not made linear here.
 
 ## 2. A position (#2563)
 
@@ -123,7 +127,10 @@ any one of them. So the test is skipped where the contract says so; where it can
 holds it is another holder, as before.
 
 Fixtures: `browser/tea/EntrySwapArms` (refused on the base, `unknown`; accepted, the page `SAME`) and
-`browser/tea/EntrySwapShared` (an arm that answers `w` at both places: refused).
+`browser/tea/EntrySwapShared` (an arm that answers `w` at both places: refused). The second review found
+that the locations a consumer keeps were taken out of `own` after the taking away, so a location `update`
+answers from a kept one stayed `own`; the old test had hidden it. They are taken away first now
+(`browser/tea/EntrySwapKept`, §9).
 
 ## 6. Not built
 
@@ -152,15 +159,61 @@ last commit (six new fixtures), compared line by line (`core` dumped from the ba
 
 ## 8. Sweeps
 
-SWEEPS
+`run.mjs --checker=v3 --mode=both` with the ReleaseSafe compiler of the lane: every generator of the folder,
+the fault folders, `harvest-v2-records` and the corpus. The families from `precision-159` to `blind4a` ran on
+the compiler before the entry fix of §9 (which only refuses more), the rest on the last commit.
+
+| Sweep | Programs | SAME | REFUSED | LIMIT | Faults | Other |
+|---|---:|---:|---:|---:|---:|---|
+| `corpus` | 1 797 | 1 253 | 523 | 1 | 3 | 12 BOTHFAIL, 4 PLAINFAIL, 1 TIMEOUT |
+| `folds-callbacks` | 30 300 | 5 669 | 24 631 | 0 | 0 | |
+| `recursive-levels` | 16 131 | 3 869 | 12 262 | 0 | 0 | |
+| `blind` | 9 792 | 1 683 | 8 109 | 0 | 0 | |
+| `blind4b` | 6 596 | 1 350 | 5 244 | 2 | 0 | |
+| `aliased-arguments` | 5 160 | 1 270 | 3 890 | 0 | 0 | |
+| `precision-159` (`getset`, `rb`, `entry`) | 47 | 11 | 36 | 0 | 0 | every `live` refused |
+| 44 other sweeps and fault folders | 20 497 | 5 222 | 15 114 | 14 | 0 | 123 PLAINFAIL, 24 TIMEOUT |
+| **all** | **90 320** | 20 327 | 69 809 | 17 | **3** | 12 BOTHFAIL, 127 PLAINFAIL, 25 TIMEOUT |
+| the blind round's `arms` (#2550) | 200 | 200 | 0 | 0 | 0 | 58 refused on the base |
+| the second review's programs, on the fix | 357 | 70 | 284 | 0 | 0 | 3 PLAINFAIL |
+
+The three are the known `run/ListSanitiserTrieHolder` and `dom`/`tea` `ShowAndBranches` (#2504). Against report
+158, `blind4b` and `blind` give the same rows; `precision-159`'s dead twins won on this lane: `getset.same`,
+`.fold`, `.back`; `rb.distinct`, `.param`, `.replace`; `entry.swap`, `.rotate`, `.swapnested` (each refused on the
+base).
 
 ## 9. Reviews
 
-REVIEWS
+Two fresh adversarial readers (Opus), each told to write programs that the new rules accept and that trap or
+differ under the four legs.
+
+- **After §2 and §3** (about 470 programs: get then set with lists that hide a duplicate in 30 ways, views,
+  helpers that shift the index, sets between, folds; red-black trees with values at two keys, 75 mutants of
+  `insert`/`balance`, chains of 8 to 150 keys): **no fault**. Every unsafe twin refused; 14 safe programs newly
+  `SAME`. It noted that nothing seen from outside shows the duplicate test's `.all` path ran; safe builds test
+  every set of at most 64 atoms by tables alone (`checkShare`), so that path runs, and agrees, on every small set.
+- **At the end** (about 350 programs of its own, and a comparison of verdict lines between the compilers before
+  and after §4 and §5 over 1 564 programs): **one fault, in §5**, fixed. The entry rule took the model
+  locations a consumer keeps out of `own` after the taking away, so a location that `update` answers from a kept
+  one stayed `own`; the cross-arm test of "no other location" had hidden it. `Keep model.w` in a message of
+  `view`, `Swap`, then a write of `w2` in place: `TRAP` (records and lists, a swap or a plain move). Fixed by
+  reading the consumers first (kernel §6 rule 13, *What a consumer keeps is taken away before the taking away*);
+  fixture `browser/tea/EntrySwapKept` (accepted and trapping with the entry fix reverted; refused now). Its 357
+  programs rerun on the fix: no fault (the three fault programs refused). It found nothing against §4: the only
+  verdict differences between the compilers before and after §4 are §5's entry lines, and the safe-build checks
+  of `coverHits` and `slotHeld` did not fire. It also noted that a `REFUSED` verdict stops the oracle, so an
+  unsound acceptance beside a refusal in one program is seen only by a comparison of verdict lines.
 
 ## 10. Timing
 
-TIMING
+`bench/ownership-v2-review.mjs --checkers=v3 --runs=3 --jobs=1 --roots=real`, ReleaseFast LLVM compilers of the base
+and of the lane (before the entry fix, which changes one loop's order). **The machine ran a sweep at 24 jobs at
+the same time**, so the absolute figures are about 2.4 times report 158's; the two runs are comparable with each
+other only. v3 on the 33 real roots, `core` left out (the base cannot parse the lane's `core/` there): **3 151.8 →
+3 885.1 ms**. All of it is `platforms/browser`, **1 123.1 → 1 820.2 ms**: `Gpu.Batch`, `Gpu.Make`, `Gpu.Device` and
+`Gpu.Shader` are now walked to the end where a budget stopped each, and the modules after them read their
+contracts. Every other root is within ±40 ms (Conduit 311.5 → 274.6). A walk past a budget does none of this
+work, so the cost is of the modules judged, not of the rules.
 
 ## 11. Reproduce
 
