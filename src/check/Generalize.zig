@@ -595,8 +595,12 @@ fn foldOf(content: TypeStore.Content, group_rank: u32) Fold {
 const RankFrame = Walk.RankFrame;
 
 /// Elm's `adjustRank` without recursion. A young node is marked `visit`
-/// BEFORE its successors are walked, because the graph may be cyclic (a
-/// cycle's rank is read mid-walk, as Elm's recursion reads it).
+/// BEFORE its successors are walked, because the graph may be cyclic, and
+/// its rank is set to its group's at the same time. Elm reads a cycle's old
+/// rank mid-walk, but in Elm a cycle is an infinite type; here every method
+/// type rides back to its receiver through `owned` (§4.1), and a receiver
+/// reached from a lower bucket than its own would hand its old, higher rank
+/// to its method type (§39).
 ///
 /// A node's `owned` successors are pushed onto `stacks.rank_kids` when it is
 /// entered, last first, and entered one at a time as they are popped: the
@@ -654,11 +658,12 @@ fn enter(
     const mark = store.mark(root);
     if (mark != young_mark) return settled(store, root, mark, visit_mark, group_rank);
     store.setMark(root, visit_mark);
+    // Provisional: an `owned` successor that comes back to this node while it
+    // is still being walked reads its group's rank, not its pre-walk one.
+    // The frame's pop writes the final rank, which is no higher.
+    store.setRank(root, group_rank);
     const content = store.content(root);
-    if (isLeaf(content)) {
-        store.setRank(root, group_rank);
-        return group_rank;
-    }
+    if (isLeaf(content)) return group_rank;
     const fold = foldOf(content, group_rank);
     var max = fold.floor;
     const kids = &stacks.rank_kids;

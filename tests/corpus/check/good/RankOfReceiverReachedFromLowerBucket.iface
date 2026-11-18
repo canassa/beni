@@ -1,0 +1,6 @@
+module RankOfReceiverReachedFromLowerBucket
+  value belowAfterMap : List b → Bool !e1 where b.compare : b, b → Order !(e1 | sync)
+  value hasSize : { r | size : Maybe a } → Bool !e1 where a.eq : a, a → Bool !e1
+  value nested : List b → Bool !e1 where b.eq : b, b → Bool !(e1 | sync)
+  value sameAfterMap : List b → Bool !e1 where b.eq : b, b → Bool !(e1 | sync)
+  value twoMaps : List b → Bool !e1 where b.eq : b, b → Bool !(e1 | sync)
