@@ -1,0 +1,103 @@
+-- The live twin of `TreeInsertRebalanced`: one record inserted at two keys
+-- is at two places of the tree, so the tree's levels are no claim that its
+-- lists are apart (`ownership-v3-kernel.md` §4.4), and the push of the list at
+-- key 1, whose other place is read after, is refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    n : Int
+    xs : List Int
+
+
+type NColor
+    = Red
+    | Black
+
+
+type Tree
+    = Node NColor Int R Tree Tree
+    | Leaf
+
+
+insert : Tree, Int, R → Tree
+insert tree key value =
+    case tree of
+        Leaf →
+            Node Red key value Leaf Leaf
+
+        Node nColor nKey nValue nLeft nRight →
+            if key < nKey then
+                balance nColor nKey nValue (insert nLeft key value) nRight
+            else if key == nKey then
+                Node nColor nKey value nLeft nRight
+            else
+                balance nColor nKey nValue nLeft (insert nRight key value)
+
+
+balance : NColor, Int, R, Tree, Tree → Tree
+balance color key value left right =
+    case right of
+        Node Red rK rV rLeft rRight →
+            case left of
+                Node Red lK lV lLeft lRight →
+                    Node
+                        Red
+                        key
+                        value
+                        (Node Black lK lV lLeft lRight)
+                        (Node Black rK rV rLeft rRight)
+
+                _ →
+                    Node color rK rV (Node Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                Node Red lK lV (Node Red llK llV llLeft llRight) lRight →
+                    Node
+                        Red
+                        lK
+                        lV
+                        (Node Black llK llV llLeft llRight)
+                        (Node Black key value lRight right)
+
+                _ →
+                    Node color key value left right
+
+
+get : Tree, Int → Maybe R
+get tree k =
+    case tree of
+        Leaf →
+            Nothing
+
+        Node _ nk v l r →
+            if k < nk then
+                get l k
+            else if k == nk then
+                Just v
+            else
+                get r k
+
+
+pushAt : Tree, Int → List Int
+pushAt tree k =
+    case get tree k of
+        Just v →
+            List.push v.xs 9
+
+        Nothing →
+            []
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    r = { n = 1, xs = [ 1 ] }
+    t = insert (insert (insert Leaf 1 r) 2 { n = 2, xs = [ 2 ] }) 3 r
+    Node.print "${show (pushAt t 1)} ${show (Maybe.withDefault (Maybe.map (get t 3) λv → v.xs) [])}"

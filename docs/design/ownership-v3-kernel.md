@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §6 rule 10 revised again the same day (research report 159). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4 and §6 rule 10 revised again the same day (research report 159). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -608,6 +608,25 @@ saw as an opaque root: a pair of entries with one is tested by the caller's atom
 exception (`alternatives`): the answer of a function `g` and a parameter location the callee hands `g`
 `free` are alternatives, because a cell handed `free` is read by the callee no more, so it is in the answer
 or it stays, never both (the `taken` rows of `core/`).
+
+**Two readings through a later root** (research report 159, #2564). An atom records the first root the frame
+made that it was read through (`via`), and two of its readings are two cells where that root holds each cell
+once and they were read through two of its parts. A cell can then go through a second such root: a call's
+answer (`balance`'s, in a red-black tree's `insert`) that holds the answer of an earlier call (the recursive
+`insert`) at two of its entries, one in each arm. The second root's claim (`linear`: no cell is at two of its
+entries) says that its two entries hold two cells; but the atoms copied there name the first root, at one of
+its entries, so they were one cell, and the tree's deep level was `twice`. So an atom also records the last
+root it was read through and the entry (`Atom.via2`, `via2_e`, `copyAtoms`), and two readings are two cells
+where that root holds each cell once and the entries differ (`via2Apart`, read by `viaApart`). Each root's
+claim is about its own entries, so either one tells the readings apart. A part and a part below it in one
+entry are not told apart by the later root (the pessimistic side). The linear-time duplicate test (§8) keys
+its tables by the first root alone, so where an atom of another key that it finds is apart from the atom by
+the later root, it compares the atom with each atom of its group (`TablesShare.all`): the answer is the test
+in pairs', as before. *Before, a value taken out of a dictionary that `insert` built was refused (`element`),
+in a tree of a user's own type as in `core/`'s `Dict` (`run/TreeInsertRebalanced`; the live twin is
+`run/TreeInsertShared`).* What it does not cover: `core/`'s `Dict` read by a caller at an instance of `Dict k v`
+(`Dict Int R`), whose deep level the call map reads through the type variables as `Loc.all` (§4.1); every
+value of such a dictionary is still at both levels of the caller's reading.
 
 **The parts of a list pattern are apart** (research report 154, #2548). A list pattern `[ p₁, …, pₙ, …r ]`
 (the spread anywhere, or none) binds the items at n distinct positions of one list and, through its
@@ -1477,7 +1496,10 @@ paths:
   shallowest. Two atoms at comparable paths are one cell unless both were read through two apart parts
   of one root (`viaApart`), so one of the two kept is one cell with the atom whenever any atom there is.
   Atoms read through one part (`via`, `via_e`) have their own tables, and a pair found there is tested
-  for its `via_path`; when that fails, the atom is compared with each atom of its part. The largest run
+  for its `via_path`; when that fails, the atom is compared with each atom of its part. Two atoms of two
+  keys can still be two cells, read last through two entries of one later root (`via2Apart`, §4.4, *Two
+  readings through a later root*): where the atom found is apart from the atom so, the atom is compared
+  with each atom of its group (research report 159), each pair a unit as before. The largest run
   is taken last, and is only looked up. Each atom grouped, each path looked up or added to, is a lookup;
   each pair compared is a unit. A set of at most 64 atoms is tested in pairs as before, and a safe build
   checks there that `runsShare` answers the same, with its groups compared in pairs and with every group

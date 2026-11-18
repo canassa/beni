@@ -113,7 +113,12 @@ const Kid = struct { step: u32, val: Val };
 /// `pos`: the match of a list pattern and the position in it that the cell
 /// was read at (`listParts`, kernel §4.4, *The parts of a list pattern are
 /// apart*), or `none`: two atoms of one match at two positions are two cells.
-pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none, pos: u32 = none };
+/// `via2`, `via2_e`: the last root the frame made through which the cell was
+/// read, and the entry of it (`copyAtoms`); `via` is the first. A root that
+/// holds each cell once tells two of its entries apart whichever root an atom
+/// was first read through (`viaApart`; kernel §4.4, *Two readings through a
+/// later root*).
+pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none, pos: u32 = none, via2: u32 = none, via2_e: u32 = none };
 /// `outside`: root 0, the one root of every cell outside the frame (kernel
 /// §3.1). `fresh`: a cell a callee made, named by the call and the callee's
 /// allocation site (kernel §4.2); it has no layout and no value, only atoms.
@@ -820,8 +825,19 @@ fn dupOverlap(f: *const Frame, xs: []const Atom, ys: []const Atom) bool {
 /// a part and a part below it) are one cell: `[ a, a ]` with `a` read out of
 /// a list the frame made.
 fn viaApart(f: *const Frame, x: Atom, y: Atom) bool {
+    if (f.via2Apart(x, y)) return true;
     if (x.via == none or x.via != y.via or !f.isLinear(x.via)) return false;
     return x.via_e != y.via_e or !f.comparable(x.via_path, y.via_path);
+}
+
+/// Whether two overlapping atoms were read last through two entries of one
+/// root the frame made that holds each cell once (kernel §4.4, *Two readings
+/// through a later root*): the root's claim that its entries hold two cells
+/// is about its own entries, whichever root the atoms were first read
+/// through. A part and a part below it in one entry are not told apart here.
+fn via2Apart(f: *const Frame, x: Atom, y: Atom) bool {
+    if (x.via2 == none or x.via2 != y.via2 or x.via2_e == y.via2_e) return false;
+    return f.roots.items[x.via2].linear == .yes;
 }
 
 /// The parts of one run that `partDup` tests, each against the parts before
@@ -992,6 +1008,7 @@ fn shareWith(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?[
                 .no => {},
                 .yes => return true,
                 .each => if (try f.shareEach(g, i, sel, true, charged)) return true,
+                .all => if (try f.shareEach(g, i, sel, false, charged)) return true,
             }
         }
         // Then the run's atoms join their groups.
@@ -1053,7 +1070,7 @@ fn partTable(f: *const Frame, g: u32, a: Atom, make: bool) Error!u32 {
     return got.value_ptr.*;
 }
 
-const TablesShare = enum { no, yes, each };
+const TablesShare = enum { no, yes, each, all };
 
 /// The test of atom `i` against the tables of its group `g`.
 fn shareTables(f: *const Frame, g: u32, i: u32, mine_sel: bool, comptime charged: bool) Error!TablesShare {
@@ -1062,7 +1079,13 @@ fn shareTables(f: *const Frame, g: u32, i: u32, mine_sel: bool, comptime charged
     const k = f.viaKey(x);
     // A selected atom pairs with any; another only with a selected one.
     const side: u32 = if (mine_sel) 1 else 0;
-    if (try f.shareLook(s.table.items[g] + side, g, i, k, charged)) |y| return if (f.atomsShare(x, s.atoms.items[y], charged)) .yes else .each;
+    // An atom of another `via` key is one cell with `x`, unless the two were
+    // read last through two entries of one root that holds each cell once
+    // (`via2Apart`), which the keys do not say: then each atom of the group.
+    if (try f.shareLook(s.table.items[g] + side, g, i, k, charged)) |y| {
+        if (f.atomsShare(x, s.atoms.items[y], charged)) return .yes;
+        return if (f.via2Apart(x, s.atoms.items[y])) .all else .each;
+    }
     if (k == 0) return .no;
     const pt = try f.partTable(g, x, false);
     if (pt == none) return .no;
@@ -1153,6 +1176,7 @@ fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
     const loc = &f.m.loc;
     if (!(x.root == y.root and x.root != 0 and x.e == y.e and !posApart(x, y) and loc.comparable(x.path, y.path))) return false;
     // `viaApart`, with no count and no assertion: the check reads what the test reads.
+    if (f.via2Apart(x, y)) return false;
     if (x.via == none or x.via != y.via or f.roots.items[x.via].linear != .yes) return true;
     return !(x.via_e != y.via_e or !loc.comparable(x.via_path, y.via_path));
 }
@@ -1278,6 +1302,11 @@ fn copyAtoms(f: *Frame, start: u32, len: u32, via: u32, via_path: u32, via_e: u3
             a.via_path = via_path;
             a.via_e = via_e;
         }
+        // And the last, by its entries (kernel §4.4, *Two readings through a later root*).
+        if (via != none) {
+            a.via2 = via;
+            a.via2_e = via_e;
+        }
         out.appendAssumeCapacity(a);
     }
 }
@@ -1289,7 +1318,7 @@ fn twiceAt(f: *const Frame, a: Atom) bool {
 }
 
 fn atomEql(a: Atom, b: Atom) bool {
-    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead and a.pos == b.pos;
+    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead and a.pos == b.pos and a.via2 == b.via2 and a.via2_e == b.via2_e;
 }
 
 /// Remove from `list.items[from..]` each atom that an earlier atom of the run
