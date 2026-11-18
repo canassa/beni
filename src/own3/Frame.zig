@@ -9810,32 +9810,12 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
             }
         }
     };
-    if (over) {
-        @memset(own, false);
-    } else {
-        // Take away: a location that is not `own` takes away each location that needs it.
-        const needed_by = try f.gpa.alloc(std.ArrayList(u32), mes.len);
-        defer f.gpa.free(needed_by);
-        @memset(needed_by, .empty);
-        for (deps.items) |p| try needed_by[p[1]].append(f.gpa, p[0]);
-        var work: std.ArrayList(u32) = .empty;
-        defer work.deinit(f.gpa);
-        for (own, bad, 0..) |*o, b, k| if (b or !o.*) {
-            o.* = false;
-            try work.append(f.gpa, @intCast(k));
-        };
-        take: while (work.pop()) |k2| for (needed_by[k2].items) |k| {
-            if (f.tick()) {
-                @memset(own, false);
-                break :take;
-            }
-            if (!own[k]) continue;
-            own[k] = false;
-            try work.append(f.gpa, k);
-        };
-    }
     // What the other functions keep of the model is not `own`: the runtime
-    // holds their answers. A `view`'s answer is markup, and a platform's
+    // holds their answers. This is decided before the taking away below, so
+    // that each location that needs a kept one is taken away with it (a
+    // location `update` answers from a kept one: research report 159's
+    // second review, `{ m | w2 = m.w }` with `w` kept by a message `view`
+    // builds). A `view`'s answer is markup, and a platform's
     // runtime reads the values of its holes only while it renders it,
     // which it does before it runs `update` again, and keeps none of their
     // lists past that (`boundary.md` §9.4.8, kernel §6.12): so what a
@@ -9875,6 +9855,30 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                 }
             }
         }
+    }
+    if (over) {
+        @memset(own, false);
+    } else {
+        // Take away: a location that is not `own` takes away each location that needs it.
+        const needed_by = try f.gpa.alloc(std.ArrayList(u32), mes.len);
+        defer f.gpa.free(needed_by);
+        @memset(needed_by, .empty);
+        for (deps.items) |p| try needed_by[p[1]].append(f.gpa, p[0]);
+        var work: std.ArrayList(u32) = .empty;
+        defer work.deinit(f.gpa);
+        for (own, bad, 0..) |*o, b, k| if (b or !o.*) {
+            o.* = false;
+            try work.append(f.gpa, @intCast(k));
+        };
+        take: while (work.pop()) |k2| for (needed_by[k2].items) |k| {
+            if (f.tick()) {
+                @memset(own, false);
+                break :take;
+            }
+            if (!own[k]) continue;
+            own[k] = false;
+            try work.append(f.gpa, k);
+        };
     }
     // The verdicts: one for each location that a producer handed the model
     // (`update`, `settle`) writes. A write is `own` only where each model

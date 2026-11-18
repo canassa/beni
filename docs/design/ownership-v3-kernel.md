@@ -1172,6 +1172,14 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     (`browser/tea/EntrySwapArms`; the live twin, an arm that answers `w` at both places, is
     `browser/tea/EntrySwapShared`).*
 
+    **What a consumer keeps is taken away before the taking away** (the second review of research report 159).
+    A location a consumer keeps (`view`, a subscription) is not `own`, and a location that a producer
+    answers from it needs it: so the consumers are read first, and their locations start the work list of
+    the taking away with the others (`entryCall`). Before, they were taken away after it, and a location
+    that needed one stayed `own`; the test of "no other location" hid it, until it was read one value at a
+    time: `Keep model.w` in a message of `view`, then `Swap`, then a write of `w2` in place
+    (`browser/tea/EntrySwapKept`).
+
     Every other source has another holder or no fact, and is not `own`: a top-level value
     (`outside`), the answer of a function, a capture (the record holds it for as long as the program
     runs), the `Host`, and **the message**.

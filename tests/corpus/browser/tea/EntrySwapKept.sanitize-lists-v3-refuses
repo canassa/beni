@@ -1,0 +1,2 @@
+# view keeps w in a message and Swap answers it at w2: w2 is not update's own, and Bump2's write of it is refused (ownership-v3-kernel.md §6 rule 13).
+58:5 list_still_used entry
