@@ -450,6 +450,14 @@ fresh_esc: std.AutoHashMapUnmanaged([3]u32, [3]u32) = .empty,
 /// scans them: a frame makes few).
 pos_keys: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
 pos_info: std.ArrayList([5]u32) = .empty,
+/// Per layout, its index for `slotHeld` once made (`slotIndex`), or null.
+slot_index: std.ArrayList(?*const SlotIndex) = .empty,
+/// The result of the call in work (`applyAt`), or 0, and the next one: what
+/// `argLeavesKept` keeps, by the call, the argument and the entry.
+paired_gen: u32 = 0,
+next_paired_gen: u32 = 1,
+paired_memo: std.AutoHashMapUnmanaged([4]u32, PairedHit) = .empty,
+paired_buf: std.ArrayList(Atom) = .empty,
 /// The walk is over (`finish`): a value of no claim, or a closure, has the
 /// atoms that its first walk found, kept by the value (`whole_at`: where they
 /// start in `whole_buf`, and how many), so that `finish`, which reads the
@@ -504,6 +512,7 @@ pub const Error = Allocator.Error;
 const safety = std.debug.runtime_safety;
 
 const FreshKey = struct { key: u64, holder: u64, k: u32 };
+const PairedHit = struct { start: u32, len: u32, dup: bool, hit_all: bool };
 
 pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32) Error!Frame {
     var f: Frame = .{ .m = m, .gpa = m.walk_arena.allocator(), .parent = parent, .id = m.next_frame, .decl = decl, .d = m.bir.decls[decl], .is_lambda = is_lambda, .code_inst = code_inst };
@@ -6028,6 +6037,89 @@ fn argLeaves(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bo
 /// there is no test (kernel §4.1). A record's object is a cell only where a
 /// layout names its slots (kernel §11.1, §3.4). It scans `own` (kernel §8).
 fn slotHeld(f: *Frame, own: u32, asked: []const u64) Error!bool {
+    // The layout is indexed once in the frame (`SlotIndex`), and a question
+    // costs the depth of its label path, not a scan of the layout: a call
+    // asks it for each source and each slot of its answer (kernel §8;
+    // research report 159). The answer is the scan's.
+    const t = &f.m.loc;
+    const ix = try f.slotIndex(own);
+    const last: Loc.Label = @bitCast(asked[asked.len - 1]);
+    _ = f.charge(Loc.lookup_units * (asked.len + 1));
+    const es = t.layoutEntries(own);
+    var asked_cyc = false;
+    var at: ?u32 = 0;
+    var ans = false;
+    // A wide entry at the root, or at a prefix of the path, holds the record.
+    if (t.indexOf(own, 0) != none and es[t.indexOf(own, 0)].kind.wide()) ans = true;
+    for (asked) |w| {
+        const l: Loc.Label = @bitCast(w);
+        if (l.cyc) asked_cyc = true;
+        if (at) |x| at = t.find(x, w);
+        if (at) |x| {
+            const i = t.indexOf(own, x);
+            if (i != none and es[i].kind.wide()) ans = true;
+        }
+    }
+    // A slot at the path.
+    if (at) |x| if (t.indexOf(own, x) != none) {
+        ans = true;
+    };
+    // A slot of the field in the deep level of a cycle, or any slot of the
+    // field where the path asked is in one.
+    if (!ans) {
+        if (std.mem.indexOfScalar(u32, ix.cyc, last.payload) != null) ans = true;
+        if (asked_cyc and std.mem.indexOfScalar(u32, ix.any, last.payload) != null) ans = true;
+    }
+    if (std.debug.runtime_safety and es.len <= 256) {
+        const units = f.m.steps;
+        const module_units = f.m.module_units;
+        const over = f.m.steps_over;
+        const scanned = try f.slotHeldScan(own, asked);
+        f.m.steps = units;
+        f.m.module_units = module_units;
+        f.m.steps_over = over;
+        std.debug.assert(scanned == ans);
+    }
+    return ans;
+}
+
+/// Per layout of the frame (`slotHeld`): the field ranks of its record slots
+/// that are not wide (`any`), and of those with a step of a cycle on their
+/// path (`cyc`), each once.
+const SlotIndex = struct { any: []const u32, cyc: []const u32 };
+
+fn slotIndex(f: *Frame, own: u32) Error!*const SlotIndex {
+    if (own < f.slot_index.items.len) if (f.slot_index.items[own]) |x| return x;
+    const t = &f.m.loc;
+    const es = t.layoutEntries(own);
+    var any: std.ArrayList(u32) = .empty;
+    var cyc: std.ArrayList(u32) = .empty;
+    // Built once for each layout in a frame; it costs the scan it replaces (kernel §8).
+    _ = f.charge(Loc.scanUnits(es.len));
+    for (es) |oe| {
+        if (oe.kind.wide() or oe.loc == 0) continue;
+        const ol: Loc.Label = @bitCast(t.loc_label.items[oe.loc]);
+        if (ol.kind != .fslot) continue;
+        const rank: u32 = ol.payload;
+        if (std.mem.indexOfScalar(u32, any.items, rank) == null) try any.append(f.gpa, rank);
+        var x = oe.loc;
+        const in_cycle = while (x != 0) : (x = t.loc_parent.items[x]) {
+            const pl: Loc.Label = @bitCast(t.loc_label.items[x]);
+            if (pl.cyc) break true;
+        } else false;
+        _ = f.charge(Loc.scanUnits(t.loc_depth.items[oe.loc]));
+        if (in_cycle and std.mem.indexOfScalar(u32, cyc.items, rank) == null) try cyc.append(f.gpa, rank);
+    }
+    const x = try f.gpa.create(SlotIndex);
+    x.* = .{ .any = any.items, .cyc = cyc.items };
+    if (own >= f.slot_index.items.len) try f.slot_index.appendNTimes(f.gpa, null, own + 1 - f.slot_index.items.len);
+    f.slot_index.items[own] = x;
+    return x;
+}
+
+/// `slotHeld`, by a scan of `own`: the reading of kernel §3.4 that the
+/// index answers, kept as its check in safe builds.
+fn slotHeldScan(f: *Frame, own: u32, asked: []const u64) Error!bool {
     const t = &f.m.loc;
     const last: Loc.Label = @bitCast(asked[asked.len - 1]);
     var at: ?u32 = 0;
@@ -6423,6 +6515,12 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // Per entry: it holds the answer of a function parameter, which the callee's claims do not cover (`deriveLinear`).
     const has_answer = try f.gpa.alloc(bool, es.len);
     @memset(has_answer, false);
+    // The atoms of an argument at an entry of its parameter are read once
+    // for this result (`argLeavesKept`).
+    const outer_gen = f.paired_gen;
+    f.paired_gen = f.next_paired_gen;
+    f.next_paired_gen += 1;
+    defer f.paired_gen = outer_gen;
     for (0..es.len) |e| {
         const cr = cov[e];
         const start: u32 = @intCast(f.atoms.items.len);
@@ -7439,12 +7537,41 @@ fn pairedLeaves(f: *Frame, v: Val, arg_inst: u32, psig: u32, pe: u32, rsig: u32,
     return dup;
 }
 
+/// `argLeaves(v, psig, pe)` whole, into `f.atoms`. In the result of one call
+/// (`paired_gen`), each source is read for each location of the caller's
+/// reading that holds it, and with no suffix the atoms are the same each
+/// time: they are kept for the call, with the duplicate and `hit_all` the
+/// read found, and a second read copies them, one unit for each atom
+/// (kernel §8; research report 159).
+fn argLeavesKept(f: *Frame, v: Val, psig: u32, pe: u32) Error!bool {
+    if (f.paired_gen == 0) return f.argLeaves(v, psig, pe, &.{}, false, &f.atoms);
+    const key: [4]u32 = .{ f.paired_gen, v, psig, pe };
+    if (f.paired_memo.get(key)) |hit| {
+        _ = f.charge(1 + hit.len);
+        try f.atoms.appendSlice(f.gpa, f.paired_buf.items[hit.start..][0..hit.len]);
+        if (hit.hit_all) f.hit_all = true;
+        return hit.dup;
+    }
+    const start = f.atoms.items.len;
+    const outer_all = f.hit_all;
+    f.hit_all = false;
+    const dup = try f.argLeaves(v, psig, pe, &.{}, false, &f.atoms);
+    const got_all = f.hit_all;
+    f.hit_all = outer_all or got_all;
+    if (!f.m.steps_over) {
+        const at: u32 = @intCast(f.paired_buf.items.len);
+        try f.paired_buf.appendSlice(f.gpa, f.atoms.items[start..]);
+        try f.paired_memo.put(f.gpa, key, .{ .start = at, .len = @intCast(f.atoms.items.len - start), .dup = dup, .hit_all = got_all });
+    }
+    return dup;
+}
+
 fn pairedLeavesAt(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rlayout: u32, e: u32) Error!bool {
     const m = f.m;
     const pentry = m.loc.layoutEntries(psig)[pe];
     const rentry = m.loc.layoutEntries(rsig)[cr];
     if (!(pentry.kind.wide() and rentry.kind.wide())) {
-        const dup = try f.argLeaves(v, psig, pe, &.{}, false, &f.atoms);
+        const dup = try f.argLeavesKept(v, psig, pe);
         // A wide location of one side and a concrete one of the other: the
         // callee casts what it was handed (`Js.to` of a parameter of a type
         // variable answered as a record, a tuple answered as a type
@@ -8877,9 +9004,14 @@ fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!v
     const ar = f.roots.items[root_id];
     const dr = f.drafts.items[di];
     const cov = try f.m.loc.cover(alayout, dr.layouts[dr.arity]);
-    // The scan of the map is work (kernel §8).
-    _ = f.charge(Loc.scanUnits(cov.len));
-    for (cov, 0..) |cv, k| if (Loc.hits(cv, ae)) try f.atoms.append(f.gpa, .{ .root = root_id, .path = ar.path, .e = @intCast(k) });
+    // The map read the other way, made once for each pair of layouts in a
+    // frame (`coverHits`): each entry asked costs the entries it finds, in
+    // the order a scan of the map finds them (kernel §8; research report 159).
+    var hit: std.ArrayList(u32) = .empty;
+    defer hit.deinit(f.gpa);
+    try f.coverHits(alayout, dr.layouts[dr.arity], cov, ae, &hit);
+    _ = f.charge(1 + hit.items.len);
+    for (hit.items) |k| try f.atoms.append(f.gpa, .{ .root = root_id, .path = ar.path, .e = k });
 }
 
 /// No rule follows this answer. It has no claim, and it can hold a cell of

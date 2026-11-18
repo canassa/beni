@@ -1598,23 +1598,33 @@ paths:
   front).
 
   **The result is read once for each of its locations, and costs what it reads** (research report 159,
-  #2532). `finish` reads the frame's result at each location of its layout in turn (`leavesAs`). Two
-  loops cost the result's whole layout at each, so a result of many locations cost the square of them:
-  `Gpu.Make.checkedIn`'s `Result Error.Error V` has 711, and the declaration passed its budget there.
+  #2532). `finish` reads the frame's result at each location of its layout in turn (`leavesAs`), and a
+  call expands the callee's sources at each location of the caller's reading (`expandSrcs`). Five loops
+  cost a whole layout, or a whole value, at each location, so a result of many locations cost the square
+  of them: `Gpu.Make.checkedIn`'s `Result Error.Error V` has 711, each holding every location of its
+  parameters (the answer of unknown code, §3.2), and the module passed its budget there.
   - **A value of no claim, or a closure, is walked once after the walk** (`Frame.finished`,
     `whole_at`): its atoms are the same at every location (`leaves` reads it whole), a value never
     changes once it is made, and every capture is bound when the walk is over. The first walk keeps
     them, and each later read copies them, one unit for each atom, as a hit of the walk of values does.
-  - **A reading of a few locations through a map looks them up** (`leavesSet`): the map read the
-    other way is made once for each pair of layouts in a frame (`coverHits`, which costs the map), and
-    each location asked costs the entries it finds, not a scan of the map.
+  - **A reading of a few locations through a map looks them up** (`leavesSet`, `ownAnswer`): the map
+    read the other way is made once for each pair of layouts in a frame (`coverHits`, which costs the
+    map), and each location asked costs the entries it finds, not a scan of the map.
+  - **An argument's atoms at an entry of its parameter are read once for a call's result**
+    (`argLeavesKept`, `paired_gen`): with no suffix (§3.4's wide pairs excepted) they are the same at
+    each location of the reading that the source is at; they are kept for that call, with the duplicate
+    and `hit_all` the read found, and a second read copies them.
+  - **Whether a layout holds a record's object is looked up** (`slotHeld`): the slots of each layout
+    are indexed once in a frame (`SlotIndex`), and a question costs the depth of its label path, not a
+    scan of the layout; safe builds compare the answer with the scan's for layouts of at most 256 entries.
 
-  The answers are the ones the scans gave; the units are fewer. `checkedIn` now does 1.1 million units
-  of its 2.5 million, and `inBatch` and `tests/platforms/gpu`'s `readAt` pass theirs too. The module is
-  still not judged: `checked`, which calls `checkedIn`, passes its budget in its walk, where each of the
-  711 locations of `checkedIn`'s answer holds every location of its parameters (the answer of unknown
-  code, §3.2) and each is expanded at the call (`expandSrcs`); a contract that says "these sources at
-  every location" once would be the fix, and is not built.
+  The answers are the ones the scans gave; the units are fewer. `checkedIn` does 1.1 million units of its
+  2.5 million, `checked` 0.84 of its 1.4, and `Gpu.Make` is judged: its two writes are accepted. Behind
+  it, `Gpu.Batch.inBatch`, `Gpu.Device.made`, `Gpu.Shader.compile` and `tests/platforms/gpu`'s `readAt`
+  pass theirs too; four declarations of `Gpu.Device` and `Gpu.Diagnostics` now reach theirs, since the
+  modules before them are walked, and their contracts read, where they were not (no verdict of any
+  ownership root moves but the three it gains). A contract that says "these sources at every location"
+  once, which a caller would expand once, is not built.
 
   **Whether a cell the frame made escaped is asked once for each cell** (`freshSrc`, research report 146).
   Each atom of a frame's result that names a cell the frame made asks whether an escape holds it, and
@@ -1795,6 +1805,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a row whose word puts a wide location of a parameter (a type variable, a `Js.Value`) at a place of the result whose type is not the location's — `returned` or `builderdone` at the same place, `stored` at that place of the result's elements, `elementof` and `taken` an element at that place, `aliased` at any type variable of the result — casts. It reads the words and the types of the store again, apart from the code that marked the row (`castsAt`, `aliasedCasts`). With the types not compared (research report 151's fault: the places alone, which are one for every type variable), the first row of `returned a → b` panics. The check counts no work | `Check.checkWordedCasts`, in `wordedContract` | §3.4, §6 rule 10 |
 | every cell of a `Js.Value` that the frame made of parts and read at a type variable, or at a type with one at or below its place, escaped: each leaf of the value is held by an escape of the frame. With that escape turned off (research report 151's fault: `Js.to (Js.array [ Js.from x ])` read at `b`), the first such read panics. The check counts no work | `Frame.checkMadeEscaped`, in `readAtVar` and `narrowed` | §3.4 |
 | a summary location of a worded row's result that is not `twice` holds only sources that a word puts there at stated positions, by `statesPositions`, the one reading of §4.4's list that the marker uses too (the same place for `returned`, `builderdone`, `copyof`, `concatenated` and `prepended`'s list; an element location for a value of the element type that `stored` puts beside the one `written returned` list, and for `prepended`'s item; every location for an `exclusive` row's new cells); and a row without `exclusive` (or a cell's handle) names one site for all its new cells. It reads the contract the marker built, after `Contract.normal`, so it checks the marking loop and the sites, not the reading: the two readings of research report 156 disagreed on `stored` beside a `written returned` record, and this check panicked on a row the word validator accepts (research report 157, #2559). With the `twice` of a row turned off (research report 156's fault), or its `fresh` sites split, the first program checked under `--ownership=v3` panics (core's `Schema` rows answer new lists of issues with `fresh` alone). The check counts no work | `Check.checkWordedTwice`, in `wordedContract` | §4.4, §6 rule 10 |
+| `slotHeld`'s index of a layout's record slots answers what a scan of the layout answers, for layouts of at most 256 entries | `Frame.slotHeld` | §3.4, §8 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 
 ## 10. What the kernel costs
