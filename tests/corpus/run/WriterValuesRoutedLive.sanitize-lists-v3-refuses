@@ -1,0 +1,15 @@
+# Each write's old name is read after it, however the writer value was reached: v3 refuses every one (ownership-v3-kernel.md §12 item 5).
+81:9 list_still_used w
+84:9 list_still_used ww
+87:9 list_still_used lw
+89:9 list_still_used call
+92:10 list_still_used r
+95:9 list_still_used call
+99:9 list_still_used wa
+102:9 list_still_used call
+104:9 list_still_used call
+107:9 list_still_used lp
+110:9 list_still_used call
+113:9 list_still_used call
+116:9 list_still_used call
+120:9 list_still_used call

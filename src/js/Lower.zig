@@ -78,6 +78,7 @@ const SchemaPlan = @import("../check/SchemaPlan.zig");
 const Hoists = @import("../own/Hoists.zig");
 const V3Reads = @import("../own3/Reads.zig");
 const Channel = @import("../own2/Hoists.zig");
+const Prepass = @import("../own2/Prepass.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -1328,6 +1329,11 @@ pub const Lowerer = struct {
     /// `List.append` of that item. A column by instruction, made on the
     /// first question.
     spread_roots: []u32 = &.{},
+    /// Under the v3 oracle, per instruction whether it is the callee of a
+    /// `call`: a writer of core named anywhere else is a writer value,
+    /// routed where it is made (`routedWriterValue`). A column by
+    /// instruction, made on the first question.
+    callee_marks: []bool = &.{},
     /// The padded nullary constructors this module has written in value
     /// position, each one module-level constant (`backend.md` §4, *A
     /// nullary constructor is one object*). Discovered like `needs`, so
@@ -1645,6 +1651,8 @@ pub const Lowerer = struct {
         list_compare: bool = false,
         /// `_core/_sanitize.mjs`'s `list` (`Input.sanitize_lists`).
         sanitize: bool = false,
+        /// And its `writerWait` (`routedWriterValue`).
+        sanitize_wait: bool = false,
     };
 
     /// One derived function being lowered (`derivedArrow`).
@@ -3979,6 +3987,11 @@ pub const Lowerer = struct {
         // The runtime, when this module's derived functions reach it.
         if (try l.runtimeImport()) |statement| try out.append(l.scratch, statement);
         // The list sanitiser, when a list write of this module is sanitised.
+        // A writer value that may park (`routedWriterValue`).
+        if (l.needs.sanitize_wait) try out.append(l.scratch, try l.importStatement(l.in.sanitize_runtime, &.{.{
+            .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "writerWait"), .tag = JsIr.Name.no_tag }),
+            .local = try l.sanitizerLocal("writerWait"),
+        }}));
         if (l.needs.sanitize) try out.append(l.scratch, try l.importStatement(l.in.sanitize_runtime, &.{
             .{
                 .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "list"), .tag = JsIr.Name.no_tag }),
@@ -5441,7 +5454,88 @@ pub const Lowerer = struct {
         while (l.bir.instTag(at) == .local and depth < 8) : (depth += 1) at = l.letValueOf(at) orelse return null;
         const d = l.bir.instData(at);
         if (l.bir.instTag(at) != .ext_value) return null;
-        return l.listWriterAt(@fromBackingInt(@intCast(d.lhs)), d.rhs);
+        return l.coreWriterAt(@fromBackingInt(@intCast(d.lhs)), d.rhs);
+    }
+
+    /// `listWriterAt`, and under the v3 oracle (`Input.records_v3`) also
+    /// for a value of another package that is a top-level alias of such a
+    /// writer, through any number of aliases and modules (a platform's
+    /// `pub ins = Dict.insert`), as v3 reads the callee (`Mod.calleeOf`).
+    fn coreWriterAt(l: *Lowerer, module: Graph.Index, value: u32) ?[]const u8 {
+        if (l.listWriterAt(module, value)) |w| return w;
+        if (!l.in.records_v3 or module.int() >= l.in.provenance.len) return null;
+        const decl = l.in.provenance[module.int()].valueDecl(value) orelse return null;
+        var t: [2]u32 = .{ module.int(), decl.int() };
+        var budget: u32 = 16;
+        var moved = false;
+        while (budget > 0) : (budget -= 1) {
+            t = Prepass.aliasStep(l.in.birs, l.in.provenance, t) orelse break;
+            moved = true;
+        }
+        if (!moved or t[0] >= l.in.birs.len) return null;
+        const target: Graph.Index = @fromBackingInt(t[0]);
+        const bir = l.in.birs[t[0]];
+        if (t[1] >= bir.decls.len) return null;
+        return l.writerNamed(target, l.interner.slice(bir.symbol(bir.decls[t[1]].name)));
+    }
+
+    /// The local alias chain `callee` names a writer through (`upd =
+    /// Dict.update`, `q = upd`), followed to the writer's own reference,
+    /// or null where `callee` is no local.
+    fn aliasedWriterRef(l: *Lowerer, callee: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(callee) != .local) return null;
+        var at = callee;
+        var depth: u32 = 0;
+        while (l.bir.instTag(at) == .local and depth < 8) : (depth += 1) at = l.letValueOf(at) orelse return null;
+        return if (l.bir.instTag(at) == .ext_value) at else null;
+    }
+
+    /// The callee a write through a writer is lowered with: under the v3
+    /// oracle, a local alias of the writer is the writer's own reference,
+    /// since the alias's value is routed where it is made (`reference`)
+    /// and the write here is routed at its call: no write is routed twice.
+    fn unroutedCallee(l: *Lowerer, callee_inst: Inst.Index, callee: Node.Index) !Node.Index {
+        if (!l.routesWriterValues()) return callee;
+        const ref = l.aliasedWriterRef(callee_inst) orelse return callee;
+        return l.referenceBare(ref);
+    }
+
+    /// Whether this module's writer values are routed where they are made
+    /// (ownership-v3-kernel.md §12 item 5): under the v3 oracle, each
+    /// reference whose line v3's channel lists as an accepted write
+    /// (`Enforce.valueWriter`; `sanitizesAt`).
+    fn routesWriterValues(l: *const Lowerer) bool {
+        return l.in.records_v3 and l.in.list_writes != null and l.sanitizesLists();
+    }
+
+    /// Whether `inst` is the callee of a `call` (`callee_marks`).
+    fn isCallee(l: *Lowerer, inst: Inst.Index) bool {
+        if (l.callee_marks.len == 0) {
+            l.callee_marks = l.scratch.alloc(bool, l.bir.insts.len) catch return false;
+            @memset(l.callee_marks, false);
+            for (0..l.bir.insts.len) |i| {
+                const at: Inst.Index = @fromBackingInt(@intCast(i));
+                if (l.bir.instTag(at) != .call) continue;
+                const callee = l.bir.instData(at).lhs;
+                if (callee < l.callee_marks.len) l.callee_marks[callee] = true;
+            }
+        }
+        return inst.int() < l.callee_marks.len and l.callee_marks[inst.int()];
+    }
+
+    /// A writer of core named as a value under the v3 oracle: every call
+    /// of it writes under the oracle (`_sanitize$writer`). Its suspendable
+    /// twin (`Dict.sortBy$s`, its callback may park) answers a `Task`
+    /// where the callback waits: `_sanitize$writerWait(site, value,
+    /// Task.andThen)` settles the base once the answer is there.
+    fn routedWriterValue(l: *Lowerer, value: Node.Index, writer: []const u8, module: Graph.Index, v: u32, inst: Inst.Index) !Node.Index {
+        const p = l.pos(inst);
+        if (!(l.suspendsHere(l.in.dispatch.effectAt(inst).body) and l.externalTwin(module, v))) return l.sanitizedWriterValue(value, writer, p);
+        l.needs.sanitize = true;
+        l.needs.sanitize_wait = true;
+        const site = try std.fmt.allocPrint(l.scratch, "`{s}` value in {s} (at byte {d})", .{ writer, l.interner.slice(l.module_name), p });
+        const and_then = try l.coreValue(.Task, .andThen, p);
+        return l.call(try l.ident(try l.sanitizerLocal("writerWait"), p), &.{ try l.stringNode(site, p), value, and_then }, p);
     }
 
     /// Whether `inst` is a call a list's spread made (`[ …a, …b ]`): a call
@@ -5493,7 +5587,13 @@ pub const Lowerer = struct {
         if (l.in.graph.modulePackage(module) != .core) return null;
         const iface = &l.in.interfaces[module.int()];
         if (value >= iface.values.len) return null;
-        const spelling = l.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]);
+        return l.writerNamed(module, l.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]));
+    }
+
+    /// The writer's qualified name for value `spelling` of core module
+    /// `module` (`listWriterAt`), or null.
+    fn writerNamed(l: *Lowerer, module: Graph.Index, spelling: []const u8) ?[]const u8 {
+        if (l.in.graph.modulePackage(module) != .core) return null;
         if (l.in.graph.moduleName(module) == InternPool.WellKnown.List.symbol()) {
             const writers = [_][]const u8{ "List.set", "List.update", "List.push", "List.pop", "List.swap", "List.insertAt", "List.removeAt", "List.append" };
             for (writers) |w| if (std.mem.eql(u8, w[5..], spelling)) return w;
@@ -5606,31 +5706,6 @@ pub const Lowerer = struct {
         all[3 + k] = try l.ident(base, p);
         const answer = try l.suspension(out, inst, try l.call(try l.ident(try l.sanitizerLocal("startAt"), p), all, p));
         return l.call(try l.ident(try l.sanitizerLocal("settle"), p), &.{ try l.ident(base, p), answer, try l.stringNode(site, p) }, p);
-    }
-
-    /// Under the v3 oracle, a writer of core handed to the call `inst` as a
-    /// value (`apply Dict.insert d`) whose line v3 accepted: each argument
-    /// that names one is `_sanitize$writer(site, value)`, which writes under
-    /// the oracle wherever the callee calls it (kernel §12, *A writer handed
-    /// on as a value*). The channel lists such a call as a write
-    /// (`Enforce.handsCoreWriter`).
-    fn routeWriterValues(l: *Lowerer, written: []Node.Index, arg_insts: []const Inst.Index, inst: Inst.Index, p: u32) Allocator.Error!void {
-        if (!l.in.records_v3 or l.in.list_writes == null or !l.sanitizesAt(inst)) return;
-        for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
-            // A writer that takes a callback may park where the callee runs
-            // it, and its value answers a `Task` there, which the oracle's
-            // synchronous `writer` cannot settle: it is the plain function,
-            // which copies (kernel §12).
-            if (takesCallback(writer)) continue;
-            w.* = try l.sanitizedWriterValue(w.*, writer, p);
-        };
-    }
-
-    /// Whether the writer of core named `writer` takes a callback, which
-    /// may park: `List.update`, `Dict.update`, `Dict.sortBy`, `Set.sortBy`.
-    fn takesCallback(writer: []const u8) bool {
-        for ([_][]const u8{ "List.update", "Dict.update", "Dict.sortBy", "Set.sortBy" }) |w| if (std.mem.eql(u8, w, writer)) return true;
-        return false;
     }
 
     /// `_sanitize$len(list)`: a read of a list's length under the
@@ -7810,6 +7885,20 @@ pub const Lowerer = struct {
     /// arity, so `let f = Dict.insert` is `(a, b, c) => Dict$insert(cmp, a,
     /// b, c)` and never `Dict$insert`.
     fn reference(l: *Lowerer, inst: Inst.Index) !Node.Index {
+        const value = try l.referenceBare(inst);
+        // A writer of core named as a value: routed where it is made
+        // (ownership-v3-kernel.md §12 item 5, *A writer value is routed
+        // where it is made*).
+        if (l.bir.instTag(inst) == .ext_value and l.routesWriterValues() and l.sanitizesAt(inst) and !l.isCallee(inst)) {
+            const d = l.bir.instData(inst);
+            const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+            if (l.coreWriterAt(module, d.rhs)) |writer| return l.routedWriterValue(value, writer, module, d.rhs, inst);
+        }
+        return value;
+    }
+
+    /// `reference`, with no routing of a writer value: the binding itself.
+    fn referenceBare(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const p = l.pos(inst);
         // A list a loop holds as an offset (§8, *Scalar views*): the offset
         // where the loop reads it so, the list built anywhere else.
@@ -10465,12 +10554,9 @@ pub const Lowerer = struct {
                     @memcpy(all[evidence.len..], values);
                     return l.sanitizedWriteAt(out, callee_name, writer, all, evidence.len, p, inst);
                 };
+                // A writer handed on as a value (`x.apply Dict.insert`) is
+                // routed where it is made (`reference`).
                 const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
-                // A writer handed on as a value (`x.apply Dict.insert`).
-                const arg_insts = try l.scratch.alloc(Inst.Index, values.len);
-                arg_insts[0] = @fromBackingInt(@intCast(d.lhs));
-                @memcpy(arg_insts[1..], l.bir.extraSlice(args, Inst.Index));
-                try l.routeWriterValues(values, arg_insts, inst, p);
                 const all = try l.scratch.alloc(Node.Index, evidence.len + values.len);
                 @memcpy(all[0..evidence.len], evidence);
                 @memcpy(all[evidence.len..], values);
@@ -11332,7 +11418,6 @@ pub const Lowerer = struct {
         if (l.sanitizesWriterValues()) for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
             w.* = try l.sanitizedWriterValue(w.*, writer, p);
         };
-        try l.routeWriterValues(written, arg_insts, inst, p);
         l.region = inst;
         // The evidence takes the body its callee takes (§16.2).
         const saved_choice = l.term_choice;
@@ -11341,7 +11426,7 @@ pub const Lowerer = struct {
         l.term_choice = saved_choice;
         if (evidence.len == 0) {
             if ((if (arg_insts.len != 0) try l.sanitizesSpreadAt(inst, arg_insts[0]) else l.sanitizesAt(inst)) and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
-                return l.sanitizedWrite(out, callee, writer, written, p, inst, if (arg_insts.len != 0) arg_insts[0] else null);
+                return l.sanitizedWrite(out, try l.unroutedCallee(callee_inst, callee), writer, written, p, inst, if (arg_insts.len != 0) arg_insts[0] else null);
             if (written.len == 2 and try l.frontsSanitisedWrite(inst)) return l.sanitizedFront(written, p);
             return l.suspension(out, inst, try l.call(callee, written, p));
         }
@@ -11358,7 +11443,7 @@ pub const Lowerer = struct {
         // the v3 oracle (kernel §12): its base is the argument after the
         // evidence (`sanitizedWriteAt`).
         if (written.len != 0 and l.sanitizesAt(inst)) if (l.listWriterOf(callee_inst)) |writer|
-            return l.sanitizedWriteAt(out, callee, writer, args, evidence.len, p, inst);
+            return l.sanitizedWriteAt(out, try l.unroutedCallee(callee_inst, callee), writer, args, evidence.len, p, inst);
         return l.suspension(out, inst, try l.call(callee, args, p));
     }
 

@@ -29,6 +29,7 @@ const InternPool = @import("../InternPool.zig");
 const MarkupTree = @import("../js/MarkupTree.zig");
 const Check = @import("Check.zig");
 const Contract = @import("Contract.zig");
+const Prepass = @import("../own2/Prepass.zig");
 
 pub const Inputs = Enforce2.Inputs;
 pub const inputs = Enforce2.inputs;
@@ -127,10 +128,12 @@ const NameCtx = struct {
     }
 };
 
-/// The value of core that `callee` names, as `(module, value)`: an
+/// The value of core that `callee` names, as `(module, spelling)`: an
 /// `ext_value`, through a chain of locals that a `let` binds to it
-/// (`upd = Dict.update`, `q = upd`), as `Lower.listWriterOf` follows it.
-fn coreValueOf(session: *const Session, bir: *const Bir, callee: Bir.Inst.Index) ?struct { Graph.Index, u32 } {
+/// (`upd = Dict.update`, `q = upd`), as `Lower.listWriterOf` follows it,
+/// and through top-level aliases of other modules (a platform's `pub ins =
+/// Dict.insert`), as `Mod.calleeOf` and `Lower.coreWriterAt` follow them.
+fn coreValueOf(session: *const Session, birs: []const *const Bir, bir: *const Bir, callee: Bir.Inst.Index) ?struct { Graph.Index, []const u8 } {
     var at = callee;
     var depth: u32 = 0;
     while (bir.instTag(at) == .local and depth < 8) : (depth += 1) at = letValueOf(bir, at) orelse return null;
@@ -138,8 +141,20 @@ fn coreValueOf(session: *const Session, bir: *const Bir, callee: Bir.Inst.Index)
     const d = bir.instData(at);
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
     if (module.int() >= session.resolution.interfaces.len) return null;
-    if (session.graph.modulePackage(module) != .core) return null;
-    return .{ module, d.rhs };
+    if (session.graph.modulePackage(module) == .core) {
+        _, const spelling = coreNames(session, module, d.rhs) orelse return null;
+        return .{ module, spelling };
+    }
+    const provenance = session.resolution.provenance;
+    if (module.int() >= provenance.len) return null;
+    const decl = provenance[module.int()].valueDecl(d.rhs) orelse return null;
+    var t: [2]u32 = .{ module.int(), decl.int() };
+    var budget: u32 = 16;
+    while (budget > 0) : (budget -= 1) t = Prepass.aliasStep(birs, provenance, t) orelse break;
+    if (t[0] == module.int() or t[0] >= birs.len) return null;
+    const target: Graph.Index = @fromBackingInt(t[0]);
+    if (session.graph.modulePackage(target) != .core or t[1] >= birs[t[0]].decls.len) return null;
+    return .{ target, session.interner.slice(birs[t[0]].symbol(birs[t[0]].decls[t[1]].name)) };
 }
 
 /// The definition a `let` binds local `inst` to, as `Lower.letValueOf`
@@ -164,6 +179,26 @@ fn coreNames(session: *const Session, module: Graph.Index, value: u32) ?struct {
     return .{ session.interner.slice(session.graph.moduleName(module)), session.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]) };
 }
 
+/// Whether instruction `inst` is the body of a top-level alias
+/// (`Prepass.isAliasShape`: a value of no parameter whose body is a name).
+fn isAliasBody(bir: *const Bir, inst: u32) bool {
+    for (bir.decls) |d| {
+        const body = d.body.unwrap() orelse continue;
+        if (body.int() == inst and Prepass.isAliasShape(bir, d)) return true;
+    }
+    return false;
+}
+
+/// The copy that a refused write's message names: of a record, of a
+/// dictionary or a set where the writer is theirs, else of a list.
+fn copyFix(record: bool, op: []const u8, base: []const u8) []const u8 {
+    if (record) return "Record.copy";
+    const writer = if (std.mem.eql(u8, op, "value")) base else if (std.mem.startsWith(u8, op, "call ")) op["call ".len..] else op;
+    if (std.mem.startsWith(u8, writer, "Dict.")) return "Dict.copy";
+    if (std.mem.startsWith(u8, writer, "Set.")) return "Set.copy";
+    return "List.copy";
+}
+
 fn isOneOf(name: []const u8, names: []const []const u8) bool {
     for (names) |w| if (std.mem.eql(u8, w, name)) return true;
     return false;
@@ -172,16 +207,16 @@ fn isOneOf(name: []const u8, names: []const []const u8) bool {
 /// The core value that instruction `inst` calls: a `call` of an
 /// `ext_value` or of a local bound to one, or a `method_call` whose
 /// dispatch term is a value of a core module (`d.update k f`).
-fn coreCallee(session: *const Session, bir: *const Bir, dispatch: ?*const Dispatch, inst: u32) ?struct { Graph.Index, u32 } {
+fn coreCallee(session: *const Session, birs: []const *const Bir, bir: *const Bir, dispatch: ?*const Dispatch, inst: u32) ?struct { Graph.Index, []const u8 } {
     if (inst >= bir.insts.len) return null;
     const call: Bir.Inst.Index = @fromBackingInt(inst);
-    if (bir.instTag(call) == .call) return coreValueOf(session, bir, @fromBackingInt(@intCast(bir.instData(call).lhs)));
+    if (bir.instTag(call) == .call) return coreValueOf(session, birs, bir, @fromBackingInt(@intCast(bir.instData(call).lhs)));
     if (bir.instTag(call) != .method_call) return null;
     const dt = dispatch orelse return null;
     const site = dt.siteOf(call) orelse return null;
     const ti = site.callee.unwrap() orelse return null;
     return switch (dt.term(ti)) {
-        .ext => |u| if (u.module.int() < session.resolution.interfaces.len and session.graph.modulePackage(u.module) == .core) .{ u.module, @backingInt(u.value) } else null,
+        .ext => |u| if (u.module.int() < session.resolution.interfaces.len and session.graph.modulePackage(u.module) == .core) (if (coreNames(session, u.module, @backingInt(u.value))) |n| .{ u.module, n[1] } else null) else null,
         // No other term names a value of another module.
         .top, .param, .derived, .ext_derived, .primitive, .undetermined, .field, .identity, .text, .codec => null,
     };
@@ -191,9 +226,9 @@ fn coreCallee(session: *const Session, bir: *const Bir, dispatch: ?*const Dispat
 /// `List.update`, or one of `Dict`'s and `Set`'s (kernel §12), however the
 /// call names it: directly, method-style (`d.update k f`), or through a
 /// local alias (`upd = Dict.update`).
-fn callsCoreWriter(session: *const Session, bir: *const Bir, dispatch: ?*const Dispatch, inst: u32) bool {
-    const module, const value = coreCallee(session, bir, dispatch, inst) orelse return false;
-    const module_name, const name = coreNames(session, module, value) orelse return false;
+fn callsCoreWriter(session: *const Session, birs: []const *const Bir, bir: *const Bir, dispatch: ?*const Dispatch, inst: u32) bool {
+    const module, const name = coreCallee(session, birs, bir, dispatch, inst) orelse return false;
+    const module_name = session.interner.slice(session.graph.moduleName(module));
     if (session.graph.moduleName(module) == InternPool.WellKnown.List.symbol()) return std.mem.eql(u8, name, "update");
     // The walked writers of `Dict` and `Set` (kernel §12): the write is a
     // row's inside core, and the lowering edits the call as the writer.
@@ -202,42 +237,28 @@ fn callsCoreWriter(session: *const Session, bir: *const Bir, dispatch: ?*const D
     return false;
 }
 
-/// Whether the call `inst` hands a writer of core's `List`, `Dict` or `Set`
-/// to its callee as a value (`apply Dict.insert d`; kernel §12, *A writer
-/// handed on as a value*): the call's line judged every write the value
-/// makes, so where it is accepted the lowering routes the value
-/// (`Lower.routeWriterValues`).
-fn handsCoreWriter(session: *const Session, bir: *const Bir, inst: u32) bool {
-    if (inst >= bir.insts.len) return false;
-    const call: Bir.Inst.Index = @fromBackingInt(inst);
-    const data = bir.instData(call);
-    // A method call hands its receiver and its arguments (`x.apply Dict.insert`).
-    const receiver: []const Bir.Inst.Index = if (bir.instTag(call) == .method_call) &.{@fromBackingInt(@intCast(data.lhs))} else &.{};
-    const args = switch (bir.instTag(call)) {
-        .call => bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index),
-        .method_call => args: {
-            const mc = bir.extraData(@fromBackingInt(data.rhs), Bir.MethodCall);
-            break :args bir.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Bir.Inst.Index);
-        },
-        else => return false,
-    };
-    for ([_][]const Bir.Inst.Index{ receiver, args }) |part| for (part) |a| {
-        const module, const value = coreValueOf(session, bir, a) orelse continue;
-        const module_name, const name = coreNames(session, module, value) orelse continue;
-        // A writer that takes a callback (`update`, `sortBy`) is handed on
-        // as the plain function: it may park where the callee runs it
-        // (`Lower.routeWriterValues`).
-        const writers: []const []const u8 = if (session.graph.moduleName(module) == InternPool.WellKnown.List.symbol())
-            &.{ "set", "push", "pop", "swap", "insertAt", "removeAt", "append" }
-        else if (std.mem.eql(u8, module_name, "Dict"))
-            &.{ "insert", "remove", "swap", "insertAt" }
-        else if (std.mem.eql(u8, module_name, "Set"))
-            &.{ "insert", "remove", "swap", "insertAt" }
-        else
-            &.{};
-        if (isOneOf(name, writers)) return true;
-    };
-    return false;
+/// The qualified name of the writer of core's `List`, `Dict` or `Set` that
+/// instruction `inst` names as a value: an `ext_value` of the writer, or
+/// of a top-level alias of it (`coreValueOf`), anywhere but as the callee
+/// of a `call` (`callee`). Kernel §12 item 5, *A writer value is routed
+/// where it is made*: each run of it is judged where it runs, and the
+/// lowering routes the value where the reference is (`Lower.reference`,
+/// which reads the same instructions).
+fn valueWriter(session: *const Session, birs: []const *const Bir, bir: *const Bir, callee: []const bool, inst: u32) ?[]const u8 {
+    const at: Bir.Inst.Index = @fromBackingInt(inst);
+    if (bir.instTag(at) != .ext_value or callee[inst]) return null;
+    const module, const name = coreValueOf(session, birs, bir, at) orelse return null;
+    const module_name = session.interner.slice(session.graph.moduleName(module));
+    const writers: []const []const u8 = if (session.graph.moduleName(module) == InternPool.WellKnown.List.symbol())
+        &.{ "List.set", "List.update", "List.push", "List.pop", "List.swap", "List.insertAt", "List.removeAt", "List.append" }
+    else if (std.mem.eql(u8, module_name, "Dict"))
+        &.{ "Dict.insert", "Dict.remove", "Dict.update", "Dict.swap", "Dict.insertAt", "Dict.sortBy" }
+    else if (std.mem.eql(u8, module_name, "Set"))
+        &.{ "Set.insert", "Set.remove", "Set.swap", "Set.insertAt", "Set.sortBy" }
+    else
+        &.{};
+    for (writers) |w| if (std.mem.eql(u8, w[module_name.len + 1 ..], name)) return w;
+    return null;
 }
 
 /// The Driver's hook: in the worker that checked module `m`, after its type
@@ -305,12 +326,37 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         // `List.update` has no words: its write is `focus`'s, inside core,
         // so v3 says it at the call (`callsite`). The lowering edits the call
         // as the writer it is (`backend.md` §4), so the channel names it as one.
-        // A call that hands a core writer on as a value (`apply Dict.insert
-        // d`) is named as a writer too: its line judged the value's writes,
-        // and the lowering routes the value (kernel §12).
         const dispatch: ?*const Dispatch = if (mi_u < d.dispatch.len) &d.dispatch[mi_u] else null;
-        const kind = if (l.kind == .callsite and callsCoreWriter(session, bir, dispatch, l.inst)) .writer else if (handsCoreWriter(session, bir, l.inst)) .writer else l.kind;
+        const kind = if (l.kind == .callsite and callsCoreWriter(session, ctx.ins.birs, bir, dispatch, l.inst)) .writer else l.kind;
         try channel.add(arena, l.inst, kind, l.refused, Hoists.reliesOnCallers(l.accepted));
+    }
+    // A writer of core named as a value (`apply Dict.insert d`, `w = idW
+    // Dict.insert`): each run of it is judged where it runs (a call of it,
+    // a call that hands it on, a closure that captured it), and a holder
+    // that keeps or loses it refuses it (kernel §12 item 5). So where its
+    // reference has no refused line, its line is accepted, and the channel
+    // names it as a write: the lowering routes the value there.
+    var report_lines: std.ArrayList(Facts.Line) = .empty;
+    try report_lines.appendSlice(arena, lines);
+    {
+        const callee = try arena.alloc(bool, bir.insts.len);
+        @memset(callee, false);
+        for (0..bir.insts.len) |i| {
+            const at: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+            if (bir.instTag(at) != .call) continue;
+            const c = bir.instData(at).lhs;
+            if (c < callee.len) callee[c] = true;
+        }
+        const main_tokens = bir.insts.items(.main_token);
+        for (0..bir.insts.len) |i| {
+            const writer = valueWriter(session, ctx.ins.birs, bir, callee, @intCast(i)) orelse continue;
+            const refused = for (r.lines) |l| {
+                if (l.inst == i and l.refused) break true;
+            } else false;
+            if (refused) continue;
+            try report_lines.append(arena, .{ .position = NameCtx.position(&nc, mi_u, main_tokens[i]), .token = main_tokens[i], .op = "value", .base = writer, .refused = false, .accepted = .call });
+            try channel.add(arena, @intCast(i), .writer, false, false);
+        }
     }
     var table = try channel.finish(arena, gpa, r.limits.len != 0);
     // Core and the platforms authorise no write of their own.
@@ -335,7 +381,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         var others: std.ArrayList([]const u8) = .empty;
         try others.appendSlice(arena, r.summaries);
         for (r.limits) |l| try others.append(arena, l.text);
-        ctx.state.reports[mi_u] = try Report.Kept.of(gpa, .{ .module = mi_u, .lines = lines, .others = others.items, .limits = @intCast(r.limits.len) });
+        ctx.state.reports[mi_u] = try Report.Kept.of(gpa, .{ .module = mi_u, .lines = report_lines.items, .others = others.items, .limits = @intCast(r.limits.len) });
     }
     if (!session.enforce_ownership) return;
     // Core and the platforms authorise no write of their own, so only a
@@ -347,15 +393,28 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     const dest = &d.per_module[mi_u];
     for (lines, r.lines) |l, rl| {
         if (!l.refused) continue;
-        if (!app and !rl.evidence) continue;
+        // And a function that writes its parameter that a platform puts
+        // where no rule follows it (`pub push = idL List.push`, kept at
+        // its top level): a program runs it through the platform's value
+        // with no line judging the run (kernel §12 item 5; the review of
+        // research report 163). A top-level alias (`pub ins = Dict.insert`)
+        // is not kept: every reader reads it as what it names
+        // (`Mod.calleeOf`, `coreValueOf`), and each run is judged there.
+        const kept_writer = !app and session.graph.modulePackage(m) != .core and std.mem.eql(u8, l.op, "value") and rl.cause == .call and !isAliasBody(bir, rl.inst);
+        if (!app and !rl.evidence and !kept_writer) continue;
         // A write of a record's field slot is a record's refusal (kernel §11).
-        const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\nThe step 0 prototype of the ownership checker (`--ownership=v3`) refuses a write that it cannot show to be safe. Change a copy (`{s}`).", .{
+        // A function that writes, as a value, where no rule follows it:
+        // the fix is to call it where it writes, or to hand it straight to
+        // the call that runs it (kernel §12 item 5).
+        const fix: []const u8 = if (std.mem.eql(u8, l.op, "value")) "Call the function directly where it writes, or hand it straight to the call that runs it, or change a copy" else "Change a copy";
+        const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\nThe step 0 prototype of the ownership checker (`--ownership=v3`) refuses a write that it cannot show to be safe. {s} (`{s}`).", .{
             l.op,
             l.base,
             Facts.causeText(l.cause),
             if (l.detail.len != 0) ": " else "",
             l.detail,
-            if (rl.record) "Record.copy" else "List.copy",
+            fix,
+            copyFix(rl.record, l.op, l.base),
         });
         try dest.append(gpa, .{ .ownership = true, .code = if (rl.record) .record_still_used else .list_still_used, .module = m, .region = @fromBackingInt(0), .token = l.token, .message = message });
     }

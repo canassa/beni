@@ -5,7 +5,8 @@
 -- Dict.update`), a writer handed on as a value (`apply Dict.insert d`,
 -- `Set.insert`, `List.push`), and a `sortBy` whose callback parks. A
 -- writer that takes a callback handed on as a value (`applyP Dict.sortBy`,
--- whose callback parks) is the plain function, which copies. Nothing
+-- whose callback parks) is routed too, and settles once its answer is
+-- there (`_sanitize$writerWait`, ownership-v3-kernel.md §12 item 5). Nothing
 -- reads a written value's old name, so each write is accepted, and the
 -- sanitised build and the in-place build print what the plain build
 -- prints. Before, these calls were accepted and lowered as plain calls,

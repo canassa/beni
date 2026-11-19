@@ -189,6 +189,13 @@ export const front = (x, xs, site) => {
 // write under the sanitiser.
 export const writer = (site, f) => (base, ...rest) => list(site, f, base, ...rest);
 
+// A writer that takes a callback, handed on as its suspendable twin (its
+// callback may park): the write runs on a fresh copy, and the base is
+// poisoned once the answer is there, after the wait where the callback
+// parks. `andThen` is core's `Task.andThen`, which hands a value that is
+// there to its continuation at once.
+export const writerWait = (site, f, andThen) => (base, ...rest) => andThen(start(site, f, base, ...rest), (a) => settle(base, a, site));
+
 // `xs.length` under the sanitiser. A stale plain array answers its length
 // without throwing, so a read of it that goes through here traps. A view or a
 // trie header throws on its own.

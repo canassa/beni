@@ -2512,6 +2512,23 @@ test "ownership v3 (the step 0 prototype): a refusal is an error under enforceme
     try testing.expectEqual(@as(u8, 1), refused.exit_code);
     try testing.expect(std.mem.indexOf(u8, refused.stderr, "List.push xs is refused: later-use") != null);
     try testing.expect(std.mem.indexOf(u8, refused.stderr, "call Cases.five xs is refused: disjoint") != null);
+    // A writer kept where no rule follows it: the message names the fix
+    // (ownership-v3-kernel.md §12 item 5).
+    try w.write("Kept.beni",
+        \\import Dict exposing (Dict)
+        \\
+        \\
+        \\kept : ⊤ → Dict Int Int
+        \\kept ⊤ =
+        \\    ops = { ins = Dict.insert }
+        \\    ops.ins (Dict.fromList [ ( 1, 10 ) ]) 3 30
+        \\
+    );
+    const kept = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Kept.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), kept.exit_code);
+    try testing.expect(std.mem.indexOf(u8, kept.stderr, "value Dict.insert is refused: call") != null);
+    try testing.expect(std.mem.indexOf(u8, kept.stderr, "Call the function directly where it writes") != null);
+    try testing.expect(std.mem.indexOf(u8, kept.stderr, "change a copy (`Dict.copy`)") != null);
     // Without the hidden flag the same module is v1's to judge.
     try w.write("Main.beni",
         \\import Page

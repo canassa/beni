@@ -1,0 +1,127 @@
+-- A writer of `Dict`, `Set` or `List` named as a value and reached through
+-- something that answers it (an identity, a lambda, a local, a closure that
+-- captured it), then called: v3 judges each call where the value runs, and
+-- the oracle routes the value where it is made (`ownership-v3-kernel.md`
+-- §12 item 5, *A writer value is routed where it is made*). Nothing reads
+-- a written value's old name, so each write is accepted, and the sanitised
+-- and in-place builds print what the plain build prints. Before, each of
+-- these calls was accepted and ran the plain writer, which copies, so no
+-- leg of the oracle ran it in place.
+import Dict exposing (Dict)
+import Io
+import Node exposing (Program)
+import Set exposing (Set)
+
+
+type alias D =
+    Dict Int Int
+
+
+idW : (D, Int, Int → D) → (D, Int, Int → D)
+idW f = f
+
+
+idR : (D, Int → D) → (D, Int → D)
+idR f = f
+
+
+idU : (D, Int, (Maybe Int → Maybe Int) → D) → (D, Int, (Maybe Int → Maybe Int) → D)
+idU f = f
+
+
+idP : (D, (Int, Int → Int) → D) → (D, (Int, Int → Int) → D)
+idP f = f
+
+
+idSet : (Set Int, Int → Set Int) → (Set Int, Int → Set Int)
+idSet f = f
+
+
+idL : (List Int, Int → List Int) → (List Int, Int → List Int)
+idL f = f
+
+
+idLU : (List Int, Int, (Int → Int) → List Int) → (List Int, Int, (Int → Int) → List Int)
+idLU f = f
+
+
+apply : (D, Int, Int → D), D → D
+apply f d = f d 3 30
+
+
+applyOne : (D → D), D → D
+applyOne f d = f d
+
+
+applyLU : (List Int, Int, (Int → Int) → List Int), List Int → List Int
+applyLU f xs = f xs 0 λn →
+    Io.sleep 1
+    n + 100
+
+
+base : ⊤ → D
+base ⊤ = Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]
+
+
+render : D → String
+render d =
+    String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${String.fromInt v}") ","
+
+
+members : Set Int → String
+members s = String.join (List.map (Set.toList s) String.fromInt) ","
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    w = idW Dict.insert
+    a = w (base ⊤) 3 30
+    ww = idW (idW Dict.insert)
+    b = ww (base ⊤) 4 40
+    lw = (λq → q) Dict.insert
+    c = lw (base ⊤) 5 50
+    d = apply (idW Dict.insert) (base ⊤)
+    r = idR Dict.remove
+    e1 = r (base ⊤) 1
+    si = idSet Set.insert
+    f = si (Set.fromList [ 1, 2 ]) 3
+    ins = Dict.insert
+    wa = idW ins
+    g = wa (base ⊤) 6 60
+    h = λx → w x 7 70
+    i = h (base ⊤)
+    j = applyOne (λx → w x 8 80) (base ⊤)
+    lp = idL List.push
+    k = lp [ 1, 2 ] 3
+    part = w _ 9 90
+    l = part (base ⊤)
+    u = idU Dict.update
+    m = u (base ⊤) 1 λ_ → Just 7
+    srt = idP Dict.sortBy
+    n = srt (base ⊤) λx _ →
+        Io.sleep 1
+        0 - x
+    o = applyLU (idLU List.update) [ 1, 2 ]
+    [ render a
+    , render b
+    , render c
+    , render d
+    , render e1
+    , members f
+    , render g
+    , render i
+    , render j
+    , ints k
+    , render l
+    , render m
+    , render n
+    , ints o
+    ]
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (go ⊤)

@@ -1,0 +1,24 @@
+-- A platform's top-level value that a call answers (`pub push = idL
+-- List.push`) holds a writer where no rule follows it: a program would run
+-- it through the platform's value with no line judging the run. v3 refuses
+-- it in the platform, whose refusal stops the build like evidence's
+-- (`ownership-v3-kernel.md` §12 item 5). The program reads the written
+-- list's old name after the write: before, it was accepted, and the write
+-- ran the plain writer, which copies.
+import Node exposing (Program)
+import Probe
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    b0 = [ 1, 2 ]
+    x = Probe.push b0 3
+    [ ints x, ints b0 ]
+
+
+main : Program
+main = Node.printLines (go ⊤)

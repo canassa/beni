@@ -1,0 +1,90 @@
+-- A writer of core kept in a holder no rule follows into: a record's field,
+-- a list, a `Maybe`, a tuple, a constructor's argument, a top-level value,
+-- the answer of a function. No call of it is judged where it runs, so v3
+-- refuses each at the reference, and the message names the fix: call the
+-- writer directly, hand it straight to the call that runs it, or copy
+-- (`ownership-v3-kernel.md` §12 item 5). There is no form in which a
+-- writer value runs as a copying function.
+import Dict exposing (Dict)
+import Node exposing (Program)
+
+
+type alias D =
+    Dict Int Int
+
+
+type alias Ops =
+    ins : D, Int, Int → D
+
+
+type Box
+    = Box (D, Int, Int → D)
+
+
+base : ⊤ → D
+base ⊤ = Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]
+
+
+render : D → String
+render d =
+    String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${String.fromInt v}") ","
+
+
+topIns : D, Int, Int → D
+topIns = Dict.insert
+
+
+pick : ⊤ → (D, Int, Int → D)
+pick ⊤ = Dict.insert
+
+
+inRecord : ⊤ → String
+inRecord ⊤ =
+    ops = { ins = Dict.insert }
+    render (ops.ins (base ⊤) 3 30)
+
+
+inList : ⊤ → String
+inList ⊤ =
+    case [ Dict.insert ] of
+        [ g ] →
+            render (g (base ⊤) 3 30)
+
+        _ →
+            ""
+
+
+inMaybe : ⊤ → String
+inMaybe ⊤ =
+    case Just Dict.insert of
+        Just g →
+            render (g (base ⊤) 3 30)
+
+        Nothing →
+            ""
+
+
+inTuple : ⊤ → String
+inTuple ⊤ =
+    ( g, _ ) = ( Dict.insert, 0 )
+    render (g (base ⊤) 3 30)
+
+
+inBox : ⊤ → String
+inBox ⊤ =
+    (Box g) = Box Dict.insert
+    render (g (base ⊤) 3 30)
+
+
+viaTop : ⊤ → String
+viaTop ⊤ = render (topIns (base ⊤) 3 30)
+
+
+viaPick : ⊤ → String
+viaPick ⊤ =
+    g = pick ⊤
+    render (g (base ⊤) 3 30)
+
+
+main : Program
+main = Node.printLines [ inRecord ⊤, inList ⊤, inMaybe ⊤, inTuple ⊤, inBox ⊤, viaTop ⊤, viaPick ⊤ ]

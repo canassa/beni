@@ -1,0 +1,46 @@
+-- A platform's top-level alias of a writer of core (`pub ins =
+-- Dict.insert`), called and handed on as a value: v3 reads the callee
+-- through the alias as the writer (`Mod.calleeOf`), and the oracle routes
+-- the call at its site and the value where it is made
+-- (`ownership-v3-kernel.md` §12 item 5). Nothing reads a written value's
+-- old name, so each write is accepted, and the sanitised and in-place
+-- builds print what the plain build prints. Before, each of these calls
+-- was accepted and ran the plain writer, which copies.
+import Dict exposing (Dict)
+import Node exposing (Program)
+import Probe
+
+
+apply : (Dict Int Int, Int, Int → Dict Int Int), Dict Int Int → Dict Int Int
+apply f d = f d 3 30
+
+
+applyL : (List Int, Int → List Int), List Int → List Int
+applyL f xs = f xs 3
+
+
+base : ⊤ → Dict Int Int
+base ⊤ = Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]
+
+
+render : Dict Int Int → String
+render d =
+    String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${String.fromInt v}") ","
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    a = Probe.ins (base ⊤) 3 30
+    b = apply Probe.ins (base ⊤)
+    c = Probe.upd (base ⊤) 1 λ_ → Just 7
+    d = Probe.push [ 1, 2 ] 3
+    f = applyL Probe.push [ 1, 2 ]
+    [ render a, render b, render c, ints d, ints f ]
+
+
+main : Program
+main = Node.printLines (go ⊤)

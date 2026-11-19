@@ -1,0 +1,8 @@
+# A writer value kept where no rule follows it is refused at its reference, with the fix in the message (ownership-v3-kernel.md §12 item 5).
+34:10 list_still_used value
+38:10 list_still_used value
+43:19 list_still_used value
+49:12 list_still_used value
+59:15 list_still_used value
+69:18 list_still_used value
+75:19 list_still_used value

@@ -147,6 +147,10 @@ export const front = (x, xs, site) => {
 // A writer handed on as a value (`apply List.push xs`).
 export const writer = (site, f) => (base, ...rest) => list(site, f, base, ...rest);
 
+// A writer that takes a callback, handed on as its suspendable twin: the
+// base takes the written storage once the answer is there.
+export const writerWait = (site, f, andThen) => (base, ...rest) => andThen(start(site, f, base, ...rest), (a) => settle(base, a, site));
+
 export const len = (xs) => xs.length;
 
 export const same = (a, b) => a === b;

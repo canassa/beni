@@ -1,0 +1,15 @@
+--! A platform layer whose values are aliases of core's writers.
+
+import Dict exposing (Dict)
+
+
+pub ins : (Dict Int Int, Int, Int → Dict Int Int)
+ins = Dict.insert
+
+
+pub upd : (Dict Int Int, Int, (Maybe Int → Maybe Int) → Dict Int Int)
+upd = Dict.update
+
+
+pub push : (List Int, Int → List Int)
+push = List.push
