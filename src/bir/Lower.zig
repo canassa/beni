@@ -2405,7 +2405,8 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
 /// (`recordOwnWords`) and are not touched: v1 and v2 read the signature as
 /// before. `position` stands on one parameter after the first, a value, in a
 /// signature whose first parameter is a list the words read: the result is
-/// `elementof` it, or it is `written returned` beside a `stored` parameter.
+/// `elementof` it, or it is `written returned` (beside a `stored` value, or
+/// with none: `Dict.remove`, kernel §12).
 /// A refused word is reported and dropped.
 fn recordOwnWords3(l: *Lower, t: Index) Allocator.Error!void {
     const seen = l.own3_seen.items;

@@ -363,7 +363,7 @@ core/Dict.js                  Dict.keySame        5af3298ca7da839f5642daa2ac2ef2
 core/Dict.js                  Dict.same           0e175ad684f7ebbaf06564a9fa8e9a6ef1a3ff0c56c4b59c6328e6acc01bfea0
 core/Dict.js                  Dict.copy           7b5716159cc6dfcb80ecf45dcec01ca362a245a588b1c605206ec85fbe698433
 core/Dict.js                  Dict.put            2f02a94ba96a3c16adb8bb5785474335375187d1310db48c0873e94fb5d2980f
-core/Dict.js                  Dict.insert         18ea8521950da1415b1f7673c6aee74544d50f9d9ae44e09520c31bbca92d204
+core/Dict.js                  Dict.insert         3fd835670f13b57f63ed9a0b069332fef1fe4caa576af741af49c1eafcbf2145
 core/Dict.js                  Dict.remove         b544f2ace0b171ff2adfadbd9f97cdff4fa181a7a6550afe401bbfb0f9c510f2
 core/Dict.js                  Dict.swap           8e98dee1a4bad4e0e6523ab838f8434dbcb9d976581066bc862508c18e128904
 core/Dict.js                  Dict.insertAt       f307f0edd806b07d9fa7a9d699de396f086652e4369b81262621e0117b661bc6

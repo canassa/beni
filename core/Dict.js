@@ -53,7 +53,7 @@ export const put = (d, k, v) => {
 
 export const insert = (d, k, v) => {
   const pair = pairOf(d, k);
-  if (pair !== undefined && pair[1] === v) return d;
+  if (pair !== undefined && Object.is(pair[1], v)) return d;
   return put(cloned(d), k, v);
 };
 

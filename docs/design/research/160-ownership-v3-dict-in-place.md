@@ -24,7 +24,7 @@ re-opened here. Kernel §12 holds the rules.*
 - **v3 judges a dictionary as a list of its values** (§5, kernel §12): a `keyed` type is storage of
   kind `list` whose element is the value; the primitives are trusted rows; a key is a position
   (`insert`, `remove`, `valueFor`), which answers #2563's `Dict` side for get-then-insert.
-- **No soundness fault** in the `dicts.mjs` sweep (new), the records sweep, the corpus, or the first
+- **No soundness fault** in the `dicts.mjs` sweep (new), the records sweep, the corpus, or either
   review's programs (§7, §8).
 - **Verdicts** (§6): no real root has an accepted line refused. The ledger is 309 of 319 (was 296 of
   308). 15 new refusals on real roots are of `Dict` writes v3 judges for the first time: 5 are real
@@ -180,7 +180,26 @@ and `--release` plain and in place.
 
 ## 8. Reviews
 
-TBD
+Two fresh adversarial readers (Opus), each told to write programs that v3 accepts whole and that trap or
+differ under the four legs.
+
+- **After the oracle and the representation** (about 1 480 programs: dictionaries in every holder and
+  user type, every writer, one value at two keys built 21 ways and then written per position, positions
+  with literal, aliased, rebound and record-field keys, values taken out by 14 readers and written,
+  `merge`, `Set`, `Dict.copy`'s shallowness, the release optimiser's inlining around a write,
+  `Task.spawn`): **no fault**. Its precision notes are #2570 items 6 to 11: two fresh inner
+  dictionaries in one `fromList` read as one cell, `partition`'s halves read as one storage, a literal
+  key is no position, a position lost through `copy`, `filter` and `map`, `merge` into a list
+  accumulator refused, `Dict.copy` inside an `update` callback refused.
+- **At the end** (about 255 programs and 25 hand probes: `remove`'s position reused across writes at
+  one key local, removes in folds and recursion, sharing one level down, every routing form — pipe,
+  method, alias, partial application, a writer in a record field — release `Set` boxes, `put`'s
+  storage, v2's keyed rule): **no fault**. Three defects, none of which lets a write through:
+  `Dict.insert` skipped a store of a value `===` to the one there, so `-0` over `0` kept `0` (fixed,
+  `Object.is`; `run/DictInsertNegativeZero`, red before the fix); a stale comment of
+  `recordOwnWords3` (fixed); and walked writers called method-style or through a local alias are
+  accepted but never routed, so they copy and the oracle cannot test them (#2571). v2 is stricter than
+  before, not looser: a list put into or taken out of a dictionary escapes to it.
 
 ## 9. The representation measurement
 
@@ -240,6 +259,7 @@ run by the full method is S2e's (`browser-inline.md` §9.9).
 | 4 | `Dict.update` with a value-writing callback: a `focus` row (#2570 item 1) | open |
 | 5 | get, write, insert at one key; folds of nested lists; `size` reads only the storage (#2570) | open |
 | 6 | v3 enforced, so production writes in place (#2569) | open |
+| 7 | route method-style and aliased walked writers (#2571) | open |
 
 ## 12. Reproduce
 
