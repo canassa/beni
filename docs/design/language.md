@@ -1463,6 +1463,12 @@ key-order iteration and existing equality implementation. The insertion-order
 storage behavior and new storage APIs specified below await O4; this slice does
 not replace the tree or add a copying fallback.
 
+*Amended 2026-11-19 (research report 160):* the storage and the APIs below are
+built, on the ownership checker v3's branch. Each writer of `core/Dict` answers
+new storage; only a write the checker v3 accepts is made in place, by its
+oracle (`ownership-v3-kernel.md` §12), so no build edits a dictionary a program
+can name until v3 is the checker a build enforces.
+
 `Dict k v` is an ordered keyed collection. `k` must resolve to `Int` or `String`.
 An alias for either is accepted. `Char`, `Int32`, `Float`, tuples, records,
 custom types and collections are refused, even if they have `eq` or `compare`.
@@ -3631,7 +3637,7 @@ beni source writes it**, as Elm's writes Elm, with Elm's spacing:
 | list | `[1,2,3]`, `[]` |
 | record | `{ a = 1, b = "x" }`, `{}` |
 | constructor | `Nothing`, `Just 1`, `Labeled "a b" (Circle 1.5)`: an argument in parentheses when it is more than one word or begins with `-` — `Just (-1)`, `Rect (-1) 2` — as source must write it; `Mark ()` keeps its `()` |
-| `Dict` | `Dict.fromList [(1,"a"),(2,"b")]`, in key order |
+| `Dict` | `Dict.fromList [(1,"a"),(2,"b")]`, in insertion order (amended 2026-11-19) |
 | `Set` | `Set.fromList ['a','b']` |
 | function | `<function>` |
 | `foreign type` | `<internals>` |

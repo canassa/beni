@@ -1991,7 +1991,12 @@ elements are its values.
 4. **A key is a position** (§6 rule 10, *A position*). `insert`'s key and `valueFor`'s key carry
    `position`: `get d k` answers the value at `π1@1[π2]`, and `insert d k v` puts `v` at the key's
    position and keeps `d`'s values at the others (`π1@1[≠π2]`), whether or not the key was there.
-   So get-then-insert at one key local (#2563) is read at one match.
+   So get-then-insert at one key local (#2563) is read at one match. `remove`'s key carries
+   `position` too, a writer with no `stored` value: the value at the key leaves, and the result's
+   values are `d`'s at the other positions (`π1@1[≠π2]`). This widens rule 10's *A position*,
+   which read the other positions only beside a `stored` value; the fact is the same, of the
+   elements that stay. So `update`'s join of `insert` and `remove` holds the value it took out at
+   no place but the callback's answer.
 5. **Lowering.** The writers of `core/Dict.js` copy: they answer new storage and leave their
    argument as it was, so a build that no v3 acceptance reaches edits no dictionary a program can
    name: only the private `put` writes in place, into storage the loop that calls it made, as
@@ -2001,8 +2006,16 @@ elements are its values.
    writer on a copy of the storage, then poisons the old header and its entries array, so a read
    through an older name traps, and links the two for `same`; `--lists-in-place` moves the written
    storage into the base's header, which every holder of the base sees, and answers the base.
+   The walked writers, `Dict.update`, `Dict.sortBy` and `Set`'s, are judged at the call
+   (`callsite`) and named to the lowering as writers (`Enforce.callsCoreWriter`), as
+   `List.update` is; a writer that takes evidence (`sortBy`) is `_sanitize$listAt`, its base the
+   argument after the evidence, and one that may park is the plain call, which copies.
 6. **`Set`** is an opaque box around a `Dict t ⊤`; its writers are walked bodies over `Dict`'s rows,
    and a box written in place is the box whose dictionary was.
 
-What it does not cover yet: v3 judges the calls the oracle lowers; a write that v3 accepts through a
-function value of a writer (`apply Dict.insert d`) is lowered as a plain call and so copies.
+What it does not cover yet: a writer handed on as a function value (`apply Dict.insert d`) is
+lowered as a plain call and copies. A callback of `Dict.update` that writes its value is refused
+(`supply`): `update` is walked, and its callback is handed what the default hands it, not the value
+taken out (§6.8); `List.update`'s `focus` row is the shape that answers it. A get, a write of the
+value, then an insert at one key is refused at the write, since `insert` reads the whole dictionary
+(rule 10, *What it does not cover*).

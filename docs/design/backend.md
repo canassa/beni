@@ -635,6 +635,15 @@ prefix range used by `cancelAll`. W47's type identities and comparison evidence
 remain unchanged. Dict and Set themselves no longer have `compare` and are
 refused as keys with the reason named in the diagnostic.
 
+*Amended 2026-11-19 (research report 160):* built on the ownership checker v3's
+branch with the pair index below. Until v3 is the checker a build enforces, every
+public writer of `core/Dict.js` copies (new header, entries, pairs and `Map`) and
+leaves its argument as it was; only a write v3 accepts is made in place, and only
+under its oracle (`--lists-in-place`, `ownership-v3-kernel.md` §12). The one
+writer that edits in place is the private `put`, into storage the loop that calls
+it made. "Every accepted writer mutates this storage on every platform" above is
+the target, not the state.
+
 *Amended 2026-10-25 (the owner, #298; measured in `browser-inline.md` §9.7):* the
 `index` maps each key to **its entry pair**, not to the pair's position. The
 bijection becomes: `index.size === entries.length`, each key occurs once, and

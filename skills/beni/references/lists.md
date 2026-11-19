@@ -239,6 +239,18 @@ grown a b =
 
 Sources: `docs/design/language.md` §6.8; `docs/design/ownership-checker.md` §16.7, §31.
 
+## Dict and Set
+
+`Dict k v` and `Set t` keep insertion order. `keys`, `values`, `toList` and the folds use that
+order. An insert of a key that is there already keeps its position; a remove and an insert again
+put it at the end. Equality includes order: `Dict.fromList [ ( 1, "a" ), ( 2, "b" ) ]` is not
+equal to `Dict.fromList [ ( 2, "b" ), ( 1, "a" ) ]`. Sort when you need key order:
+`Dict.sortBy d λk _ → k`. `Dict.swap` and `Dict.insertAt` change positions; `Dict.keyAt d i` is
+the key at position `i`, or `Nothing`. `Dict.empty ⊤` and `Set.empty ⊤` make new storage at each
+call. `Dict.copy d` and `Set.copy s` make a shallow copy: the values stay shared.
+
+Sources: `docs/design/language.md` §6.8; `docs/design/backend.md` §4.
+
 ## Identity
 
 `List.map`, `List.filter` and the other readers return a fresh list, never the one they were given.

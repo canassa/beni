@@ -1863,7 +1863,8 @@ takes a callback and produces its result in the order of its subject calls that 
 same order, first element first** — `List.foldl`, `map`, `indexedMap`, `filter`, `filterMap`,
 `concatMap`, `map2`…`map5`, `partition`, `any` and `all` (both with early exit) walk the list front
 to back; `Dict` and `Set`'s `map`, `filter`, `partition`, `foldl` and `merge` walk in ascending key
-order; `String`'s walk the string left to right; `Maybe` and `Result`'s callbacks are called at most
+order (*amended 2026-11-19, research report 160:* in insertion order, `merge` the left's keys then the
+right-only keys, `language.md` §6.8, *Ordered dictionaries and sets*); `String`'s walk the string left to right; `Maybe` and `Result`'s callbacks are called at most
 once. **`foldr` is the exception, by definition**: `List.foldr`, `String.foldr`, `Dict.foldr` and
 `Set.foldr` call their callback last element first, and that — not an accident of an implementation
 built on `reverse` — is their contract. The sort family splits the question in two. A
