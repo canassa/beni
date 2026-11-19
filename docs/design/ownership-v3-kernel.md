@@ -1116,11 +1116,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
       say so.
 
     What it does not judge, each by its reason: a **count** of cells the body was handed (`twice`
-    at a location where the walk has a parameter location or a function's answer, and `nonlinear`
-    that only a cell at two places of one summary location makes), since a word that states
-    positions (`returned`, one `stored`, `copyof`) asserts it as `taken` does and no walk of a
-    permutation or a merge derives it (a count of cells the body made alone is the walk's own, and
-    judged: `fresh exclusive` over `[ t, t ]` is refused): `List.swap`'s two `set`s read the element they put back as
+    at a location where the walk has only parameter locations, function answers or `outside`, and
+    `nonlinear` that only a cell at two places of one summary location makes), since a word that
+    states positions (`returned`, one `stored`, `copyof`) asserts it as `taken` does and no walk of
+    a permutation or a merge derives it. Where a cell the body made is at the location, it can be
+    the one at two places, so the count is judged: `fresh exclusive` over `[ t, t ]` is refused, and
+    so is `List.push (List.push xs t) t` beside handed cells under `written returned` and `stored`: `List.swap`'s two `set`s read the element they put back as
     at two places, and `sortWith`'s merge does the same (a body that stores one value twice beside
     a `written returned` list is a false row the check does not see, `bench/ownership-sweeps/
     worded-bodies.mjs`'s `twice`); `taken`'s `free`, asserted for loops that hand each position

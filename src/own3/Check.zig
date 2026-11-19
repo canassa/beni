@@ -2441,11 +2441,12 @@ pub const Mod = struct {
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
         const rwords = try m.wordsText(rw, &.{}, none);
         for (res_es, c.res, wc.res, 0..) |re, srcs, wsrcs, ri| {
-            // One cell at two places of the location: a count. Of cells the
-            // body made alone it is the walk's own, and judged; with a cell
-            // it was handed there, it is asserted by the words that state
+            // One cell at two places of the location: a count. Where a cell
+            // the body made is there, it can be the one at two places, and
+            // the count is the walk's own: judged. Where only cells it was
+            // handed are there, it is asserted by the words that state
             // positions, and not judged (`srcCovered`).
-            if (hasKind(srcs, .twice) and !hasKind(wsrcs, .twice) and !hasKind(srcs, .param) and !hasKind(srcs, .answer))
+            if (hasKind(srcs, .twice) and !hasKind(wsrcs, .twice) and hasKind(srcs, .fresh))
                 return try m.falseText(name, "the body answers one new cell at two places of the result{s}, and the words `{s}` say that each is at one", .{ try m.atText(re.loc), rwords });
             for (srcs) |s| {
                 if (srcCovered(s, wsrcs)) {
@@ -2507,7 +2508,7 @@ pub const Mod = struct {
         // states positions asserts that each is at one place, as `taken`
         // asserts what a loop hands, and no walk of a permutation
         // (`List.swap`'s two `set`s) or of a merge derives it (research
-        // report 162). A count of cells the body made alone is judged by
+        // report 162). A count where a cell the body made is is judged by
         // `falseWord`.
         if (s.kind == .twice) return true;
         for (ws) |w| switch (s.kind) {
