@@ -345,9 +345,8 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\It stands in front of one parameter after the first, a value and not a
                 \\function, once in a signature. The first parameter is a list that the words
                 \\read: the result is `elementof` it, as in `at : borrowed List a, borrowed
-                \\position Int → elementof a`, or it is `written returned` beside a `stored`
-                \\value, as in `set : written returned List a, borrowed position Int, stored a →
-                \\List a`.
+                \\position Int → elementof a`, or it is `written returned`, as in `set : written
+                \\returned List a, borrowed position Int, stored a → List a`.
             , .{text}),
             .own_failure => try w.writeAll(
                 \\`failure` marks the failure constructor of a type with two constructors, and it

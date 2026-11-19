@@ -1887,11 +1887,11 @@ pub const Mod = struct {
         // a row that casts, places a location anywhere or is pessimistic says
         // no position.
         if (!pessimistic and !c.casts and !c.nonlinear and arity > 0) if (positionParam(m.bir.ownSlotsV3(d), arity)) |q| {
-            const stores = for (pw, 0..) |w, j| {
-                if (j != 0 and has(w, .stored)) break true;
-            } else false;
             const at = has(rw, .elementof) and !has(rw, .taken);
-            const other = !at and has(pw[0], .written) and has(pw[0], .returned) and stores;
+            // With no `stored` value, the element at the position leaves the
+            // result (`Dict.remove`, kernel §12): the other elements are
+            // parameter 0's at the other positions all the same.
+            const other = !at and has(pw[0], .written) and has(pw[0], .returned);
             if (at or other) if (try m.loc.proj(sig.params[0], Step.elem)) |pr| {
                 for (res) |*r| for (r.items) |*s| if (s.kind == .param and s.a == 0 and std.mem.indexOfScalar(u32, pr.up, s.e) != null) {
                     s.p = Src.posOf(q, if (at) 0 else 1);

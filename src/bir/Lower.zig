@@ -2420,15 +2420,16 @@ fn recordOwnWords3(l: *Lower, t: Index) Allocator.Error!void {
     const recorded = if (d.own2_end != d.own2_start) l.extra.items[d.own2_start..d.own2_end] else l.extra.items[d.own_start..d.own_end];
     var first: u32 = 0;
     var result: u32 = 0;
-    var stored = false;
     var at: usize = 0;
     while (at + 1 < recorded.len) : (at += 2) {
         if (recorded[at] == 0) first = recorded[at + 1];
         if (recorded[at] == Bir.own_result) result = recorded[at + 1];
-        if (recorded[at] != 0 and recorded[at] != Bir.own_result and recorded[at + 1] & W.stored.bit() != 0) stored = true;
     }
+    // A writer whose parameter 0 is `written returned`: with a `stored`
+    // value, it puts the value at the position; with none, the element there
+    // leaves (`Dict.remove`, `ownership-v3-kernel.md` §12).
     const container = (result & W.elementof.bit() != 0) or
-        (first & W.written.bit() != 0 and first & W.returned.bit() != 0 and stored);
+        (first & W.written.bit() != 0 and first & W.returned.bit() != 0);
     const is_fn_type = l.insts.items(.tag)[t.int()] == .type_fn;
     const arity = l.typeFnArity(t);
     const mark = l.scratchMark();

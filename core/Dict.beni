@@ -80,8 +80,9 @@ foreign pure valueAt : borrowed Dict k v, borrowed Int → elementof v
 -- The value at a position below `size`, as `valueAt` reads it. Its row is
 -- asserted, as `List.traverseAt`'s is: the value it hands out is apart from
 -- every other position. The obligation every loop that calls it meets: the
--- loop reads the dictionary only through it, once per position, at a
--- position that moves one way.
+-- loop reads the dictionary's values only through it, once per position, at
+-- a position that moves one way. Its `size` and `keyIndex` reads hold no
+-- cell: a key is an `Int` or a `String`.
 foreign pure traverseAt : borrowed Dict k v, borrowed Int → taken v
 
 
@@ -138,7 +139,7 @@ pub foreign pure insert : written returned Dict k v, borrowed position k, stored
 
 --| Remove a key-value pair from a dictionary. If the key is not found, no
 --| changes are made. The other entries keep their order.
-pub foreign pure remove : written returned Dict k v, borrowed k → Dict k v
+pub foreign pure remove : written returned Dict k v, borrowed position k → Dict k v
 
 
 --| A new dictionary with the same keys, values and order. The values are
