@@ -104,7 +104,7 @@ function gen(maker, holder, writer, read) {
   lines.push(`[ ${shown.join(', ')} ]`);
   const param = m.arg ? 'd' : '_';
   const go = `go : Dict Int (List Int) → List String\ngo ${param} =\n${ind(lines.join('\n'), 4)}\n`;
-  const arg = m.arg ?? '(Dict.empty ⊤)';
+  const arg = m.arg ? (/ /.test(m.arg) ? `(${m.arg})` : m.arg) : '(Dict.empty ⊤)';
   return `import Dict exposing (Dict)\nimport Node exposing (Program)\nimport Other\n\n\n${COMMON}\n\n${go}\n\nmain : Program\nmain = Node.printLines (go ${arg})\n`;
 }
 
