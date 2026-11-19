@@ -1068,7 +1068,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
       definition, named where the type it is read at holds a cell (`Check.touchesCells`: a
       parameter, a function parameter or the result of that type has a location, or the value's own
       type has one; `Js.shiftRightZero` on two `Int`s, as `List`'s bounds test calls it, sees none);
-    - a derived row or a codec: the compiler's code, which a walk reads by facts, not by a body;
+    - another module's derived row with no published fact, or a codec: the compiler's code, which no
+      walk reads by a body (this module's derived rows are read through the methods they call, which
+      `Edges` yields as edges of their own, so `( 1, 2 ) == ( 2, 1 )` reaches nothing);
     - a worded row that hands a parameter to code no walk sees (`Check.handsUnseen`: a parameter
       with no word or `unknown` that holds a cell, a function parameter with no word, the result
       word `unknown`), or whose contract casts;
@@ -1081,6 +1083,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     it is declared: it does not carry the bit to its callers. A body that reaches JavaScript is not
     checked: the walk reads JavaScript by its rows, which are pessimistic where they see a cell
     (`Js.call` lets each operand escape, `Js.to` casts), so the walk finds more than the body does.
+    A body that reaches none and whose walk gave up or passed a limit has nothing to check its words
+    against, and an importer trusts them all the same: it is refused. (Where its module publishes no
+    contract, past the layout limit, no importer reads the words, and nothing is refused.)
 
     *Below*, as callers read a contract (`Contract.zig`):
 
@@ -1110,10 +1115,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
       or writes a cell after it handed it (`called`, `lost`, `ans_escapes`, `rewrites`), the words
       say so.
 
-    What it does not judge, each by its reason: a **count** (`twice`, and `nonlinear` that only a
-    cell at two places of one summary location makes), since a word that states positions
-    (`returned`, one `stored`, `copyof`, `exclusive`) asserts it as `taken` does and no walk of a
-    permutation or a merge derives it: `List.swap`'s two `set`s read the element they put back as
+    What it does not judge, each by its reason: a **count** of cells the body was handed (`twice`
+    at a location where the walk has a parameter location or a function's answer, and `nonlinear`
+    that only a cell at two places of one summary location makes), since a word that states
+    positions (`returned`, one `stored`, `copyof`) asserts it as `taken` does and no walk of a
+    permutation or a merge derives it (a count of cells the body made alone is the walk's own, and
+    judged: `fresh exclusive` over `[ t, t ]` is refused): `List.swap`'s two `set`s read the element they put back as
     at two places, and `sortWith`'s merge does the same (a body that stores one value twice beside
     a `written returned` list is a false row the check does not see, `bench/ownership-sweeps/
     worded-bodies.mjs`'s `twice`); `taken`'s `free`, asserted for loops that hand each position

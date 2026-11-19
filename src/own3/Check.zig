@@ -2230,8 +2230,10 @@ pub const Mod = struct {
     ///   primitive or a name with no definition, named where the type it is
     ///   read at holds a cell (`touchesCells`: `Js.shiftRightZero` on two
     ///   `Int`s reads none);
-    /// - a derived row or a codec: the compiler's code, read by facts and
-    ///   not by a body;
+    /// - another module's derived row with no published fact, or a codec:
+    ///   the compiler's code, which no walk reads by a body (this module's
+    ///   derived rows are read through the methods they call, which leg 3
+    ///   yields as edges of their own);
     /// - a worded row that hands a parameter to code that no walk sees
     ///   (`handsUnseen`), or that casts;
     /// - a declaration with no words and no contract (its walk gave up, or
@@ -2277,7 +2279,13 @@ pub const Mod = struct {
                         const vd = m.in.provenance[mi].valueDecl(x.value) orelse break true;
                         break :blk .{ mi, vd.int() };
                     },
-                    .derived, .ext_derived, .codec => break true,
+                    // This module's derived row: its body's methods are edges
+                    // of their own (leg 3 walks through the rows).
+                    .derived => continue,
+                    // Another module's derived row, by its published fact.
+                    .ext_derived => if ((try m.edgeEffect(e)).no_contract) break true else continue,
+                    // A codec: the compiler's code, which no walk reads by a body.
+                    .codec => break true,
                     // The compiler's own comparisons: they read their operands.
                     .primitive, .undetermined => continue,
                 };
@@ -2433,6 +2441,12 @@ pub const Mod = struct {
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
         const rwords = try m.wordsText(rw, &.{}, none);
         for (res_es, c.res, wc.res, 0..) |re, srcs, wsrcs, ri| {
+            // One cell at two places of the location: a count. Of cells the
+            // body made alone it is the walk's own, and judged; with a cell
+            // it was handed there, it is asserted by the words that state
+            // positions, and not judged (`srcCovered`).
+            if (hasKind(srcs, .twice) and !hasKind(wsrcs, .twice) and !hasKind(srcs, .param) and !hasKind(srcs, .answer))
+                return try m.falseText(name, "the body answers one new cell at two places of the result{s}, and the words `{s}` say that each is at one", .{ try m.atText(re.loc), rwords });
             for (srcs) |s| {
                 if (srcCovered(s, wsrcs)) {
                     // A new cell at two locations of the result: the words name one site for both.
@@ -2489,10 +2503,12 @@ pub const Mod = struct {
     /// caller writes only where it may write what it handed, and reads as
     /// held by what it handed).
     fn srcCovered(s: Src, ws: []const Src) bool {
-        // A count is not judged: a word that states positions asserts that
-        // each cell is at one place, as `taken` asserts what a loop hands,
-        // and no walk of a permutation (`List.swap`'s two `set`s) or of a
-        // merge derives it (research report 162).
+        // A count of cells the body was handed is not judged: a word that
+        // states positions asserts that each is at one place, as `taken`
+        // asserts what a loop hands, and no walk of a permutation
+        // (`List.swap`'s two `set`s) or of a merge derives it (research
+        // report 162). A count of cells the body made alone is judged by
+        // `falseWord`.
         if (s.kind == .twice) return true;
         for (ws) |w| switch (s.kind) {
             .param => if (w.kind == .param and w.a == s.a and w.e == s.e and (w.p == 0 or w.p == s.p)) return true,
@@ -3675,10 +3691,16 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         defer m.loc.units = units;
         if (options.rows) m.js = try m.reachesJs();
         for (bir.decls, walked, 0..) |d, w, di| {
-            const c = w orelse continue;
+            if (d.kind != .value or d.body == .none or bir.ownSlotsV2(d).len == 0) continue;
             if (di >= m.js.len or m.js[di]) continue;
+            // Words that no importer reads (the module publishes no
+            // contract) are not trusted, and need no check.
             const wc = m.contracts[di] orelse continue;
-            if (try m.falseWord(@intCast(di), wc, c)) |text| try m.false_words.append(m.arena, .{ .text = text, .token = d.name_token });
+            // A walk that gave up or passed a limit found nothing to check
+            // the words against, and its words are trusted all the same:
+            // they are refused.
+            const text = if (w) |c| try m.falseWord(@intCast(di), wc, c) else try m.falseText(m.names.declName(in.module, @intCast(di)), "its body reaches no JavaScript, and its walk gave up or passed a limit, so no word of it can be checked", .{});
+            if (text) |t| try m.false_words.append(m.arena, .{ .text = t, .token = d.name_token });
         }
     }
     // The contracts as text, for a dump: the ones the module publishes.

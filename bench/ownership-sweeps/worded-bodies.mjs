@@ -280,6 +280,74 @@ const rows = [
     [ ints ys, String.fromInt ((Ref.get r) ⊤) ]`,
   },
   {
+    // A derived comparison of values that hold no cell reaches no JavaScript.
+    name: 'derivedCompare',
+    sig: (w) => `peek : ${w[0]} Dict Int (List Int) → Int`,
+    body: `peek d =
+    k = if ( 1, 2 ) == ( 2, 1 ) then 2 else 1
+    List.length (Maybe.withDefault (Dict.get d k) [])`,
+    lie: [['shallow', ['borrowed shallow']]],
+    honest: [['borrowed', ['borrowed']]],
+    live: `    d0 = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+    xs = Maybe.withDefault (Dict.get d0 1) []
+    ys = List.push xs 5
+    n = Rows.peek d0
+    [ ints ys, String.fromInt n ]`,
+    dead: `    d0 = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+    n = Rows.peek d0
+    xs = Maybe.withDefault (Dict.get d0 1) []
+    ys = List.push xs 5
+    [ ints ys, String.fromInt n ]`,
+  },
+  {
+    // A walk that gives up has nothing to check the words against: refused.
+    name: 'givesUp',
+    sig: (w) => `peek : ${w[0]} Dict Int (List Int) → Int`,
+    body: `peek d =
+    xs = Maybe.withDefault (Dict.get d 1) []
+    loop : Int, List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int → List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int × List Int
+    loop n ( b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19 ) = if n == 0 then ( b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19 ) else loop (n - 1) ( b19, b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18 )
+    ( a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19 ) = loop 0 ( xs, [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [] )
+    List.length a0`,
+    lie: [['shallow', ['borrowed shallow']]],
+    live: `    d0 = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+    xs = Maybe.withDefault (Dict.get d0 1) []
+    ys = List.push xs 5
+    n = Rows.peek d0
+    [ ints ys, String.fromInt n ]`,
+    dead: `    d0 = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+    n = Rows.peek d0
+    xs = Maybe.withDefault (Dict.get d0 1) []
+    ys = List.push xs 5
+    [ ints ys, String.fromInt n ]`,
+  },
+  {
+    // A count of cells the body made alone is judged.
+    name: 'freshTwice',
+    sig: (w) => `mk : borrowed Int → ${w[0]} List (List Int)`,
+    body: `mk n =
+    t = [ n ]
+    [ t, t ]`,
+    lie: [['exclusive', ['fresh exclusive']]],
+    honest: [['fresh', ['fresh']], ['two', ['fresh exclusive'], 'mk n = [ [ n ], [ n ] ]']],
+    live: `    ys = Rows.mk 1
+    case ys of
+        [ a, b ] →
+            a2 = List.push a 5
+            [ ints a2, ints b ]
+
+        _ →
+            []`,
+    dead: `    ys = Rows.mk 1
+    case ys of
+        [ a, _ ] →
+            a2 = List.push a 5
+            [ ints a2 ]
+
+        _ →
+            []`,
+  },
+  {
     // Not judged (a count): the words state one store, the body stores twice. A row of this kind is
     // trusted as a `foreign` one is, so its `live` twin is expected to trap or differ.
     name: 'twice',

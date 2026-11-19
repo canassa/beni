@@ -22,3 +22,118 @@ later l = λ⊤ → List.length l
 --| `many`, and the body keeps the function in a cell.
 pub keepFn : many (⊤ → Int) → Ref (⊤ → Int)
 keepFn f = Ref.make f
+
+
+--| `shallow`, and the body reads the list at a key that a derived
+--| comparison of two tuples chooses: a comparison of values that hold no
+--| cell reaches no JavaScript.
+pub peekCompare : borrowed shallow Dict Int (List Int) → Int
+peekCompare d =
+    k = if ( 1, 2 ) == ( 2, 1 ) then 2 else 1
+    List.length (Maybe.withDefault (Dict.get d k) [])
+
+
+--| `shallow`, and a walk that gives up: a loop over a tuple of twenty lists
+--| whose walk does not settle. No word of it can be checked.
+pub peekRotate : borrowed shallow Dict Int (List Int) → Int
+peekRotate d =
+    xs = Maybe.withDefault (Dict.get d 1) []
+    loop :
+          Int
+        , List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+        → List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+              × List Int
+    loop n ( b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19 ) =
+        if n == 0 then
+            ( b0
+            , b1
+            , b2
+            , b3
+            , b4
+            , b5
+            , b6
+            , b7
+            , b8
+            , b9
+            , b10
+            , b11
+            , b12
+            , b13
+            , b14
+            , b15
+            , b16
+            , b17
+            , b18
+            , b19
+            )
+        else
+            loop
+                (n - 1)
+                ( b19
+                , b0
+                , b1
+                , b2
+                , b3
+                , b4
+                , b5
+                , b6
+                , b7
+                , b8
+                , b9
+                , b10
+                , b11
+                , b12
+                , b13
+                , b14
+                , b15
+                , b16
+                , b17
+                , b18
+                )
+    ( a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16, a17, a18, a19 ) =
+        loop 0 ( xs, [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [] )
+    List.length a0
+
+
+--| `exclusive`, and the body answers one new list at two places.
+pub freshTwice : ⊤ → fresh exclusive List (List Int)
+freshTwice ⊤ =
+    t = [ 1 ]
+    [ t, t ]
