@@ -120,7 +120,7 @@ Open the file your task needs.
   `env`, errors, cancellation.
 - `references/project.md` — `beni.json`, `beni new`, the output tree, `beni serve`.
 - `references/ownership-words.md` — the ownership words core and platform packages write,
-  `misplaced_ownership_word`, `false_ownership_word`, and `@ownership_summary_size`.
+  `misplaced_ownership_word`, and `@ownership_summary_size`.
 - `references/cli.md` — every command and flag of `beni help`, the exit codes, `--diagnostics=json`.
 - `references/api-core.md` — generated core interfaces.
 - `references/api-node.md`, `references/api-browser.md`, `references/api-browser-tea.md`,
