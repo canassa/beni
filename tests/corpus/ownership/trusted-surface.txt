@@ -88,4 +88,3 @@ core       Dict.has              ownership/core/DictWords.beni   -        Dict.m
 core       Dict.keyIndex         ownership/core/DictWords.beni   -        Dict.keyAt
 core       Dict.isIndex          ownership/core/DictWords.beni   -        Dict.keyAt
 core       Dict.keySame          ownership/core/DictWords.beni   -        Dict.eq
-core       Dict.same             ownership/core/DictWords.beni   -        Dict.eq

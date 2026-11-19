@@ -1,0 +1,7 @@
+Int ==: False
+eq two builds: True
+member: yes
+1
+eq copy: True
+== copy: True
+set eq: True

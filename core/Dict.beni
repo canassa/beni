@@ -86,12 +86,10 @@ foreign pure valueAt : borrowed Dict k v, borrowed Int → elementof v
 foreign pure traverseAt : borrowed Dict k v, borrowed Int → taken v
 
 
--- Two keys are the same key.
+-- Two keys are the same key, as the index identifies keys: a `Map`'s
+-- SameValueZero, so a NaN key (`round (0.0 / 0.0)`) is one key, the one
+-- `get`, `member` and `fromList` find.
 foreign pure keySame : borrowed k, borrowed k → Bool
-
-
--- Two dictionaries are one storage.
-foreign pure same : borrowed Dict k v, borrowed Dict k v → Bool
 
 
 -- Insert into storage that only the loop of this module that made it can
@@ -407,13 +405,15 @@ sortBy d f =
 
 
 --| Equal when both have the same keys with equal values, in the same order,
---| by each value's own `eq`.
+--| by each value's own `eq`, as `List.eq` compares: a dictionary that holds
+--| a Float NaN is not equal to itself. Keys are compared as the dictionary
+--| identifies them, so a NaN key is equal to a NaN key.
 --|
 --|     eq (fromList [ ( 1, "a" ), ( 2, "b" ) ]) (fromList [ ( 1, "a" ), ( 2, "b" ) ]) == True
 --|     eq (fromList [ ( 1, "a" ), ( 2, "b" ) ]) (fromList [ ( 2, "b" ), ( 1, "a" ) ]) == False
 pub eq : Dict k v, Dict k v → Bool
     where v.eq : v, v → Bool
-eq left right = same left right || (size left == size right && eqFrom left right 0)
+eq left right = size left == size right && eqFrom left right 0
 
 
 eqFrom : Dict k v, Dict k v, Int → Bool

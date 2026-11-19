@@ -34,8 +34,8 @@ export const keyIndex = (d, i) => d.entries[i][0];
 export const isIndex = (d, i) => Number.isInteger(i) && i >= 0 && i < d.entries.length;
 export const valueAt = (d, i) => d.entries[i][1];
 export const traverseAt = (d, i) => d.entries[i][1];
-export const keySame = (a, b) => a === b;
-export const same = (a, b) => a === b;
+// SameValueZero, as the index's `Map` identifies keys.
+export const keySame = (a, b) => a === b || (a !== a && b !== b);
 export const copy = (d) => cloned(d);
 
 // `put` on storage only `Dict.beni`'s loop that made it can see.

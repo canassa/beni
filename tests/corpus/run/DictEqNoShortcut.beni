@@ -1,0 +1,20 @@
+-- `Dict.eq` compares each value by its own `eq`, as `List.eq` does, with no
+-- shortcut for one storage: a dictionary that holds a Float NaN is not
+-- equal to itself, nor to its copy. Before, `eq` began with `same left
+-- right ||`, so `d == d` was True while `d == Dict.copy d` was False.
+import Dict exposing (Dict)
+import Node exposing (Program)
+import Set
+
+
+main : Program
+main =
+    nan = 0.0 / 0.0
+    d = Dict.fromList [ ( 1, nan ) ]
+    xs = [ nan ]
+    Node.printLines
+        [ if nan == nan then "Float ==: True" else "Float ==: False"
+        , if xs == xs then "list self: True" else "list self: False"
+        , if d == d then "dict self: True" else "dict self: False"
+        , if d == Dict.copy d then "dict copy: True" else "dict copy: False"
+        ]

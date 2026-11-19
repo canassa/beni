@@ -359,8 +359,7 @@ core/Dict.js                  Dict.keyIndex       bae000c7b3dbb9e94a65af9238996f
 core/Dict.js                  Dict.isIndex        8afdf52c2569ab35d64f5eab5d81d02988a2a356fe56a4a80e33cc5039ba6d48
 core/Dict.js                  Dict.valueAt        1f7ad5fe7b259e7d1363517e0fbf39bd7a51b43ca5ff6ee8bd881a9b76fba8e7
 core/Dict.js                  Dict.traverseAt     185baff58cd20cef1573cd00e2c3e57f7212bfec7a9dbe6d87572338a706eac1
-core/Dict.js                  Dict.keySame        5af3298ca7da839f5642daa2ac2ef2387cd43bd38a090cf1a6fafd393a09c5e2
-core/Dict.js                  Dict.same           0e175ad684f7ebbaf06564a9fa8e9a6ef1a3ff0c56c4b59c6328e6acc01bfea0
+core/Dict.js                  Dict.keySame        8730bec376bd1a27aad898e9a585b8d105e394467f338b3921ec5e8d1fd4faa0
 core/Dict.js                  Dict.copy           7b5716159cc6dfcb80ecf45dcec01ca362a245a588b1c605206ec85fbe698433
 core/Dict.js                  Dict.put            2f02a94ba96a3c16adb8bb5785474335375187d1310db48c0873e94fb5d2980f
 core/Dict.js                  Dict.insert         3fd835670f13b57f63ed9a0b069332fef1fe4caa576af741af49c1eafcbf2145

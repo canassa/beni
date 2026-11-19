@@ -1,0 +1,30 @@
+-- A NaN `Int` key (`round (0.0 / 0.0)`) is one key to the index (a `Map`,
+-- SameValueZero): `member`, `get` and `fromList`'s dedupe find it. `Dict.eq`
+-- compares keys the same way (`keySame`), so a dictionary is equal to its
+-- copy and to another build of it, and `Set.eq` of two `[ nan ]` sets is
+-- True. Before, `keySame` was `===`, under which NaN is no key it holds.
+import Dict exposing (Dict)
+import Node exposing (Program)
+import Set
+
+
+main : Program
+main =
+    nan = round (0.0 / 0.0)
+    d = Dict.fromList [ ( nan, "a" ) ]
+    c = Dict.copy d
+    Node.printLines
+        [ if nan == nan then "Int ==: True" else "Int ==: False"
+        , if Dict.eq (Dict.fromList [ ( nan, "a" ) ]) (Dict.fromList [ ( nan, "a" ) ]) then
+            "eq two builds: True"
+          else
+            "eq two builds: False"
+        , if Dict.member c nan then "member: yes" else "member: no"
+        , String.fromInt (Dict.size (Dict.fromList [ ( nan, "a" ), ( nan, "b" ) ]))
+        , if Dict.eq d c then "eq copy: True" else "eq copy: False"
+        , if d == c then "== copy: True" else "== copy: False"
+        , if Set.eq (Set.fromList [ nan ]) (Set.fromList [ nan ]) then
+            "set eq: True"
+          else
+            "set eq: False"
+        ]
