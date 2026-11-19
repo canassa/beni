@@ -159,3 +159,7 @@ export const record = (base, copy) => copy;
 // A writer of `Dict` or `Set` that takes evidence first (`sortBy`): its base
 // is argument `k`, and takes the written storage.
 export const listAt = (site, writer, k, ...args) => settleKeyed(args[k], writer(...args));
+
+// The first half of such a write that may park: the writer runs, and
+// `settle` gives its answer's storage to the base.
+export const startAt = (site, writer, k, ...args) => writer(...args);

@@ -127,33 +127,113 @@ const NameCtx = struct {
     }
 };
 
-/// Whether instruction `inst` calls a walked writer of core by its name:
-/// `List.update`, or one of `Dict`'s and `Set`'s (kernel §12).
-fn callsCoreWriter(session: *const Session, bir: *const Bir, inst: u32) bool {
-    if (inst >= bir.insts.len) return false;
-    const call: Bir.Inst.Index = @fromBackingInt(inst);
-    if (bir.instTag(call) != .call) return false;
-    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
-    if (bir.instTag(callee) != .ext_value) return false;
-    const d = bir.instData(callee);
+/// The value of core that `callee` names, as `(module, value)`: an
+/// `ext_value`, through a chain of locals that a `let` binds to it
+/// (`upd = Dict.update`, `q = upd`), as `Lower.listWriterOf` follows it.
+fn coreValueOf(session: *const Session, bir: *const Bir, callee: Bir.Inst.Index) ?struct { Graph.Index, u32 } {
+    var at = callee;
+    var depth: u32 = 0;
+    while (bir.instTag(at) == .local and depth < 8) : (depth += 1) at = letValueOf(bir, at) orelse return null;
+    if (bir.instTag(at) != .ext_value) return null;
+    const d = bir.instData(at);
     const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
-    const interfaces = session.resolution.interfaces;
-    if (module.int() >= interfaces.len) return false;
-    if (session.graph.modulePackage(module) != .core) return false;
-    const iface = &interfaces[module.int()];
-    if (d.rhs >= iface.values.len) return false;
-    const name = session.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    if (module.int() >= session.resolution.interfaces.len) return null;
+    if (session.graph.modulePackage(module) != .core) return null;
+    return .{ module, d.rhs };
+}
+
+/// The definition a `let` binds local `inst` to, as `Lower.letValueOf`
+/// reads it.
+fn letValueOf(bir: *const Bir, inst: Bir.Inst.Index) ?Bir.Inst.Index {
+    const local = bir.instData(inst).lhs;
+    for (bir.decls) |d| {
+        if (inst.int() < d.inst_start.int() or inst.int() >= d.inst_end.int()) continue;
+        const locals = bir.declLocals(d);
+        if (local >= locals.len or locals[local].kind != .let) return null;
+        const def = locals[local].inst;
+        if (bir.instTag(def) != .let_def) return null;
+        return @fromBackingInt(@intCast(bir.instData(def).rhs));
+    }
+    return null;
+}
+
+/// The name of core module `module`, and the spelling of its value `value`.
+fn coreNames(session: *const Session, module: Graph.Index, value: u32) ?struct { []const u8, []const u8 } {
+    const iface = &session.resolution.interfaces[module.int()];
+    if (value >= iface.values.len) return null;
+    return .{ session.interner.slice(session.graph.moduleName(module)), session.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]) };
+}
+
+fn isOneOf(name: []const u8, names: []const []const u8) bool {
+    for (names) |w| if (std.mem.eql(u8, w, name)) return true;
+    return false;
+}
+
+/// The core value that instruction `inst` calls: a `call` of an
+/// `ext_value` or of a local bound to one, or a `method_call` whose
+/// dispatch term is a value of a core module (`d.update k f`).
+fn coreCallee(session: *const Session, bir: *const Bir, dispatch: ?*const Dispatch, inst: u32) ?struct { Graph.Index, u32 } {
+    if (inst >= bir.insts.len) return null;
+    const call: Bir.Inst.Index = @fromBackingInt(inst);
+    if (bir.instTag(call) == .call) return coreValueOf(session, bir, @fromBackingInt(@intCast(bir.instData(call).lhs)));
+    if (bir.instTag(call) != .method_call) return null;
+    const dt = dispatch orelse return null;
+    const site = dt.siteOf(call) orelse return null;
+    const ti = site.callee.unwrap() orelse return null;
+    return switch (dt.term(ti)) {
+        .ext => |u| if (u.module.int() < session.resolution.interfaces.len and session.graph.modulePackage(u.module) == .core) .{ u.module, @backingInt(u.value) } else null,
+        // No other term names a value of another module.
+        .top, .param, .derived, .ext_derived, .primitive, .undetermined, .field, .identity, .text, .codec => null,
+    };
+}
+
+/// Whether instruction `inst` calls a walked writer of core by its name:
+/// `List.update`, or one of `Dict`'s and `Set`'s (kernel §12), however the
+/// call names it: directly, method-style (`d.update k f`), or through a
+/// local alias (`upd = Dict.update`).
+fn callsCoreWriter(session: *const Session, bir: *const Bir, dispatch: ?*const Dispatch, inst: u32) bool {
+    const module, const value = coreCallee(session, bir, dispatch, inst) orelse return false;
+    const module_name, const name = coreNames(session, module, value) orelse return false;
     if (session.graph.moduleName(module) == InternPool.WellKnown.List.symbol()) return std.mem.eql(u8, name, "update");
     // The walked writers of `Dict` and `Set` (kernel §12): the write is a
     // row's inside core, and the lowering edits the call as the writer.
-    const module_name = session.interner.slice(session.graph.moduleName(module));
-    const walked: []const []const u8 = if (std.mem.eql(u8, module_name, "Dict"))
-        &.{ "update", "sortBy" }
-    else if (std.mem.eql(u8, module_name, "Set"))
-        &.{ "insert", "remove", "swap", "insertAt", "sortBy" }
-    else
-        &.{};
-    for (walked) |w| if (std.mem.eql(u8, w, name)) return true;
+    if (std.mem.eql(u8, module_name, "Dict")) return isOneOf(name, &.{ "update", "sortBy" });
+    if (std.mem.eql(u8, module_name, "Set")) return isOneOf(name, &.{ "insert", "remove", "swap", "insertAt", "sortBy" });
+    return false;
+}
+
+/// Whether the call `inst` hands a writer of core's `List`, `Dict` or `Set`
+/// to its callee as a value (`apply Dict.insert d`; kernel §12, *A writer
+/// handed on as a value*): the call's line judged every write the value
+/// makes, so where it is accepted the lowering routes the value
+/// (`Lower.routeWriterValues`).
+fn handsCoreWriter(session: *const Session, bir: *const Bir, inst: u32) bool {
+    if (inst >= bir.insts.len) return false;
+    const call: Bir.Inst.Index = @fromBackingInt(inst);
+    const data = bir.instData(call);
+    // A method call hands its receiver and its arguments (`x.apply Dict.insert`).
+    const receiver: []const Bir.Inst.Index = if (bir.instTag(call) == .method_call) &.{@fromBackingInt(@intCast(data.lhs))} else &.{};
+    const args = switch (bir.instTag(call)) {
+        .call => bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Inst.Index),
+        .method_call => args: {
+            const mc = bir.extraData(@fromBackingInt(data.rhs), Bir.MethodCall);
+            break :args bir.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Bir.Inst.Index);
+        },
+        else => return false,
+    };
+    for ([_][]const Bir.Inst.Index{ receiver, args }) |part| for (part) |a| {
+        const module, const value = coreValueOf(session, bir, a) orelse continue;
+        const module_name, const name = coreNames(session, module, value) orelse continue;
+        const writers: []const []const u8 = if (session.graph.moduleName(module) == InternPool.WellKnown.List.symbol())
+            &.{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" }
+        else if (std.mem.eql(u8, module_name, "Dict"))
+            &.{ "insert", "remove", "update", "swap", "insertAt", "sortBy" }
+        else if (std.mem.eql(u8, module_name, "Set"))
+            &.{ "insert", "remove", "swap", "insertAt", "sortBy" }
+        else
+            &.{};
+        if (isOneOf(name, writers)) return true;
+    };
     return false;
 }
 
@@ -222,7 +302,11 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         // `List.update` has no words: its write is `focus`'s, inside core,
         // so v3 says it at the call (`callsite`). The lowering edits the call
         // as the writer it is (`backend.md` §4), so the channel names it as one.
-        const kind = if (l.kind == .callsite and callsCoreWriter(session, bir, l.inst)) .writer else l.kind;
+        // A call that hands a core writer on as a value (`apply Dict.insert
+        // d`) is named as a writer too: its line judged the value's writes,
+        // and the lowering routes the value (kernel §12).
+        const dispatch: ?*const Dispatch = if (mi_u < d.dispatch.len) &d.dispatch[mi_u] else null;
+        const kind = if (l.kind == .callsite and callsCoreWriter(session, bir, dispatch, l.inst)) .writer else if (handsCoreWriter(session, bir, l.inst)) .writer else l.kind;
         try channel.add(arena, l.inst, kind, l.refused, Hoists.reliesOnCallers(l.accepted));
     }
     var table = try channel.finish(arena, gpa, r.limits.len != 0);

@@ -4016,6 +4016,10 @@ pub const Lowerer = struct {
                 .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "listAt"), .tag = JsIr.Name.no_tag }),
                 .local = try l.sanitizerLocal("listAt"),
             },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "startAt"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("startAt"),
+            },
         }));
         // The markup runtime: the lowering's exports and the markup
         // primitives this module uses, one binding each (`backend.md` §15.1).
@@ -5578,6 +5582,43 @@ pub const Lowerer = struct {
         l.needs.sanitize = true;
         const site = try std.fmt.allocPrint(l.scratch, "`{s}` value in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
         return l.call(try l.ident(try l.sanitizerLocal("writer"), p), &.{ try l.stringNode(site, p), value }, p);
+    }
+
+    /// A writer of `Dict` or `Set` that takes evidence first (`sortBy`),
+    /// under the v3 oracle (kernel §12): `_sanitize$listAt(site, writer, k,
+    /// …args)`, its base `args[k]`, the argument after the evidence. One
+    /// that may park here (its callback may wait) is
+    /// `_sanitize$startAt(…)` behind the marker, then
+    /// `_sanitize$settle(base, answer, site)`, the base bound to a
+    /// temporary first, as `sanitizedWrite` lowers a parking write.
+    fn sanitizedWriteAt(l: *Lowerer, out: *StmtList, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, k: usize, p: u32, inst: Inst.Index) Allocator.Error!Node.Index {
+        if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists() and k < args.len);
+        l.needs.sanitize = true;
+        const site = try std.fmt.allocPrint(l.scratch, "`{s}` in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
+        const all = try l.scratch.alloc(Node.Index, args.len + 3);
+        all[0] = try l.stringNode(site, p);
+        all[1] = writer;
+        all[2] = try l.intNode(@intCast(k), p);
+        @memcpy(all[3..], args);
+        if (!(l.suspendable and l.suspendsHere(l.in.dispatch.effectAt(inst).own))) return l.call(try l.ident(try l.sanitizerLocal("listAt"), p), all, p);
+        const base = try l.fresh(l.well.temp);
+        try l.constDecl(out, base, args[k], p);
+        all[3 + k] = try l.ident(base, p);
+        const answer = try l.suspension(out, inst, try l.call(try l.ident(try l.sanitizerLocal("startAt"), p), all, p));
+        return l.call(try l.ident(try l.sanitizerLocal("settle"), p), &.{ try l.ident(base, p), answer, try l.stringNode(site, p) }, p);
+    }
+
+    /// Under the v3 oracle, a writer of core handed to the call `inst` as a
+    /// value (`apply Dict.insert d`) whose line v3 accepted: each argument
+    /// that names one is `_sanitize$writer(site, value)`, which writes under
+    /// the oracle wherever the callee calls it (kernel §12, *A writer handed
+    /// on as a value*). The channel lists such a call as a write
+    /// (`Enforce.handsCoreWriter`).
+    fn routeWriterValues(l: *Lowerer, written: []Node.Index, arg_insts: []const Inst.Index, inst: Inst.Index, p: u32) Allocator.Error!void {
+        if (!l.in.records_v3 or l.in.list_writes == null or !l.sanitizesAt(inst)) return;
+        for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
+            w.* = try l.sanitizedWriterValue(w.*, writer, p);
+        };
     }
 
     /// `_sanitize$len(list)`: a read of a list's length under the
@@ -10402,12 +10443,26 @@ pub const Lowerer = struct {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.termName(target, p);
                 // `xs.push x` is `List.push xs x`, a write of its receiver.
-                if (target == .ext and evidence.len == 0 and l.sanitizesAt(inst)) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
+                if (target == .ext and l.sanitizesAt(inst)) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
                     const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
-                    return l.sanitizedWrite(out, callee_name, writer, values, p, inst, null);
+                    if (evidence.len == 0) return l.sanitizedWrite(out, callee_name, writer, values, p, inst, null);
+                    // `d.sortBy f`: the evidence first, then the receiver,
+                    // the base (`sanitizedWriteAt`).
+                    const all = try l.scratch.alloc(Node.Index, evidence.len + values.len);
+                    @memcpy(all[0..evidence.len], evidence);
+                    @memcpy(all[evidence.len..], values);
+                    return l.sanitizedWriteAt(out, callee_name, writer, all, evidence.len, p, inst);
                 };
-                const called = try l.receiverCall(out, callee_name, evidence, @fromBackingInt(@intCast(d.lhs)), args, p);
-                const value = try l.suspension(out, inst, called);
+                const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
+                // A writer handed on as a value (`x.apply Dict.insert`).
+                const arg_insts = try l.scratch.alloc(Inst.Index, values.len);
+                arg_insts[0] = @fromBackingInt(@intCast(d.lhs));
+                @memcpy(arg_insts[1..], l.bir.extraSlice(args, Inst.Index));
+                try l.routeWriterValues(values, arg_insts, inst, p);
+                const all = try l.scratch.alloc(Node.Index, evidence.len + values.len);
+                @memcpy(all[0..evidence.len], evidence);
+                @memcpy(all[evidence.len..], values);
+                const value = try l.suspension(out, inst, try l.call(callee_name, all, p));
                 // An ordering operator against a non-primitive target is
                 // the `Order` test of §8.3: the method answers `Order` and
                 // the operator answers `Bool`.
@@ -11265,6 +11320,7 @@ pub const Lowerer = struct {
         if (l.sanitizesWriterValues()) for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
             w.* = try l.sanitizedWriterValue(w.*, writer, p);
         };
+        try l.routeWriterValues(written, arg_insts, inst, p);
         l.region = inst;
         // The evidence takes the body its callee takes (§16.2).
         const saved_choice = l.term_choice;
@@ -11287,19 +11343,10 @@ pub const Lowerer = struct {
         @memcpy(args[0..evidence.len], evidence);
         @memcpy(args[evidence.len..], written);
         // A writer of `Dict` or `Set` that takes evidence (`sortBy`) under
-        // the v3 oracle (kernel §12): `_sanitize$listAt(site, writer, k, …)`,
-        // its base the argument after the evidence. One that may park is
-        // the plain call, which copies.
-        if (written.len != 0 and l.sanitizesAt(inst) and !(l.suspendable and l.suspendsHere(l.in.dispatch.effectAt(inst).own))) if (l.listWriterOf(callee_inst)) |writer| {
-            l.needs.sanitize = true;
-            const site = try std.fmt.allocPrint(l.scratch, "`{s}` in {s} (at byte {d})", .{ writer, l.interner.slice(l.module_name), p });
-            const all = try l.scratch.alloc(Node.Index, args.len + 3);
-            all[0] = try l.stringNode(site, p);
-            all[1] = callee;
-            all[2] = try l.intNode(@intCast(evidence.len), p);
-            @memcpy(all[3..], args);
-            return l.call(try l.ident(try l.sanitizerLocal("listAt"), p), all, p);
-        };
+        // the v3 oracle (kernel §12): its base is the argument after the
+        // evidence (`sanitizedWriteAt`).
+        if (written.len != 0 and l.sanitizesAt(inst)) if (l.listWriterOf(callee_inst)) |writer|
+            return l.sanitizedWriteAt(out, callee, writer, args, evidence.len, p, inst);
         return l.suspension(out, inst, try l.call(callee, args, p));
     }
 

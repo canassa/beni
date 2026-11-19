@@ -2452,6 +2452,11 @@ const Case = struct {
             const written = c.w.read(try std.fmt.allocPrint(c.arena, "{s}/{s}.mjs", .{ out, path })) catch continue;
             // The checker's accepted list writes, by "line:col [value ]List.<writer>".
             var wanted: std.StringArrayHashMapUnmanaged(u32) = .empty;
+            // v3's accepted `call` lines, by "line:col": a walked writer
+            // called method-style or through an alias (`call upd xs`), and a
+            // call that hands a writer on as a value (`call Main.apply xs`),
+            // each wrapped at its call (ownership-v3-kernel.md §12).
+            var calls: std.StringArrayHashMapUnmanaged(void) = .empty;
             var lines = std.mem.splitScalar(u8, section[header_end + 1 ..], '\n');
             while (lines.next()) |raw| {
                 const line = std.mem.trimStart(u8, raw, " ");
@@ -2468,6 +2473,7 @@ const Case = struct {
                 // at the write itself.
                 if (std.mem.eql(u8, checker, "v2") and std.mem.startsWith(u8, line[verdict..], ": accepted callback-param")) continue;
                 var rest = line[space + 1 .. verdict];
+                if (std.mem.eql(u8, checker, "v3") and std.mem.startsWith(u8, rest, "call ")) try calls.put(c.arena, at, {});
                 var value = false;
                 if (std.mem.startsWith(u8, rest, "value ")) {
                     value = true;
@@ -2476,25 +2482,32 @@ const Case = struct {
                 // v3 says `List.update`, which has no words, at the call
                 // (`call List.update xs`); the build wraps it as a writer.
                 if (std.mem.eql(u8, checker, "v3") and std.mem.startsWith(u8, rest, "call List.update ")) rest = rest["call ".len..];
+                // And a walked writer of `Dict` or `Set` (`call Dict.update d`),
+                // whose sites v3's oracle wraps beside `Dict`'s and `Set`'s
+                // primitives (ownership-v3-kernel.md §12).
+                if (std.mem.eql(u8, checker, "v3") and (std.mem.startsWith(u8, rest, "call Dict.") or std.mem.startsWith(u8, rest, "call Set."))) rest = rest["call ".len..];
                 const op_end = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
                 const op = rest[0..op_end];
                 if (std.mem.indexOf(u8, rest[op_end..], "[*]") != null) continue;
-                const writer: []const u8 = if (std.mem.startsWith(u8, op, "List."))
-                    op["List.".len..]
+                const keyed = std.mem.eql(u8, checker, "v3") and keyedWriter(op);
+                const writer: []const u8 = if (std.mem.startsWith(u8, op, "List.") or keyed)
+                    op
                 else if (!value and (std.mem.eql(u8, op, "construction") or std.mem.eql(u8, op, "++")))
-                    "append"
+                    "List.append"
                 else
                     continue;
-                const k = try std.fmt.allocPrint(c.arena, "{s} {s}List.{s}", .{ at, if (value) "value " else "", writer });
+                const k = try std.fmt.allocPrint(c.arena, "{s} {s}{s}", .{ at, if (value) "value " else "", writer });
                 const slot = try wanted.getOrPut(c.arena, k);
                 slot.value_ptr.* = if (slot.found_existing) slot.value_ptr.* + 1 else 1;
             }
             // The build's sites: "`List.<w>`[ value] in M (at byte N)".
             var got: std.StringArrayHashMapUnmanaged(u32) = .empty;
-            var it = std.mem.splitSequence(u8, written, "(\"`List.");
+            var it = std.mem.splitSequence(u8, written, "(\"`");
             _ = it.next();
             while (it.next()) |piece| {
                 const tick = std.mem.indexOfScalar(u8, piece, '`') orelse continue;
+                // A site of `List`, or under v3 of `Dict` or `Set`.
+                if (!std.mem.startsWith(u8, piece, "List.") and !(std.mem.eql(u8, checker, "v3") and keyedWriter(piece[0..tick]))) continue;
                 const value = std.mem.startsWith(u8, piece[tick + 1 ..], " value in ");
                 const at = std.mem.indexOf(u8, piece, "(at byte ") orelse continue;
                 const digits = piece[at + "(at byte ".len ..];
@@ -2510,7 +2523,7 @@ const Case = struct {
                         c_no = 1;
                     } else if (b & 0xC0 != 0x80) c_no += 1;
                 }
-                const k = try std.fmt.allocPrint(c.arena, "{d}:{d} {s}List.{s}", .{ l_no, c_no, if (value) "value " else "", piece[0..tick] });
+                const k = try std.fmt.allocPrint(c.arena, "{d}:{d} {s}{s}", .{ l_no, c_no, if (value) "value " else "", piece[0..tick] });
                 const slot = try got.getOrPut(c.arena, k);
                 slot.value_ptr.* = if (slot.found_existing) slot.value_ptr.* + 1 else 1;
             }
@@ -2521,6 +2534,7 @@ const Case = struct {
                 failed = true;
             };
             for (got.keys(), got.values()) |k, n| if (!wanted.contains(k)) {
+                if (calls.contains(k[0 .. std.mem.indexOfScalar(u8, k, ' ') orelse k.len])) continue;
                 detail("{s}: {s}: the sanitised build wraps {s} ({d}), which is no list write {s} accepted\n", .{ c.fixture.name, source, k, n, checker });
                 failed = true;
             };
@@ -2529,6 +2543,14 @@ const Case = struct {
             because("[{s}] the sanitised sites are not {s}'s accepted list writes", .{ out, checker });
             return error.SanitisedSitesMismatch;
         }
+    }
+
+    /// Whether `op` names a writer of core's `Dict` or `Set`, whose
+    /// accepted calls v3's oracle wraps (`Lower.listWriterAt`).
+    fn keyedWriter(op: []const u8) bool {
+        const writers = [_][]const u8{ "Dict.insert", "Dict.remove", "Dict.update", "Dict.swap", "Dict.insertAt", "Dict.sortBy", "Set.insert", "Set.remove", "Set.swap", "Set.insertAt", "Set.sortBy" };
+        for (writers) |w| if (std.mem.eql(u8, w, op)) return true;
+        return false;
     }
 
     fn ownershipOnly(stderr: []const u8) bool {

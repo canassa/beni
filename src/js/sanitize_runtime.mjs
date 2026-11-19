@@ -254,3 +254,10 @@ export const listAt = (site, writer, k, ...args) => {
   args[k] = freshKeyed(base);
   return settle(base, writer(...args), site);
 };
+
+// The first half of such a write that may park (its callback may wait):
+// the writer runs on a fresh copy, and `settle` takes its answer.
+export const startAt = (site, writer, k, ...args) => {
+  args[k] = freshKeyed(args[k]);
+  return writer(...args);
+};

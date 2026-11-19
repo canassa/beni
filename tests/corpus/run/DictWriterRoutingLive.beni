@@ -1,0 +1,89 @@
+-- The live twin of `DictWriterRouting`: each written dictionary, set or
+-- list is read through its old name after the write, so in place the read
+-- would see the write. v3 refuses each call, whatever form names the
+-- writer (`ownership-v3-kernel.md` §12, *Lowering*). With v3's later-read
+-- test broken, each of them is accepted, and the oracle routes it: the
+-- sanitised build traps and the in-place build prints another line.
+import Dict exposing (Dict)
+import Io
+import Node exposing (Program)
+import Set exposing (Set)
+
+
+apply : (Dict Int Int, Int, Int → Dict Int Int), Dict Int Int → Dict Int Int
+apply f d = f d 3 30
+
+
+applyS : (Set Int, Int → Set Int), Set Int → Set Int
+applyS f s = f s 3
+
+
+applyL : (List Int, Int → List Int), List Int → List Int
+applyL f xs = f xs 3
+
+
+base : ⊤ → Dict Int Int
+base ⊤ = Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]
+
+
+render : Dict Int Int → String
+render d =
+    String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${String.fromInt v}") ","
+
+
+members : Set Int → String
+members s = String.join (List.map (Set.toList s) String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    upd = Dict.update
+    srt = Dict.sortBy
+    ins = Set.insert
+    a0 = base ⊤
+    a = a0.update 1 λ_ → Just 7
+    b0 = base ⊤
+    b = b0.sortBy λk _ → 0 - k
+    c0 = base ⊤
+    c = upd c0 2 λ_ → Nothing
+    s0 = base ⊤
+    s = srt s0 λk _ → 0 - k
+    f0 = base ⊤
+    f = apply Dict.insert f0
+    g0 = Set.fromList [ 1, 2 ]
+    g = g0.insert 4
+    h0 = Set.fromList [ 1, 2 ]
+    h = ins h0 5
+    i0 = Set.fromList [ 1, 2 ]
+    i = applyS Set.insert i0
+    j0 = [ 1, 2 ]
+    j = applyL List.push j0
+    p0 = base ⊤
+    p = Dict.sortBy p0 λn _ →
+        Io.sleep 1
+        0 - n
+    [ render a
+    , render a0
+    , render b
+    , render b0
+    , render c
+    , render c0
+    , render s
+    , render s0
+    , render f
+    , render f0
+    , members g
+    , members g0
+    , members h
+    , members h0
+    , members i
+    , members i0
+    , String.join (List.map j String.fromInt) ","
+    , String.join (List.map j0 String.fromInt) ","
+    , render p
+    , render p0
+    ]
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (go ⊤)

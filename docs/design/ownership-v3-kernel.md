@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research report 161). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -2009,12 +2009,35 @@ elements are its values.
    The walked writers, `Dict.update`, `Dict.sortBy` and `Set`'s, are judged at the call
    (`callsite`) and named to the lowering as writers (`Enforce.callsCoreWriter`), as
    `List.update` is; a writer that takes evidence (`sortBy`) is `_sanitize$listAt`, its base the
-   argument after the evidence, and one that may park is the plain call, which copies.
+   argument after the evidence, and one that may park (its callback waits) is
+   `_sanitize$startAt`, the wait, then `_sanitize$settle` with the answer, as a parking list
+   write is. A writer answers its argument itself where the write changes nothing: `insert`
+   of the value that is there (`Object.is`), `remove` of a key that is not there, `swap` of
+   a key that is not there or of a key with itself; this is an answer under a new name as
+   any other (`written returned`), and in place the answer is the base in every case.
+
+   *Every form of a call is routed* (research report 161, #2571). What the checker judges is
+   the call of the value the callee names, not its spelling, so the channel names the call
+   however it names the writer: a method call (`d.update k f`, `s.insert x`), whose
+   dispatch term is the writer, and a call through a local that a `let` binds to the writer
+   (`upd = Dict.update`, through a chain of such locals, as `Lower.listWriterOf` follows
+   it) (`Enforce.coreCallee`). **A writer handed on as a value** (`apply Dict.insert d`,
+   `applyL List.push xs`) writes where the callee runs it, and the writes it makes there are
+   judged at the call that hands it: the value flows to the callee's contract for its
+   parameter (§6 rule 2), a written location it is handed is a demand of that call, a cell
+   the callee made and reads after is `supply`, and a callee that loses it or keeps it puts
+   it in the default location, which refuses a writer (§6 rule 8). So where that call's line
+   is accepted, every write the value makes is one v3 accepted, and the lowering hands
+   `_sanitize$writer(site, value)`, which routes each call of it (`Enforce.handsCoreWriter`,
+   `Lower.routeWriterValues`). A writer value handed to a call that has no line, or bound
+   anywhere but at a call's argument (a record's field, a list), is the plain function, which
+   copies: no line judged it, so no write of it is in place.
 6. **`Set`** is an opaque box around a `Dict t ⊤`; its writers are walked bodies over `Dict`'s rows,
    and a box written in place is the box whose dictionary was.
 
-What it does not cover yet: a writer handed on as a function value (`apply Dict.insert d`) is
-lowered as a plain call and copies. A callback of `Dict.update` that writes its value is refused
+What it does not cover yet: a walked writer handed on as a value (`applyU Dict.update d`) is
+refused where its answer is read (`later-use`): its contract answers its parameter, not a new
+name of it, and a function value's answer is read as its contract says. A callback of `Dict.update` that writes its value is refused
 (`supply`): `update` is walked, and its callback is handed what the default hands it, not the value
 taken out (§6.8); `List.update`'s `focus` row is the shape that answers it. A get, a write of the
 value, then an insert at one key is refused at the write, since `insert` reads the whole dictionary
