@@ -306,7 +306,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\`sequence foreign type Builder a`. `cell` stands before an opaque type, or a
                 \\`foreign type`, with one parameter: `pub opaque cell type Ref a = Ref Js.Value`.
                 \\`sender` stands before an alias of a function of one argument that returns
-                \\`⊤`: `pub sender type alias Send msg = msg → ⊤`.
+                \\`⊤`: `pub sender type alias Send msg = msg → ⊤`. `keyed` stands before the
+                \\`foreign type` of a type with two parameters, a key and a value:
+                \\`pub equatable keyed foreign type Dict k v`.
             , .{text}),
             .own_stored_callback => try w.print(
                 \\`{s}` describes a callback whose answer is stored, and a word it needs is

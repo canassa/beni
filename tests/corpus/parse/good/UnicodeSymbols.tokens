@@ -97,6 +97,7 @@
 22:9 underscore _
 22:11 equal =
 22:13 qualified_lower Dict.empty
+22:24 top ⊤
 25:1 lower_ident fields
 25:8 colon :
 25:10 l_brace {

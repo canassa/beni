@@ -1061,6 +1061,14 @@ pub const Mod = struct {
 
     /// The element type of a sequence type (`List a`, `Builder a`: an
     /// application of one argument), or `null`.
+    /// Whether type `t` is a keyed collection (`Bir.OwnKind.keyed`, kernel §12).
+    fn keyedType(m: *Mod, t: anytype) bool {
+        if (t.int() >= m.in.types.entries.len) return false;
+        const e = m.in.types.entries[t.int()];
+        if (e.kind != .foreign) return false;
+        return m.in.birs[e.module.int()].decl(e.decl).own_kind == .keyed;
+    }
+
     fn elemType(m: *Mod, v: ?Var) ?Var {
         const t = v orelse return null;
         const store = m.in.store;
@@ -1069,7 +1077,11 @@ pub const Mod = struct {
             .structure => |s| switch (s) {
                 .app => |ap| {
                     const args = store.vars(ap.args);
-                    return if (args.len == 1) args[0] else null;
+                    if (args.len == 1) return args[0];
+                    // A keyed collection's elements are its values, the
+                    // second argument (kernel §12).
+                    if (args.len == 2 and m.keyedType(ap.type)) return args[1];
+                    return null;
                 },
                 .unit, .empty_record, .func, .tuple, .record => return null,
             },

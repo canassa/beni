@@ -9,7 +9,7 @@ want k kind t d = Dict.update d k λcurrent →
     Just ( first, List.append taps [ t ] )
 
 
-initial k kind = Dict.insert Dict.empty k ( kind, [] )
+initial k kind = Dict.insert (Dict.empty ⊤) k ( kind, [] )
 
 
 main : Tea.Program

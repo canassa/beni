@@ -1,2 +1,2 @@
-# A payload's level read whole past a call: v2 refuses (§2.1, The exit rule)
-34:33 list_still_used SanitiserFamilyCall.pick
+# core/Dict's rows are the ownership checker v3's (ownership-v3-kernel.md §12): v2 reads them as a `foreign` with no word, so the list escaped into the dictionary
+22:34 list_may_be_shared List.push

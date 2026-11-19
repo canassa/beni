@@ -14,7 +14,7 @@ want k t d = Dict.update d k λcurrent →
 main : Tea.Program
 main =
     Tea.sandbox
-        { init = λ⊤ → want 1 2 (Dict.insert Dict.empty 1 ( 0, [ 1 ] ))
+        { init = λ⊤ → want 1 2 (Dict.insert (Dict.empty ⊤) 1 ( 0, [ 1 ] ))
         , update = λ_ model → model
         , view = view
         }

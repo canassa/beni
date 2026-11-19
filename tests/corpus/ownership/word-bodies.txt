@@ -346,3 +346,33 @@ platforms/browser-base/Listen.beni               Listen.direct                  
 platforms/browser-base/Hosted.beni              Hosted.compare                  b85aa05b9a9293b25f44120517b5137bf7305d8c4266db767f1afb80ea3888bb
 platforms/browser-inline/Inline.beni             Inline.subscribe d9c7373da3d53fd382c54a683fdc3b25130741477f7793d0be275db3253d7462
 platforms/browser-inline/Inline.beni             Inline.eventEntry e037867648728040ff8f1bfa1f5b542496749da2f23981b54cde6a3cbe90f56e
+#
+# core/Dict's rows (ownership-v3-kernel.md §12): its sibling's primitives and the
+# helpers they run, and the loops of Dict.beni that read a `taken` result.
+core/Dict.js                  Dict.pairOf         5f10c67507fb55c4e642a039e6a1c88aadf466f4fa118a6129a593519a6ae43b
+core/Dict.js                  Dict.cloned         10c07ece7cfe0e33346814c58e8b619e15dc4054765637f8dca63ce50940cf50
+core/Dict.js                  Dict.empty          98d60af822eebbb52d0edcc9b790a6faa6d74c9f239f470b28433f86886fe491
+core/Dict.js                  Dict.size           4364f12d9ad796d1850da057032f75b64e1fe70064106e8da17e4b3dc7cda7aa
+core/Dict.js                  Dict.has            ff623994608b98681e8c83434c5ee0d15282e057304955e235fa6f30c7e737dd
+core/Dict.js                  Dict.valueFor       a1c6cc518fcd72d2ec20f3c8b9b19018a03abdd19e1d4aacdf9a37b00412daf3
+core/Dict.js                  Dict.keyIndex       bae000c7b3dbb9e94a65af9238996fca12e2970bb229e10831a42465ce0bbc13
+core/Dict.js                  Dict.isIndex        8afdf52c2569ab35d64f5eab5d81d02988a2a356fe56a4a80e33cc5039ba6d48
+core/Dict.js                  Dict.valueAt        1f7ad5fe7b259e7d1363517e0fbf39bd7a51b43ca5ff6ee8bd881a9b76fba8e7
+core/Dict.js                  Dict.traverseAt     185baff58cd20cef1573cd00e2c3e57f7212bfec7a9dbe6d87572338a706eac1
+core/Dict.js                  Dict.keySame        5af3298ca7da839f5642daa2ac2ef2387cd43bd38a090cf1a6fafd393a09c5e2
+core/Dict.js                  Dict.same           0e175ad684f7ebbaf06564a9fa8e9a6ef1a3ff0c56c4b59c6328e6acc01bfea0
+core/Dict.js                  Dict.copy           7b5716159cc6dfcb80ecf45dcec01ca362a245a588b1c605206ec85fbe698433
+core/Dict.js                  Dict.put            2f02a94ba96a3c16adb8bb5785474335375187d1310db48c0873e94fb5d2980f
+core/Dict.js                  Dict.insert         18ea8521950da1415b1f7673c6aee74544d50f9d9ae44e09520c31bbca92d204
+core/Dict.js                  Dict.remove         b544f2ace0b171ff2adfadbd9f97cdff4fa181a7a6550afe401bbfb0f9c510f2
+core/Dict.js                  Dict.swap           8e98dee1a4bad4e0e6523ab838f8434dbcb9d976581066bc862508c18e128904
+core/Dict.js                  Dict.insertAt       f307f0edd806b07d9fa7a9d699de396f086652e4369b81262621e0117b661bc6
+core/Dict.js                  Dict.permute        18b3caeaefaf90f957ea88140b98ab25ca8ed6becf06f35ee9f7c4ae62b6c36a
+core/Dict.beni                Dict.foldlFrom      73f377653e6fec9dcc7261b6e65d55ca630afdd00a93c8ac1ca5aa3c1ef836e2
+core/Dict.beni                Dict.foldrFrom      c6e9cc387de0021b50e98c55f485802cfb947b2bd1df38a17c23baf3f734f81d
+core/Dict.beni                Dict.mapFrom        3389a86ffd7cf8fc7035371cce16d175c15c160e48bf4a316163d1adfa78c355
+core/Dict.beni                Dict.filterFrom     93388e0bd87a7354180ce4efa65b295e4153c9686344524f53bd5d2718951c02
+core/Dict.beni                Dict.partitionFrom  fbf9ee0f008cbd77b73af61ac26f0948c80b7f6489481dcb8155e0aaba808c3c
+core/Dict.beni                Dict.unionFrom      8c42caa14f22d612ac4364d93cfdac7626e3d103f6976e6f8e9b6d11487cf7af
+core/Dict.beni                Dict.valuesFrom     c83706691b2681ae82ce4d9eb4a15922dda741c724f1b6e35c81c654c2bbe2a8
+core/Dict.beni                Dict.toListFrom     6e7aea5753ed1b7bdd6c63fdec0ea51107f567b61f841a10358aa4ec1f0bb436

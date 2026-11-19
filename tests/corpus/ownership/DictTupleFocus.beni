@@ -6,7 +6,7 @@ import Dict exposing (Dict)
 
 pub grow : ⊤ → Dict Int (Int × List Int)
 grow ⊤ =
-    d = Dict.insert Dict.empty 1 ( 0, [ 1 ] )
+    d = Dict.insert (Dict.empty ⊤) 1 ( 0, [ 1 ] )
     Dict.update d 1 λcurrent →
         ( first, taps ) = Maybe.withDefault current ( 0, [] )
         Just ( first, List.append taps [ 2 ] )

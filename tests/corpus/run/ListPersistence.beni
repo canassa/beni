@@ -72,7 +72,7 @@ pick seed n =
 
 
 empty : Model
-empty = { start = 0, len = 0, items = Dict.empty }
+empty = { start = 0, len = 0, items = Dict.empty ⊤ }
 
 
 modelPush : Model, Int → Model
@@ -316,7 +316,7 @@ main =
 
     start =
         { seed = 4711
-        , versions = Dict.empty
+        , versions = Dict.empty ⊤
         , count = 0
         , bad = []
         , checks = 0

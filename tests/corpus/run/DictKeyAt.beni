@@ -1,0 +1,32 @@
+-- `Dict.keyAt` is total: the key at a zero-based position in insertion
+-- order, or `Nothing` outside `0..size - 1`, also for a negative or NaN
+-- position (an `Int` can be NaN). It follows the order after a remove, an
+-- `insertAt`, a `swap` and a `sortBy` (`language.md` §6.8, *Ordered
+-- dictionaries and sets*).
+import Dict exposing (Dict)
+import Node exposing (Program)
+
+
+show : Maybe String → String
+show m = Maybe.withDefault m "Nothing"
+
+
+main : Program
+main =
+    d = Dict.fromList [ ( "b", 2 ), ( "a", 1 ), ( "c", 3 ) ]
+    removed = Dict.remove (Dict.copy d) "b"
+    moved = Dict.insertAt (Dict.copy d) 0 "c" 9
+    swapped = Dict.swap (Dict.copy d) "b" "c"
+    sorted = Dict.sortBy (Dict.copy d) λk _ → k
+    Node.printLines
+        [ show (Dict.keyAt d 0)
+        , show (Dict.keyAt d 2)
+        , show (Dict.keyAt d 3)
+        , show (Dict.keyAt d (0 - 1))
+        , show (Dict.keyAt d (round (0.0 / 0.0)))
+        , show (Dict.keyAt (Dict.empty ⊤) 0)
+        , show (Dict.keyAt removed 0)
+        , show (Dict.keyAt moved 0)
+        , show (Dict.keyAt swapped 2)
+        , show (Dict.keyAt sorted 0)
+        ]

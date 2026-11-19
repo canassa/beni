@@ -1022,9 +1022,11 @@ pub fn spreadItems(b: *const Bir, s: Spread) []const [2]u32 {
 /// The type word a declaration carries (ownership-v2.md §2.13.5, §2.13.6),
 /// checked by lowering: `sequence` on a unary `foreign type`, `cell` on a
 /// unary opaque `type` or `foreign type`, `sender` on a one-argument
-/// function alias returning `⊤`. Metadata of the ownership checker v2: no
-/// type, no interface entry v1 reads and no emitted byte depends on it.
-pub const OwnKind = enum(u8) { none, sequence, cell, sender };
+/// function alias returning `⊤`, `keyed` on a binary `foreign type`
+/// (`ownership-v3-kernel.md` §12). Metadata of the ownership checkers v2
+/// and v3: no type, no interface entry v1 reads and no emitted byte depends
+/// on it.
+pub const OwnKind = enum(u8) { none, sequence, cell, sender, keyed };
 
 pub const Decl = struct {
     kind: Kind,

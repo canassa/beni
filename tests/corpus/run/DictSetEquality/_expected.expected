@@ -1,16 +1,16 @@
-dict == True True
-dict ≠ False
-Basics.eq True True
-Basics.neq False False
-(==) True Dict.eq True
-record True
-maybe True
-list True
+dict == False False
+dict ≠ True
+Basics.eq False False
+Basics.neq True True
+(==) False Dict.eq False
+record False
+maybe False
+list False
 value False
 key False
 longer False False
 empty True
 own eq True
-set == True ≠ False Basics.eq True
-set record True
+set == False ≠ True Basics.eq False
+set record False
 set unequal False False

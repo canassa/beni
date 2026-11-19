@@ -11,7 +11,7 @@ main =
     Tea.sandbox
         { init =
             λ⊤ →
-                built = List.foldl [ 1, 2 ] Dict.empty λk acc →
+                built = List.foldl [ 1, 2 ] (Dict.empty ⊤) λk acc →
                     Dict.update acc k λold →
                         Just (List.append (Maybe.withDefault old []) [ shared ])
                 Dict.update built 1 λold →

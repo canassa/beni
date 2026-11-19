@@ -80,7 +80,7 @@ pub const Table = struct {
         const e = in.types.entries[head];
         if (e.kind != .adt or e.schema_endpoint) return false;
         const k = in.birs[e.module.int()].decl(e.decl).own_kind;
-        return k != .sequence and k != .cell;
+        return k != .sequence and k != .cell and k != .keyed;
     }
 
     /// Tarjan's components from `root`, on an explicit stack.

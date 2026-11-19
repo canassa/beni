@@ -124,7 +124,7 @@ pub fn surface(arena: Allocator, line: []const u8) ![]const u8 {
     // (ownership-v2.md §2.13.6) are metadata no program writes outside core
     // and the platforms: they go.
     var s = line;
-    for ([_][]const u8{ " (failure)", " (sequence)", " (cell)", " (sender)" }) |mark| {
+    for ([_][]const u8{ " (failure)", " (sequence)", " (cell)", " (sender)", " (keyed)" }) |mark| {
         if (std.mem.endsWith(u8, s, mark)) s = s[0 .. s.len - mark.len];
     }
     const indent = s.len - std.mem.trimStart(u8, s, " ").len;
@@ -336,6 +336,7 @@ test "a dump line becomes beni's notation" {
         .{ "  value bracket : (⊤ → r !e1), (r, Exit a → ⊤ !e2), (r → a !e3) → a !(impure | e1 | e2 | e3)", "  value bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a  -- impure" },
         .{ "  foreign type List a (equatable)", "  type List a" },
         .{ "  foreign type List a (equatable) (sequence)", "  type List a" },
+        .{ "  foreign type Dict k v (equatable) (keyed)", "  type Dict k v" },
         .{ "  opaque type Ref a (cell)", "  opaque type Ref a" },
         .{ "    Err/1 (failure)", "    Err" },
         .{ "  markup value text : String → Html msg", "  value text : String → Html msg" },

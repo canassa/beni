@@ -53,4 +53,4 @@ view model = <p onClick={Go}>{Maybe.withDefault (Dict.get model.d 1) 0}</p>
 
 main : Browser.Program
 main =
-    Tea.sandbox { init = λ⊤ → { items = [ A, B ], d = Dict.empty }, update = update, view = view }
+    Tea.sandbox { init = λ⊤ → { items = [ A, B ], d = Dict.empty ⊤ }, update = update, view = view }

@@ -5443,7 +5443,7 @@ pub const Lowerer = struct {
         const tag = l.in.token_tags[token];
         if (tag != .ellipsis and tag != .ascii_ellipsis) return false;
         const writer = l.listWriterOf(@fromBackingInt(@intCast(l.bir.instData(inst).lhs))) orelse return false;
-        return std.mem.eql(u8, writer, "append");
+        return std.mem.eql(u8, writer, "List.append");
     }
 
     /// Under the sanitiser, the rest of the spread or `++` chain whose head
@@ -5473,16 +5473,31 @@ pub const Lowerer = struct {
         return inst.int() < l.sanitize_chain.len and l.sanitize_chain[inst.int()];
     }
 
-    /// `listWriterOf` for value `value` of module `module`'s interface.
+    /// `listWriterOf` for value `value` of module `module`'s interface: the
+    /// writer's qualified name. Under the v3 oracle (`Input.records_v3`) the
+    /// writers of core's `Dict` and `Set` are writers too
+    /// (`ownership-v3-kernel.md` §12): their rows are v3's alone, so no other
+    /// checker accepts a write of theirs.
     fn listWriterAt(l: *Lowerer, module: Graph.Index, value: u32) ?[]const u8 {
         if (module.int() >= l.in.interfaces.len) return null;
         if (l.in.graph.modulePackage(module) != .core) return null;
-        if (l.in.graph.moduleName(module) != InternPool.WellKnown.List.symbol()) return null;
         const iface = &l.in.interfaces[module.int()];
         if (value >= iface.values.len) return null;
         const spelling = l.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]);
-        const writers = [_][]const u8{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" };
-        for (writers) |w| if (std.mem.eql(u8, w, spelling)) return w;
+        if (l.in.graph.moduleName(module) == InternPool.WellKnown.List.symbol()) {
+            const writers = [_][]const u8{ "List.set", "List.update", "List.push", "List.pop", "List.swap", "List.insertAt", "List.removeAt", "List.append" };
+            for (writers) |w| if (std.mem.eql(u8, w[5..], spelling)) return w;
+            return null;
+        }
+        if (!l.in.records_v3) return null;
+        const module_name = l.interner.slice(l.in.graph.moduleName(module));
+        if (std.mem.eql(u8, module_name, "Dict")) {
+            const writers = [_][]const u8{ "Dict.insert", "Dict.remove", "Dict.update", "Dict.swap", "Dict.insertAt", "Dict.sortBy" };
+            for (writers) |w| if (std.mem.eql(u8, w[5..], spelling)) return w;
+        } else if (std.mem.eql(u8, module_name, "Set")) {
+            const writers = [_][]const u8{ "Set.insert", "Set.remove", "Set.swap", "Set.insertAt", "Set.sortBy" };
+            for (writers) |w| if (std.mem.eql(u8, w[4..], spelling)) return w;
+        }
         return null;
     }
 
@@ -5510,7 +5525,7 @@ pub const Lowerer = struct {
             if (!w.callers) break :note ", whatever its callers";
             break :note if (l.in.callers_checked) ", every caller checked" else ", a caller may be unchecked";
         } else "";
-        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` in {s} (at byte {d}{s})", .{ writer_name, l.interner.slice(l.module_name), p, note });
+        const site = try std.fmt.allocPrint(l.scratch, "`{s}` in {s} (at byte {d}{s})", .{ writer_name, l.interner.slice(l.module_name), p, note });
         const all = try l.scratch.alloc(Node.Index, args.len + 2);
         all[0] = try l.stringNode(site, p);
         all[1] = writer;
@@ -5555,7 +5570,7 @@ pub const Lowerer = struct {
     fn sanitizedWriterValue(l: *Lowerer, value: Node.Index, writer_name: []const u8, p: u32) Allocator.Error!Node.Index {
         if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists());
         l.needs.sanitize = true;
-        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` value in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
+        const site = try std.fmt.allocPrint(l.scratch, "`{s}` value in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
         return l.call(try l.ident(try l.sanitizerLocal("writer"), p), &.{ try l.stringNode(site, p), value }, p);
     }
 
@@ -11105,7 +11120,7 @@ pub const Lowerer = struct {
             try l.markSanitizeChain(inst, arg_insts);
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const append = try l.coreValue(.List, .append, p);
-            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return .{ .value = try l.sanitizedWrite(out, append, "append", values, p, inst, null) };
+            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return .{ .value = try l.sanitizedWrite(out, append, "List.append", values, p, inst, null) };
             return .{ .value = try l.suspension(out, inst, try l.call(append, values, p)) };
         }
         // Under `--release`, a `++` one of whose operands is a string —

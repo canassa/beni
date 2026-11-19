@@ -1,5 +1,9 @@
--- Equality keeps comparing the pairs while the tree representation remains.
--- Dict and Set keys and ordering are refused by separate build fixtures.
+-- Equality of `Dict` and `Set` compares the entries in insertion order
+-- (`language.md` §6.8, *Ordered dictionaries and sets*), through every
+-- spelling. A write of a top-level dictionary changes a copy (`Dict.copy`,
+-- `Set.copy`): the ownership checker refuses a write of a value every reader
+-- shares. Dict and Set keys and ordering are refused by separate build
+-- fixtures.
 import Bag exposing (Bag)
 import Dict exposing (Dict)
 import List
@@ -28,7 +32,7 @@ backwards = Dict.fromList [ ( 6, "f" ), ( 5, "e" ), ( 4, "d" ), ( 3, "c" ), ( 2,
 
 
 removed : Dict Int String
-removed = Dict.remove (Dict.insert backwards 0 "z") 0
+removed = Dict.remove (Dict.insert (Dict.copy backwards) 0 "z") 0
 
 
 up : Set Int
@@ -42,7 +46,7 @@ down = Set.fromList [ 6, 5, 4, 3, 2, 1 ]
 main : Program
 main =
     bags = Dict.fromList [ ( 1, Bag [ 1, 2, 3 ] ), ( 2, Bag [ 4, 5 ] ) ]
-    shuffled = Dict.fromList [ ( 2, Bag [ 5, 4 ] ), ( 1, Bag [ 3, 1, 2 ] ) ]
+    shuffled = Dict.fromList [ ( 1, Bag [ 3, 1, 2 ] ), ( 2, Bag [ 5, 4 ] ) ]
     Node.printLines
         [ "dict == " ++ yes (forwards == backwards) ++ " " ++ yes (forwards == removed)
         , "dict ≠ " ++ yes (forwards ≠ backwards)
@@ -61,13 +65,13 @@ main =
         , "record " ++ yes ({ d = forwards, n = 1 } == { d = backwards, n = 1 })
         , "maybe " ++ yes (Just forwards == Just backwards)
         , "list " ++ yes ([ forwards, backwards ] == [ backwards, forwards ])
-        , "value " ++ yes (Dict.insert forwards 3 "x" == backwards)
-        , "key " ++ yes (Dict.insert (Dict.remove forwards 3) 7 "c" == backwards)
+        , "value " ++ yes (Dict.insert (Dict.copy forwards) 3 "x" == backwards)
+        , "key " ++ yes (Dict.insert (Dict.remove (Dict.copy forwards) 3) 7 "c" == backwards)
         , "longer "
-            ++ yes (Dict.insert forwards 7 "g" == backwards)
+            ++ yes (Dict.insert (Dict.copy forwards) 7 "g" == backwards)
             ++ " "
-            ++ yes (backwards == Dict.insert forwards 7 "g")
-        , "empty " ++ yes (Dict.empty == Dict.remove (Dict.singleton 1 "a") 1)
+            ++ yes (backwards == Dict.insert (Dict.copy forwards) 7 "g")
+        , "empty " ++ yes ((Dict.empty ⊤) == Dict.remove (Dict.singleton 1 "a") 1)
         , "own eq " ++ yes (bags == shuffled)
         , "set == "
             ++ yes (up == down)
@@ -76,5 +80,8 @@ main =
             ++ " Basics.eq "
             ++ yes (apply Basics.eq up down)
         , "set record " ++ yes ({ s = up } == { s = down })
-        , "set unequal " ++ yes (Set.insert up 7 == down) ++ " " ++ yes (Set.remove up 1 == down)
+        , "set unequal "
+            ++ yes (Set.insert (Set.copy up) 7 == down)
+            ++ " "
+            ++ yes (Set.remove (Set.copy up) 1 == down)
         ]

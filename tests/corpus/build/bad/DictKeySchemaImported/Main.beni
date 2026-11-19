@@ -7,7 +7,7 @@ pub type alias Map k =
 
 
 bad : Map Bool
-bad = Dict.empty
+bad = Dict.empty ⊤
 
 
 main : Int

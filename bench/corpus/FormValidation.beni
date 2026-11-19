@@ -269,10 +269,10 @@ pub errorsByField : Validation a → Dict String (List String)
 errorsByField validation =
     case validation of
         Valid _ →
-            Dict.empty
+            Dict.empty ⊤
 
         Invalid errors →
-            List.foldl errors Dict.empty λ( field, message ) acc →
+            List.foldl errors (Dict.empty ⊤) λ( field, message ) acc →
                 Dict.update acc field λexisting →
                     Just (Maybe.withDefault existing [] ++ [ message ])
 

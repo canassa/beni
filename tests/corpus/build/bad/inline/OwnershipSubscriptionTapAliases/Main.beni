@@ -16,7 +16,7 @@ main =
         { init =
             λ⊤ →
                 taps = [ 1 ]
-                old = Dict.insert (Dict.insert Dict.empty 1 ( 0, taps )) 2 ( 0, taps )
+                old = Dict.insert (Dict.insert (Dict.empty ⊤) 1 ( 0, taps )) 2 ( 0, taps )
                 changed = want 1 2 old
                 ( size changed 1, size changed 2, size old 1 )
         , update = λ_ model → model

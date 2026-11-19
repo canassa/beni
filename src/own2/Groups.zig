@@ -39,6 +39,7 @@ const Allocator = std.mem.Allocator;
 const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Family = @import("Family.zig");
+const Keyed = @import("Keyed.zig");
 const Place = @import("Place.zig");
 const Slots = @import("Slots.zig");
 const Contract = @import("Contract.zig");
@@ -138,8 +139,7 @@ const Node = struct {
     kind: Kind,
     place_kind: Place.Kind,
     head: u32,
-    /// `structural`, `cyclic`: a run of `kids`. `nominal`: the argument list.
-    /// `payload`: the family.
+    /// `structural`, `cyclic`: a run of `kids`. `nominal`: the argument list. `payload`: the family.
     a: u32,
     b: u32,
 };
@@ -172,8 +172,7 @@ pub const Adapter = struct {
     alias_memo: std.AutoHashMapUnmanaged([2]u32, AliasMemo) = .empty,
     /// The arguments of every family head met (`nominal`), which go to
     /// `contexts` while a payload is read; a kept expansion's, each at its
-    /// last place, in `kept_logs` (`applied`), and the stamps that find
-    /// the last places.
+    /// last place, in `kept_logs` (`applied`), and the stamps that find the last places.
     family_log: std.ArrayList(u32) = .empty,
     kept_logs: std.ArrayList(u32) = .empty,
     log_seen: stamped.Column(u32, void) = .{},
@@ -629,8 +628,8 @@ pub const Adapter = struct {
         const bir = a.in.birs[e.module.int()];
         const decl = bir.decl(e.decl);
         switch (decl.own_kind) {
-            .sequence => if (arg0 != none) {
-                try out.append(a.gpa, .{ .step = Step.elem, .@"var" = arg0 });
+            .sequence, .keyed => if (a.listAt(n.a, @intFromBool(decl.own_kind == .keyed)) != none) { // `keyed`'s elements are its values (v3 kernel §12)
+                try out.append(a.gpa, .{ .step = Step.elem, .@"var" = a.listAt(n.a, @intFromBool(decl.own_kind == .keyed)) });
                 return .{ .kind = .list, .head = n.head };
             },
             .cell => if (arg0 != none) {
@@ -1103,6 +1102,7 @@ pub const Module = struct {
         var arena: std.heap.ArenaAllocator = .init(mod.gpa);
         defer arena.deinit();
         const words = mod.in.birs[owner].ownSlotsV2(decl);
+        if (decl.own2_end != decl.own2_start and Keyed.row(mod.in, &mod.places, params, result)) return Rows.pessimistic(mod.rowsEnv(arena.allocator()), @intCast(params.len), true);
         var ps: std.ArrayList(Rows.Param) = .empty;
         defer ps.deinit(mod.gpa);
         var result_words: u32 = 0;

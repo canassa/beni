@@ -8,7 +8,7 @@ main =
     Tea.sandbox
         { init =
             λ⊤ →
-                Dict.foldl (Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ]) Dict.empty λ_ x acc →
+                Dict.foldl (Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ]) (Dict.empty ⊤) λ_ x acc →
                     grown = Dict.update acc 1 λold →
                         Just (List.append (Maybe.withDefault old []) [ x ])
                     taps = Maybe.withDefault (Dict.get grown 1) []

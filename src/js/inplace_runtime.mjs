@@ -72,6 +72,7 @@ const named = (site) => plainWriters[/List\.(\w+)/.exec(site)?.[1]];
 // into its header. `site` names the write.
 export const settle = (base, result, site) => {
   if (result === base) return base;
+  if (keyedSite(site)) return settleKeyed(base, result);
   if (Array.isArray(base)) {
     // A writer's answer that is not its base is fresh: it shares no array
     // with the base, so the copy reads none of the cells it writes.
@@ -94,8 +95,35 @@ export const settle = (base, result, site) => {
 // the fiber resumes, goes to `settle` where the lowering waits for it.
 export const start = (site, writer, base, ...rest) => writer(base, ...rest);
 
+// Dictionaries and sets (`ownership-v3-kernel.md` §12): a `Dict` is a header
+// `{ entries, index }` (`core/Dict.js`), and a `Set` is a box around one
+// (a constructor's object, or, unboxed, the header itself). `core/Dict`'s
+// writer computes the written dictionary as new storage, and the base's
+// header takes it: every holder of the base sees the write, and the answer
+// is the base itself.
+const keyedSite = (site) => /^`(Dict|Set)\./.test(site);
+
+const isHeader = (x) => typeof x === "object" && x !== null && x.index instanceof Map && Array.isArray(x.entries);
+
+const headerOf = (x) => {
+  if (isHeader(x)) return x;
+  for (const key of Reflect.ownKeys(x)) if (isHeader(x[key])) return x[key];
+  throw new Error("beni: the in-place oracle met a dictionary it cannot read");
+};
+
+const settleKeyed = (base, result) => {
+  const into = headerOf(base);
+  const from = headerOf(result);
+  if (into !== from) {
+    into.entries = from.entries;
+    into.index = from.index;
+  }
+  return base;
+};
+
 // `List.<writer>(base, …rest)`, edited in place.
 export const list = (site, writer, base, ...rest) => {
+  if (keyedSite(site)) return settleKeyed(base, writer(base, ...rest));
   if (Array.isArray(base)) {
     const native = named(site);
     if (native !== undefined) return native(base, ...rest);

@@ -12,7 +12,7 @@ type alias Cache =
 
 
 pub empty : Cache
-empty = { hits = 0, misses = 0, table = Dict.empty }
+empty = { hits = 0, misses = 0, table = Dict.empty ⊤ }
 
 
 pub fib : Int, Cache → Int × Cache

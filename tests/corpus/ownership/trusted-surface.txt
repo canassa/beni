@@ -80,3 +80,12 @@ browser-inline Tea.application    ownership/EntryUrlTaggers.beni   1:entry>-
 # document delegates to element with the same protocol; no further ownership promise.
 browser-inline Tea.document       browser/inline/DocumentTitle.beni     -
 page       Page.sandbox           browser/Counter.beni             1:entry>-
+# Dict's rows that v1 reads (ownership-v3-kernel.md §12): a new dictionary, and reads that borrow. v1 judges
+# no write of a dictionary (the writers' words are v2's and v3's), so no flip of these changes a v1 verdict.
+core       Dict.empty            ownership/core/DictWords.beni   -
+core       Dict.size             ownership/core/DictWords.beni   -
+core       Dict.has              ownership/core/DictWords.beni   -        Dict.member
+core       Dict.keyIndex         ownership/core/DictWords.beni   -        Dict.keyAt
+core       Dict.isIndex          ownership/core/DictWords.beni   -        Dict.keyAt
+core       Dict.keySame          ownership/core/DictWords.beni   -        Dict.eq
+core       Dict.same             ownership/core/DictWords.beni   -        Dict.eq

@@ -730,13 +730,17 @@ pub const OwnWord3 = enum(u5) {
 /// `sequence` before `foreign type` (storage of kind list, one `[*]` child
 /// of the parameter), `cell` before `type` after `pub opaque`, or before
 /// `foreign type` (a stable handle, one barrier `◆` child), `sender`
-/// before `type alias` (the temporary alias form of `Send`'s protocol).
+/// before `type alias` (the temporary alias form of `Send`'s protocol),
+/// `keyed` before a two-parameter `foreign type` (storage of kind list whose
+/// one `[*]` child is the second parameter, the value: a keyed collection
+/// whose keys hold no cell, `ownership-v3-kernel.md` §12).
 /// `failure` stands before a constructor instead: the token before a
 /// `constructor` node's name.
 pub const OwnTypeWord = enum(u8) {
     sequence,
     cell,
     sender,
+    keyed,
 
     pub fn fromText(text: []const u8) ?OwnTypeWord {
         return std.meta.stringToEnum(OwnTypeWord, text);

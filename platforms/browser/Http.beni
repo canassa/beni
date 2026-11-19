@@ -1038,7 +1038,7 @@ received response text =
 -- twice its values joined with ", ".
 headersFrom : Js.Value → Dict String String
 headersFrom headers =
-    all = Js.ref Dict.empty
+    all = Js.ref (Dict.empty ⊤)
     Js.each headers λpair →
         name : String
         name = Js.to (Js.call (Js.at pair 0) "toLowerCase" [])

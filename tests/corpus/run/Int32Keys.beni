@@ -5,7 +5,8 @@
 -- is step 1 of the same rule: `core/Int32.beni` declares its own `pub eq`
 -- and `pub compare`, and the module rule makes them the type's methods —
 -- the way `String` has always answered `compare`. So `==` and `<` work, a
--- `Dict` keyed by one sorts its keys, a `Set` deduplicates them, and
+-- `Set` of their `Int`s deduplicates them (sorted explicitly, since a set
+-- keeps insertion order), and
 -- `List.sort` discharges its `where a.compare` against them.
 --
 -- **The ordering is SIGNED**, which is the decision worth pinning: the
@@ -66,10 +67,13 @@ main =
     Node.printLines
         (List.map (List.sort samples) show
             ++ List.map
-                (Set.toList (Set.fromList (List.map (List.copy samples ++ samples) Int32.toInt)))
+                (List.sort
+                    (Set.toList (Set.fromList (List.map (List.copy samples ++ samples) Int32.toInt))
+                    )
+                )
                 String.fromInt
-            ++ List.map (Dict.keys counts) String.fromInt
-            ++ Dict.values counts
+            ++ List.map (List.sort (Dict.keys counts)) String.fromInt
+            ++ List.filterMap (List.sort (Dict.keys counts)) λk → Dict.get counts k
             ++ [ yesNo (Dict.member counts (Int32.toInt Int32.minValue))
                , yesNo (Dict.member counts 0)
                , yesNo (Int32.fromInt 0xFFFFFFFF == Int32.fromInt (-1))

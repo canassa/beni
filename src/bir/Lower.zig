@@ -1269,7 +1269,11 @@ fn recordOwnType(l: *Lower, index: u32, node: NodeIndex, header: Ast.DeclHeader,
     if (!l.options.core and !l.options.platform) return l.reportOwn(token, .own_outside_platform);
     const word = Ast.OwnTypeWord.fromText(l.tokenText(token)).?;
     const ok = switch (l.tree.nodeTag(node)) {
-        .foreign_type => word != .sender and l.tree.fullForeignType(node).params.len == 1,
+        .foreign_type => switch (word) {
+            .sequence, .cell => l.tree.fullForeignType(node).params.len == 1,
+            .keyed => l.tree.fullForeignType(node).params.len == 2,
+            .sender => false,
+        },
         .type_decl => word == .cell and header.opaque_token != .none and l.tree.fullTypeDecl(node).params.len == 1,
         .type_alias => word == .sender and blk: {
             const ta = l.tree.fullTypeAlias(node);
@@ -1284,6 +1288,7 @@ fn recordOwnType(l: *Lower, index: u32, node: NodeIndex, header: Ast.DeclHeader,
         .sequence => .sequence,
         .cell => .cell,
         .sender => .sender,
+        .keyed => .keyed,
     };
 }
 

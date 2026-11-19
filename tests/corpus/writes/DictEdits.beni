@@ -69,7 +69,7 @@ update msg model =
             { model | rows = Dict.update model.rows id λslot → slot }
 
         Clear →
-            { model | rows = Dict.empty }
+            { model | rows = Dict.empty ⊤ }
 
         Flip id label →
             if label == "" then
@@ -94,4 +94,4 @@ view model =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = λ⊤ → { rows = Dict.empty, count = 0 }, update = update, view = view }
+main = Tea.sandbox { init = λ⊤ → { rows = Dict.empty ⊤, count = 0 }, update = update, view = view }

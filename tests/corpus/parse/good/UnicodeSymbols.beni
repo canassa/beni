@@ -19,7 +19,7 @@ nested ( a, ( b, c ) ) = ( ( a, b ), c )
 
 
 pairs : Maybe (a × b), List (Int × Int) → Dict String (Int × Int)
-pairs _ _ = Dict.empty
+pairs _ _ = Dict.empty ⊤
 
 
 fields : { at : Int × Int, label : String } → (Int → Int) × String

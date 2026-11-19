@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1952,3 +1952,57 @@ What the lowering does with an accepted update is `backend.md` §4's: `(r.f₁ =
 value first. The oracle (research report 142) writes each update that v3 accepted in place under
 `--lists-in-place`, and under `--sanitize-lists` copies it and poisons, on every older name of the
 object, each field whose value an in-place store would change; `Js.same` traps two names of one object.
+
+## 12. Dictionaries written in place
+
+*Added 2026-11-19 (research report 160). The owner's decisions of 2026-10-17 and 2026-10-25 (#294,
+`backend.md` §4, *Ordered dictionaries*): a `Dict` is an array of `[key, value]` entries in insertion
+order and a `Map` from each key to its entry, keys are `Int` or `String`, a write the checker accepts
+edits the storage, and a write it cannot show safe is a compile error with a copy fix (`Dict.copy`).
+No copy is a fallback.*
+
+A dictionary is judged by the principle of §1 and the write rule of §5, unchanged: it is a list whose
+elements are its values.
+
+1. **A keyed collection's storage is a list's** (`Bir.OwnKind.keyed`, `own2/Groups.zig`'s place
+   graph). `pub equatable keyed foreign type Dict k v` has a place of kind `list` whose one element
+   step is its second parameter, the value. Its storage location names the header, the entries
+   array, every entry pair and the `Map`: they are one cell to the checker, written together. Keys
+   are `Int` or `String` (`checker-v2.md` §37) and hold no cell, so the first parameter has no step.
+   A value held in a dictionary is at its element location, and a record or a list held as a value
+   has its slots and storage below it, as an element of a list has (§11).
+2. **The rows are v3's** (`core/Dict.beni`). Each primitive is a `foreign` with words, the trusted
+   rows of §6 rule 10. The writers `insert`, `remove`, `swap`, `insertAt`, `permute` and the private
+   `put` are `written returned` with what they store `stored`; `copy` is `borrowed → copyof`; the
+   readers borrow, and `valueFor` and `valueAt` answer `elementof`; `traverseAt` answers `taken`,
+   asserted for the loops of the module that read each position once, in order, as
+   `List.traverseAt` is; `empty` is `fresh exclusive`. The words a writer carries are v2's and v3's
+   only (`written`, `stored`, `elementof`, `copyof`), so v1 reads no word on them, and v2 reads a row
+   over a keyed place as a `foreign` with no word (`own2/Keyed.zig`): neither judges a write of a
+   dictionary, and neither checker authorises one (no lowering reads their verdicts on it).
+3. **A write.** `insert d k v` of a key that is there replaces the value at its position, and of a
+   new key appends one; both write the storage and put `v` at the result's elements. `remove` and
+   `swap` write the storage and keep the other values; `insertAt` stores one more. Each answers its
+   argument under a new name (`version`, §5.1). `update` is walked: `alter (get d k)`, then `insert`
+   or `remove`. `map`, `filter`, `partition`, `union`, `fromList` and `toList`, `keys` and `values`
+   answer new storage, built by `put` into an `empty` the loop made, or by `List.push`; their loops
+   are walked bodies over typed accumulators, where a fold over a type variable read the storage and
+   the values as one location.
+4. **A key is a position** (§6 rule 10, *A position*). `insert`'s key and `valueFor`'s key carry
+   `position`: `get d k` answers the value at `π1@1[π2]`, and `insert d k v` puts `v` at the key's
+   position and keeps `d`'s values at the others (`π1@1[≠π2]`), whether or not the key was there.
+   So get-then-insert at one key local (#2563) is read at one match.
+5. **Lowering.** The writers of `core/Dict.js` copy: they answer new storage and leave their
+   argument as it was, so a build that no v3 acceptance reaches edits no dictionary a program can
+   name: only the private `put` writes in place, into storage the loop that calls it made, as
+   `List`'s `Builder` is written (v3 accepts each such write in `core/`). Under either
+   oracle (`Lower.Input.records_v3`) a call of a `Dict` or `Set` writer that v3 accepted is
+   `_sanitize$list` with a site that names it (`Lower.listWriterAt`): `--sanitize-lists` runs the
+   writer on a copy of the storage, then poisons the old header and its entries array, so a read
+   through an older name traps, and links the two for `same`; `--lists-in-place` moves the written
+   storage into the base's header, which every holder of the base sees, and answers the base.
+6. **`Set`** is an opaque box around a `Dict t ⊤`; its writers are walked bodies over `Dict`'s rows,
+   and a box written in place is the box whose dictionary was.
+
+What it does not cover yet: v3 judges the calls the oracle lowers; a write that v3 accepts through a
+function value of a writer (`apply Dict.insert d`) is lowered as a plain call and so copies.

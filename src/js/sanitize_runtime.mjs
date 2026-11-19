@@ -114,6 +114,45 @@ const fresh = (xs) => {
   return { length, h: own(h), hc, T: tree, t: own(t), p: null, $plain };
 };
 
+// Dictionaries and sets (`ownership-v3-kernel.md` §12): a `Dict` is a header
+// `{ entries, index }` (`core/Dict.js`), and a `Set` is a box around one
+// (a constructor's object, or, unboxed, the header itself). A site names a
+// writer of `Dict` or `Set` by its first word.
+const keyedSite = (site) => /^`(Dict|Set)\./.test(site);
+
+const isHeader = (x) => typeof x === "object" && x !== null && x.index instanceof Map && Array.isArray(x.entries);
+
+// The header a dictionary or a set holds.
+const headerOf = (x) => {
+  if (isHeader(x)) return x;
+  for (const key of Reflect.ownKeys(x)) if (isHeader(x[key])) return x[key];
+  throw new Error("beni: the sanitiser met a dictionary it cannot read");
+};
+
+const cloneHeader = (d) => {
+  const entries = d.entries.map((pair) => [pair[0], pair[1]]);
+  return { entries, index: new Map(entries.map((pair) => [pair[0], pair])) };
+};
+
+// A fresh copy of a dictionary or a set: a writer run on it shares no
+// storage with the base, which is poisoned after.
+const freshKeyed = (x) => {
+  if (isHeader(x)) return cloneHeader(x);
+  const box = { ...x };
+  for (const key of Reflect.ownKeys(box)) if (isHeader(box[key])) box[key] = cloneHeader(box[key]);
+  return box;
+};
+
+// The old dictionary or set loses its storage: every read of it traps,
+// where an in-place run would read what the write left.
+const poisonKeyed = (x, site) => {
+  const h = headerOf(x);
+  const { entries } = h;
+  poisonObject(h, site);
+  poisonArray(entries, site);
+  if (h !== x) poisonObject(x, site);
+};
+
 // `List.<writer>(base, …rest)` under the sanitiser: `site` names the write.
 // A base already poisoned traps here, where the copy reads it.
 export const list = (site, writer, base, ...rest) => settle(base, start(site, writer, base, ...rest), site);
@@ -122,10 +161,15 @@ export const list = (site, writer, base, ...rest) => settle(base, start(site, wr
 // may park (a suspendable twin, `name$s`) is lowered as `start`, the wait,
 // then `settle` with the answer, so the base is poisoned once the writer
 // is done, as an in-place store comes after its callback returns.
-export const start = (site, writer, base, ...rest) => writer(fresh(base), ...rest);
+export const start = (site, writer, base, ...rest) => writer(keyedSite(site) ? freshKeyed(base) : fresh(base), ...rest);
 
 // The second half: the old base poisoned, and linked to the answer.
 export const settle = (base, result, site) => {
+  if (keyedSite(site)) {
+    poisonKeyed(base, site);
+    successors.set(base, { next: result, site });
+    return result;
+  }
   const view = !Array.isArray(base) && base.o !== undefined;
   poison(base, site, result.length);
   if (!view) successors.set(base, { next: result, site });

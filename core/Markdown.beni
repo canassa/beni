@@ -1260,14 +1260,17 @@ lineEnding = Js.regExp "\\r\\n|\\n|\\r" ""
 --|     parse "&copy; &#169; &MadeUp;" == [ Paragraph [ Text "\u{A9} \u{A9} &MadeUp;" ] ]
 pub parse : String → List Block
 parse input =
-    ( nodes, refs ) = collect (blocksOf input) Dict.empty
-    toBlocks refs nodes
+    ( nodes, defs ) = collect (blocksOf input) []
+    -- The first definition of a label wins: `fromList` keeps a key's last
+    -- value, so the definitions go in backwards. One dictionary, built
+    -- once, where an insert per definition would copy it each time.
+    toBlocks (Dict.fromList (List.map (List.reverse defs) λd → ( d.label, d ))) nodes
 
 
 -- The link reference definitions at the start of each paragraph, in
 -- document order (the first of a label wins), and the paragraphs without
 -- them; a paragraph that was only definitions goes.
-collect : List Node, Dict String Definition → List Node × Dict String Definition
+collect : List Node, List Definition → List Node × List Definition
 collect nodes refs = List.foldl nodes ( [], refs ) λnode ( acc, r ) →
     case node of
         Node (RParagraph content) start end →
@@ -1293,7 +1296,7 @@ collect nodes refs = List.foldl nodes ( [], refs ) λnode ( acc, r ) →
             ( List.push acc node, r )
 
 
-strip : String, Dict String Definition → String × Dict String Definition
+strip : String, List Definition → String × List Definition
 strip content refs =
     if codeAt content 0 ≠ 91 then
         ( content, refs )
@@ -1302,7 +1305,7 @@ strip content refs =
             Just d →
                 strip
                     (after content d.length)
-                    (if Dict.member refs d.label then refs else Dict.insert refs d.label d)
+                    (List.push refs d)
 
             Nothing →
                 ( content, refs )

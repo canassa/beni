@@ -1,9 +1,14 @@
---! A set of unique Int or String values. The member constraint belongs to
---! the type; callers supply no comparison evidence. Set has no compare method.
+--! An ordered set of unique Int or String values. The member constraint
+--! belongs to the type; callers supply no comparison evidence. Set has no
+--! compare method.
 --!
 --!     names : Set String
 --!     names =
 --!         Set.fromList [ "Alice", "Bob" ]
+--!
+--! Iteration follows insertion order. Inserting a value that is there already
+--! keeps its position; removing it and inserting it again puts it at the
+--! end. Equality includes the order.
 --!
 --! Argument order here is **subject first and function last**, as it is
 --! everywhere in core: the set comes first, so `names ▷ Set.insert "Carol"`
@@ -12,8 +17,9 @@
 --! a lambda you write inline is the final one, and `map` now has only the
 --! one to place.
 --!
---! Insert, remove and query take *O(log n)* time. A `Set` is a `Dict` whose
---! values are all `⊤`, which is how Elm builds it too.
+--! Lookup takes expected O(1); iteration takes O(n). A `Set` is a `Dict`
+--! whose values are all `⊤`. A write that the ownership checker cannot
+--! show safe copies the storage: `Set.copy` keeps an old version.
 --!
 --! Nothing here is `foreign`.
 
@@ -27,25 +33,23 @@ pub opaque type Set t
     = Set (Dict t ⊤)
 
 
---| The empty set. It compares nothing, so it needs no `compare` and is a
---| constant rather than a function.
+--| A new empty set. Each call makes its own storage.
 --|
---|     Set.empty
-pub empty : Set t
-empty = Set Dict.empty
+--|     Set.empty ⊤
+pub empty : ⊤ → Set t
+empty ⊤ = Set (Dict.empty ⊤)
 
 
---| Create a set with one value. One value needs no ordering either, so this
---| one needs no method evidence.
+--| Create a set with one value.
 --|
 --|     Set.singleton "Tom"
 pub singleton : t → Set t
 singleton value = Set (Dict.singleton value ⊤)
 
 
---| Insert a value into a set.
+--| Insert a value into a set. A new value goes at the end.
 --|
---|     Set.insert Set.empty "Tom"
+--|     Set.insert (Set.empty ⊤) "Tom"
 pub insert : Set t, t → Set t
 insert (Set dict) value = Set (Dict.insert dict value ⊤)
 
@@ -57,9 +61,33 @@ pub remove : Set t, t → Set t
 remove (Set dict) value = Set (Dict.remove dict value)
 
 
+--| A new set with the same values in the same order.
+pub copy : Set t → Set t
+copy (Set dict) = Set (Dict.copy dict)
+
+
+--| Exchange the positions of two values. A value that is not there, or the
+--| same value twice, leaves the set as it is.
+pub swap : Set t, t, t → Set t
+swap (Set dict) a b = Set (Dict.swap dict a b)
+
+
+--| Insert a value at a zero-based position of the order. The value's old
+--| position, if any, is removed first.
+pub insertAt : Set t, Int, t → Set t
+insertAt (Set dict) i value = Set (Dict.insertAt dict i value ⊤)
+
+
+--| Sort the values by a key that a function computes from each, smallest
+--| first. Values with equal keys keep their order.
+pub sortBy : Set t, (t → a) → Set t
+    where a.compare : a, a → Order
+sortBy (Set dict) f = Set (Dict.sortBy dict λkey _ → f key)
+
+
 --| Determine if a set is empty.
 --|
---|     isEmpty empty == True
+--|     isEmpty (empty ⊤) == True
 pub isEmpty : Set t → Bool
 isEmpty (Set dict) = Dict.isEmpty dict
 
@@ -77,7 +105,8 @@ pub size : Set t → Int
 size (Set dict) = Dict.size dict
 
 
---| Get the union of two sets. Keep all values.
+--| Get the union of two sets. Keep all values: the first set's in its order,
+--| then the second's that the first does not have.
 pub union : Set t, Set t → Set t
 union (Set d1) (Set d2) = Set (Dict.union d1 d2)
 
@@ -93,38 +122,36 @@ pub diff : Set t, Set t → Set t
 diff (Set d1) (Set d2) = Set (Dict.diff d1 d2)
 
 
---| Convert a set into a list, sorted from lowest to highest.
+--| Convert a set into a list, in order.
 pub toList : Set t → List t
 toList (Set dict) = Dict.keys dict
 
 
---| Convert a list into a set, removing any duplicates. The values are
---| ordered by their own `compare`.
+--| Convert a list into a set, removing any duplicates. A value's first
+--| occurrence sets its position.
 --|
 --|     Set.fromList [ "a", "b", "a" ]
 pub fromList : List t → Set t
-fromList list = List.foldl list empty λvalue set → insert set value
+fromList list = Set (Dict.fromList (List.map list λvalue → ( value, ⊤ )))
 
 
---| Map a function onto a set, creating a new set with no duplicates. The
---| result holds values of a NEW type, so the constraint is on that type's
---| `compare` and not on the one the set came in with.
+--| Map a function onto a set, creating a new set with no duplicates.
 --|
 --|     Set.map names String.length
 pub map : Set a, (a → b) → Set b
 map set func = fromList (List.map (toList set) func)
 
 
---| Fold over the values in a set, in order from lowest to highest.
+--| Fold over the values in a set, in order.
 --|
 --|     Set.foldl numbers 0 λn total → n + total
 pub foldl : Set t, b, (t, b → b) → b
 foldl (Set dict) initial func = Dict.foldl dict initial λkey _ acc → func key acc
 
 
---| Fold over the values in a set, in order from highest to lowest.
+--| Fold over the values in a set, from the last to the first.
 --|
---|     foldr (fromList [ "b", "a" ]) [] (λname acc → [ name, …acc ]) == [ "a", "b" ]
+--|     foldr (fromList [ "a", "b" ]) [] (λname acc → [ name, …acc ]) == [ "a", "b" ]
 pub foldr : Set t, b, (t, b → b) → b
 foldr (Set dict) initial func = Dict.foldr dict initial λkey _ acc → func key acc
 
@@ -146,14 +173,11 @@ partition (Set dict) isGood =
     ( Set trues, Set falses )
 
 
---| Whether two sets hold the same values, by the value type's `compare`.
---| This is what `==` and `≠` on a set mean (`static-dispatch-spike.md`
---| §3.3), and it stays callable by name.
+--| Whether two sets hold the same values in the same order. This is what
+--| `==` and `≠` on a set mean (`static-dispatch-spike.md` §3.3), and it
+--| stays callable by name.
 --|
---|     eq (fromList [ 1, 2, 3 ]) (fromList [ 3, 2, 1 ]) == True
---|
---| It is written here because the derived `eq` would compare the trees
---| underneath, and two sets holding the same values are not always the same
---| tree. It is `Dict.eq` on the dictionaries. O(n).
+--|     eq (fromList [ 1, 2, 3 ]) (fromList [ 1, 2, 3 ]) == True
+--|     eq (fromList [ 1, 2, 3 ]) (fromList [ 3, 2, 1 ]) == False
 pub eq : Set t, Set t → Bool
 eq (Set left) (Set right) = Dict.eq left right

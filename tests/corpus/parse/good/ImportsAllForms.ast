@@ -21,4 +21,6 @@
     (type_con Set
       (type_con Int)))
   (definition example
-    (ident Set.empty)))
+    (apply
+      (ident Set.empty)
+      (unit))))

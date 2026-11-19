@@ -12,7 +12,7 @@ want k kind t d = Dict.update d k λcurrent →
     Just ( first, List.append taps [ t ] )
 
 
-build declared = List.foldl declared Dict.empty λ( k, kind, t ) d → want k kind t d
+build declared = List.foldl declared (Dict.empty ⊤) λ( k, kind, t ) d → want k kind t d
 
 
 main : Tea.Program

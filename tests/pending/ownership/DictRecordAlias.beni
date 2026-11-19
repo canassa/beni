@@ -18,11 +18,11 @@ grow p = { items = List.push p.items 9, n = p.n }
 pub shared : ⊤ → Dict Int P
 shared ⊤ =
     xs = [ 1 ]
-    d = Dict.insert (Dict.insert Dict.empty 1 { items = xs, n = 0 }) 2 { items = xs, n = 0 }
+    d = Dict.insert (Dict.insert (Dict.empty ⊤) 1 { items = xs, n = 0 }) 2 { items = xs, n = 0 }
     Dict.update d 1 λm → Maybe.map m grow
 
 
 pub fresh : ⊤ → Dict Int P
 fresh ⊤ =
-    d = Dict.insert (Dict.insert Dict.empty 1 { items = [ 1 ], n = 0 }) 2 { items = [ 2 ], n = 0 }
+    d = Dict.insert (Dict.insert (Dict.empty ⊤) 1 { items = [ 1 ], n = 0 }) 2 { items = [ 2 ], n = 0 }
     Dict.update d 1 λm → Maybe.map m grow

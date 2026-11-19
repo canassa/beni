@@ -1,6 +1,6 @@
 -- An ANNOTATED constant of no parameters carrying a `where` clause
 -- (`docs/design/static-dispatch-spike.md` §8.1, §8.2, §10.10, A.85). It is
--- the shape of `Dict.empty`: the requirement belongs to the
+-- the shape of `Dict.empty ⊤`: the requirement belongs to the
 -- TYPE and is carried for a later call, not used by the body.
 --
 -- Compiled wrongly it builds with exit 0 and throws `TypeError: Cannot read

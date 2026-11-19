@@ -336,6 +336,8 @@ const layers = [_]Entry{
     .{ .file = "HandedWrites.zig", .layer = 12, .max_lines = 175 },
     // Nested codes' captures, split from `Groups` (#2028).
     .{ .file = "CodeCaps.zig", .layer = 12, .max_lines = 90 },
+    // A worded row of a keyed collection, split from `Groups` (ownership-v3-kernel.md §12).
+    .{ .file = "Keyed.zig", .layer = 12, .max_lines = 25 },
     // A parameter annotated with a type variable, split from `Groups` (#2028).
     .{ .file = "TypeVarParam.zig", .layer = 12, .max_lines = 95 },
     // A group's codes solved on their own and its local cycles, split from `Groups` (§2.12, #2035).
@@ -898,7 +900,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 170), layers.len);
+    try testing.expectEqual(@as(usize, 171), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

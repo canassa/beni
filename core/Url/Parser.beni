@@ -283,10 +283,10 @@ prepareQuery : Maybe String → Dict String (List String)
 prepareQuery maybeQuery =
     case maybeQuery of
         Nothing →
-            Dict.empty
+            Dict.empty ⊤
 
         Just qry →
-            List.foldr (String.split qry "&") Dict.empty addParam
+            List.foldr (String.split qry "&") (Dict.empty ⊤) addParam
 
 
 addParam : String, Dict String (List String) → Dict String (List String)
