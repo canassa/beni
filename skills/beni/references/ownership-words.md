@@ -70,6 +70,19 @@ pub pick : borrowed List a, borrowed position Int → Int
 pick xs i = i
 ```
 
+The ownership checker v3 checks a declaration that has words and a beni
+body that calls no JavaScript. It compares the words with what it finds in
+the body. A word that says less than the body does causes
+`false_ownership_word` at the declaration's name, under `--ownership=v3`.
+For example, `shallow` on a parameter whose values the body reads, `borrowed`
+on a parameter that the body writes or keeps, or `fresh` on a result that is
+a parameter. A word that says more than the body does is permitted.
+
+```text
+pub peek : borrowed shallow Dict Int (List Int) → Int
+peek d = List.length (Maybe.withDefault (Dict.get d 1) [])
+```
+
 
 ## Raise the ownership summary size
 
@@ -104,4 +117,4 @@ pub small : List Int
 small = [ 1 ]
 ```
 
-Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4; `docs/design/ownership-v3-kernel.md` §6 rule 10.
+Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4; `docs/design/ownership-v3-kernel.md` §6 rule 10, §7.

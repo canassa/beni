@@ -1,0 +1,5 @@
+# Each row's words claim less than the walk of its body found, which reaches no JavaScript: the platform's build refuses each (ownership-v3-kernel.md §6 rule 10, *A worded body is checked against its walk*).
+9:1 false_ownership_word peekBody
+14:1 false_ownership_word same
+19:1 false_ownership_word later
+24:1 false_ownership_word keepFn

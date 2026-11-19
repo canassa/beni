@@ -2554,7 +2554,7 @@ const Case = struct {
     }
 
     fn ownershipOnly(stderr: []const u8) bool {
-        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit", "comparison_changes_value" };
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit", "comparison_changes_value", "false_ownership_word" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
         _ = it.next();

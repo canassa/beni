@@ -1,0 +1,33 @@
+-- The true twin of `WordedBodyFalse`: platform rows with ownership words and
+-- beni bodies that reach no JavaScript, each word true of its body, so each
+-- row stays and the program's writes are accepted in place where the words
+-- allow (ownership-v3-kernel.md §6 rule 10, *A worded body is checked
+-- against its walk*; research report 162). A list taken out of the
+-- dictionary is pushed in place before `sizeBody`, which reads the storage
+-- alone; a copy and a list a cell keeps are pushed in place too.
+import Dict exposing (Dict)
+import Node exposing (Program)
+import Peek
+import Ref
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    d0 = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+    xs = Maybe.withDefault (Dict.get d0 1) []
+    ys = List.push xs 5
+    n = Peek.sizeBody d0
+    a = [ 7 ]
+    b = List.push (Peek.copied a) 8
+    c = List.push (Peek.same [ 9 ]) 10
+    r = Peek.keepFn λ⊤ → 11
+    [ ints ys, String.fromInt n, ints a, ints b, ints c, String.fromInt ((Ref.get r) ⊤) ]
+
+
+main : Program
+main = Node.printLines (go ⊤)

@@ -168,6 +168,11 @@ pub const Result = struct {
     limits: []const Limit,
     /// Each declaration's contract as text, when asked for.
     summaries: []const []const u8,
+    /// The worded declarations whose body reaches no JavaScript and whose
+    /// walk found what their words do not say (kernel §6 rule 10, *A worded
+    /// body is checked against its walk*): every package's build refuses
+    /// each (`Enforce.checkModule`).
+    false_words: []const Limit = &.{},
 };
 
 /// The build's markup type (`boundary.md` §9.2), by the names the manifest
@@ -186,6 +191,13 @@ pub const Options = struct {
     /// keeps beyond the call that made them, ascending (kernel §6.14,
     /// `Enforce.keptLets`): each is held by the root that keeps it.
     kept_lets: []const u32 = &.{},
+    /// A module of core or a platform, the packages that may write
+    /// ownership words: which of its bodies reach JavaScript is worked out
+    /// and published (`reachesJs`), for its worded bodies and for those of
+    /// the modules that import it. An application's module has no word, and
+    /// publishes none: an importer reads each of its declarations as one
+    /// that reaches JavaScript.
+    rows: bool = false,
 };
 
 const State = enum(u8) { todo, working, done };
@@ -311,6 +323,11 @@ pub const Mod = struct {
     spread_root: std.DynamicBitSetUnmanaged = .{},
     lines: std.ArrayList(Line) = .empty,
     limits: std.ArrayList(Limit) = .empty,
+    /// Per declaration: its body reaches JavaScript (`reachesJs`).
+    js: []bool = &.{},
+    /// The worded declarations whose walk found what their words do not
+    /// say (`falseWord`, kernel §6 rule 10), at each one's name.
+    false_words: std.ArrayList(Limit) = .empty,
     /// The declaration whose budget or walk first met a type past the
     /// layout limit (`Loc.Table.over`), for the limit line's position.
     over_decl: ?u32 = null,
@@ -2201,6 +2218,380 @@ pub const Mod = struct {
         }
     }
 
+    // ---- a worded body checked against its walk (kernel §6 rule 10) -----------------
+
+    /// Per declaration of the module: whether its body reaches JavaScript
+    /// that can see a cell (kernel §6 rule 10, *A worded body is checked
+    /// against its walk*), so that its walk reads what it cannot follow. One
+    /// of its edges (`Edges.declEdgesAt`: the values its instructions and
+    /// local functions name, its dispatch terms) is
+    ///
+    /// - a declaration of core's `Js`, a `foreign` with no words, a markup
+    ///   primitive or a name with no definition, named where the type it is
+    ///   read at holds a cell (`touchesCells`: `Js.shiftRightZero` on two
+    ///   `Int`s reads none);
+    /// - a derived row or a codec: the compiler's code, read by facts and
+    ///   not by a body;
+    /// - a worded row that hands a parameter to code that no walk sees
+    ///   (`handsUnseen`), or that casts;
+    /// - a declaration with no words and no contract (its walk gave up, or
+    ///   its module passed a limit), one whose contract casts, or one whose
+    ///   own body reaches JavaScript, of this module or of another
+    ///   (`Published.js`).
+    ///
+    /// A worded callee is read by its words, and its own body is checked
+    /// where it is declared: it does not carry the bit. One pass over each
+    /// declaration's edges, then a walk back along the edges into
+    /// declarations with no words: linear in the edges.
+    fn reachesJs(m: *Mod) Allocator.Error![]bool {
+        const gpa = m.gpa;
+        const bir = m.bir;
+        const nd = bir.decls.len;
+        const js = try m.arena.alloc(bool, nd);
+        @memset(js, false);
+        var rev = try gpa.alloc(std.ArrayList(u32), nd);
+        defer {
+            for (rev) |*r| r.deinit(gpa);
+            gpa.free(rev);
+        }
+        for (rev) |*r| r.* = .empty;
+        var edges: std.ArrayList(Edges.Edge) = .empty;
+        defer edges.deinit(gpa);
+        var at: std.ArrayList(u32) = .empty;
+        defer at.deinit(gpa);
+        var queue: std.ArrayList(u32) = .empty;
+        defer queue.deinit(gpa);
+        const dt: *const Dispatch = m.in.dispatch orelse &Dispatch.empty;
+        const in_js = m.isJsModule(m.in.module);
+        for (bir.decls, 0..) |d, di| {
+            if (!d.kind.isValue() or d.body == .none) continue;
+            edges.clearRetainingCapacity();
+            at.clearRetainingCapacity();
+            try Edges.declEdgesAt(&edges, &at, gpa, bir, dt, @intCast(di), null);
+            const direct = for (edges.items, at.items) |e, pos| {
+                const t: [2]u32 = switch (e) {
+                    .top => |t| .{ m.in.module, t },
+                    .ext => |x| blk: {
+                        const mi = x.module.int();
+                        if (mi >= m.in.provenance.len) break true;
+                        const vd = m.in.provenance[mi].valueDecl(x.value) orelse break true;
+                        break :blk .{ mi, vd.int() };
+                    },
+                    .derived, .ext_derived, .codec => break true,
+                    // The compiler's own comparisons: they read their operands.
+                    .primitive, .undetermined => continue,
+                };
+                const td = m.declOf(t) orelse break true;
+                if (in_js or m.isJsModule(t[0])) {
+                    if (try m.touchesCells(pos)) break true;
+                    continue;
+                }
+                switch (calleeKind(m.in.birs[t[0]], td)) {
+                    .js => if (try m.touchesCells(pos)) break true,
+                    .worded => {
+                        if (try m.handsUnseen(t)) break true;
+                        if ((try m.declContract(t)).?.casts) break true;
+                    },
+                    .walked => {
+                        const c = (try m.declContract(t)) orelse break true;
+                        if (c.casts) break true;
+                        if (t[0] == m.in.module) {
+                            if (t[1] != di) try rev[t[1]].append(gpa, @intCast(di));
+                        } else {
+                            const p = (if (t[0] < m.shared.published.len) m.shared.published[t[0]] else null) orelse break true;
+                            if (t[1] >= p.js.len or p.js[t[1]]) break true;
+                        }
+                    },
+                }
+            } else false;
+            if (direct) {
+                js[di] = true;
+                try queue.append(gpa, @intCast(di));
+            }
+        }
+        var next: usize = 0;
+        while (next < queue.items.len) : (next += 1) {
+            const t = queue.items[next];
+            // A worded declaration does not carry the bit to its callers.
+            if (bir.ownSlotsV2(bir.decls[t]).len != 0) continue;
+            for (rev[t].items) |caller| if (!js[caller]) {
+                js[caller] = true;
+                try queue.append(gpa, caller);
+            };
+        }
+        return js;
+    }
+
+    /// Whether the reference at instruction `pos` (`Edges.declEdgesAt`) is
+    /// read at a type that holds a cell: a parameter, a function parameter
+    /// or the result of the function type it is read at, or its own type.
+    /// A position with no instruction of a reference (a row of the reference
+    /// table, a dispatch site) is read as one that does.
+    fn touchesCells(m: *Mod, pos: u32) Allocator.Error!bool {
+        if (pos >= m.bir.insts.len) return true;
+        const tag = m.tags[pos];
+        if (tag != .top and tag != .ext_value) return true;
+        const ty: Var.Optional = if (pos < m.in.inst_type.len) m.in.inst_type[pos] else .none;
+        if (ty == .none) return true;
+        if (m.fnType(ty)) |ft| {
+            for (m.in.store.vars(ft.params)) |pv| {
+                if (m.fnType(pv.toOptional()) != null) return true;
+                if (m.loc.layoutEntries(try m.loc.layoutOf(try m.placeOf(pv.toOptional()))).len != 0) return true;
+            }
+            return m.loc.layoutEntries(try m.loc.layoutOf(try m.placeOf(ft.result.toOptional()))).len != 0;
+        }
+        return m.loc.layoutEntries(try m.loc.layoutOf(try m.placeOf(ty))).len != 0;
+    }
+
+    /// Whether the words of worded declaration `t` hand a location of a
+    /// parameter to code that no walk sees (`reachesJs`): a parameter with
+    /// no word, or `unknown`, that holds a cell, or a function parameter
+    /// with no word, whose function JavaScript calls with every cell of
+    /// every parameter; or the result word `unknown`. A row with no
+    /// contract is unknown code.
+    fn handsUnseen(m: *Mod, t: [2]u32) Allocator.Error!bool {
+        const d = m.declOf(t) orelse return true;
+        const c = (try m.declContract(t)) orelse return true;
+        var pw = try m.gpa.alloc(u32, c.arity);
+        defer m.gpa.free(pw);
+        @memset(pw, 0);
+        for (m.in.birs[t[0]].ownSlotsV2(d)) |s| {
+            if (s[0] == Bir.own_result) {
+                if (has(s[1], .unknown)) return true;
+            } else if (s[0] < c.arity) pw[s[0]] = s[1];
+        }
+        for (pw, 0..) |w, j| {
+            if (w != 0 and !has(w, .unknown)) continue;
+            if (c.fns[j] != null or m.loc.layoutEntries(c.layouts[j]).len != 0) return true;
+        }
+        return false;
+    }
+
+    /// Whether module `mi` is core's `Js`.
+    fn isJsModule(m: *const Mod, mi: u32) bool {
+        if (!m.in.isCore(mi) or mi >= m.names.module_names.len) return false;
+        return std.mem.eql(u8, m.names.module_names[mi], "Js");
+    }
+
+    const CalleeKind = enum { js, worded, walked };
+
+    /// How a callee of module `bir` reaches its caller's walk
+    /// (`reachesJs`): by its words, which are its contract; by its own
+    /// walk; or by nothing a walk follows.
+    fn calleeKind(bir: *const Bir, d: Bir.Decl) CalleeKind {
+        if (bir.ownSlotsV2(d).len != 0) return .worded;
+        return switch (d.kind) {
+            .value => .walked,
+            // A row of JavaScript with no words, a markup primitive, a name
+            // with no definition, or no value at all: no fact a walk follows.
+            .foreign_value, .vocab_markup, .annotation_only, .type, .type_alias, .foreign_type, .schema, .vocab_element, .vocab_attribute, .vocab_event => .js,
+        };
+    }
+
+    /// The first fact of walk contract `c` of worded declaration `di` that
+    /// its words' contract `wc` does not say, as the text of a refusal, or
+    /// null when `c` is below `wc` (kernel §6 rule 10, *A worded body is
+    /// checked against its walk*): what a caller reads of the walk, the
+    /// words say too, or something more pessimistic. Both contracts are of
+    /// this module's table and of one signature; a pair of other layouts (a
+    /// function value declared with no parameter, whose walk is its
+    /// lambda's) is not compared. Counts no work.
+    fn falseWord(m: *Mod, di: u32, wc: *const Contract.Contract, c: *const Contract.Contract) Allocator.Error!?[]const u8 {
+        const d = m.bir.decls[di];
+        // `entry` is a protocol of the runtime (rule 13), and `Record.copy`'s
+        // `copyof` is applied by its caller's own rule (`Frame.recordCopy`).
+        if (wc.entry or wc.record_copy) return null;
+        if (wc.arity != c.arity or !std.mem.eql(u32, wc.layouts, c.layouts)) return null;
+        var pw = try m.gpa.alloc(u32, wc.arity);
+        defer m.gpa.free(pw);
+        @memset(pw, 0);
+        var rw: u32 = 0;
+        for (m.bir.ownSlotsV2(d)) |s| {
+            if (s[0] == Bir.own_result) rw = s[1] else if (s[0] < wc.arity) pw[s[0]] = s[1];
+        }
+        const v3 = m.bir.ownSlotsV3(d);
+        const name = m.names.declName(m.in.module, di);
+        for (0..c.arity) |j| {
+            const pes = m.loc.layoutEntries(c.layouts[j]);
+            for (pes, 0..) |pe, e| {
+                const cf = c.flags[c.off[j] + e];
+                const wf = wc.flags[wc.off[j] + e];
+                const missing = cf & ~wf;
+                if (missing & (Contract.flag_r | Contract.flag_w | Contract.flag_e | Contract.flag_a) == 0) continue;
+                const at = try m.atText(pe.loc);
+                const words = try m.wordsText(pw[j], v3, j);
+                if (cf & Contract.flag_r != 0 and wf & Contract.flag_r == 0)
+                    return try m.falseText(name, "the body reads parameter {d}{s}, and its words `{s}` say that it does not ({s})", .{ j + 1, at, words, if (shallowParam(v3, j)) "`shallow`: no location below its storage" else "`unused`" });
+                if (cf & Contract.flag_w != 0 and wf & Contract.flag_w == 0)
+                    return try m.falseText(name, "the body writes parameter {d}{s}, and its words `{s}` say that it does not (`written` writes the storage, `consumed` all of it)", .{ j + 1, at, words });
+                if (cf & Contract.flag_e != 0 and wf & Contract.flag_e == 0)
+                    return try m.falseText(name, "the body lets parameter {d}{s} escape, and its words `{s}` keep it (`escaped` says that it escapes)", .{ j + 1, at, words });
+                if (cf & Contract.flag_a != 0 and wf & (Contract.flag_a | Contract.flag_r) == 0)
+                    return try m.falseText(name, "the body answers parameter {d}{s}, and its words `{s}` say that it does not read it", .{ j + 1, at, words });
+            }
+        }
+        const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
+        const rwords = try m.wordsText(rw, &.{}, none);
+        for (res_es, c.res, wc.res, 0..) |re, srcs, wsrcs, ri| {
+            for (srcs) |s| {
+                if (srcCovered(s, wsrcs)) {
+                    // A new cell at two locations of the result: the words name one site for both.
+                    if (s.kind == .fresh) if (try m.freshApart(c, wc, s, ri)) |other|
+                        return try m.falseText(name, "the body answers one new value in the result{s} and in the result{s}, and the words `{s}` say that they are two (`exclusive`)", .{ try m.atText(re.loc), try m.atText(res_es[other].loc), rwords });
+                    continue;
+                }
+                return try m.falseText(name, "the body answers {s} in the result{s}, and the words `{s}` do not say so", .{ try m.srcText(s), try m.atText(re.loc), rwords });
+            }
+        }
+        if (c.nonlinear and !wc.nonlinear and !dupsOnly(c))
+            return try m.falseText(name, "the body can answer one cell of a parameter at two places of its result, and its words say that it cannot", .{});
+        if (c.casts and !wc.casts)
+            return try m.falseText(name, "the body answers a value at a type variable of another type than its own (a cast), and its words say that it does not", .{});
+        if (c.old_result and !wc.old_result)
+            return try m.falseText(name, "the body can answer an object that was there before the call, and its words say that it answers a new one", .{});
+        for (0..c.arity) |j| {
+            const g = c.fns[j] orelse continue;
+            const wg = wc.fns[j] orelse continue;
+            if (g.arity != wg.arity or !std.mem.eql(u32, g.layouts, wg.layouts)) continue;
+            const words = try m.wordsText(pw[j], v3, j);
+            if (g.called and !wg.called) return try m.falseText(name, "the body calls function parameter {d}, and its words `{s}` say that it does not", .{ j + 1, words });
+            if (g.lost and !wg.lost) return try m.falseText(name, "the body keeps function parameter {d} where no contract describes its holder, and its words `{s}` say that it does not (`once` and `many` say that it is called and not kept)", .{ j + 1, words });
+            if (g.ans_escapes and !wg.ans_escapes) return try m.falseText(name, "the body lets the answer of function parameter {d} escape, and its words `{s}` say that it does not", .{ j + 1, words });
+            if (g.rewrites and !wg.rewrites) return try m.falseText(name, "the body changes a value after it handed it to function parameter {d}, which its words `{s}` do not say", .{ j + 1, words });
+            // `taken` asserts what the owner hands and reads no more, which no walk derives.
+            const taken = has(pw[j], .taken);
+            for (0..g.arity) |k| for (m.loc.layoutEntries(g.layouts[k]), 0..) |fe, i| {
+                const slot = g.off[k] + i;
+                const free = wg.free[slot] and !taken;
+                if (free and !g.free[slot])
+                    return try m.falseText(name, "the body reads again what it hands function parameter {d} at its parameter {d}{s}, and its words `{s}` say that it does not", .{ j + 1, k + 1, try m.atText(fe.loc), words });
+                for (g.supply[slot]) |s| {
+                    const covered = switch (s.kind) {
+                        .param, .answer, .twice => srcCovered(s, wg.supply[slot]),
+                        // A cell the body made: a caller names it only where the body answers it too.
+                        .fresh => !answersSite(c, s.a) or hasKind(wg.supply[slot], .fresh),
+                        // Outside every frame: a function the owner hands it to may not write it.
+                        .outside => !wg.free[slot] or hasKind(wg.supply[slot], .outside),
+                    };
+                    if (!covered) return try m.falseText(name, "the body hands {s} to function parameter {d} at its parameter {d}{s}, and its words `{s}` do not say so", .{ try m.srcText(s), j + 1, k + 1, try m.atText(fe.loc), words });
+                }
+            };
+        }
+        return null;
+    }
+
+    /// Whether the words' sources `ws` at a location name the cells of the
+    /// walk's source `s` there (`falseWord`): a parameter location at the
+    /// same position or at none, a function parameter's answer; `outside`
+    /// by `outside`; a cell the body made by `outside`, or,
+    /// where it did not let it escape, by a new cell of the words, a
+    /// parameter location or a function parameter's answer (each of which a
+    /// caller writes only where it may write what it handed, and reads as
+    /// held by what it handed).
+    fn srcCovered(s: Src, ws: []const Src) bool {
+        // A count is not judged: a word that states positions asserts that
+        // each cell is at one place, as `taken` asserts what a loop hands,
+        // and no walk of a permutation (`List.swap`'s two `set`s) or of a
+        // merge derives it (research report 162).
+        if (s.kind == .twice) return true;
+        for (ws) |w| switch (s.kind) {
+            .param => if (w.kind == .param and w.a == s.a and w.e == s.e and (w.p == 0 or w.p == s.p)) return true,
+            .answer => if (w.kind == .answer and w.a == s.a and w.e == s.e) return true,
+            .twice => unreachable,
+            .outside => if (w.kind == .outside) return true,
+            .fresh => switch (w.kind) {
+                .outside => return true,
+                .fresh => if (s.e == 0 or w.e != 0) return true,
+                .param, .answer => if (s.e == 0) return true,
+                .twice => {},
+            },
+        };
+        return false;
+    }
+
+    /// Whether walk contract `c` is `nonlinear` only by a cell at two places
+    /// of one summary location (`twice`, which `srcCovered` reads): no
+    /// parameter location or function answer is a source of two locations
+    /// of its result, so no cell of a parameter is at two of them.
+    fn dupsOnly(c: *const Contract.Contract) bool {
+        for (c.res, 0..) |srcs, ri| for (srcs) |s| {
+            if (s.kind != .param and s.kind != .answer) continue;
+            for (c.res[ri + 1 ..]) |other| for (other) |x| if (x.kind == s.kind and x.a == s.a and x.e == s.e) return false;
+        };
+        return true;
+    }
+
+    fn hasKind(ws: []const Src, k: Src.Kind) bool {
+        for (ws) |w| if (w.kind == k) return true;
+        return false;
+    }
+
+    /// Whether walk contract `c` answers the cell the body made at site `a`.
+    fn answersSite(c: *const Contract.Contract, a: u16) bool {
+        for (c.res) |srcs| for (srcs) |s| if (s.kind == .fresh and s.a == a) return true;
+        return false;
+    }
+
+    /// Another location of the walk's result where the new cell `s` at
+    /// location `ri` is too, while the words name no one site for both: a
+    /// cell at two places that the words say are two (`exclusive`).
+    fn freshApart(m: *Mod, c: *const Contract.Contract, wc: *const Contract.Contract, s: Src, ri: usize) Allocator.Error!?usize {
+        _ = m;
+        for (c.res, 0..) |srcs, rj| {
+            if (rj == ri) continue;
+            const there = for (srcs) |x| {
+                if (x.kind == .fresh and x.a == s.a) break true;
+            } else false;
+            if (!there) continue;
+            if (hasKind(wc.res[ri], .outside) or hasKind(wc.res[rj], .outside)) continue;
+            const shared = for (wc.res[ri]) |x| {
+                if (x.kind != .fresh) continue;
+                if (for (wc.res[rj]) |y| {
+                    if (y.kind == .fresh and y.a == x.a) break true;
+                } else false) break true;
+            } else false;
+            if (!shared) return rj;
+        }
+        return null;
+    }
+
+    fn srcText(m: *Mod, s: Src) Allocator.Error![]const u8 {
+        return switch (s.kind) {
+            .param => std.fmt.allocPrint(m.arena, "parameter {d}'s value{s}", .{ s.a + 1, if (s.p == 0) "" else if ((s.p - 1) % 2 == 0) " at the position its key names" else " at the other positions" }),
+            .answer => std.fmt.allocPrint(m.arena, "the answer of function parameter {d}", .{s.a + 1}),
+            .twice => "one cell at two places of a list (`twice`)",
+            .outside => "a value outside every frame (a top-level value, or JavaScript's)",
+            .fresh => if (s.e != 0) "a new value that it let escape" else "a new value",
+        };
+    }
+
+    /// The words of parameter `j` (or of the result, `j == none`), as written.
+    fn wordsText(m: *Mod, w: u32, v3: []const [2]u32, j: usize) Allocator.Error![]const u8 {
+        var out: std.Io.Writer.Allocating = .init(m.arena);
+        for (std.enums.values(W)) |x| if (has(w, x)) {
+            if (out.written().len != 0) out.writer.writeAll(" ") catch return error.OutOfMemory;
+            out.writer.writeAll(@tagName(x)) catch return error.OutOfMemory;
+        };
+        if (j != none) for (v3) |s| if (s[0] == j) for (std.enums.values(Ast.OwnWord3)) |x| if (s[1] & x.bit() != 0) {
+            if (out.written().len != 0) out.writer.writeAll(" ") catch return error.OutOfMemory;
+            out.writer.writeAll(@tagName(x)) catch return error.OutOfMemory;
+        };
+        if (out.written().len == 0) return "(none)";
+        return out.written();
+    }
+
+    /// ` at ` and location text `l`, or nothing for a value's own storage.
+    fn atText(m: *Mod, loc: u32) Allocator.Error![]const u8 {
+        const l = try m.locText(loc);
+        if (l.len == 0) return "";
+        return std.fmt.allocPrint(m.arena, " at {s}", .{l});
+    }
+
+    fn falseText(m: *Mod, name: []const u8, comptime fmt: []const u8, args: anytype) Allocator.Error![]const u8 {
+        const what = try std.fmt.allocPrint(m.arena, fmt, args);
+        return std.fmt.allocPrint(m.arena, "{s} is refused: false-word: {s}", .{ name, what });
+    }
+
     /// The result of a worded row that the words do not describe: it can be
     /// a cell outside every frame (JavaScript's, a cell's contents), so no
     /// frame may write it, and it can hold every cell of every parameter, at
@@ -3224,12 +3615,15 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         try m.solveGroup(members.items, m.prepass.recursive[gi]);
     }
     // A worded declaration's contract is its words. Its body is walked for
-    // its own verdicts only, when every contract of the module is known.
+    // its own verdicts when every contract of the module is known; what the
+    // walk found is kept, to be checked against the words at the end.
+    const walked = try arena.alloc(?*const Contract.Contract, bir.decls.len);
+    @memset(walked, null);
     for (bir.decls, 0..) |d, di| {
         if (!d.kind.isValue() or bir.ownSlotsV2(d).len == 0) continue;
         _ = try m.declContract(.{ in.module, @intCast(di) });
         if (d.kind != .value or d.body == .none) continue;
-        _ = try m.walkDecl(@intCast(di));
+        walked[di] = try m.walkDecl(@intCast(di));
         // Its contract is its words, a trusted row, whatever its walk found.
         m.failed_decl[di] = false;
         _ = m.walk_arena.reset(.retain_capacity);
@@ -3272,9 +3666,24 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     if (m.module_over) for (bir.decls, m.contracts) |d, *c| {
         if (!d.kind.isValue() or bir.ownSlotsV2(d).len == 0) c.* = null;
     };
+    // Which bodies reach JavaScript, and each worded body that reaches none
+    // checked against its walk (kernel §6 rule 10, *A worded body is checked
+    // against its walk*). Last, when every budget has been read: they count
+    // no work, so no limit and no verdict depends on them.
+    {
+        const units = m.loc.units;
+        defer m.loc.units = units;
+        if (options.rows) m.js = try m.reachesJs();
+        for (bir.decls, walked, 0..) |d, w, di| {
+            const c = w orelse continue;
+            if (di >= m.js.len or m.js[di]) continue;
+            const wc = m.contracts[di] orelse continue;
+            if (try m.falseWord(@intCast(di), wc, c)) |text| try m.false_words.append(m.arena, .{ .text = text, .token = d.name_token });
+        }
+    }
     // The contracts as text, for a dump: the ones the module publishes.
     var summaries: std.ArrayList([]const u8) = .empty;
     if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
-    const published = try Contract.publish(gpa, &m.loc, m.contracts, derived);
-    return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items };
+    const published = try Contract.publish(gpa, &m.loc, m.contracts, derived, m.js);
+    return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items, .false_words = m.false_words.items };
 }

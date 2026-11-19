@@ -305,6 +305,10 @@ pub const Published = struct {
     /// row that is not here has no fact: an importer reads it as code that
     /// writes and keeps what it is handed.
     derived: []const DerivedFact = &.{},
+    /// By declaration: its body reaches JavaScript (`Check.reachesJs`,
+    /// kernel §6 rule 10, *A worded body is checked against its walk*). A
+    /// declaration past the end is read as one that does.
+    js: []const bool = &.{},
 
     pub fn deinit(p: *Published, gpa: Allocator) void {
         p.arena.deinit();
@@ -391,7 +395,7 @@ pub fn derivedFact(p: *const Published, ty: u32, kind: u8) ?Effect {
 }
 
 /// The module's contracts, by declaration, as its importers read them.
-pub fn publish(gpa: Allocator, loc: *const Loc.Table, contracts: []const ?*const Contract, derived: []const DerivedFact) Allocator.Error!*Published {
+pub fn publish(gpa: Allocator, loc: *const Loc.Table, contracts: []const ?*const Contract, derived: []const DerivedFact, js: []const bool) Allocator.Error!*Published {
     const p = try gpa.create(Published);
     p.* = .{ .arena = .init(gpa) };
     errdefer p.deinit(gpa);
@@ -405,6 +409,7 @@ pub fn publish(gpa: Allocator, loc: *const Loc.Table, contracts: []const ?*const
         }
     }.lt);
     p.derived = facts;
+    p.js = try a.dupe(bool, js);
     p.layouts = try a.alloc(?[]const ExEntry, loc.layouts.items.len);
     @memset(p.layouts, null);
     p.contracts = try a.alloc(?*const Contract, contracts.len);

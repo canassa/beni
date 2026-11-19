@@ -307,6 +307,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         .markup_type = markup_type,
         .kept_lets = try keptLets(arena, session, d, m, bir),
         .library = session.options.library and session.graph.modulePackage(m) == .app,
+        .rows = session.graph.modulePackage(m) != .app,
     });
     ctx.state.shared.published[mi_u] = r.published;
 
@@ -380,6 +381,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     if (kept != null and mi_u < ctx.state.reports.len) {
         var others: std.ArrayList([]const u8) = .empty;
         try others.appendSlice(arena, r.summaries);
+        for (r.false_words) |x| try others.append(arena, x.text);
         for (r.limits) |l| try others.append(arena, l.text);
         ctx.state.reports[mi_u] = try Report.Kept.of(gpa, .{ .module = mi_u, .lines = report_lines.items, .others = others.items, .limits = @intCast(r.limits.len) });
     }
@@ -417,6 +419,13 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
             copyFix(rl.record, l.op, l.base),
         });
         try dest.append(gpa, .{ .ownership = true, .code = if (rl.record) .record_still_used else .list_still_used, .module = m, .region = @fromBackingInt(0), .token = l.token, .message = message });
+    }
+    // A worded declaration whose words claim less than its walk found
+    // (kernel §6 rule 10, *A worded body is checked against its walk*): a
+    // fact of the words, so every package's build stops on it.
+    for (r.false_words) |x| {
+        const message = try std.fmt.allocPrint(gpa, "{s}\n\nA worded declaration whose body reaches no JavaScript is checked against what the ownership checker (`--ownership=v3`) finds in its body: a word may say more than the body does, never less. Correct the words.", .{x.text});
+        try dest.append(gpa, .{ .ownership = true, .code = .false_ownership_word, .module = m, .region = @fromBackingInt(0), .token = x.token orelse 0, .message = message });
     }
     if (!app) return;
     for (r.limits) |o| try dest.append(gpa, .{ .ownership = true, .code = .ownership_limit, .module = m, .region = @fromBackingInt(0), .token = o.token orelse 0, .message = try gpa.dupe(u8, o.text) });

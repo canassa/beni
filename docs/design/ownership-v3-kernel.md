@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1043,6 +1043,90 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     nothing but is `borrowed a, borrowed a → fresh bool`: an in-place write keeps its base's object, so
     a value kept from before the write is `===` to the written list, which it is not where the write
     copies. An identity compare reads its operands (research report 140).
+
+    **A worded body is checked against its walk** (research report 162, #2573). A row is trusted
+    because the checker cannot see what its JavaScript does. A worded declaration with a beni body
+    is walked all the same (§7), and where its body **reaches no JavaScript** the walk sees all of
+    it: its contract is a fact of the body, and a word that claims less than it is a mistake of the
+    platform's author that the build can see (`peekBody : borrowed shallow Dict Int (List Int) →
+    Int` whose body reads `Dict.get d 1`'s length: a caller wrote that list in place, then called
+    it). So the walk's contract must be **below** the words' (`Check.falseWord`): every fact a
+    caller reads of the walk, the words say too, or something more pessimistic. Words that claim
+    more than the walk found (a conservative word) are allowed. Where the walk's contract is not
+    below the words', the declaration is refused, `false_ownership_word` at its name, in the build
+    of every program that loads the package that declares it, wherever its lines are enforced
+    (`--ownership=v3` with `--ownership-everywhere` or a chain that writes in place), naming the
+    declaration, the parameter or the result, and the word. It is a refusal, not a panic: the
+    mistake is the platform's, and every build makes it. The check runs when the module's walks and
+    budgets are done, and counts no work: no limit and no other verdict depends on it.
+
+    A declaration **reaches JavaScript** (`Check.reachesJs`) when one of its edges
+    (`Edges.declEdgesAt`: the values its instructions and local functions name, its dispatch
+    terms) is
+
+    - a declaration of core's `Js`, a `foreign` with no words, a markup primitive or a name with no
+      definition, named where the type it is read at holds a cell (`Check.touchesCells`: a
+      parameter, a function parameter or the result of that type has a location, or the value's own
+      type has one; `Js.shiftRightZero` on two `Int`s, as `List`'s bounds test calls it, sees none);
+    - a derived row or a codec: the compiler's code, which a walk reads by facts, not by a body;
+    - a worded row that hands a parameter to code no walk sees (`Check.handsUnseen`: a parameter
+      with no word or `unknown` that holds a cell, a function parameter with no word, the result
+      word `unknown`), or whose contract casts;
+    - a declaration with no words that has no contract (its walk gave up, or its module passed a
+      limit), whose contract casts, or whose own body reaches JavaScript, in this module or another
+      (`Published.js`; a module of an application has no words and publishes none, so each of its
+      declarations reads as one that does).
+
+    A worded callee is read by its words, which are its contract, and its own body is checked where
+    it is declared: it does not carry the bit to its callers. A body that reaches JavaScript is not
+    checked: the walk reads JavaScript by its rows, which are pessimistic where they see a cell
+    (`Js.call` lets each operand escape, `Js.to` casts), so the walk finds more than the body does.
+
+    *Below*, as callers read a contract (`Contract.zig`):
+
+    - **a parameter's flags**: where the walk reads a location (`flag_r`), the words read it —
+      `unused`, and `shallow` below the storage, say that they do not; where the walk writes it
+      (`flag_w`), the words write it (`written` at the storage, `consumed`); where the walk lets it
+      escape (`flag_e`), so do the words (`escaped`, `aliased`, a cell's words, a placement with
+      nowhere to go); where the walk answers it (`flag_a`), the words read or answer it. `flag_s`
+      is read through the function parameter's `free`, below;
+    - **the result's sources**: each source of each location of the walk's result is named by the
+      words' sources at that location — a parameter location by itself, at the same position or at
+      none (`position` claims one only where the walk found it); a function parameter's answer by
+      itself; `outside` (a top-level value or JavaScript's) by `outside` alone, since a caller of a
+      `fresh` row writes a value every reader holds; a cell the body made by `outside`, or, where
+      the body did not let it go, by a new cell of the words, a parameter location or a function
+      parameter's answer (each of which a caller writes only where it may write what it handed);
+      and one new cell at two locations only where the words name one site for both (`exclusive`
+      names one for each);
+    - **the contract's claims**: where the walk is `nonlinear` by a parameter's cell at two
+      locations, `casts`, or can answer an object that was there before the call (`old_result`),
+      the words are too;
+    - **a function parameter's use** (`Contract.Fn`), entry by entry: each parameter location or
+      answer the walk hands, the words hand; a cell the body made that it hands and also answers,
+      likewise, so that a caller sees what its function kept of the answer; where the words say
+      that the owner reads it no more (`free`), the walk does too, and hands no `outside` cell
+      the words do not; and where the walk calls the function, loses it, lets its answer escape
+      or writes a cell after it handed it (`called`, `lost`, `ans_escapes`, `rewrites`), the words
+      say so.
+
+    What it does not judge, each by its reason: a **count** (`twice`, and `nonlinear` that only a
+    cell at two places of one summary location makes), since a word that states positions
+    (`returned`, one `stored`, `copyof`, `exclusive`) asserts it as `taken` does and no walk of a
+    permutation or a merge derives it: `List.swap`'s two `set`s read the element they put back as
+    at two places, and `sortWith`'s merge does the same (a body that stores one value twice beside
+    a `written returned` list is a false row the check does not see, `bench/ownership-sweeps/
+    worded-bodies.mjs`'s `twice`); `taken`'s `free`, asserted for loops that hand each position
+    once; `entry`, a protocol of the runtime, judged at the program's entry (rule 13); `Record.copy`'s
+    `copyof`, applied by its caller's own rule (`Frame.recordCopy`); and a walk whose contract has
+    other layouts than the words' (a function value declared with no parameter, whose walk is its
+    lambda's). A body whose walk is more pessimistic than the truth — a callee whose words are
+    conservative (`List.length` says `borrowed`, not `shallow`) — is refused where its words are
+    sharper than the walk can show: a refusal, never an acceptance, of the platform's own code.
+    *Before, a worded body's contract was its words whatever the walk found, so `peekBody` above was
+    accepted and its caller trapped under the sanitiser (`run/WordedBodyFalse`; its true twin is
+    `run/WordedBodyTrue`).* No row of `core/` or of a shipped platform is refused, and no verdict of
+    the ownership roots changes (research report 162).
 11. **No fact by a name** (`methodCall`, `evidence`, `derivedEffect`, `Check.edgeEffect`, `Check.isSender`):
     a method call or an operator runs the code the dispatch table names: a declaration is a call of its
     contract; a function the compiler derives (`eq`, `compare` of a type that declares none, a codec)
@@ -1349,8 +1433,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
 
 Declarations are walked in dependency order, callees first (`Check.checkModule`); a contract crosses a
 module as label paths (`Contract.publish`, `Contract.Reader`), so it means the same in every module. A
-worded declaration's body is walked for its own lines only, after every contract is known; its contract is
-its words whatever the walk found. A module whose walk reached a limit, or that is not an application
+worded declaration's body is walked for its own lines, after every contract is known; its contract is its
+words, and where the body reaches no JavaScript, a word that claims less than the walk found refuses the
+declaration (§6 rule 10, *A worded body is checked against its walk*). A module whose walk reached a limit, or that is not an application
 module, authorises no in-place write (`Enforce.checkModule`, `Hoists.finish`).
 
 ## 8. Resource limits
@@ -1824,6 +1909,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a row whose word puts a wide location of a parameter (a type variable, a `Js.Value`) at a place of the result whose type is not the location's — `returned` or `builderdone` at the same place, `stored` at that place of the result's elements, `elementof` and `taken` an element at that place, `aliased` at any type variable of the result — casts. It reads the words and the types of the store again, apart from the code that marked the row (`castsAt`, `aliasedCasts`). With the types not compared (research report 151's fault: the places alone, which are one for every type variable), the first row of `returned a → b` panics. The check counts no work | `Check.checkWordedCasts`, in `wordedContract` | §3.4, §6 rule 10 |
 | every cell of a `Js.Value` that the frame made of parts and read at a type variable, or at a type with one at or below its place, escaped: each leaf of the value is held by an escape of the frame. With that escape turned off (research report 151's fault: `Js.to (Js.array [ Js.from x ])` read at `b`), the first such read panics. The check counts no work | `Frame.checkMadeEscaped`, in `readAtVar` and `narrowed` | §3.4 |
 | a summary location of a worded row's result that is not `twice` holds only sources that a word puts there at stated positions, by `statesPositions`, the one reading of §4.4's list that the marker uses too (the same place for `returned`, `builderdone`, `copyof`, `concatenated` and `prepended`'s list; an element location for a value of the element type that `stored` puts beside the one `written returned` list, and for `prepended`'s item; every location for an `exclusive` row's new cells); and a row without `exclusive` (or a cell's handle) names one site for all its new cells. It reads the contract the marker built, after `Contract.normal`, so it checks the marking loop and the sites, not the reading: the two readings of research report 156 disagreed on `stored` beside a `written returned` record, and this check panicked on a row the word validator accepts (research report 157, #2559). With the `twice` of a row turned off (research report 156's fault), or its `fresh` sites split, the first program checked under `--ownership=v3` panics (core's `Schema` rows answer new lists of issues with `fresh` alone). The check counts no work | `Check.checkWordedTwice`, in `wordedContract` | §4.4, §6 rule 10 |
+| a worded declaration whose body reaches no JavaScript has a walk's contract below its words' contract: every fact a caller reads of the walk (a flag of a parameter location, a source of a result location, `nonlinear`, `casts`, `old_result`, a function parameter's supply, `free`, `called`, `lost`, `ans_escapes`, `rewrites`), the words say too, or something more pessimistic. It runs in **every** build, not only a safe one, and it **refuses**, `false_ownership_word` at the declaration's name, where the other checks of this table panic: a false word is the platform author's mistake, not a drift of this text from the code. It counts no work. Before research report 162 a worded body's contract was its words whatever its walk found (`run/WordedBodyFalse`) | `Check.falseWord`, `Check.reachesJs`, at the end of `checkModule` | §6 rule 10, §7 |
 | `slotHeld`'s index of a layout's record slots answers what a scan of the layout answers, for layouts of at most 256 entries | `Frame.slotHeld` | §3.4, §8 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 

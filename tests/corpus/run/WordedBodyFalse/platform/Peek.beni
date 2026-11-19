@@ -1,0 +1,24 @@
+--! A test platform: worded rows with beni bodies that reach no JavaScript, whose words claim less than their bodies do.
+
+import Dict exposing (Dict)
+import Ref exposing (Ref)
+
+
+--| `shallow`, and the body reads the list at key 1.
+pub peekBody : borrowed shallow Dict Int (List Int) → Int
+peekBody d = List.length (Maybe.withDefault (Dict.get d 1) [])
+
+
+--| `fresh`, and the body answers its parameter.
+pub same : borrowed List Int → fresh List Int
+same l = l
+
+
+--| `fresh`, and the function the body answers holds its parameter.
+pub later : borrowed List Int → fresh (⊤ → Int)
+later l = λ⊤ → List.length l
+
+
+--| `many`, and the body keeps the function in a cell.
+pub keepFn : many (⊤ → Int) → Ref (⊤ → Int)
+keepFn f = Ref.make f
