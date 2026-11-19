@@ -155,3 +155,7 @@ export const same = (a, b) => a === b;
 // lowering writes the stores itself and never calls this: it is here so that
 // the two runtimes have one set of exports.
 export const record = (base, copy) => copy;
+
+// A writer of `Dict` or `Set` that takes evidence first (`sortBy`): its base
+// is argument `k`, and takes the written storage.
+export const listAt = (site, writer, k, ...args) => settleKeyed(args[k], writer(...args));

@@ -127,8 +127,9 @@ const NameCtx = struct {
     }
 };
 
-/// Whether instruction `inst` calls core's `List.update` by its name.
-fn callsListUpdate(session: *const Session, bir: *const Bir, inst: u32) bool {
+/// Whether instruction `inst` calls a walked writer of core by its name:
+/// `List.update`, or one of `Dict`'s and `Set`'s (kernel §12).
+fn callsCoreWriter(session: *const Session, bir: *const Bir, inst: u32) bool {
     if (inst >= bir.insts.len) return false;
     const call: Bir.Inst.Index = @fromBackingInt(inst);
     if (bir.instTag(call) != .call) return false;
@@ -139,10 +140,21 @@ fn callsListUpdate(session: *const Session, bir: *const Bir, inst: u32) bool {
     const interfaces = session.resolution.interfaces;
     if (module.int() >= interfaces.len) return false;
     if (session.graph.modulePackage(module) != .core) return false;
-    if (session.graph.moduleName(module) != InternPool.WellKnown.List.symbol()) return false;
     const iface = &interfaces[module.int()];
     if (d.rhs >= iface.values.len) return false;
-    return std.mem.eql(u8, session.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]), "update");
+    const name = session.interner.slice(iface.symbols[@backingInt(iface.values[d.rhs].name)]);
+    if (session.graph.moduleName(module) == InternPool.WellKnown.List.symbol()) return std.mem.eql(u8, name, "update");
+    // The walked writers of `Dict` and `Set` (kernel §12): the write is a
+    // row's inside core, and the lowering edits the call as the writer.
+    const module_name = session.interner.slice(session.graph.moduleName(module));
+    const walked: []const []const u8 = if (std.mem.eql(u8, module_name, "Dict"))
+        &.{ "update", "sortBy" }
+    else if (std.mem.eql(u8, module_name, "Set"))
+        &.{ "insert", "remove", "swap", "insertAt", "sortBy" }
+    else
+        &.{};
+    for (walked) |w| if (std.mem.eql(u8, w, name)) return true;
+    return false;
 }
 
 /// The Driver's hook: in the worker that checked module `m`, after its type
@@ -210,7 +222,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         // `List.update` has no words: its write is `focus`'s, inside core,
         // so v3 says it at the call (`callsite`). The lowering edits the call
         // as the writer it is (`backend.md` §4), so the channel names it as one.
-        const kind = if (l.kind == .callsite and callsListUpdate(session, bir, l.inst)) .writer else l.kind;
+        const kind = if (l.kind == .callsite and callsCoreWriter(session, bir, l.inst)) .writer else l.kind;
         try channel.add(arena, l.inst, kind, l.refused, Hoists.reliesOnCallers(l.accepted));
     }
     var table = try channel.finish(arena, gpa, r.limits.len != 0);

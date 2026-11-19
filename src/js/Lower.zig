@@ -397,6 +397,8 @@ pub const Input = struct {
     /// record update the v3 channel (`list_writes`) accepted is written in
     /// place (`--lists-in-place`), or copied with its old object poisoned
     /// (`--sanitize-lists`, `recordUpdateSanitized`).
+    /// Also the writers of `Dict` and `Set` (`ownership-v3-kernel.md` §12):
+    /// only under it does a call of one go through the oracle.
     records_v3: bool = false,
     /// The v3 oracle's reads read before an update's stores (`own3/Reads.zig`).
     v3_reads: []const V3Reads.Read = &.{},
@@ -4009,6 +4011,10 @@ pub const Lowerer = struct {
             .{
                 .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "record"), .tag = JsIr.Name.no_tag }),
                 .local = try l.sanitizerLocal("record"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "listAt"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("listAt"),
             },
         }));
         // The markup runtime: the lowering's exports and the markup
@@ -11280,6 +11286,20 @@ pub const Lowerer = struct {
         const args = try l.scratch.alloc(Node.Index, evidence.len + written.len);
         @memcpy(args[0..evidence.len], evidence);
         @memcpy(args[evidence.len..], written);
+        // A writer of `Dict` or `Set` that takes evidence (`sortBy`) under
+        // the v3 oracle (kernel §12): `_sanitize$listAt(site, writer, k, …)`,
+        // its base the argument after the evidence. One that may park is
+        // the plain call, which copies.
+        if (written.len != 0 and l.sanitizesAt(inst) and !(l.suspendable and l.suspendsHere(l.in.dispatch.effectAt(inst).own))) if (l.listWriterOf(callee_inst)) |writer| {
+            l.needs.sanitize = true;
+            const site = try std.fmt.allocPrint(l.scratch, "`{s}` in {s} (at byte {d})", .{ writer, l.interner.slice(l.module_name), p });
+            const all = try l.scratch.alloc(Node.Index, args.len + 3);
+            all[0] = try l.stringNode(site, p);
+            all[1] = callee;
+            all[2] = try l.intNode(@intCast(evidence.len), p);
+            @memcpy(all[3..], args);
+            return l.call(try l.ident(try l.sanitizerLocal("listAt"), p), all, p);
+        };
         return l.suspension(out, inst, try l.call(callee, args, p));
     }
 

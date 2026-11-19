@@ -245,3 +245,12 @@ export const same = (a, b) => {
   }
   return a === b;
 };
+
+// A writer of `Dict` or `Set` that takes evidence first (`sortBy`): its base
+// is argument `k`. The writer runs on a fresh copy, and the base is then
+// poisoned and linked, as `list` does.
+export const listAt = (site, writer, k, ...args) => {
+  const base = args[k];
+  args[k] = freshKeyed(base);
+  return settle(base, writer(...args), site);
+};
