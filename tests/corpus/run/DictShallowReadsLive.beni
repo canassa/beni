@@ -1,0 +1,57 @@
+-- The live twin of `DictShallowReads`: the old value is read after each
+-- write, through the dictionary that still holds it, so in place the read
+-- would see the push. v3 refuses each write (`ownership-v3-kernel.md` §12,
+-- item 7: a shallow read is no read of the values, and a read of a value
+-- is one).
+import Dict exposing (Dict)
+import Node exposing (Program)
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) "+"
+
+
+render : Dict Int (List Int) → String
+render d = String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${ints v}") ","
+
+
+base : ⊤ → Dict Int (List Int)
+base ⊤ = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+
+
+bump : Dict Int (List Int), Int → Dict Int (List Int)
+bump d k =
+    case Dict.get d k of
+        Just xs →
+            Dict.insert d k (List.push xs 5)
+
+        Nothing →
+            d
+
+
+bumped : ⊤ → List String
+bumped ⊤ =
+    d = base ⊤
+    r = bump d 1
+    [ render r, render d ]
+
+
+updated : ⊤ → List String
+updated ⊤ =
+    d = base ⊤
+    r = Dict.update d 2 λm → Maybe.map m λxs → List.push xs 6
+    [ render r, render d ]
+
+
+sized : ⊤ → List String
+sized ⊤ =
+    d = base ⊤
+    xs = Maybe.withDefault (Dict.get d 1) []
+    ys = List.push xs 5
+    [ String.fromInt (Dict.size d), ints ys, render d ]
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.join (bumped ⊤) ";", String.join (updated ⊤) ";", String.join (sized ⊤) ";" ]

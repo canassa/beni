@@ -3,7 +3,9 @@
 -- *Lowering*): a walked writer called method-style (`d.update k f`,
 -- `d.sortBy f`, `s.insert x`) or through a local alias (`upd =
 -- Dict.update`), a writer handed on as a value (`apply Dict.insert d`,
--- `Set.insert`, `List.push`), and a `sortBy` whose callback parks. Nothing
+-- `Set.insert`, `List.push`), and a `sortBy` whose callback parks. A
+-- writer that takes a callback handed on as a value (`applyP Dict.sortBy`,
+-- whose callback parks) is the plain function, which copies. Nothing
 -- reads a written value's old name, so each write is accepted, and the
 -- sanitised build and the in-place build print what the plain build
 -- prints. Before, these calls were accepted and lowered as plain calls,
@@ -24,6 +26,12 @@ applyS f s = f s 3
 
 applyL : (List Int, Int → List Int), List Int → List Int
 applyL f xs = f xs 3
+
+
+applyP : (Dict Int Int, (Int, Int → Int) → Dict Int Int), Dict Int Int → Dict Int Int
+applyP f d = f d λn _ →
+    Io.sleep 1
+    0 - n
 
 
 base : ⊤ → Dict Int Int
@@ -56,6 +64,7 @@ go ⊤ =
     p = Dict.sortBy (base ⊤) λn _ →
         Io.sleep 1
         0 - n
+    q = applyP Dict.sortBy (base ⊤)
     [ render a
     , render b
     , render c
@@ -66,6 +75,7 @@ go ⊤ =
     , members i
     , String.join (List.map j String.fromInt) ","
     , render p
+    , render q
     ]
 
 

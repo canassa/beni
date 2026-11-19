@@ -715,6 +715,10 @@ pub const OwnWord = enum(u5) {
 pub const OwnWord3 = enum(u5) {
     /// The parameter names one position of the list that parameter 0 is.
     position,
+    /// The operation reads the parameter's storage and no value it holds:
+    /// a length, a key, the index, or the values' references moved, never
+    /// their contents (`ownership-v3-kernel.md` §12, research report 161).
+    shallow,
 
     pub fn inSignature(text: []const u8) ?OwnWord3 {
         return std.meta.stringToEnum(OwnWord3, text);

@@ -2031,14 +2031,40 @@ elements are its values.
    `_sanitize$writer(site, value)`, which routes each call of it (`Enforce.handsCoreWriter`,
    `Lower.routeWriterValues`). A writer value handed to a call that has no line, or bound
    anywhere but at a call's argument (a record's field, a list), is the plain function, which
-   copies: no line judged it, so no write of it is in place.
+   copies: no line judged it, so no write of it is in place. A writer that takes a callback (`update`, `sortBy`) handed on
+   as a value is the plain function too: its callback may park where the callee runs it, and
+   the value then answers a `Task`, which a write routed per call cannot settle (the first review
+   of research report 161).
 6. **`Set`** is an opaque box around a `Dict t ⊤`; its writers are walked bodies over `Dict`'s rows,
    and a box written in place is the box whose dictionary was.
+7. **A shallow read** (research report 161, #2570). A read is of what a cell holds: a later read
+   that sees a write is one that observes the written cell's contents (§5, test 4). Most of
+   `Dict`'s primitives never observe a value's contents: `size` reads the entries array's
+   length, `has` the index, `keyIndex` and `isIndex` a key or the length (a key holds no cell,
+   rule 1), and the writers `insert`, `remove`, `swap`, `insertAt`, `permute`, `put` and
+   `copy` move each value by its reference (`cloned` copies the pairs, not the values; `insert`
+   compares the value at its key with the one it stores by `Object.is`, and either answer
+   leaves at the key the value it was handed, so the compare decides only whether a store of
+   the same reference is skipped). The v3 word **`shallow`** on such a parameter says so:
+   the row reads the parameter's storage location and no location below it (`Check.wordedContract`,
+   `shallowParam`); what the row answers or stores of it is read where the caller reads the
+   answer, as before. Lowering accepts it once on a parameter, a value, that the words read
+   (`borrowed` or `written`), and keeps it in v3's column (`own_shallow_word`). So a value
+   taken out of a dictionary and written is not read again by `size` or by an `insert` at
+   any key: `Dict.size d` after a push of `Dict.get d k`'s list is accepted, a get, a write
+   and an insert at one key in a helper is accepted at the helper's write, and `Dict.update`
+   with a callback that writes the value it is handed is accepted where nothing reads the
+   dictionary after, since `update`'s own `insert` no longer reads the value its callback
+   wrote. `valueFor`, `valueAt` and `traverseAt` hand a value out (`elementof`, `taken`) and
+   carry no `shallow`. `List.length` is as shallow and is not marked here.
 
 What it does not cover yet: a walked writer handed on as a value (`applyU Dict.update d`) is
 refused where its answer is read (`later-use`): its contract answers its parameter, not a new
-name of it, and a function value's answer is read as its contract says. A callback of `Dict.update` that writes its value is refused
-(`supply`): `update` is walked, and its callback is handed what the default hands it, not the value
-taken out (§6.8); `List.update`'s `focus` row is the shape that answers it. A get, a write of the
-value, then an insert at one key is refused at the write, since `insert` reads the whole dictionary
-(rule 10, *What it does not cover*).
+name of it, and a function value's answer is read as its contract says. A get, a write of the
+value and an insert at one key in one frame, inside a `case` whose other arm answers the
+dictionary, is refused at the write where the joined answer's values are read after: the other
+arm's values are read as held after the write (`List.get` and `List.set` meet the same
+join). A fold whose accumulator holds lists of the items (`[ item, …group ]`) answers one
+cell at two places where the items list holds one cell twice, and rule 8 asks the whole answer
+to be the function's own; a fold inside a fold's callback answers a value the inner callee
+handed back, which rule 8 does not read as own (`List.foldl` in `List.foldl` meets it too).

@@ -61,6 +61,8 @@ const WRITERS = {
   vIns: 'apply Dict.insert d0',
   vUpd: 'applyU Dict.update d0',
   park: 'Dict.sortBy d0 λk _ →\n    Io.sleep 1\n    0 - k',
+  // A get, a push of the value and an insert at its key, in a helper (research report 161, #2570).
+  bumpAt: 'bumpAt d0 1',
 };
 // A writer that parks runs under `Io.run`.
 const PARKS = new Set(['park']);
@@ -100,6 +102,16 @@ bump d = Dict.insert d 3 [ 30 ]
 
 base : Dict Int (List Int)
 base = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+
+
+bumpAt : Dict Int (List Int), Int → Dict Int (List Int)
+bumpAt d k =
+    case Dict.get d k of
+        Just xs →
+            Dict.insert d k (List.push xs 5)
+
+        Nothing →
+            d
 
 
 apply : (Dict Int (List Int), Int, List Int → Dict Int (List Int)), Dict Int (List Int) → Dict Int (List Int)

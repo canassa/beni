@@ -2436,8 +2436,33 @@ fn recordOwnWords3(l: *Lower, t: Index) Allocator.Error!void {
     const mark = l.scratchMark();
     defer l.shrinkScratch(mark);
     var kept: u32 = 0;
-    for (seen) |s| {
+    for (seen, 0..) |s, si| {
         const slot = s[0];
+        // `shallow` (kernel §12): on a parameter, a value, that the words
+        // read, once.
+        if (@as(Ast.OwnWord3, @fromBackingInt(@intCast(s[1]))) == .shallow) {
+            const ok = blk: {
+                if (!is_fn_type or slot == Bir.own_result or slot >= arity) break :blk false;
+                const at_ = l.insts.items(.data)[t.int()].lhs;
+                const param_type = l.extra.items[l.extra.items[at_] + slot];
+                if (l.insts.items(.tag)[param_type] == .type_fn) break :blk false;
+                var words: u32 = 0;
+                var k: usize = 0;
+                while (k + 1 < recorded.len) : (k += 2) if (recorded[k] == slot) {
+                    words = recorded[k + 1];
+                };
+                if (words & (W.borrowed.bit() | W.written.bit()) == 0 or words & W.unused.bit() != 0) break :blk false;
+                for (seen[0..si]) |o| if (o[0] == slot and o[1] == s[1]) break :blk false;
+                break :blk true;
+            };
+            if (!ok) {
+                try l.reportOwn(s[2], .own_shallow_word);
+                continue;
+            }
+            try l.pushScratch(slot);
+            try l.pushScratch(Ast.OwnWord3.shallow.bit());
+            continue;
+        }
         const ok = blk: {
             if (!container or !is_fn_type or slot == Bir.own_result or slot == 0 or slot >= arity) break :blk false;
             const at_ = l.insts.items(.data)[t.int()].lhs;

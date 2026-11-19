@@ -1,0 +1,49 @@
+-- `Dict`'s primitives that move values by reference read a dictionary's
+-- storage and none of its values (`ownership-v3-kernel.md` §12, item 7,
+-- `shallow`). So a list taken out of a dictionary and pushed in place is
+-- not read again by `Dict.size`, nor by an `insert` at its key in a helper,
+-- nor by the `insert` inside `Dict.update` whose callback pushes the value
+-- it is handed. Nothing reads the old list after, so each write is accepted
+-- and every leg prints what the plain build prints. Before, each of these
+-- primitives read every value, and v3 refused the write.
+import Dict exposing (Dict)
+import Node exposing (Program)
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) "+"
+
+
+render : Dict Int (List Int) → String
+render d = String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${ints v}") ","
+
+
+base : ⊤ → Dict Int (List Int)
+base ⊤ = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+
+
+bump : Dict Int (List Int), Int → Dict Int (List Int)
+bump d k =
+    case Dict.get d k of
+        Just xs →
+            Dict.insert d k (List.push xs 5)
+
+        Nothing →
+            d
+
+
+sized : ⊤ → List String
+sized ⊤ =
+    d = base ⊤
+    xs = Maybe.withDefault (Dict.get d 1) []
+    ys = List.push xs 5
+    [ String.fromInt (Dict.size d), ints ys ]
+
+
+main : Program
+main =
+    Node.printLines
+        [ render (bump (base ⊤) 1)
+        , render (Dict.update (base ⊤) 2 λm → Maybe.map m λxs → List.push xs 6)
+        , String.join (sized ⊤) ";"
+        ]

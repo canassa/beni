@@ -1,0 +1,1 @@
+Dict.size, an insert in a helper and update's own insert read the storage and no value (shallow), so a pushed value taken out is no later read (ownership-v3-kernel.md §12, item 7).

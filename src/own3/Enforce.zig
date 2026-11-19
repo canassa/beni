@@ -224,12 +224,15 @@ fn handsCoreWriter(session: *const Session, bir: *const Bir, inst: u32) bool {
     for ([_][]const Bir.Inst.Index{ receiver, args }) |part| for (part) |a| {
         const module, const value = coreValueOf(session, bir, a) orelse continue;
         const module_name, const name = coreNames(session, module, value) orelse continue;
+        // A writer that takes a callback (`update`, `sortBy`) is handed on
+        // as the plain function: it may park where the callee runs it
+        // (`Lower.routeWriterValues`).
         const writers: []const []const u8 = if (session.graph.moduleName(module) == InternPool.WellKnown.List.symbol())
-            &.{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" }
+            &.{ "set", "push", "pop", "swap", "insertAt", "removeAt", "append" }
         else if (std.mem.eql(u8, module_name, "Dict"))
-            &.{ "insert", "remove", "update", "swap", "insertAt", "sortBy" }
+            &.{ "insert", "remove", "swap", "insertAt" }
         else if (std.mem.eql(u8, module_name, "Set"))
-            &.{ "insert", "remove", "swap", "insertAt", "sortBy" }
+            &.{ "insert", "remove", "swap", "insertAt" }
         else
             &.{};
         if (isOneOf(name, writers)) return true;

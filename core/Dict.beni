@@ -45,7 +45,7 @@ singleton key value = put (empty ⊤) key value
 
 
 --| Determine the number of key-value pairs in the dictionary.
-pub foreign pure size : borrowed Dict k v → Int
+pub foreign pure size : borrowed shallow Dict k v → Int
 
 
 --| Determine if a dictionary is empty.
@@ -56,7 +56,7 @@ isEmpty d = size d == 0
 
 
 -- Whether a key is in the dictionary.
-foreign pure has : borrowed Dict k v, borrowed k → Bool
+foreign pure has : borrowed shallow Dict k v, borrowed k → Bool
 
 
 -- The value of a key that `has` found.
@@ -65,12 +65,12 @@ foreign pure valueFor : borrowed Dict k v, borrowed position k → elementof v
 
 -- The key at a position that `isIndex` accepted. A key is an `Int` or a
 -- `String`, which holds no cell.
-foreign pure keyIndex : borrowed Dict k v, borrowed Int → fresh k
+foreign pure keyIndex : borrowed shallow Dict k v, borrowed Int → fresh k
 
 
 -- Whether an `Int` is a position of the dictionary: whole, and in
 -- `0..size - 1`. An `Int` can be NaN or hold a fraction.
-foreign pure isIndex : borrowed Dict k v, borrowed Int → Bool
+foreign pure isIndex : borrowed shallow Dict k v, borrowed Int → Bool
 
 
 -- The value at a position below `size`.
@@ -94,12 +94,12 @@ foreign pure keySame : borrowed k, borrowed k → Bool
 
 -- Insert into storage that only the loop of this module that made it can
 -- see, in place.
-foreign pure put : written returned Dict k v, borrowed k, stored v → Dict k v
+foreign pure put : written returned shallow Dict k v, borrowed k, stored v → Dict k v
 
 
 -- The entries in the order of `keys`, a permutation of the keys: the
 -- writer of `sortBy`.
-foreign pure permute : written returned Dict k v, borrowed List k → Dict k v
+foreign pure permute : written returned shallow Dict k v, borrowed List k → Dict k v
 
 
 --| Get the value associated with a key. If the key is not found, return
@@ -132,28 +132,37 @@ keyAt d i = if isIndex d i then Just (keyIndex d i) else Nothing
 --| keeps its position and takes the new value; a new key goes at the end.
 --|
 --|     insert (fromList [ ( "Tom", 1 ) ]) "Ann" 2 == fromList [ ( "Tom", 1 ), ( "Ann", 2 ) ]
-pub foreign pure insert : written returned Dict k v, borrowed position k, stored v → Dict k v
+pub foreign pure insert :
+      written returned shallow Dict k v
+    , borrowed position k
+    , stored v
+    → Dict k v
 
 
 --| Remove a key-value pair from a dictionary. If the key is not found, no
 --| changes are made. The other entries keep their order.
-pub foreign pure remove : written returned Dict k v, borrowed position k → Dict k v
+pub foreign pure remove : written returned shallow Dict k v, borrowed position k → Dict k v
 
 
 --| A new dictionary with the same keys, values and order. The values are
 --| not copied: a copy is shallow.
-pub foreign pure copy : borrowed Dict k v → copyof Dict k v
+pub foreign pure copy : borrowed shallow Dict k v → copyof Dict k v
 
 
 --| Exchange the positions of two keys. A key that is not there, or the same
 --| key twice, leaves the dictionary as it is.
-pub foreign pure swap : written returned Dict k v, borrowed k, borrowed k → Dict k v
+pub foreign pure swap : written returned shallow Dict k v, borrowed k, borrowed k → Dict k v
 
 
 --| Insert a key-value pair at a zero-based position of the order. The key's
 --| old entry, if any, is removed first. A position below 0 or NaN is 0; one
 --| past the end is the end.
-pub foreign pure insertAt : written returned Dict k v, borrowed Int, borrowed k, stored v → Dict k v
+pub foreign pure insertAt :
+      written returned shallow Dict k v
+    , borrowed Int
+    , borrowed k
+    , stored v
+    → Dict k v
 
 
 --| Update the value of a dictionary for a specific key with a given function.

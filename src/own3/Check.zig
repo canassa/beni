@@ -1744,11 +1744,15 @@ pub const Mod = struct {
             }
             // A parameter with no word is read by code that the checker does not see.
             const unknown = w == 0 or has(w, .unknown);
+            // `shallow` (kernel §12): the operation reads the parameter's
+            // storage and moves its values by reference, never reading what
+            // they hold: no location below the storage is read.
+            const shallow = !unknown and shallowParam(m.bir.ownSlotsV3(d), j);
             // What goes into a cell is behind it from then on: it escapes.
             const into_cell = has(w, .cellstored) or has(rw, .cellnew);
             for (pes, 0..) |pe, e| {
                 const fl = &flags[c.off[j] + e];
-                if (!has(w, .unused)) fl.* |= Contract.flag_r;
+                if (!has(w, .unused) and !(shallow and pe.loc != pself)) fl.* |= Contract.flag_r;
                 if (has(w, .consumed) and !into_cell) fl.* |= Contract.flag_w;
                 if (has(w, .written) and pe.loc == pself) fl.* |= Contract.flag_w;
                 // A cell's handle is never `own`: a write of the cell asks nothing of the caller.
@@ -1980,6 +1984,13 @@ pub const Mod = struct {
                 return m.oneStore(sig, pw, j, ri, sig.vars[j]);
             },
         }
+    }
+
+    /// Whether the word `shallow` stands on parameter `j` (`Bir.ownSlotsV3`,
+    /// kernel §12).
+    fn shallowParam(slots: []const [2]u32, j: usize) bool {
+        for (slots) |s| if (s[0] == j and s[1] & Ast.OwnWord3.shallow.bit() != 0) return true;
+        return false;
     }
 
     /// The parameter that the word `position` stands on (`Bir.ownSlotsV3`,

@@ -5617,8 +5617,20 @@ pub const Lowerer = struct {
     fn routeWriterValues(l: *Lowerer, written: []Node.Index, arg_insts: []const Inst.Index, inst: Inst.Index, p: u32) Allocator.Error!void {
         if (!l.in.records_v3 or l.in.list_writes == null or !l.sanitizesAt(inst)) return;
         for (written, 0..) |*w, i| if (i < arg_insts.len) if (l.listWriterOf(arg_insts[i])) |writer| {
+            // A writer that takes a callback may park where the callee runs
+            // it, and its value answers a `Task` there, which the oracle's
+            // synchronous `writer` cannot settle: it is the plain function,
+            // which copies (kernel §12).
+            if (takesCallback(writer)) continue;
             w.* = try l.sanitizedWriterValue(w.*, writer, p);
         };
+    }
+
+    /// Whether the writer of core named `writer` takes a callback, which
+    /// may park: `List.update`, `Dict.update`, `Dict.sortBy`, `Set.sortBy`.
+    fn takesCallback(writer: []const u8) bool {
+        for ([_][]const u8{ "List.update", "Dict.update", "Dict.sortBy", "Set.sortBy" }) |w| if (std.mem.eql(u8, w, writer)) return true;
+        return false;
     }
 
     /// `_sanitize$len(list)`: a read of a list's length under the
