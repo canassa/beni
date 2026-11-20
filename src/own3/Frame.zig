@@ -9035,9 +9035,11 @@ const SrcState = struct {
     inst: u32 = none,
     /// The labels of the caller's result entry below the callee's result entry in work.
     suffix: []const u64 = &.{},
-    /// The answers in work: `(holder, location, result entry of the function there)`.
-    /// An answer that comes back to itself adds no cell (the least fixed point).
-    seen: [24][3]u32 = undefined,
+    /// The answers in work: `(holder, location, result entry of the function there,
+    /// the function's code and captures)`. An answer that comes back to itself adds no cell (the
+    /// least fixed point). Two functions at one location (the arms of a join) are two
+    /// answers: an arm that is not the first one there adds its own cells.
+    seen: [24][4]u64 = undefined,
     nseen: u32 = 0,
     /// Each part of the answer is asked for, not the one at `suffix`.
     whole: bool = false,
@@ -9052,10 +9054,12 @@ const SrcState = struct {
     /// only cells the function made in its run, captured cells (`twice`) and
     /// cells outside the frame (`apply`).
     handed: bool = false,
-    fn visit(st: *SrcState, use: *const Use, k: u32) enum { new, old, full } {
-        for (st.seen[0..st.nseen]) |x| if (x[0] == use.id and x[1] == use.j and x[2] == k) return .old;
+    fn visit(st: *SrcState, use: *const Use, k: u32, code: Code) enum { new, old, full } {
+        // The code and its captures: two closures of one lambda are two functions.
+        const id = std.hash.Wyhash.hash(code.id(), std.mem.asBytes(&[2]u32{ code.caps, code.ncaps }));
+        for (st.seen[0..st.nseen]) |x| if (x[0] == use.id and x[1] == use.j and x[2] == k and x[3] == id) return .old;
         if (st.nseen == st.seen.len) return .full;
-        st.seen[st.nseen] = .{ use.id, use.j, k };
+        st.seen[st.nseen] = .{ use.id, use.j, k, id };
         st.nseen += 1;
         return .new;
     }
@@ -11158,7 +11162,7 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
         if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc != want.?) continue;
         // The function's type is wider here than the holder's: no cell is there.
         if (cv >= Loc.all and !try f.anyMeets(fnc.layouts[fnc.arity], lc.layouts[lc.arity], @intCast(k))) continue;
-        switch (st.visit(use, @intCast(k))) {
+        switch (st.visit(use, @intCast(k), code)) {
             .new => {},
             // In work already: it adds no cell.
             .old => continue,

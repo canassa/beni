@@ -1,0 +1,1 @@
+The push is accepted under v3 and runs in place: the answer of the join that holds the list is read before it (ownership-v3-kernel.md §6 rule 7).
