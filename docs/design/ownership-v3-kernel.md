@@ -2403,7 +2403,9 @@ contents of a cell are locations, and that a call can change what a location of 
       (`Use.inner`); a renewal makes a version (item 5), which also keeps the old contents at each
       location whose renewal does not name them (`renewHandle`'s `maybe`: the callee may run the
       closure no time at all), where its sources name only captures, cells the closure made and
-      `outside` (`capturedSrcs`). A handle of the capture that another of those operands holds is two
+      `outside` (`capturedSrcs`); a cell the closure made is named as its answer names it at the use
+      (`answerOfCode`), so one list it stores and answers is one cell (`run/CellClosureWritesLive`'s
+      `storeAnswered`). A handle of the capture that another of those operands holds is two
       names of one cell at the call (the apart-arguments rule, §4.4): a write there is refused
       (`disjoint`), and a renewal is one of an argument the frame does not follow (item 5);
     - **any other holder** (the default, a lost use, a function parameter of the frame, a list, a

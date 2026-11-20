@@ -4,7 +4,8 @@
 -- that calls it; called many times by `List.map`; run by `Task.scope`; a
 -- closure that reads the cell through its handle after an update; one that
 -- stores a list it made, which the maker then edits in place; and an update
--- of the maker's own after a closure's. No holder reads the old contents, so
+-- of the maker's own after a closure's; a list the closure stores and
+-- answers, its answer dropped. No holder reads the old contents, so
 -- each runs in place and prints what the copying program prints. Its live
 -- twin is `CellClosureWritesLive`.
 import Io
@@ -21,6 +22,10 @@ ints xs = String.join (List.map xs String.fromInt) ","
 
 apply : (⊤ → ⊤) → ⊤
 apply f = f ⊤
+
+
+applyList : (⊤ → List Int) → List Int
+applyList f = f ⊤
 
 
 direct : ⊤ → String
@@ -77,7 +82,26 @@ scoped ⊤ =
     ints (Ref.get r)
 
 
+storeDropped : ⊤ → String
+storeDropped ⊤ =
+    r = Ref.make [ 1 ]
+    _ = applyList λ⊤ →
+        ys = [ 9 ]
+        Ref.set r ys
+        ys
+    Ref.update r λxs → List.push xs 5
+    ints (Ref.get r)
+
+
 main : Program
 main = Io.run λ⊤ →
     Node.printLines
-        [ direct ⊤, handed ⊤, many ⊤, readsHandle ⊤, storedFresh ⊤, thenOwn ⊤, scoped ⊤ ]
+        [ direct ⊤
+        , handed ⊤
+        , many ⊤
+        , readsHandle ⊤
+        , storedFresh ⊤
+        , thenOwn ⊤
+        , scoped ⊤
+        , storeDropped ⊤
+        ]

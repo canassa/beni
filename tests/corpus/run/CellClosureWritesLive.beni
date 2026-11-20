@@ -9,8 +9,10 @@
 -- store the maker must not trust before its own update; a closure called
 -- inside an update of the same cell; a closure in a list; one captured by
 -- another closure that reads a loan after calling it; one handed to the
--- frame's own function parameter; and one in a spawned fiber. Were a write
--- accepted, the old holder would read the new contents in place.
+-- frame's own function parameter; one in a spawned fiber; and a list a
+-- closure stores in the cell and answers too, which the maker updates.
+-- Were a write accepted, the old holder would read the new contents in
+-- place.
 import Io
 import List
 import Node exposing (Program)
@@ -25,6 +27,10 @@ apply f = f ⊤
 
 applyInt : (⊤ → Int) → Int
 applyInt f = f ⊤
+
+
+applyList : (⊤ → List Int) → List Int
+applyList f = f ⊤
 
 
 never : (⊤ → ⊤) → ⊤
@@ -143,6 +149,17 @@ spawned ⊤ =
     List.length old
 
 
+storeAnswered : ⊤ → Int
+storeAnswered ⊤ =
+    r = Ref.make [ 1 ]
+    zs = applyList λ⊤ →
+        ys = [ 9 ]
+        Ref.set r ys
+        ys
+    Ref.update r λxs → List.push xs 5
+    List.length zs
+
+
 main : Program
 main = Io.run λ⊤ →
     Node.print
@@ -159,6 +176,7 @@ main = Io.run λ⊤ →
                 , nested ⊤
                 , ownParam apply
                 , spawned ⊤
+                , storeAnswered ⊤
                 ]
                 String.fromInt
             )

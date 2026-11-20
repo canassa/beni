@@ -9551,7 +9551,9 @@ fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
         args[code.own_params + k] = others.items[first + k].v;
     };
     const bsite: Site = .{ .inst = site.inst, .callee = site.callee };
-    const base: Use = .{ .kind = .call, .id = f.useId(), .key = std.hash.Wyhash.hash(use.key, std.mem.asBytes(&code.inst)), .holder = code.id(), .c = lc, .args = args, .site = &bsite };
+    // A cell the code made is named as its answer names it at this use
+    // (`answerOfCode`): one cell the code stores and answers is one root.
+    const base: Use = .{ .kind = .call, .id = f.useId(), .key = use.key, .holder = code.id(), .c = lc, .args = args, .site = &bsite };
     for (0..code.ncaps) |k| {
         const j: u32 = @intCast(code.own_params + k);
         if (j >= lc.arity) break;
