@@ -9582,6 +9582,14 @@ fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
             if (i == first + k or o.v == v_none) continue;
             if (try f.reach(o.v, handles)) break true;
         } else false;
+        // A callee can run the function again within the call while it holds
+        // what an earlier run gave it: the cell's contents, or a cell the
+        // function stored there and gave it too. The demand at the call is
+        // judged once, so such a write is refused.
+        if (wk and top != null and handsContents(lc, j, inner)) {
+            try f.refuse(use, .disjoint, "a function writes the contents of a cell it captured and hands them, or what it stores there, to the code that runs it, which can run it again");
+            continue;
+        }
         if (wk and top != null) for (0..n) |e| {
             if (!inner[e] or lc.flags[lc.off[j] + e] & flag_w == 0) continue;
             if (held) {
@@ -9637,6 +9645,34 @@ fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
         f.atoms.shrinkRetainingCapacity(start);
         try f.flushShare();
     }
+}
+
+/// Whether the contract `lc` lets the contents of capture parameter `j`
+/// (its entries `inner`), or a cell its renewal of them names, reach the
+/// code that runs it: its answer, an escape there, or
+/// a renewal of another parameter (kernel §13 item 11).
+fn handsContents(lc: *const Contract, j: u32, inner: []const bool) bool {
+    const n = lc.off[j + 1] - lc.off[j];
+    for (0..n) |e| if (inner[e] and lc.flags[lc.off[j] + e] & flag_e != 0) return true;
+    const Named = struct {
+        fn hit(c: *const Contract, jj: u32, inn: []const bool, x: Src) bool {
+            switch (x.kind) {
+                .param => return x.a == jj and x.e < inn.len and inn[x.e],
+                .fresh => {
+                    const nn = c.off[jj + 1] - c.off[jj];
+                    for (0..nn) |e| if (inn[e]) if (c.renewAt(c.off[jj] + e)) |srcs| for (srcs) |y| if (y.kind == .fresh and y.a == x.a) return true;
+                    return false;
+                },
+                .outside, .twice, .answer => return false,
+            }
+        }
+    };
+    for (lc.res) |srcs| for (srcs) |x| if (Named.hit(lc, j, inner, x)) return true;
+    for (0..lc.arity) |a| {
+        if (a == j) continue;
+        for (lc.off[a]..lc.off[a + 1]) |i| if (lc.renewAt(i)) |srcs| for (srcs) |x| if (Named.hit(lc, j, inner, x)) return true;
+    }
+    return false;
 }
 
 /// Whether every source that the renewals of capture parameter `j` name is

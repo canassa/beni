@@ -2407,7 +2407,12 @@ contents of a cell are locations, and that a call can change what a location of 
       (`answerOfCode`), so one list it stores and answers is one cell (`run/CellClosureWritesLive`'s
       `storeAnswered`). A handle of the capture that another of those operands holds is two
       names of one cell at the call (the apart-arguments rule, §4.4): a write there is refused
-      (`disjoint`), and a renewal is one of an argument the frame does not follow (item 5);
+      (`disjoint`), and a renewal is one of an argument the frame does not follow (item 5). The
+      callee can run the closure again within the call while it holds what an earlier run handed
+      it, and the demand is judged once: a write is refused where the closure lets the captured
+      contents, or a cell its renewal of them names, reach the code that runs it (its answer, an
+      escape, the renewal of a cell it was handed: `handsContents`; the four last programs of
+      `run/CellClosureWritesLive`);
     - **any other holder** (the default, a lost use, a function parameter of the frame, a list, a
       spawned fiber): the closure runs at times the frame does not see. Each handle it captured is
       shared (item 8), and a write of a captured cell's contents is refused (`call`).

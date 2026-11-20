@@ -10,7 +10,9 @@
 -- inside an update of the same cell; a closure in a list; one captured by
 -- another closure that reads a loan after calling it; one handed to the
 -- frame's own function parameter; one in a spawned fiber; and a list a
--- closure stores in the cell and answers too, which the maker updates.
+-- closure stores in the cell and answers too, which the maker updates;
+-- and a closure that a callee runs again while it holds what an earlier
+-- run answered, stored in a cell it handed, or stored and answered.
 -- Were a write accepted, the old holder would read the new contents in
 -- place.
 import Io
@@ -160,6 +162,59 @@ storeAnswered ⊤ =
     List.length zs
 
 
+feed : (List Int → List Int) → Int
+feed f =
+    a = f [ 5 ]
+    b = f a
+    List.length b
+
+
+withCell : (Ref (List Int) → ⊤) → Int
+withCell f =
+    c = Ref.make [ 0 ]
+    f c
+    a = Ref.get c
+    f c
+    List.length a
+
+
+mappedLoans : ⊤ → Int
+mappedLoans ⊤ =
+    r = Ref.make [ 1 ]
+    zs = List.map [ 1, 2 ] λx →
+        Ref.update r λys → List.push ys x
+        Ref.get r
+    List.length (Maybe.withDefault (List.get zs 0) [])
+
+
+fedBack : ⊤ → Int
+fedBack ⊤ =
+    r = Ref.make [ 1 ]
+    feed λp →
+        before = List.length p
+        Ref.update r λys → List.push ys 2
+        if List.length p == before then Ref.get r else [ 99 ]
+
+
+storedInHanded : ⊤ → Int
+storedInHanded ⊤ =
+    r = Ref.make [ 1 ]
+    withCell λc →
+        Ref.update r λys → List.push ys 2
+        Ref.set c (Ref.get r)
+
+
+storedTwice : ⊤ → Int
+storedTwice ⊤ =
+    r = Ref.make [ 1 ]
+    zs = List.map [ 1, 2 ] λx →
+        Ref.update r λys → List.push ys x
+        zz = [ x ]
+        Ref.set r zz
+        zz
+    List.length (Maybe.withDefault (List.get zs 0) [])
+
+
 main : Program
 main = Io.run λ⊤ →
     Node.print
@@ -177,6 +232,10 @@ main = Io.run λ⊤ →
                 , ownParam apply
                 , spawned ⊤
                 , storeAnswered ⊤
+                , mappedLoans ⊤
+                , fedBack ⊤
+                , storedInHanded ⊤
+                , storedTwice ⊤
                 ]
                 String.fromInt
             )
