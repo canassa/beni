@@ -118,7 +118,11 @@ const Kid = struct { step: u32, val: Val };
 /// holds each cell once tells two of its entries apart whichever root an atom
 /// was first read through (`viaApart`; kernel §4.4, *Two readings through a
 /// later root*).
-pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none, pos: u32 = none, via2: u32 = none, via2_e: u32 = none };
+/// `ren`: a copy of a cell's contents that the frame took at a switch point
+/// (kernel §13 item 12), at that time, or `none`: for a probe at that time
+/// or before it, the holder is no holder of a value taken before the switch.
+/// Read only while a probe is judged (`isOld`); a write reads `dead` alone.
+pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none, pos: u32 = none, via2: u32 = none, via2_e: u32 = none, ren: u32 = none };
 /// `outside`: root 0, the one root of every cell outside the frame (kernel
 /// §3.1). `fresh`: a cell a callee made, named by the call and the callee's
 /// allocation site (kernel §4.2); it has no layout and no value, only atoms.
@@ -161,6 +165,9 @@ const Root = struct {
     /// and the entry (`cellResult`); else `none`.
     cell_root: u32 = none,
     cell_e: u32 = 0,
+    /// A version that renames a tracked root's contents at a switch point
+    /// (`renameContents`): the value it was made from; else `none`.
+    rename_of: Val = none,
 };
 /// What a location of a root that the frame made holds. Each kind is a run
 /// of atoms (`start`, `len`), and some have an **own atom** `(root, path,
@@ -551,12 +558,35 @@ ret_reads: std.ArrayList(Read) = .empty,
 share_pending: std.ArrayList([3]u32) = .empty,
 /// The frame follows some cell's contents: else no hook of kernel §13 does work.
 cells_any: bool = false,
+/// Kernel §13 item 12. The body made a call where another fiber can run
+/// (`switchAt`): the contract's `switches`.
+switched: bool = false,
+/// While a probe is judged: `isOld` reads `Atom.ren` too.
+judge_probe: bool = false,
+/// The handles of tracked roots the frame made that a holder marked
+/// (`Contract.flag_m`): no function that writes their contents runs in
+/// another fiber (`revokeWriters`).
+cell_marked: std.AutoHashMapUnmanaged([2]u32, void) = .empty,
+/// At each switch point, each tracked parameter's or capture's contents.
+probes: std.ArrayList(Probe) = .empty,
+/// The functions that write the contents of a cell the frame made and run
+/// where the walk does not follow them, a spawned fiber's among them.
+writers: std.ArrayList(Writer) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
 const safety = std.debug.runtime_safety;
 
 const FreshKey = struct { key: u64, holder: u64, k: u32 };
+/// A probe (kernel §13 item 12): the contents `atoms[w..][0..wn]` of the
+/// handle at entry `h` of tracked parameter or capture `root` at the switch
+/// point at time `at`; refused where a value taken out of them before is
+/// read after, or the call reads one (`refused`, set at the call).
+const Probe = struct { w: u32, wn: u32, at: u32, ctx: u32, root: u32, h: u32, refused: bool };
+/// A function that writes the contents of capture `k` of the known code
+/// `code` (an index of `codes`), the handle at entry `e` of root `o` that
+/// the frame made, and goes where the walk does not follow it at `site`.
+const Writer = struct { code: u32, k: u32, o: u32, e: u32, site: u32 };
 const PairedHit = struct { start: u32, len: u32, dup: bool, hit_all: bool };
 
 pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32) Error!Frame {
@@ -626,6 +656,7 @@ pub fn walkBody(f: *Frame, body: u32) Error!void {
     f.body_root = body;
     // The answer is read at the end of the walk: a tracked root at its last version (kernel §13).
     const v = try f.cellsNow(try f.eval(body, .value, true));
+    try f.writersAtReturn(body, v);
     try f.noteReturnCells(body);
     try f.returns.append(f.gpa, v);
 }
@@ -1391,7 +1422,7 @@ fn twiceAt(f: *const Frame, a: Atom) bool {
 }
 
 fn atomEql(a: Atom, b: Atom) bool {
-    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead and a.pos == b.pos and a.via2 == b.via2 and a.via2_e == b.via2_e;
+    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead and a.pos == b.pos and a.via2 == b.via2 and a.via2_e == b.via2_e and a.ren == b.ren;
 }
 
 /// Remove from `list.items[from..]` each atom that an earlier atom of the run
@@ -2376,6 +2407,7 @@ fn wIndexed(f: *const Frame, w: []const Atom) bool {
 /// read the value from before the write. A name that was old before the
 /// write is the cells themselves: the holder reads what the write changes.
 fn isOld(f: *const Frame, x: Atom) bool {
+    if (f.judge_probe and x.ren != none and f.judge_at <= x.ren) return true;
     return x.dead != none and (f.judge_at == none or f.judge_at <= x.dead);
 }
 
@@ -2704,7 +2736,7 @@ fn runReaches(f: *Frame, root: u32, re: u32, ent: REntry, w: []const Atom) Error
         }
         rf.old = if (never) 1 else low +| 2;
     }
-    if (rf.old != 1 and (f.judge_at == none or f.judge_at <= rf.old - 2)) {
+    if (!f.judge_probe and rf.old != 1 and (f.judge_at == none or f.judge_at <= rf.old - 2)) {
         if (safety and run.len <= 64) for (run) |a| std.debug.assert(f.isOld(a));
         return f.charge(1);
     }
@@ -2753,6 +2785,8 @@ fn closureHeld(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
     for (0..code.ncaps) |k| if (lc.fns[code.own_params + k] != null) return false;
     for (0..code.ncaps) |k| {
         const j: u32 = @intCast(code.own_params + k);
+        // A writer's handle is no holder the frame loses (kernel §13 item 12).
+        if (f.isWriter(code, k)) continue;
         const capv = try f.capVal(code, k);
         const n = lc.off[j + 1] - lc.off[j];
         // The scan of the capture's flags and of the answer's sources is work (kernel §8).
@@ -4158,12 +4192,14 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // holds: what the calls before left in the parameters' cells is
             // what the caller reads (kernel §13).
             if (v == v_none) {
+                try f.writersAtReturn(inst, v_none);
                 try f.noteReturnCells(inst);
                 return v_none;
             }
             // The failure leaves the function with the scrutinee's other arm:
             // an answer that is an object made before (`Contract.old_result`).
             try f.readAll(v, inst);
+            try f.writersAtReturn(inst, v);
             try f.returns.append(f.gpa, try f.cellsNow(v));
             try f.noteReturnCells(inst);
             f.tail_old = true;
@@ -5557,8 +5593,10 @@ fn runsTwice(f: *Frame, all: []const Atom, runs: []const [2]u32) Error!bool {
 pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const m = f.m;
     try f.flushShare();
+    try f.revokeWriters();
     try f.cellReads();
     try f.finishDemands();
+    try f.finishProbes();
     f.finished = true;
     // What the body reads of each parameter.
     var tmp: std.ArrayList(Atom) = .empty;
@@ -5688,7 +5726,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     // What the body leaves in its parameters' cells (kernel §13).
     const renew = try f.publishRenew(flags, off, total);
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .renew = renew };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .renew = renew };
     return c;
 }
 
@@ -6406,13 +6444,21 @@ fn flowRenews(f: *Frame, code: Code, use: *const Use, own_only: bool) Error!void
             defer ks.deinit(f.gpa);
             try f.contentsAt(sig, @intCast(h), &ks);
             var renewed = false;
+            // A writer's renewal of its cell's own contents keeps them in the
+            // cell the frame follows (kernel §13 item 12).
+            const writer = k >= code.own_params and f.isWriter(code, k - code.own_params);
             for (ks.items) |le| if (lc.renewAt(lc.off[k] + le)) |srcs| {
                 renewed = true;
-                for (srcs) |s| try f.flowStored(code, use, s, inst);
+                for (srcs) |s| {
+                    if (writer and s.kind == .param and s.a == k) continue;
+                    try f.flowStored(code, use, s, inst);
+                }
             };
             if (!renewed) continue;
             // The handle: what the holder hands there, or the captured value.
             if (k >= code.own_params) {
+                // A writer runs at the frame's switch points (kernel §13 item 12).
+                if (f.isWriter(code, k - code.own_params)) continue;
                 const start = f.atoms.items.len;
                 _ = try f.argLeaves(try f.capVal(code, k - code.own_params), sig, @intCast(h), &.{}, false, &f.atoms);
                 try f.shareAtoms(start, f.atoms.items.len, inst);
@@ -6551,8 +6597,8 @@ fn noteReturnCells(f: *Frame, point: u32) Error!void {
 /// some return point: its value there is a version, not the root itself.
 fn renewedAt(f: *const Frame, root: u32) bool {
     for (f.ret_cells.items) |rc| if (rc[0] == root) {
-        const n = f.nodes.items[rc[1]];
-        if (!(n.tag == .ref and n.a == root)) return true;
+        // A rename at a switch point is no renewal (kernel §13 item 12).
+        if (!f.onlyRenamed(rc[1], root, 0)) return true;
     };
     return false;
 }
@@ -6626,6 +6672,456 @@ fn joinCells(f: *Frame, arms: []const []const [2]u32, ctxs: []const u32) Error!v
         } else true;
         const v = if (same) vals.items[0] else try f.joinVal(f.roots.items[o].place, vals.items, ctxs);
         try f.setLatest(o, v);
+    }
+}
+
+// ---- switch points (kernel §13 item 12) -------------------------------------------------
+
+/// Whether another fiber can run inside the call at `inst`: its callee may
+/// be impure or may suspend (`Dispatch.effectAt`). An impure call that does
+/// not suspend can run other fibers too: `Task.fromHost` drains the fiber
+/// queue when its callback returns. A module with no effect table: every
+/// call can.
+fn switchAt(f: *const Frame, inst: u32) bool {
+    const dt = f.m.in.dispatch orelse return true;
+    const s = dt.effectAt(@fromBackingInt(inst));
+    return s.impure or s.own != .no;
+}
+
+/// At a call where another fiber can run, after its arguments are
+/// evaluated and before the call reads them (`ops`): each function that
+/// writes a cell the frame made and runs in another fiber runs
+/// (`runWriter`), and the contents of each tracked parameter's and
+/// capture's cells are probed and renamed (`probeCells`).
+fn switchPoint(f: *Frame, inst: u32, ops: []const Val) Error!void {
+    if (!f.switchAt(inst)) return;
+    f.switched = true;
+    if (!f.cells_any) return;
+    try f.flushShare();
+    // A call in a hole of markup can run where the markup renders, after
+    // what the walk sees next (kernel §6.12): every holder of a cell there
+    // is marked, and no writer of the frame's cells runs in another fiber.
+    if (f.markup_reads != null) {
+        for (f.params.items) |root| if (f.roots.items[root].tracked) {
+            const r = f.roots.items[root];
+            for (f.m.loc.layoutEntries(r.layout), 0..) |he, h| if (he.kind == .cell) {
+                f.pflags.items[r.ent + h] |= CMod.flag_m;
+            };
+        };
+        for (f.writers.items) |w| try f.cell_marked.put(f.gpa, .{ w.o, w.e }, {});
+        return;
+    }
+    for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, ops);
+    try f.probeCells(inst, ops);
+}
+
+/// Whether the operand `o` of a switch point reaches the contents `ws` of
+/// the cell of tracked root `root`: a handle read through itself, and a
+/// closure's capture of it, read the contents where they read them.
+fn opReaches(f: *Frame, o: Val, ws: []const Atom, root: u32) Error!bool {
+    if (o == v_none or o == v_outside or f.isHandleOf(o, root)) return false;
+    if (f.nodes.items[o].tag == .closure) {
+        const code = f.codes.items[f.nodes.items[o].a];
+        for (0..code.ncaps) |k| {
+            const cv = try f.capVal(code, k);
+            if (try f.opReaches(cv, ws, root)) return true;
+        }
+        return false;
+    }
+    return f.otherReaches(.{ .v = o }, ws, none, &.{});
+}
+
+/// Whether value `v` is tracked root `o` whole, or a version of it: a handle
+/// read through itself reads the contents as they are when it reads them.
+fn isHandleOf(f: *const Frame, v: Val, o: u32) bool {
+    if (v == v_none or v == v_outside) return false;
+    var x: u32 = none;
+    return f.wholeTracked(v, &x, 0) and x == o;
+}
+
+/// Kernel §13 item 12, the probe: at the switch point `inst`, the contents of
+/// each handle of each tracked parameter and capture as they are now. A
+/// value taken out of them before is held across the switch where it is
+/// read after it, where it escaped before it, or where the call reads it
+/// (`ops`, but a handle read through itself): judged at the end of the walk
+/// (`finishProbes`), a refusal is the mark (`Contract.flag_m`) on the handle,
+/// no diagnostic. Then the contents get a new name for probes
+/// (`renameContents`): a value taken out of the cell after the call is no
+/// value taken before it.
+fn probeCells(f: *Frame, inst: u32, ops: []const Val) Error!void {
+    const at = f.timeOf(inst);
+    for (f.params.items) |root| {
+        const r = f.roots.items[root];
+        if (!r.tracked) continue;
+        const es = f.m.loc.layoutEntries(r.layout);
+        const cur = f.latestOf(root) orelse try f.rootVal(root);
+        var probed = false;
+        for (es, 0..) |he, h| {
+            if (he.kind != .cell) continue;
+            // A shared handle's contents escaped already: the contract says so.
+            if (f.cell_shared.contains(.{ root, @intCast(h) })) continue;
+            var ks: std.ArrayList(u32) = .empty;
+            defer ks.deinit(f.gpa);
+            try f.contentsAt(r.layout, @intCast(h), &ks);
+            if (ks.items.len == 0) continue;
+            const w: u32 = @intCast(f.atoms.items.len);
+            for (ks.items) |k| _ = try f.leavesAs(cur, r.place, k, &f.atoms);
+            try f.uniqueTail(&f.atoms, w);
+            const wn: u32 = @intCast(f.atoms.items.len - w);
+            probed = true;
+            var refused = false;
+            const ws = f.atoms.items[w..][0..wn];
+            f.judge_ctx = f.cur_ctx;
+            f.judge_at = at;
+            f.judge_probe = true;
+            for (ops) |o| if (try f.opReaches(o, ws, root)) {
+                refused = true;
+                break;
+            };
+            if (!refused) for (f.escapes.items) |e| {
+                if (!f.compatible(e.ctx, f.cur_ctx)) continue;
+                if (f.overlapWrite(f.esc_atoms.items[e.start..][0..e.len], ws)) {
+                    refused = true;
+                    break;
+                }
+            };
+            f.judge_ctx = none;
+            f.judge_at = none;
+            f.judge_probe = false;
+            try f.probes.append(f.gpa, .{ .w = w, .wn = wn, .at = at, .ctx = f.cur_ctx, .root = root, .h = @intCast(h), .refused = refused });
+        }
+        if (probed) try f.renameContents(root, cur, inst, at);
+    }
+}
+
+/// A version of tracked root `root` whose value now is `cur`, the same
+/// cells, each copy in a cell's contents taken at time `at` (`Atom.ren`):
+/// no rename is a write (`dead` stays), and no renewal (`renewedAt`).
+fn renameContents(f: *Frame, root: u32, cur: Val, inst: u32, at: u32) Error!void {
+    const v = try f.versionOf(root, cur, inst);
+    f.roots.items[v].rename_of = cur;
+    const inner = try f.innerOf(f.roots.items[root].layout);
+    const ent0 = f.roots.items[v].ent;
+    for (inner, 0..) |in, k| if (in) {
+        const ent = f.rents.items[ent0 + k];
+        for (f.atoms.items[ent.start..][0..ent.len]) |*a| a.ren = at;
+    };
+    try f.finishVersion(root, v);
+}
+
+/// Whether `v`, the value of tracked root `root` at a return point, is the
+/// root itself through renames only (`renameContents`): no call renewed it.
+fn onlyRenamed(f: *const Frame, v: Val, root: u32, depth: u32) bool {
+    if (depth > 64) return false;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .ref => {
+            if (n.a == root) return true;
+            const p = f.roots.items[n.a].rename_of;
+            return p != none and f.onlyRenamed(p, root, depth + 1);
+        },
+        .join => {
+            for (0..n.b) |ki| if (!f.onlyRenamed(f.lists.items[n.a + 2 * ki], root, depth + 1)) return false;
+            return true;
+        },
+        .none, .outside, .fnref, .closure, .unknown, .built, .later => return false,
+    }
+}
+
+/// The probes judged against the reads after each (kernel §13 item 12):
+/// a refused one marks its handle in the contract.
+fn finishProbes(f: *Frame) Error!void {
+    for (f.probes.items) |p| {
+        var refused = p.refused or f.failed or f.m.steps_over;
+        if (!refused) {
+            const ws = f.atoms.items[p.w..][0..p.wn];
+            f.judge_ctx = p.ctx;
+            f.judge_at = p.at;
+            f.judge_probe = true;
+            defer {
+                f.judge_ctx = none;
+                f.judge_at = none;
+                f.judge_probe = false;
+            }
+            if (f.charge(f.uses.items.len)) refused = true;
+            if (!refused) for (f.uses.items) |u| {
+                if (u.at <= p.at) continue;
+                if (!f.compatible(u.ctx, p.ctx)) continue;
+                if (f.tick()) {
+                    refused = true;
+                    break;
+                }
+                if (try f.useReaches(u, ws)) {
+                    refused = true;
+                    break;
+                }
+            };
+        }
+        if (refused) {
+            const r = f.roots.items[p.root];
+            f.pflags.items[r.ent + p.h] |= CMod.flag_m;
+        }
+    }
+}
+
+/// The holders of the handles that `v` holds at entry `h` of `sig` are
+/// marked (`Contract.flag_m`): a parameter's or a capture's in the
+/// contract, a root the frame made in `cell_marked`.
+fn markHandles(f: *Frame, v: Val, sig: u32, h: u32) Error!void {
+    if (v == v_none or v == v_outside) return;
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    _ = try f.argLeaves(v, sig, h, &.{}, false, &f.atoms);
+    const hs = try f.gpa.dupe(Atom, f.atoms.items[start..]);
+    defer f.gpa.free(hs);
+    try f.markAtoms(hs, CMod.flag_m);
+    var os: std.ArrayList([3]u32) = .empty;
+    defer os.deinit(f.gpa);
+    for (hs) |a| try f.cellOrigins(a, &os);
+    for (os.items) |o| try f.cell_marked.put(f.gpa, .{ o[0], o[1] }, {});
+}
+
+/// The marks of a contract `c` applied to the values `args` at a call or a
+/// use (kernel §13 item 12): each handle it marks, and each handle whose
+/// contents it hands a function that can run other fibers while it holds
+/// them (`fnSwitches`): a function the frame was handed is judged by the
+/// frame's caller, through the supply the frame publishes.
+fn applyMarks(f: *Frame, c: *const Contract, args: []const Val) Error!void {
+    if (!f.cells_any) return;
+    const m = f.m;
+    for (0..@min(c.arity, args.len)) |j| {
+        const sig = c.layouts[j];
+        for (m.loc.layoutEntries(sig), 0..) |he, h| if (he.kind == .cell and c.flags[c.off[j] + h] & CMod.flag_m != 0) {
+            try f.markHandles(args[j], sig, @intCast(h));
+        };
+    }
+    for (0..@min(c.arity, args.len)) |j| {
+        const fnc = c.fns[j] orelse continue;
+        var sw: ?bool = null;
+        for (fnc.supply) |srcs| for (srcs) |s| {
+            if (s.kind != .param or s.a >= c.arity or s.a >= args.len) continue;
+            const sig = c.layouts[s.a];
+            const inner = try f.innerOf(sig);
+            if (s.e >= inner.len or !inner[s.e]) continue;
+            if (sw == null) sw = try f.fnSwitches(args[j], 0);
+            if (!sw.?) continue;
+            for (m.loc.layoutEntries(sig), 0..) |he, h| if (he.kind == .cell) {
+                var ks: std.ArrayList(u32) = .empty;
+                defer ks.deinit(f.gpa);
+                try f.contentsAt(sig, @intCast(h), &ks);
+                if (std.mem.indexOfScalar(u32, ks.items, s.e) != null) try f.markHandles(args[s.a], sig, @intCast(h));
+            };
+        };
+    }
+}
+
+/// Whether the function value `v` can run other fibers when it runs: its
+/// code makes a call where another fiber can run (`Contract.switches`). The
+/// frame's own function parameter: no, here (its caller judges it). Any
+/// other function: yes.
+fn fnSwitches(f: *Frame, v: Val, depth: u32) Error!bool {
+    if (v == v_none or v == v_outside) return false;
+    if (depth > 8) return true;
+    const n = f.nodes.items[v];
+    if (n.tag == .join) {
+        for (0..n.b) |ki| if (try f.fnSwitches(f.lists.items[n.a + 2 * ki], depth + 1)) return true;
+        return false;
+    }
+    if (try f.codeOf(v)) |code| return code.contract.switches;
+    if (f.isFnRoot(f.ownFnRoot(v))) return false;
+    return true;
+}
+
+/// Kernel §13 item 12, a writer: the known function `code` at `use` goes where
+/// the walk does not follow it, and capture `k` holds handles of cells the
+/// frame made. Where every handle of the capture is one of a tracked root
+/// the frame made that nothing shared or marked, the closure writes or
+/// renews the contents only through the cell's own rows, hands them to no
+/// code that runs it, renews them with captures, its own cells and
+/// `outside` only, and holds no value taken out of them across a switch
+/// point (no mark), the capture is a writer (`Writer`): it is not shared,
+/// and runs at each later switch point of the frame and at its end
+/// (`runWriter`). Answers whether it is one.
+fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
+    const m = f.m;
+    const lc = code.contract;
+    const j: u32 = @intCast(code.own_params + k);
+    if (j >= lc.arity or code.inst == none) return false;
+    if (f.nodes.items[v].tag != .closure) return false;
+    if (m.isDraft(lc) or lc.casts or code.own_params + code.ncaps > lc.arity) return false;
+    for (0..code.ncaps) |kc| if (lc.fns[code.own_params + kc] != null) return false;
+    if (f.writesOwn(lc, code.own_params)) return false;
+    const sig = lc.layouts[j];
+    const inner = try f.innerOf(sig);
+    if (inner.len == 0) return false;
+    const ses = m.loc.layoutEntries(sig);
+    // Only a function that writes the contents in place: one that only
+    // stores into the cell or reads it gives the handle another holder, as
+    // before, which costs it nothing.
+    var writes = false;
+    for (lc.flags[lc.off[j]..lc.off[j + 1]], 0..) |x, e| {
+        if (x & CMod.flag_m != 0) return false;
+        if ((inner[e] or ses[e].kind == .cell) and x & flag_e != 0) return false;
+        if (inner[e] and x & flag_w != 0) writes = true;
+    }
+    if (!writes) return false;
+    if (handsContents(lc, j, inner) or !capturedSrcs(lc, j, code.own_params, inner)) return false;
+    // Its answer names nothing of the capture, nor does a renewal of another.
+    for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j) return false;
+    for (0..lc.arity) |a| if (a != j) for (lc.off[a]..lc.off[a + 1]) |i| if (lc.renewAt(i)) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j) return false;
+    const capv = try f.capVal(code, k);
+    var os: std.ArrayList([3]u32) = .empty;
+    defer os.deinit(f.gpa);
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    for (ses, 0..) |he, h| if (he.kind == .cell) {
+        const s0 = f.atoms.items.len;
+        _ = try f.argLeaves(capv, sig, @intCast(h), &.{}, false, &f.atoms);
+        if (f.atoms.items.len == s0) return false;
+    };
+    for (f.atoms.items[start..]) |a| {
+        const before = os.items.len;
+        try f.cellOrigins(a, &os);
+        if (os.items.len == before) return false;
+    }
+    for (os.items) |o| {
+        const r = f.roots.items[o[0]];
+        if (r.kind != .local or !r.tracked) return false;
+        if (f.cell_shared.contains(.{ o[0], o[1] }) or f.cell_marked.contains(.{ o[0], o[1] })) return false;
+    }
+    const ci = f.nodes.items[v].a;
+    for (os.items) |o| try f.writers.append(f.gpa, .{ .code = ci, .k = k, .o = o[0], .e = o[1], .site = site });
+    return true;
+}
+
+/// Whether capture `k` of the known function `code` is a writer
+/// (`registerWriter`): codes of one closure share its captures' run.
+fn isWriter(f: *const Frame, code: Code, k: usize) bool {
+    if (code.inst == none) return false;
+    for (f.writers.items) |w| {
+        const wc = f.codes.items[w.code];
+        if (wc.inst == code.inst and wc.caps == code.caps and w.k == k) return true;
+    }
+    return false;
+}
+
+/// A run of writer `w` at the switch point `inst`, whose call reads `ops`
+/// (kernel §13 item 12): as a call that runs the closure within (item 11),
+/// it reads what it writes of the capture there, its write of the contents
+/// is a demand at the call on the frame's latest version, judged against
+/// the call's operands (but a handle read through itself, and a writer of
+/// the cell, which writes it in its own fiber) and the closure's other
+/// captures, of what an earlier run stored too, and its renewal makes a
+/// version that keeps the old contents (it may not run here).
+fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val) Error!void {
+    const m = f.m;
+    const code = f.codes.items[w.code];
+    const lc = code.contract;
+    const j: u32 = @intCast(code.own_params + w.k);
+    const sig = lc.layouts[j];
+    const inner = try f.innerOf(sig);
+    const ses = m.loc.layoutEntries(sig);
+    const n = lc.off[j + 1] - lc.off[j];
+    const capv = try f.capVal(code, w.k);
+    try f.readBy(capv, inst, sig, lc.flags[lc.off[j]..lc.off[j + 1]]);
+    var others: std.ArrayList(Other) = .empty;
+    defer others.deinit(f.gpa);
+    for (ops) |o| {
+        if (o == v_none or o == v_outside or f.isHandleOf(o, w.o)) continue;
+        if (f.nodes.items[o].tag == .closure) {
+            // A closure reads a handle it captured where it runs.
+            const oc = f.codes.items[f.nodes.items[o].a];
+            for (0..oc.ncaps) |kc| {
+                const cv = try f.capVal(oc, kc);
+                if (!f.isHandleOf(cv, w.o)) try others.append(f.gpa, .{ .v = cv });
+            }
+            continue;
+        }
+        try others.append(f.gpa, .{ .v = o });
+    }
+    for (0..code.ncaps) |kc| {
+        const jc = code.own_params + kc;
+        if (kc == w.k or jc >= lc.arity) continue;
+        try others.append(f.gpa, .{ .v = try f.capVal(code, kc), .sig = lc.layouts[jc], .flags = lc.flags[lc.off[jc]..lc.off[jc + 1]] });
+    }
+    for (0..n) |e| {
+        if (!inner[e] or lc.flags[lc.off[j] + e] & flag_w == 0) continue;
+        const wa: u32 = @intCast(f.atoms.items.len);
+        const dup = try f.argLeaves(capv, sig, @intCast(e), &.{}, false, &f.atoms);
+        try f.storedAtoms(code, j, @intCast(e));
+        try f.demand(wa, .{
+            .point = inst,
+            .loc = ses[e].loc,
+            .others = others.items,
+            .dup = dup and !ses[e].single,
+            .list_only = ses[e].kind == .list,
+            .kind = .callsite,
+        });
+    }
+    if (!lc.renews()) return;
+    const args = try f.gpa.alloc(Val, lc.arity);
+    defer f.gpa.free(args);
+    @memset(args, v_none);
+    for (0..code.ncaps) |kc| if (code.own_params + kc < lc.arity) {
+        args[code.own_params + kc] = try f.capVal(code, kc);
+    };
+    const bsite: Site = .{ .inst = inst };
+    const base: Use = .{ .kind = .call, .id = f.useId(), .key = w.site, .holder = code.id(), .c = lc, .args = args, .site = &bsite };
+    var done: ?[]bool = null;
+    defer if (done) |d| f.gpa.free(d);
+    for (ses, 0..) |he, h| {
+        if (he.kind != .cell) continue;
+        if (done) |d| if (d[h]) continue;
+        var ks: std.ArrayList(u32) = .empty;
+        defer ks.deinit(f.gpa);
+        try f.contentsAt(sig, @intCast(h), &ks);
+        const renewed = for (ks.items) |x| {
+            if (lc.renewAt(lc.off[j] + x) != null) break true;
+        } else false;
+        if (!renewed) continue;
+        if (done == null) {
+            done = try f.gpa.alloc(bool, ses.len);
+            @memset(done.?, false);
+        }
+        for (ks.items) |x| done.?[x] = true;
+        try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, inst);
+    }
+}
+
+/// At a return point (`?`, the end of the walk) whose answer is `v`: the
+/// writers run there too, since they can run after the frame ends, while
+/// its caller holds the answer.
+fn writersAtReturn(f: *Frame, point: u32, v: Val) Error!void {
+    if (f.writers.items.len == 0) return;
+    try f.flushShare();
+    for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], point, &.{v});
+}
+
+/// At the end of the walk: a writer whose cell got another holder after it
+/// was made one, whose handle the frame answers, or which a holder of the
+/// cell marked (a callee handed the handle, a closure run within a call)
+/// is refused where it went out of sight.
+fn revokeWriters(f: *Frame) Error!void {
+    if (f.writers.items.len == 0) return;
+    try f.flushShare();
+    var answered: std.ArrayList([3]u32) = .empty;
+    defer answered.deinit(f.gpa);
+    for (f.returns.items) |rv| {
+        if (rv == v_none or rv == v_outside) continue;
+        const start = f.atoms.items.len;
+        defer f.atoms.shrinkRetainingCapacity(start);
+        _ = try f.allLeaves(rv, &f.atoms);
+        const xs = try f.gpa.dupe(Atom, f.atoms.items[start..]);
+        defer f.gpa.free(xs);
+        for (xs) |a| try f.cellOrigins(a, &answered);
+    }
+    for (f.writers.items) |w| {
+        const key: [2]u32 = .{ w.o, w.e };
+        const kept = for (answered.items) |o| {
+            if (o[0] == w.o and o[1] == w.e) break true;
+        } else false;
+        const why: ?[]const u8 = if (f.cell_shared.contains(key)) "the cell gets another holder" else if (f.cell_marked.contains(key)) "a holder of the cell keeps a value taken out of it across a call where another fiber can run" else if (kept) "the frame answers the cell" else null;
+        if (why) |text| try f.m.addRefusal(f, w.site, .call, try std.fmt.allocPrint(f.m.arena, "a function that writes the contents of a cell it captured runs in another fiber, and {s}", .{text}));
     }
 }
 
@@ -6718,6 +7214,13 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         const after = (try f.saveCells()).?;
         try f.joinCells(&.{ after, before }, &.{});
     }
+    // Another fiber can run inside the call (kernel §13 item 12).
+    {
+        try vals.append(f.gpa, callee_val);
+        defer _ = vals.pop();
+        try f.switchPoint(inst, vals.items);
+    }
+    const writers_before = f.writers.items.len;
     // A call in a hole of markup can run after the other holes (`markup`).
     f.call_inst = inst;
     f.call_vals = try f.gpa.dupe(Val, vals.items);
@@ -6739,6 +7242,10 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         try vals.append(f.gpa, callee_val);
         break :blk try f.unknownResult(inst, vals.items);
     };
+    // A writer that went out of sight at this call can run within it.
+    if (f.writers.items.len > writers_before and f.switchAt(inst)) {
+        for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items);
+    }
     const named = m.tags[callee] == .top or m.tags[callee] == .ext_value;
     try f.noteJsSite(.{ if (named) callee else none, inst }, vals.items, result, f.casts and !casts_before);
     return result;
@@ -6988,6 +7495,9 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
     }
     const derived = try f.evidence(inst);
+    // Another fiber can run inside the call (kernel §13 item 12).
+    try f.switchPoint(inst, vals.items);
+    const writers_before = f.writers.items.len;
     const casts_before = f.casts;
     const result: Val = blk: {
         switch (target) {
@@ -7002,6 +7512,9 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         for (vals.items) |v| try f.escape(v, inst);
         break :blk try f.unknownResult(inst, vals.items);
     };
+    if (f.writers.items.len > writers_before and f.switchAt(inst)) {
+        for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items);
+    }
     try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
     return result;
 }
@@ -7565,6 +8078,30 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
         const n = c.off[j + 1] - c.off[j];
+        // A closure the callee loses whose capture is a writer (kernel §13
+        // item 12): its other captures escape, and the writer's handle runs
+        // at the frame's switch points instead.
+        const out_of_sight = if (c.fns[j]) |fnc| fnc.lost or for (0..n) |se| {
+            if (c.flags[c.off[j] + se] & (flag_e | flag_a) != 0) break true;
+        } else false else false;
+        if (out_of_sight and f.cells_any and args[j] != v_none and f.nodes.items[args[j]].tag == .closure) {
+            const lcode = f.codes.items[f.nodes.items[args[j]].a];
+            var any = false;
+            for (0..lcode.ncaps) |k| {
+                if (f.isWriter(lcode, k) or try f.registerWriter(args[j], lcode, @intCast(k), inst)) any = true;
+            }
+            if (any) {
+                const escapes_any = for (0..n) |se| {
+                    if (c.flags[c.off[j] + se] & flag_e != 0) break true;
+                } else false;
+                if (escapes_any) for (0..lcode.ncaps) |k| if (!f.isWriter(lcode, k)) {
+                    const start: u32 = @intCast(f.atoms.items.len);
+                    _ = try f.allLeaves(try f.capVal(lcode, k), &f.atoms);
+                    try f.noteEscape(start, inst);
+                };
+                continue;
+            }
+        }
         for (0..n) |se| if (c.flags[c.off[j] + se] & flag_e != 0) {
             const start: u32 = @intCast(f.atoms.items.len);
             _ = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
@@ -7577,6 +8114,9 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         const use: Use = .{ .kind = .call, .id = f.useId(), .key = inst, .holder = code.id(), .c = c, .fnc = fnc, .j = @intCast(j), .args = args, .site = &site };
         try f.flow(args[j], &use);
     }
+    // The handles the callee marks, or hands to a function that can run
+    // other fibers while it holds their contents (kernel §13 item 12).
+    try f.applyMarks(c, args);
     // What the callee writes.
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
@@ -9281,10 +9821,16 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // its function parameters a function in the default state, which
         // keeps what it is handed (`defaultParams`).
         if (f.writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
-        if (try f.writesCaptured(code)) try f.refuse(&use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
+        // A capture of a cell the frame made, which the function writes or
+        // renews only through the cell's rows, is a writer: it runs at the
+        // frame's later switch points (kernel §13 item 12).
+        const reg = try f.gpa.alloc(bool, code.ncaps);
+        defer f.gpa.free(reg);
+        for (reg, 0..) |*x, k| x.* = f.cells_any and (f.isWriter(code, k) or try f.registerWriter(v, code, @intCast(k), inst));
+        if (try f.writesCapturedBut(code, reg)) try f.refuse(&use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
         // It runs at times the frame does not see: each handle it captured
         // has another holder (kernel §13 items 8 and 11).
-        for (0..code.ncaps) |k| try f.shareVal(try f.capVal(code, k), inst);
+        for (0..code.ncaps) |k| if (!reg[k]) try f.shareVal(try f.capVal(code, k), inst);
         try f.captureEscapes(code, inst);
         if (use.kind != .top) {
             // A callee lost it. It can keep what it hands, and it can run the
@@ -9332,7 +9878,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         }
     }
     try f.escapeUnplacedAnswer(code, &use);
-    try f.captureCells(code, &use);
+    try f.captureCells(v, code, &use);
     try f.flowRenews(code, &use, true);
     try f.flowCaptures(code, &use);
 }
@@ -9471,8 +10017,14 @@ fn captureEscapes(f: *Frame, code: Code, inst: u32) Error!void {
 /// Whether the known function `code` writes in place the contents of a
 /// cell it captured (kernel §13 item 11).
 fn writesCaptured(f: *Frame, code: Code) Error!bool {
+    return f.writesCapturedBut(code, &.{});
+}
+
+/// `writesCaptured`, but of no capture `k` with `skip[k]` (a writer).
+fn writesCapturedBut(f: *Frame, code: Code, skip: []const bool) Error!bool {
     const lc = code.contract;
     for (0..code.ncaps) |k| {
+        if (k < skip.len and skip[k]) continue;
         const j = code.own_params + k;
         if (j >= lc.arity) break;
         const inner = try f.innerOf(lc.layouts[j]);
@@ -9524,13 +10076,27 @@ fn keepsFn(use: *const Use) bool {
 /// write is refused, and a renewal is one of an argument the frame does not
 /// follow (`flowRenews`). Where no call runs the function within, it goes
 /// where the walk does not follow it: a write is refused (`flowCode`).
-fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
+fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
     const m = f.m;
     const lc = code.contract;
+    // The handles of its captures it marks (kernel §13 item 12).
+    if (f.cells_any) for (0..code.ncaps) |k| {
+        const j = code.own_params + k;
+        if (j >= lc.arity) break;
+        const sig = lc.layouts[j];
+        for (m.loc.layoutEntries(sig), 0..) |he, h| if (he.kind == .cell and lc.flags[lc.off[j] + h] & CMod.flag_m != 0) {
+            try f.markHandles(try f.capVal(code, k), sig, @intCast(h));
+        };
+    };
     const writes = try f.writesCaptured(code);
     if (!writes and !lc.renews()) return;
     const top = runsWithin(use);
-    if (writes and top == null) try f.refuse(use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
+    // Where no call runs it within, a capture of a cell the frame made can
+    // be a writer, which runs at the frame's switch points (kernel §13 item 12).
+    const reg = try f.gpa.alloc(bool, code.ncaps);
+    defer f.gpa.free(reg);
+    for (reg, 0..) |*x, k| x.* = top == null and f.cells_any and (f.isWriter(code, k) or try f.registerWriter(v, code, @intCast(k), use.site.inst));
+    if (top == null and try f.writesCapturedBut(code, reg)) try f.refuse(use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
     try f.flushShare();
     const site = use.site;
     // The operands the callee holds while it runs the function: the call's
@@ -9585,6 +10151,7 @@ fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
             if (lc.renewAt(lc.off[j] + e) != null) rk = true;
         };
         if (!wk and !rk) continue;
+        if (reg[k]) continue;
         // The code reads what it writes and renews where it runs, at the
         // cell's version before its renewal: a write of the contents made
         // before the call is judged against that read, as against a direct
@@ -9625,13 +10192,7 @@ fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
             // (another location of the cell's own contents among them), outside
             // the frame's (outside, or a value the callee handed, which no rule
             // names here), and not a cell the function made in its run.
-            if (lc.renewAt(lc.off[j] + e)) |srcs| for (srcs) |s| switch (s.kind) {
-                .fresh, .twice => {},
-                .outside, .answer => try f.atoms.append(f.gpa, outside_atom),
-                .param => if (s.a == j and s.e == e) {} else if (s.a >= code.own_params and s.a < lc.arity) {
-                    _ = try f.argLeaves(try f.capVal(code, s.a - code.own_params), lc.layouts[s.a], s.e, &.{}, false, &f.atoms);
-                } else try f.atoms.append(f.gpa, outside_atom),
-            };
+            try f.storedAtoms(code, j, @intCast(e));
             try f.demand(w, .{
                 .point = site.inst,
                 .callee_inst = site.callee,
@@ -9679,6 +10240,22 @@ fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
         f.atoms.shrinkRetainingCapacity(start);
         try f.flushShare();
     }
+}
+
+/// Appended to `f.atoms`: what the renewal of capture `j` of `code` names
+/// at its entry `e`, which a later run of the code writes where it writes
+/// `e` (kernel §13 item 11): a capture's cells (another location of the
+/// cell's own contents among them), `outside` for outside the frame or a
+/// value the callee handed, and not a cell the code made in its run.
+fn storedAtoms(f: *Frame, code: Code, j: u32, e: u32) Error!void {
+    const lc = code.contract;
+    if (lc.renewAt(lc.off[j] + e)) |srcs| for (srcs) |s| switch (s.kind) {
+        .fresh, .twice => {},
+        .outside, .answer => try f.atoms.append(f.gpa, outside_atom),
+        .param => if (s.a == j and s.e == e) {} else if (s.a >= code.own_params and s.a < lc.arity) {
+            _ = try f.argLeaves(try f.capVal(code, s.a - code.own_params), lc.layouts[s.a], s.e, &.{}, false, &f.atoms);
+        } else try f.atoms.append(f.gpa, outside_atom),
+    };
 }
 
 /// Whether the contract `lc` lets the contents of capture parameter `j`

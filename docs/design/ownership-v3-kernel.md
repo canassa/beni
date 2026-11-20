@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -19,8 +19,8 @@ section numbers here are referenced from the code (`kernel §N`): never renumber
 ## 0. Scope
 
 A beni `List` is a plain array. The checker accepts an in-place write only when no later read can observe
-the old value. It judges lists and, since 2026-11-15, records (§11), since 2026-11-19 dictionaries (§12), and since 2026-11-20 a cell's contents (§13); fibers that share a cell are a later stage of the same
-rules (report 116 §5.4). It runs behind `--ownership=v3`. v1 (`src/own/`) is the production checker and is not touched.
+the old value. It judges lists and, since 2026-11-15, records (§11), since 2026-11-19 dictionaries (§12), and since 2026-11-20 a cell's contents (§13), with the loan rule for a cell that fibers share (§13 item
+12), the later stage of the same rules that report 116 §5.4 names. It runs behind `--ownership=v3`. v1 (`src/own/`) is the production checker and is not touched.
 
 ## 1. The principle
 
@@ -2378,11 +2378,9 @@ contents of a cell are locations, and that a call can change what a location of 
    escapes (`flowStored`).
 10. **Fibers.** Only one fiber runs at a time, and another fiber can reach a cell only through a holder
     it has. A spawned fiber's body is a closure, so a handle it captures is shared (item 8): its
-    contents escape where the closure is spawned, and no write of them in place is accepted in any fiber.
-    A park needs no rule of its own while the frame follows a handle: no other fiber holds it. The
-    owner's loan rule for a cell that two fibers hold (#981: a loan may not stay alive across a
-    suspension point) is not built: such a cell is shared, and a write of its contents is refused, with
-    the copy fix (research report 165 §6, slice 4; #2581).
+    contents escape where the closure is spawned, and no write of them in place is accepted in any fiber,
+    except by the owner's loan rule for a cell that two fibers hold (item 12). A park needs no rule of its
+    own while the frame follows a handle: no other fiber holds it.
 
 11. **A closure writes the contents of a cell it captured** (`Frame.captureContents`, `captureCells`).
     A capture whose layout has a handle is followed as a parameter is (`Root.tracked`): the code that
@@ -2433,8 +2431,60 @@ contents of a cell are locations, and that a call can change what a location of 
     `run/SanitiserCellReentryApart`, `SanitiserScopeHost` and `SanitiserNestedCallbackWrite` are
     accepted and run in place.
 
-What it does not cover yet, each a refusal: a closure that writes the contents of a cell it captured
-and goes where the walk does not follow it, a spawned fiber's among them (item 11; `browser/tea/BallMachine`,
+12. **A cell two fibers hold: the loan rule** (the owner's decision on #981: a loan may not stay alive
+    across a suspension point or escape; `Ref.update` and `Ref.modify` edit in place when no loan of the
+    cell is alive; #2581). A function that writes the contents of a cell the frame made, and goes where
+    the walk does not follow it (a spawned fiber, `Task.par`, a list, unknown code, a wrapper a callee
+    answers), runs at the frame's **switch points**: no other fiber runs between them.
+    - **A switch point** is a call whose callee may be impure or may suspend (`switchAt`, the effect
+      checker's answer, `Dispatch.effectAt`; a module with no effect table: every call). Not only a
+      call that suspends: an impure call can run other fibers without one (`Task.fromHost` drains the
+      fiber queue where its callback returns), so every `Ref` operation is one. A contract says
+      whether its body has one (`Contract.switches`; a worded row's is true).
+    - **A writer** (`registerWriter`): such a closure, at a capture whose every handle is one of a
+      tracked root the frame made (item 4: not a parameter's, a capture's or an answer's), not shared
+      and not marked, where the closure writes the contents in place, lets neither them nor the handle
+      escape, hands them to no code that runs it, answers nothing of the capture, renews them with
+      captures, its own cells and `outside` only (`capturedSrcs`), writes no parameter of its own,
+      and has no mark there. A writer's capture is not shared where it goes out of sight (item 8), and
+      its handle and contents are no part of what escapes with it (`closureHeld`; the escape of a
+      callee's lost or kept function parameter, `applyAt`). A closure that only stores into the cell
+      or reads it is no writer: it shares the handle, as before.
+    - **A run of a writer** (`runWriter`) at each switch point after it is made (and at the call that
+      made it, where that is one), and at each return point (`?`, the end): as a call that runs it
+      within (item 11), it reads what its contract reads of the capture there, its write is a demand at
+      that call on the frame's latest version, of what an earlier run stored too, judged against the
+      call's operands (but a handle read through itself, and a closure's capture of the handle, which
+      read the contents where they run; at a return point, the answer) and the writer's other
+      captures, and its renewal makes a version that keeps the old contents (`maybe`). So a value taken
+      out of the cell and read after a switch point, or handed to it, is refused there, with the
+      `List.copy` fix.
+    - **A probe** (`probeCells`): at each switch point, the contents of each handle of each tracked
+      parameter and capture, as they are, against the call's operands (as above) and every escape so
+      far, and at the end against every later read (`finishProbes`, with `Atom.ren`, below). A refused
+      probe is no diagnostic: it is the **mark** (`Contract.flag_m`) on the handle in the contract, which
+      says that the body holds a value taken out of the cell across a switch point. After the probe the
+      contents get a new name for probes alone (`renameContents`): each copy in the version holds the
+      time (`Atom.ren`), so a value taken out of the cell after the call is no value taken before it.
+      No rename is a write (`dead` stays: a write before the call is judged against reads after it as
+      before) and none is a renewal (`onlyRenamed`, item 3).
+    - **Marks reach the frame** (`applyMarks`, `markHandles`): a callee's or a closure's mark on a handle
+      it is handed or captured marks the holder: a parameter's or a capture's in the frame's contract,
+      a root the frame made in `cell_marked`. So does a call whose contract hands a cell's contents to a
+      function that can run other fibers while it holds them (`Fn.supply` naming a location below the
+      handle, a function with `switches`, any function the walk does not know; the frame's own function
+      parameter is judged by the frame's caller through the supply it publishes): `Ref.update r λl →
+      (Task.fromHost …; List.push l x)`.
+    - **Revocation** (`revokeWriters`, at the end of the walk): a writer is refused where it went out of
+      sight if its cell got another holder at any time (item 8), the frame answers its handle, or a
+      holder of the cell has the mark.
+    `run/CellFibersInPlace` and its live twin `run/CellFibersInPlaceLive`.
+
+What it does not cover yet, each a refusal: a writer of a cell the frame did not make (a parameter's, a
+capture's: a closure spawned inside `Task.scope`'s body, `cells.mjs`' `param` and `scoped` shapes); a
+writer whose closure goes to `Task.par` or `race`, whose contract's answer names the closures' cells, so
+the handle escapes with what the answer can hold; a closure that only stores into the cell; a closure that writes the contents of a cell it captured
+and goes where the walk does not follow it and is no writer (items 11 and 12; `browser/tea/BallMachine`,
 where the closures go to the runtime); a handle handed to the frame's own function
 parameter, which shares it (`run/SanitiserCellLoanKeptApart`'s `handed` and `modified`); a handle at a
 part of a root (a record's field, a tuple's part), which is no tracked root whole and is shared at its

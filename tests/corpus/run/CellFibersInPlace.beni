@@ -1,0 +1,83 @@
+-- A cell that several fibers hold, written in place (`ownership-v3-kernel.md`
+-- §13 item 12, #981): fibers each `Ref.update log λl → List.push l x`, and
+-- no value taken out of the cell is alive where another fiber can run. So
+-- each write runs in place: two writers joined before the cell is read;
+-- three writers with parks between their writes; a writer the frame waits
+-- for through a `Deferred`; and a writer of a record's list. Each line is the
+-- same in a plain, a sanitised and an in-place build.
+import Deferred
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias Tally =
+    items : List Int
+    n : Int
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+collect : ⊤ → String
+collect ⊤ =
+    log = Ref.make []
+    a = Task.spawn λ⊤ →
+        Io.sleep 2
+        Ref.update log λl → List.push l 1
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    Task.join a
+    Task.join b
+    ints (Ref.get log)
+
+
+parked : ⊤ → String
+parked ⊤ =
+    log = Ref.make [ 0 ]
+    a = Task.spawn λ⊤ →
+        Ref.update log λl → List.push l 1
+        Io.sleep 3
+        Ref.update log λl → List.push l 2
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 3
+    c = Task.spawn λ⊤ →
+        Io.sleep 2
+        Ref.update log λl → List.push l 4
+    Task.join a
+    Task.join b
+    Task.join c
+    ints (Ref.get log)
+
+
+waited : ⊤ → String
+waited ⊤ =
+    log = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    a = Task.spawn λ⊤ →
+        Deferred.wait d
+        Ref.update log λl → List.push l 1
+    _ = Deferred.complete d ⊤
+    Task.join a
+    ints (Ref.get log)
+
+
+tallied : ⊤ → String
+tallied ⊤ =
+    t = Ref.make { items = [], n = 0 }
+    a = Task.spawn λ⊤ → Ref.update t λk → { k | items = List.push k.items 1, n = k.n + 1 }
+    b = Task.spawn λ⊤ → Ref.update t λk → { k | items = List.push k.items 2, n = k.n + 1 }
+    Task.join a
+    Task.join b
+    got = Ref.get t
+    "${ints got.items} ${String.fromInt got.n}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ collect ⊤, parked ⊤, waited ⊤, tallied ⊤ ]

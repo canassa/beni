@@ -30,7 +30,12 @@
 // - holder: where the loan is kept (`name`, `tuple`, `closure`); `-` for the other readers;
 // - fibers: `same` (one fiber, no park), `parkSelf` (one fiber, a park between the take and the write),
 //   `park` (the reader in one fiber takes, parks and reads; the writer in another writes while it is
-//   parked), `writer` (the write in a spawned fiber that the reader joins).
+//   parked), `writer` (the write in a spawned fiber that the reader joins); `par` and `scoped` (the
+//   reader and the writer of `park` as `Task.par`'s halves, or two fibers of one `Task.scope`),
+//   `bracket` (the write as `Task.bracket`'s body), `deferred` (the writer fiber waits on a `Deferred`
+//   the reader completes after its take), `queue` (the handle goes to the writer fiber through a
+//   `Queue`), `parkLater` (`park` with the writer's fiber spawned first), `peek` (the writer's fiber,
+//   then a helper that takes a value out of the cell, parks and reads it; kernel §13 item 12).
 //
 // The twin is `live` when the reader reads an old value after the write (a `loan` or `stored` reader, and
 // the `cell` reader of `getW`), `dead` otherwise. A refusal of a `dead` twin is a precision loss; a TRAP or
@@ -78,9 +83,11 @@ const HOLDERS = {
 };
 
 const READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'name2', 'name2cell', 'store2', 'storeK'];
-const FIBERS = ['same', 'parkSelf', 'park', 'writer'];
+const FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek'];
 
-function isLive(writer, reader) {
+function isLive(writer, reader, fibers) {
+  // `peek`'s helper reads a value it took before its park, while the writer writes.
+  if (fibers === 'peek' && writer !== 'getW') return true;
   if (writer === 'closTwiceStore' || writer === 'closOther') return true;
   if (reader === 'loan' || reader === 'stored' || reader === 'mid' || reader === 'name2' || reader === 'store2' || reader === 'storeK') return true;
   if (reader === 'name2cell') return writer === 'getW';
@@ -107,18 +114,51 @@ function gen(cname, maker, writer, reader, holder, fibers) {
     lines.push(`a = Task.spawn λ⊤ →\n${ind(readerBody.join('\n'), 4)}`);
     lines.push(`b = Task.spawn λ⊤ →\n${ind(writerBody.join('\n'), 4)}`);
     lines.push('ra = Task.join a', 'rb = Task.join b', '[ rb, ra ]');
+  } else if (fibers === 'parkLater') {
+    // `park` with the writer's fiber spawned first: the reader's fiber holds the cell after it.
+    const readerBody = [...take, 'Io.sleep 5', readOld];
+    const writerBody = ['Io.sleep 1', ...wr.lines, wr.shown];
+    lines.push(`b = Task.spawn λ⊤ →\n${ind(writerBody.join('\n'), 4)}`);
+    lines.push(`a = Task.spawn λ⊤ →\n${ind(readerBody.join('\n'), 4)}`);
+    lines.push('ra = Task.join a', 'rb = Task.join b', '[ rb, ra ]');
+  } else if (fibers === 'peek') {
+    // The writer's fiber spawned, then a helper that takes a value out of the cell, parks and reads it.
+    lines.push(`b = Task.spawn λ⊤ →\n${ind(['Io.sleep 1', ...wr.lines, wr.shown].join('\n'), 4)}`, 'ra = peek r', 'rb = Task.join b', '[ rb, ra ]');
+  } else if (fibers === 'par') {
+    // The reader and the writer as the two halves of `Task.par`.
+    const readerBody = [...take, 'Io.sleep 5', readOld];
+    const writerBody = ['Io.sleep 1', ...wr.lines, wr.shown];
+    lines.push(`( ra, rb ) = Task.par\n    (λ⊤ →\n${ind(readerBody.join('\n'), 8)}\n    )\n    λ⊤ →\n${ind(writerBody.join('\n'), 8)}`, '[ rb, ra ]');
+  } else if (fibers === 'scoped') {
+    // The reader and the writer as two fibers of one `Task.scope`.
+    const readerBody = [...take, 'Io.sleep 5', readOld];
+    const writerBody = ['Io.sleep 1', ...wr.lines, wr.shown];
+    lines.push(`Task.scope λs →\n    a = Task.spawnIn s λ⊤ →\n${ind(readerBody.join('\n'), 8)}\n    b = Task.spawnIn s λ⊤ →\n${ind(writerBody.join('\n'), 8)}\n    ra = Task.join a\n    rb = Task.join b\n    [ rb, ra ]`);
+  } else if (fibers === 'bracket') {
+    // The write as the body of `Task.bracket`.
+    lines.push(...take, `rb = Task.bracket (λ⊤ → ⊤) (λ_ _ → ⊤) λ_ →\n${ind([...wr.lines, wr.shown].join('\n'), 4)}`, `[ rb, ${readOld} ]`);
+  } else if (fibers === 'deferred') {
+    // The writer waits on a `Deferred` that the reader completes after its take.
+    lines.push('d = Deferred.make ⊤', `b = Task.spawn λ⊤ →\n${ind(['Deferred.wait d', ...wr.lines, wr.shown].join('\n'), 4)}`, ...take, '_ = Deferred.complete d ⊤', 'Io.sleep 1', 'rb = Task.join b', `[ rb, ${readOld} ]`);
+  } else if (fibers === 'queue') {
+    // The handle goes through a `Queue` to the writer's fiber.
+    lines.push('q = Queue.unbounded ⊤', '_ = Queue.offer q r', ...take, 'b = Task.spawn λ⊤ → fromQueue q', 'rb = Task.join b', `[ rb, ${readOld} ]`);
   } else {
     // The write in a fiber that the reader joins.
     lines.push(...take, `b = Task.spawn λ⊤ →\n${ind([...wr.lines, wr.shown].join('\n'), 4)}`, 'rb = Task.join b', `[ rb, ${readOld} ]`);
   }
+  const peek = fibers === 'peek' ? `peek : Ref ${/\s/.test(c.t) ? `(${c.t})` : c.t} → String\npeek h =\n    old = Ref.get h\n    Io.sleep 5\n    ${c.show} old\n\n\n` : '';
+  const fromQueue = fibers === 'queue' ? `fromQueue : Queue (Ref ${/\s/.test(c.t) ? `(${c.t})` : c.t}) → String\nfromQueue q =\n    case Queue.take q of\n        Just r →\n${ind([...wr.lines, wr.shown].join('\n'), 12)}\n\n        Nothing →\n            "-"\n\n\n` : '';
   const sig = maker === 'local' ? `go : ⊤ → List String\ngo ⊤ =` : `go : Ref ${/ /.test(c.t) ? `(${c.t})` : c.t}, ${c.t} → List String\ngo r v0 =`;
   const call = maker === 'local' ? 'go ⊤' : `go (Ref.make v0) v0`;
   const mainBody = maker === 'local' ? `Node.printLines (${call})` : `v0 = ${c.init}\n    Node.printLines (${call})`;
   const refT = /\s/.test(c.t) ? `(${c.t})` : c.t;
   return `-- ${cname}.${maker}.${writer}.${reader}.${holder}.${fibers}: see bench/ownership-sweeps/cells.mjs.
+import Deferred
 import Dict exposing (Dict)
 import Io
 import Node exposing (Program)
+import Queue exposing (Queue)
 import Ref exposing (Ref)
 import Task
 
@@ -161,7 +201,7 @@ wrapFn : (Int → Int) → (Int → Int)
 wrapFn f = λx → f x
 
 
-${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
+${fromQueue}${peek}${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
 ${ind(lines.join('\n'), 4)}
 
 
@@ -181,7 +221,7 @@ const emit = (name, files) => {
   list.push(path.resolve(d));
 };
 for (const cname of Object.keys(CONTENTS)) for (const maker of ['local', 'param']) for (const writer of Object.keys(WRITERS)) for (const reader of READERS) for (const holder of reader === 'loan' ? Object.keys(HOLDERS) : ['-']) for (const fibers of FIBERS) {
-  const twin = isLive(writer, reader) ? 'live' : 'dead';
+  const twin = isLive(writer, reader, fibers) ? 'live' : 'dead';
   emit(`${cname}.${maker}.${writer}.${reader}.${holder}.${fibers}.${twin}`, { 'Main.beni': gen(cname, maker, writer, reader, holder, fibers) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');

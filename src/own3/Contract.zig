@@ -96,11 +96,19 @@ pub const flag_s: u8 = 8;
 /// slot (kernel §11); every other location the body answers is read as well
 /// (`flag_r`), as v3 has judged lists from the start.
 pub const flag_a: u8 = 16;
+/// On a cell's handle (kernel §13 item 12): the body holds a value taken out
+/// of the cell's contents across a call where another fiber can run (a read
+/// of it after such a call, an escape of it, or an answer of it that a later
+/// switch point precedes), or hands the contents to a function that can run
+/// other fibers while it holds them. No read at the call: the caller marks
+/// its own holder of the handle, and a function that writes the contents in
+/// another fiber is refused where a holder of the cell has the mark.
+pub const flag_m: u8 = 32;
 
 /// Whether the flags `x` of a location say the body reads it at the call:
-/// any flag but the answer's.
+/// any flag but the answer's and the mark.
 pub fn reads(x: u8) bool {
-    return x & ~flag_a != 0;
+    return x & ~(flag_a | flag_m) != 0;
 }
 
 /// What a body does with a function parameter: the use of that location
@@ -179,6 +187,10 @@ pub const Contract = struct {
     /// identities only): a call answers its argument as it is, whatever type
     /// the body read it at (`Frame.identityCall`; research report 151).
     exact: bool = false,
+    /// The body makes a call where another fiber can run (kernel §13 item
+    /// 12): one whose callee may be impure or may suspend. A worded row's is
+    /// true: its words say nothing of it.
+    switches: bool = false,
     /// What a call leaves in a parameter's cells (kernel §13, *Renewal*):
     /// per parameter location, as `flags` is, null where the call leaves
     /// the location as it was, or the sources it holds from the call on. A
@@ -254,7 +266,7 @@ fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
 }
 
 pub fn eql(a: *const Contract, b: *const Contract) bool {
-    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy or a.casts != b.casts or a.exact != b.exact) return false;
+    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy or a.casts != b.casts or a.exact != b.exact or a.switches != b.switches) return false;
     if (!std.mem.eql(u32, a.layouts, b.layouts) or !std.mem.eql(u8, a.flags, b.flags)) return false;
     if (a.res.len != b.res.len) return false;
     for (a.res, b.res) |s, t| if (!srcsEql(s, t)) return false;
@@ -324,7 +336,7 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
         renew = rn;
     }
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .renew = renew };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .renew = renew };
     return out;
 }
 
@@ -386,7 +398,7 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     const renew = try a.alloc(?[]const Src, c.renew.len);
     for (renew, c.renew) |*r, x| r.* = if (x) |xs| try a.dupe(Src, xs) else null;
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .renew = renew };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .renew = renew };
     return out;
 }
 

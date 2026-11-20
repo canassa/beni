@@ -1985,6 +1985,8 @@ pub const Mod = struct {
             for (got, rn) |*g, r| g.* = if (r.items.len == 0) null else try Contract.normal(m.arena, r.items);
             c.renew = got;
         }
+        // Words say nothing of where another fiber can run (kernel §13 item 12).
+        c.switches = true;
         if (std.debug.runtime_safety) try m.checkWordedPlaced(sig, c, pw, rw);
         if (std.debug.runtime_safety) try m.checkWordedCasts(sig, c, pw, rw);
         if (std.debug.runtime_safety) try m.checkWordedTwice(sig, c, pw, rw);
@@ -3648,7 +3650,7 @@ pub const Mod = struct {
             for (m.loc.layoutEntries(c.layouts[j]), 0..) |e, k| {
                 const fl = c.flags[c.off[j] + k];
                 if (fl == 0) continue;
-                w.print(" π{d}{s} {s}{s}", .{ j + 1, try m.locText(e.loc), if (fl & Contract.flag_w != 0) "W" else "", if (fl & Contract.flag_e != 0) "E" else "" }) catch return error.OutOfMemory;
+                w.print(" π{d}{s} {s}{s}{s}", .{ j + 1, try m.locText(e.loc), if (fl & Contract.flag_w != 0) "W" else "", if (fl & Contract.flag_e != 0) "E" else "", if (fl & Contract.flag_m != 0) "M" else "" }) catch return error.OutOfMemory;
             }
             // What the call leaves in the parameter's cells (kernel §13).
             for (m.loc.layoutEntries(c.layouts[j]), 0..) |e, k| if (c.renewAt(c.off[j] + k)) |srcs| {
