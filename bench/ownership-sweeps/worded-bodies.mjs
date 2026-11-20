@@ -16,8 +16,8 @@
 //   what the row read or kept: trusted, it traps or differs) or `dead` (it reads nothing of it after).
 //   An honest `live` twin can be refused by the program's own write (`list_still_used`): that is the
 //   word doing its work.
-// - `<words>` is `unproven` for true words that the walk cannot show (`shallow` over `List.length`, whose
-//   words say `borrowed`): REFUSED `false_ownership_word`, the pessimistic side. It is `unjudged` for a
+// - `<words>` is `unproven` for true words that the walk cannot show (`shallow` over a `List.foldl` whose
+//   callback reads no element: the fold hands it each one): REFUSED `false_ownership_word`, the pessimistic side. It is `unjudged` for a
 //   false count (`stored` once, stored twice), which the check does not judge: not refused, and its
 //   `live` twin traps or differs, as a false `foreign` row's does.
 import fs from 'fs';
@@ -71,8 +71,9 @@ const rows = [
             0`,
     lie: [['shallow', ['borrowed shallow']]],
     honest: [['borrowed', ['borrowed']]],
-    // True, and refused: `List.length` says `borrowed`, not `shallow`, so the walk reads the elements.
-    unproven: [['length', ['borrowed shallow'], 'firstLength l = List.length l']],
+    // True, and refused: `List.foldl` hands its callback each element, so the walk reads them. (A body of
+    // `List.length l` is shown: `List.length` is `borrowed shallow`, #2584.)
+    unproven: [['length', ['borrowed shallow'], 'firstLength l = List.foldl l 0 λ_ n → n + 1']],
     live: `    l0 = [ [ 1 ], [ 2 ] ]
     xs = Maybe.withDefault (List.head l0) []
     ys = List.push xs 5
