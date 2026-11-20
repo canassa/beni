@@ -2824,6 +2824,21 @@ test "ownership v3: the faults of round 2 are refused" {
         \\    w = List.update v 0 λm → List.push m 9
         \\    List.length w
         \\
+        \\
+        \\pub joinArgLive : Int → Int
+        \\joinArgLive c =
+        \\    xs = [ [ 1 ], [ 2 ] ]
+        \\    ys =
+        \\        List.map xs
+        \\            (case c of
+        \\                0 →
+        \\                    λl → List.push l 1
+        \\
+        \\                _ →
+        \\                    λl → l
+        \\            )
+        \\    List.length ys + List.foldl xs 0 λl n → n + List.length l
+        \\
     );
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Round2.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
@@ -2833,7 +2848,10 @@ test "ownership v3: the faults of round 2 are refused" {
         // `twice`: `back` loses the closure, so each function that it captured is in the default.
         "  32:10 value <call Round2.back>: rejected supply: the function writes a parameter that the callee reads again or does not hand as its own\n",
         // `joinArg`: each arm flows to the parameter of `List.map`, so the write is a demand on `xs`.
-        "  45:9 call List.map xs[*]: rejected later-use: it is read again at 53:22 (<call List.length>)\n",
+        // `List.length xs` reads the outer array alone (`borrowed shallow`), never the elements the
+        // map wrote, so the write is safe; `joinArgLive` reads the elements after it.
+        "  45:9 call List.map xs[*]: accepted fresh\n",
+        "  144:9 call List.map xs[*]: rejected later-use: it is read again at 152:22 (<call List.foldl>)\n",
         "  60:9 value <call>: rejected call: a function that writes its parameter goes where the checker does not follow it\n",
         // `later`: `b` was called before it was bound. `a` and `b` call each
         // other, so they are walked as one group: `a` hands `q` to `b`, which
@@ -2849,8 +2867,8 @@ test "ownership v3: the faults of round 2 are refused" {
         // `ansTwice`: the two elements are one answer of `f`.
         "  136:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         // Report 111's prototype accepted each of the 14 demands that it made here.
-        // The two more are the writes of `later`'s group in its own frames.
-        "total 26: accepted 16 (fresh 2, call 1, param 0, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
+        // The two more are the writes of `later`'s group in its own frames; `joinArgLive` adds two.
+        "total 28: accepted 18 (fresh 3, call 1, param 0, callback-param 14, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -4195,12 +4213,22 @@ test "ownership v3 (the step 0 prototype): the two faults that the generator fou
         \\    v3 = [ …q, 8 ]
         \\    List.length v3 + List.length v0
         \\
+        \\
+        \\pub twiceLive : List Int → Int
+        \\twiceLive q =
+        \\    v0 = [ q, q ]
+        \\    v3 = [ …q, 8 ]
+        \\    List.length v3 + List.foldl v0 0 λl n → n + List.length l
+        \\
     );
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Gen.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     for ([_][]const u8{
         "  18:21 List.push v0.a: rejected later-use: it is read again at 19:5 (<call List.length>)\n",
-        "  25:12 construction q: rejected later-use: it is read again at 26:22 (<call List.length>)\n",
+        // `twice`: `List.length v0` reads `v0`'s own array, not the list `q` it holds twice, so the push
+        // is safe (`List.length` is `borrowed shallow`); `twiceLive` reads `q` through `v0` after it.
+        "  25:12 construction q: accepted param\n",
+        "  32:12 construction q: rejected later-use: it is read again at 33:22 (<call List.foldl>)\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });

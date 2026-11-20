@@ -181,7 +181,7 @@ plainOf x =
 --| Determine the length of a list. O(1).
 --|
 --|     length [ 1, 2, 3 ] == 3
-pub foreign pure length : borrowed List a → Int
+pub foreign pure length : borrowed shallow List a → Int
 
 
 --| Two lists are equal when they have the same elements, in the same order,

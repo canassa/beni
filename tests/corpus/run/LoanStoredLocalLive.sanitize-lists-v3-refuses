@@ -1,0 +1,2 @@
+# The list built from the loan is read through its element after the update: refused (ownership-v3-kernel.md §13, #2584).
+21:5 list_still_used call
