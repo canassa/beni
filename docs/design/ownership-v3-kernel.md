@@ -2454,8 +2454,10 @@ contents of a cell are locations, and that a call can change what a location of 
       made it, where that is one), and at each return point (`?`, the end): as a call that runs it
       within (item 11), it reads what its contract reads of the capture there, its write is a demand at
       that call on the frame's latest version, of what an earlier run stored too, judged against the
-      call's operands (but a handle read through itself, and a closure's capture of the handle, which
-      read the contents where they run, unless the closure answers something of the capture, lets it
+      call's operands (but a handle read through itself where the callee's parameter there has a cell's
+      layout, so the callee follows it and its probes mark it, `followedOps`: a handle at a type variable
+      or handed to code the walk does not know is an operand, `run/CellFibersInPlaceLive`'s `generic` and
+      `handedOn`; and a closure's capture of the handle, which read the contents where they run, unless the closure answers something of the capture, lets it
       escape or stores it, `keepsCapture`: the callee can hold that loan, or the handle, across its own
       switch points, `run/CellFibersInPlaceLive`'s `getter`; at a return point, the answer) and the writer's other
       captures, and its renewal makes a version that keeps the old contents (`maybe`). So a value taken

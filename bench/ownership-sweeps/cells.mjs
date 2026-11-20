@@ -36,7 +36,8 @@
 //   the reader completes after its take), `queue` (the handle goes to the writer fiber through a
 //   `Queue`), `parkLater` (`park` with the writer's fiber spawned first), `peek` (the writer's fiber,
 //   then a helper that takes a value out of the cell, parks and reads it), `getter` (the same through a
-//   function the helper is handed, which answers a value taken out of the cell; kernel §13 item 12).
+//   function the helper is handed, which answers a value taken out of the cell), `generic` (the same through a generic helper
+//   handed the cell at a type variable; kernel §13 item 12).
 //
 // The twin is `live` when the reader reads an old value after the write (a `loan` or `stored` reader, and
 // the `cell` reader of `getW`), `dead` otherwise. A refusal of a `dead` twin is a precision loss; a TRAP or
@@ -84,11 +85,11 @@ const HOLDERS = {
 };
 
 const READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'name2', 'name2cell', 'store2', 'storeK'];
-const FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek', 'getter'];
+const FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek', 'getter', 'generic'];
 
 function isLive(writer, reader, fibers) {
   // `peek`'s helper reads a value it took before its park, while the writer writes.
-  if ((fibers === 'peek' || fibers === 'getter') && writer !== 'getW') return true;
+  if ((fibers === 'peek' || fibers === 'getter' || fibers === 'generic') && writer !== 'getW') return true;
   if (writer === 'closTwiceStore' || writer === 'closOther') return true;
   if (reader === 'loan' || reader === 'stored' || reader === 'mid' || reader === 'name2' || reader === 'store2' || reader === 'storeK') return true;
   if (reader === 'name2cell') return writer === 'getW';
@@ -125,6 +126,9 @@ function gen(cname, maker, writer, reader, holder, fibers) {
   } else if (fibers === 'peek') {
     // The writer's fiber spawned, then a helper that takes a value out of the cell, parks and reads it.
     lines.push(`b = Task.spawn λ⊤ →\n${ind(['Io.sleep 1', ...wr.lines, wr.shown].join('\n'), 4)}`, 'ra = peek r', 'rb = Task.join b', '[ rb, ra ]');
+  } else if (fibers === 'generic') {
+    // `peek` through a generic helper handed the cell at a type variable.
+    lines.push(`b = Task.spawn λ⊤ →\n${ind(['Io.sleep 1', ...wr.lines, wr.shown].join('\n'), 4)}`, 'ra = holdAt r λh → Ref.get h', 'rb = Task.join b', '[ rb, ra ]');
   } else if (fibers === 'getter') {
     // `peek` through a function that answers a value taken out of the cell.
     lines.push(`b = Task.spawn λ⊤ →\n${ind(['Io.sleep 1', ...wr.lines, wr.shown].join('\n'), 4)}`, 'ra = peekWith λ⊤ → Ref.get r', 'rb = Task.join b', '[ rb, ra ]');
@@ -151,6 +155,7 @@ function gen(cname, maker, writer, reader, holder, fibers) {
     // The write in a fiber that the reader joins.
     lines.push(...take, `b = Task.spawn λ⊤ →\n${ind([...wr.lines, wr.shown].join('\n'), 4)}`, 'rb = Task.join b', `[ rb, ${readOld} ]`);
   }
+  const holdAt = fibers === 'generic' ? `holdAt : a, (a → ${c.t}) → String\nholdAt x g =\n    old = g x\n    Io.sleep 5\n    ${c.show} old\n\n\n` : '';
   const peekWith = fibers === 'getter' ? `peekWith : (⊤ → ${c.t}) → String\npeekWith g =\n    old = g ⊤\n    Io.sleep 5\n    ${c.show} old\n\n\n` : '';
   const peek = fibers === 'peek' ? `peek : Ref ${/\s/.test(c.t) ? `(${c.t})` : c.t} → String\npeek h =\n    old = Ref.get h\n    Io.sleep 5\n    ${c.show} old\n\n\n` : '';
   const fromQueue = fibers === 'queue' ? `fromQueue : Queue (Ref ${/\s/.test(c.t) ? `(${c.t})` : c.t}) → String\nfromQueue q =\n    case Queue.take q of\n        Just r →\n${ind([...wr.lines, wr.shown].join('\n'), 12)}\n\n        Nothing →\n            "-"\n\n\n` : '';
@@ -206,7 +211,7 @@ wrapFn : (Int → Int) → (Int → Int)
 wrapFn f = λx → f x
 
 
-${fromQueue}${peek}${peekWith}${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
+${fromQueue}${peek}${peekWith}${holdAt}${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
 ${ind(lines.join('\n'), 4)}
 
 

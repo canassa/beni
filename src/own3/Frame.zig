@@ -6693,7 +6693,7 @@ fn switchAt(f: *const Frame, inst: u32) bool {
 /// writes a cell the frame made and runs in another fiber runs
 /// (`runWriter`), and the contents of each tracked parameter's and
 /// capture's cells are probed and renamed (`probeCells`).
-fn switchPoint(f: *Frame, inst: u32, ops: []const Val) Error!void {
+fn switchPoint(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract) Error!void {
     if (!f.switchAt(inst)) return;
     f.switched = true;
     if (!f.cells_any) return;
@@ -6711,15 +6711,33 @@ fn switchPoint(f: *Frame, inst: u32, ops: []const Val) Error!void {
         for (f.writers.items) |w| try f.cell_marked.put(f.gpa, .{ w.o, w.e }, {});
         return;
     }
-    for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, ops);
-    try f.probeCells(inst, ops);
+    const followed = try f.followedOps(ops.len, c);
+    defer f.gpa.free(followed);
+    for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, ops, followed);
+    try f.probeCells(inst, ops, followed);
+}
+
+/// Per operand of a call whose contract is `c` (or none: unknown code):
+/// whether a handle there is one the callee follows, a parameter whose
+/// layout has a cell, so its walk probes the contents and publishes the
+/// mark (item 12). A handle at a type variable, or handed to code the walk
+/// does not know, is no handle read through itself.
+fn followedOps(f: *Frame, n: usize, c: ?*const Contract) Error![]bool {
+    const out = try f.gpa.alloc(bool, n);
+    for (out, 0..) |*x, i| {
+        x.* = false;
+        const cc = c orelse continue;
+        if (i >= cc.arity) continue;
+        x.* = (try f.innerOf(cc.layouts[i])).len != 0;
+    }
+    return out;
 }
 
 /// Whether the operand `o` of a switch point reaches the contents `ws` of
 /// the cell of tracked root `root`: a handle read through itself, and a
 /// closure's capture of it, read the contents where they read them.
-fn opReaches(f: *Frame, o: Val, ws: []const Atom, root: u32) Error!bool {
-    if (o == v_none or o == v_outside or f.isHandleOf(o, root)) return false;
+fn opReaches(f: *Frame, o: Val, ws: []const Atom, root: u32, follow: bool) Error!bool {
+    if (o == v_none or o == v_outside or (follow and f.isHandleOf(o, root))) return false;
     if (f.nodes.items[o].tag == .closure) {
         const code = f.codes.items[f.nodes.items[o].a];
         for (0..code.ncaps) |k| {
@@ -6728,7 +6746,7 @@ fn opReaches(f: *Frame, o: Val, ws: []const Atom, root: u32) Error!bool {
                 if (try f.otherReaches(.{ .v = cv }, ws, none, &.{})) return true;
                 continue;
             }
-            if (try f.opReaches(cv, ws, root)) return true;
+            if (try f.opReaches(cv, ws, root, true)) return true;
         }
         return false;
     }
@@ -6767,7 +6785,7 @@ fn isHandleOf(f: *const Frame, v: Val, o: u32) bool {
 /// no diagnostic. Then the contents get a new name for probes
 /// (`renameContents`): a value taken out of the cell after the call is no
 /// value taken before it.
-fn probeCells(f: *Frame, inst: u32, ops: []const Val) Error!void {
+fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Error!void {
     const at = f.timeOf(inst);
     for (f.params.items) |root| {
         const r = f.roots.items[root];
@@ -6793,7 +6811,7 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val) Error!void {
             f.judge_ctx = f.cur_ctx;
             f.judge_at = at;
             f.judge_probe = true;
-            for (ops) |o| if (try f.opReaches(o, ws, root)) {
+            for (ops, 0..) |o, oi| if (try f.opReaches(o, ws, root, oi < followed.len and followed[oi])) {
                 refused = true;
                 break;
             };
@@ -7032,7 +7050,7 @@ fn isWriter(f: *const Frame, code: Code, k: usize) bool {
 /// the cell, which writes it in its own fiber) and the closure's other
 /// captures, of what an earlier run stored too, and its renewal makes a
 /// version that keeps the old contents (it may not run here).
-fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val) Error!void {
+fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []const bool) Error!void {
     const m = f.m;
     const code = f.codes.items[w.code];
     const lc = code.contract;
@@ -7045,8 +7063,8 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val) Error!void {
     try f.readBy(capv, inst, sig, lc.flags[lc.off[j]..lc.off[j + 1]]);
     var others: std.ArrayList(Other) = .empty;
     defer others.deinit(f.gpa);
-    for (ops) |o| {
-        if (o == v_none or o == v_outside or f.isHandleOf(o, w.o)) continue;
+    for (ops, 0..) |o, oi| {
+        if (o == v_none or o == v_outside or (oi < followed.len and followed[oi] and f.isHandleOf(o, w.o))) continue;
         if (f.nodes.items[o].tag == .closure) {
             // A closure reads a handle it captured where it runs.
             const oc = f.codes.items[f.nodes.items[o].a];
@@ -7113,7 +7131,7 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val) Error!void {
 fn writersAtReturn(f: *Frame, point: u32, v: Val) Error!void {
     if (f.writers.items.len == 0) return;
     try f.flushShare();
-    for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], point, &.{v});
+    for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], point, &.{v}, &.{});
 }
 
 /// At the end of the walk: a writer whose cell got another holder after it
@@ -7237,7 +7255,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     {
         try vals.append(f.gpa, callee_val);
         defer _ = vals.pop();
-        try f.switchPoint(inst, vals.items);
+        try f.switchPoint(inst, vals.items, if (code) |c| c.contract else null);
     }
     const writers_before = f.writers.items.len;
     // A call in a hole of markup can run after the other holes (`markup`).
@@ -7263,7 +7281,9 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     };
     // A writer that went out of sight at this call can run within it.
     if (f.writers.items.len > writers_before and f.switchAt(inst)) {
-        for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items);
+        const followed = try f.followedOps(vals.items.len, if (code) |c| c.contract else null);
+        defer f.gpa.free(followed);
+        for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items, followed);
     }
     const named = m.tags[callee] == .top or m.tags[callee] == .ext_value;
     try f.noteJsSite(.{ if (named) callee else none, inst }, vals.items, result, f.casts and !casts_before);
@@ -7515,7 +7535,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     }
     const derived = try f.evidence(inst);
     // Another fiber can run inside the call (kernel §13 item 12).
-    try f.switchPoint(inst, vals.items);
+    try f.switchPoint(inst, vals.items, if (code) |c| c.contract else null);
     const writers_before = f.writers.items.len;
     const casts_before = f.casts;
     const result: Val = blk: {
@@ -7532,7 +7552,9 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         break :blk try f.unknownResult(inst, vals.items);
     };
     if (f.writers.items.len > writers_before and f.switchAt(inst)) {
-        for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items);
+        const followed = try f.followedOps(vals.items.len, if (code) |c| c.contract else null);
+        defer f.gpa.free(followed);
+        for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items, followed);
     }
     try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
     return result;

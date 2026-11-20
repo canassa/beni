@@ -6,8 +6,11 @@
 -- reads it; a reader fiber that does so, spawned after the writer; a helper
 -- that does so; a writer whose answer, which `Task.join` hands back, is a
 -- loan; an update whose function runs other fibers while it holds the
--- contents; and a helper handed a function that answers a value taken out of
--- the cell, or the cell, which it holds across its park. Were a write accepted, the loan would read it in place.
+-- contents; a helper handed a function that answers a value taken out of
+-- the cell, or the cell, which it holds across its park; and a generic
+-- helper handed the cell at a type variable, which holds a value taken out
+-- of it, or hands it to a function that does. Were a write accepted, the
+-- loan would read it in place.
 import Io
 import List
 import Node exposing (Program)
@@ -137,6 +140,38 @@ cellGetter ⊤ =
     got
 
 
+holdAt : a, (a → List Int) → String
+holdAt x g =
+    old = g x
+    Task.yieldNow ⊤
+    ints old
+
+
+generic : ⊤ → String
+generic ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ → Ref.update log λl → List.push l 2
+    got = holdAt log λh → Ref.get h
+    Task.join b
+    got
+
+
+withIt : a, (a → String) → String
+withIt x k = k x
+
+
+handedOn : ⊤ → String
+handedOn ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ → Ref.update log λl → List.push l 2
+    got = withIt log λh →
+        old = Ref.get h
+        Task.yieldNow ⊤
+        ints old
+    Task.join b
+    got
+
+
 main : Program
 main = Io.run λ⊤ →
     Node.printLines
@@ -148,4 +183,6 @@ main = Io.run λ⊤ →
         , switching ⊤
         , getter ⊤
         , cellGetter ⊤
+        , generic ⊤
+        , handedOn ⊤
         ]

@@ -347,22 +347,18 @@ tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 31:37 #0 :
 tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 27:8 #0 :: EvidenceDagBuildDepth32.w5 <call> :: rejected :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write the argument of its outer call; v2 knows `w5` writes nothing (#1714)
 tests/corpus/run/EvidenceDagBuildDepth32.beni EvidenceDagBuildDepth32 27:12 #0 :: EvidenceDagBuildDepth32.w5 x :: accepted :: absent  v1's summary of `w5` is past its limits, so `w6` is taken to write `x`; v2 knows `w5` writes nothing (#1714)
 # v2 refuses where v1 accepted (S3b): a canonical path folds the recursive children.
-
 # v2 reads a comparison through its components (ownership-v2.md §2.13.13); v1 has no row for a
 # derived or container comparison, and holds the user-written one pending.
 tests/corpus/ownership/ContainerOverWriterLocal.beni [node] ContainerOverWriterLocal 19:29 #0 :: value ContainerOverWriterLocal.compare :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
 tests/corpus/ownership/ContainerOverWriter [node] Main 12:33 #0 :: value Key.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
 tests/corpus/ownership/ContainerOverWriter [node] Main 8:33 #0 :: value Key.compare :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
-
 # v2 reads a private comparison through a derived or container one (ownership-v2.md §2.13.13).
 tests/corpus/ownership/PrivateEqThroughShapes.beni [node] PrivateEqThroughShapes 29:27 #0 :: value PrivateEqThroughShapes.eq :: pending :: absent  v1 holds the private comparison pending; v2 applies its class at the comparison that reaches it
-
 # v2 composes a derived comparison from the user-written ones its type reaches, at the places they occur (ownership-v2.md §2.13.13).
 # v2 writes a fresh value holding a parameter through a comparison's component; v1 loses the write (#1349).
 tests/corpus/ownership/CmpFresh.beni [node] CmpFresh 25:27 #0 :: value CmpFresh.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
 tests/corpus/ownership/CmpFreshImported [node] Main 16:33 #0 :: value Inner.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
 # v2 writes a fresh value holding a parameter through a comparison's component under a recursive type; v1 loses the write (#1349).
-
 # v2 composes a derived comparison from a component that writes below its first field (ownership-v2.md §2.13.13), and reads a deep demand as a write of everything its base reaches (§2.8).
 tests/corpus/ownership/CmpDeepImported [node] Main 13:16 #0 :: value Outer2.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
 tests/corpus/ownership/CmpDeepImported [node] Main 43:17 #0 :: value Outer3.eq :: pending :: absent  v1 holds the user-written comparison pending; v2 applies its class at the comparison that reaches it
@@ -5211,7 +5207,6 @@ tests/corpus/run/CellMovesSlots.beni CellMovesSlots 141:5 #0 :: CellMovesSlots.p
 tests/corpus/run/CellMovesSlots.beni CellMovesSlots 141:5 #0 :: CellMovesSlots.partial r◆.0 :: absent :: rejected  v1 checks no cell operation; v2 refuses the edit of a cell's contents, §2.13.7's rules
 tests/corpus/run/CellMovesSlots.beni CellMovesSlots 142:5 #0 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 accepts the cell operation, and a cell callback's edit with no loan live (§2.13.7, #1729)
 tests/corpus/run/CellMovesSlots.beni CellMovesSlots 142:5 #0 :: Ref.update r◆.1 :: absent :: rejected  v1 checks no cell operation; v2 refuses the edit of a cell's contents, §2.13.7's rules
-
 tests/corpus/ownership/LoanNames.beni [node] LoanNames 32:41 #0 :: List.map m[*] :: rejected :: accepted  v2 reads a list element of a cell as separated by its stores (§2.13.7, *The contents relation*)
 tests/corpus/run/BuilderCallbackSharing.beni BuilderCallbackSharing 26:32 #0 :: List.push l :: rejected :: accepted  both refuse this write: v2 at the call (the shared top-level list); v1 at the callback's write
 tests/corpus/run/CallbackPairFresh.beni CallbackPairFresh 30:10 #0 :: List.push a :: rejected :: accepted  v1 cannot tell the wrapper's two answers apart; v2 accepts the write of a fresh actual's answer (R-5.2.9)
@@ -5584,7 +5579,6 @@ tests/corpus/browser/dedicated/RealmGenericTransitiveSafe Main 19:15 #0 :: Main.
 tests/corpus/browser/dedicated/RealmConcretePageWorkerSafe Main 23:13 #0 :: Ref.set r◆ :: absent :: accepted  v2 words generic Ref writes and their consumed payloads; v1 has no cell-writer row (#1079)
 tests/corpus/browser/dedicated/RealmGenericLocalSafe Main 16:13 #0 :: Ref.set r◆ :: absent :: accepted  v2 words generic Ref writes and their consumed payloads; v1 has no cell-writer row (#1079)
 tests/corpus/browser/dedicated/RealmGenericLocalSafe Main 16:13 #0 :: Ref.set x :: absent :: accepted  v2 words generic Ref writes and their consumed payloads; v1 has no cell-writer row (#1079)
-
 # Existing opt-in v2 storage gaps exposed by the worker realm fixtures (#2127).
 tests/corpus/browser/dedicated/RealmConcretePageWorkerSafe Main 26:11 #0 :: Main.store Main.cell◆ :: absent :: rejected  #2127: existing master gap; v2 adds storage demands absent from v1 (top-level cells are rejected); worker behavior is not ownership enforcement
 tests/corpus/browser/dedicated/RealmConcretePageWorkerSafe Main 51:5 #0 :: Main.store Main.pageCell◆ :: absent :: rejected  #2127: existing master gap; v2 adds storage demands absent from v1 (top-level cells are rejected); worker behavior is not ownership enforcement
@@ -7075,7 +7069,6 @@ tests/corpus/run/NonRegularMatchRelease.beni NonRegularMatchRelease 30:58 #0 :: 
 tests/corpus/run/FamilyFunctionRun.beni FamilyFunctionRun 27:9 #0 :: FamilyFunctionRun.run <lambda> :: absent :: rejected  a family's one place graph (ownership-v2.md §2.1, A family, #2214): v2 names the write at the caller
 tests/corpus/run/NonRegularMatchRelease.beni NonRegularMatchRelease 30:36 #0 :: NonRegularMatchRelease.f <lambda> :: absent :: rejected  a family's one place graph (ownership-v2.md §2.1, A family, #2214): v2 names the write at the caller
 tests/corpus/browser/gpu/CanvasPage Main 126:5 #0 :: entry <update> model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
-
 tests/corpus/run/SanitiserRowConvergesShared.beni SanitiserRowConvergesShared 36:37 #0 :: List.push s.b :: rejected :: accepted  v1 refuses at the callback; v2 accepts it there and refuses at the call
 tests/corpus/run/SanitiserRowConvergesShared.beni SanitiserRowConvergesShared 36:9 #0 :: SanitiserRowConvergesShared.ev <record>.b :: absent :: rejected  v2's demand at the call names the argument's field; v1 has none there
 tests/corpus/run/SanitiserRowConvergesShared.beni SanitiserRowConvergesShared 36:9 #1 :: SanitiserRowConvergesShared.ev <record>.b :: absent :: rejected  v2's demand at the call names the argument's field; v1 has none there
@@ -9174,7 +9167,6 @@ tests/corpus/browser/tea/KeyAltered Main 42:5 #0 :: Ref.set b :: absent :: accep
 tests/corpus/run/HandedListElements.beni HandedListElements 27:11 #0 :: HandedListElements.app <literal>[*] :: accepted :: rejected  v1 refuses the lambda's write of the list it is handed and v2 the call that hands it one list twice; v3 refuses the call (ownership-v3-kernel.md §5, test 1)
 tests/corpus/run/HandedListElements.beni HandedListElements 27:29 #0 :: List.map l[*] :: rejected :: accepted  v1 refuses the lambda's write of the list it is handed and v2 the call that hands it one list twice; v3 refuses the call (ownership-v3-kernel.md §5, test 1)
 tests/corpus/run/HandedListElements.beni HandedListElements 27:29 #0 :: value HandedListElements.push1 :: accepted :: absent  v1 refuses the lambda's write of the list it is handed and v2 the call that hands it one list twice; v3 refuses the call (ownership-v3-kernel.md §5, test 1)
-
 # The run/ fixtures of research report 158, written for v3: the canonical path text (§2.2) of a
 # recursive type's levels, and v1's and v2's own verdicts on a dictionary's levels. Neither checker changed.
 tests/corpus/run/TreePartsApart.beni TreePartsApart 27:19 #0 :: TreePartsApart.bumpAll l⟨Tree⟩#Node.1.xs :: accepted :: absent  canonical path text (§2.2) or v1's and v2's own verdict on a fixture written for v3 (research report 158)
@@ -9597,59 +9589,71 @@ tests/corpus/run/CellFibersInPlace.beni CellFibersInPlace 75:25 #0 :: Ref.update
 tests/corpus/run/CellFibersInPlace.beni CellFibersInPlace 75:25 #0 :: Ref.update t◆.items :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
 tests/corpus/run/CellFibersInPlace.beni CellFibersInPlace 75:57 #0 :: List.push k.items :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
 tests/corpus/run/CellFibersInPlace.beni CellFibersInPlace 75:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 112:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 113:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 113:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 115:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 115:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 115:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 131:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 132:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 132:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 134:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 134:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 134:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 25:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 27:20 #0 :: once log◆ :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 27:25 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 27:25 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 27:45 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 27:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 34:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 39:20 #0 :: once log◆ :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 39:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 41:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 41:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 41:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 48:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 49:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 49:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 51:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 51:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 51:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 69:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 70:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 70:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 72:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 72:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 72:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 80:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 82:20 #0 :: once log◆ :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 82:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 84:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 84:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 84:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 92:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 93:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 93:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 94:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 94:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 96:13 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 97:20 #0 :: once log◆ :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 97:25 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 97:25 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 97:45 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
-tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 97:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 100:20 #0 :: once log◆ :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 100:25 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 100:25 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 100:45 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 100:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 115:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 116:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 116:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 118:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 118:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 118:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 134:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 135:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 135:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 137:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 137:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 137:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 152:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 153:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 153:25 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 153:25 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 153:45 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 153:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 165:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 166:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 166:25 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 166:25 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 166:45 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 166:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 28:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 30:20 #0 :: once log◆ :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 30:25 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 30:25 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 30:45 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 30:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 37:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 42:20 #0 :: once log◆ :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 42:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 44:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 44:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 44:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 51:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 52:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 52:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 54:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 54:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 54:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 72:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 73:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 73:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 75:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 75:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 75:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 83:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 85:20 #0 :: once log◆ :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 85:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 87:29 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 87:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 87:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 95:11 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 96:20 #0 :: once log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 96:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 97:9 #0 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 97:9 #1 :: Ref.update log◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellFibersInPlaceLive.beni CellFibersInPlaceLive 99:13 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
 tests/corpus/run/CellClosureWrites.beni CellClosureWrites 34:33 #0 :: List.push xs :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
 tests/corpus/run/CellClosureWrites.beni CellClosureWrites 43:35 #0 :: List.push xs :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
 tests/corpus/run/CellClosureWrites.beni CellClosureWrites 50:54 #0 :: List.push xs :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
