@@ -13,6 +13,9 @@
 // - writer: `upd` (`Ref.update` with a function that writes its parameter), `mod` (`Ref.modify`),
 //   `getSet` (`Ref.set r (w (Ref.get r))`), `helper` (a function that takes the cell and updates it),
 //   `getW` (a write of what `Ref.get` answered, not put back: the cell still holds the written value);
+//   a closure that captured the handle and updates the cell (kernel §13 item 11): `clos` (called
+//   directly), `closApply` (handed to a function that calls it), `closMap` (run by `List.map`),
+//   `closScope` (run by `Task.scope`);
 // - reader: `none` (nothing old is read after the write), `cell` (`Ref.get r` after the write), `loan`
 //   (a value `Ref.get` answered before the write, read after it), `stored` (the value the cell was made
 //   with, read after the write), `mid` (a value `Ref.get` answered between two writes, read after the
@@ -49,6 +52,10 @@ const WRITERS = {
   getSet: (c, s = '') => ({ lines: [`Ref.set r (${c.w('(Ref.get r)')})`], shown: '"s"' }),
   helper: (c, s = '') => ({ lines: ['bump r'], shown: '"h"' }),
   getW: (c, s = '') => ({ lines: [`w${s} = ${c.w('(Ref.get r)')}`], shown: `${c.show} w` }),
+  clos: (c, s = '') => ({ lines: [`wr${s} = λ⊤ → Ref.update r λv → ${c.w('v')}`, `wr${s} ⊤`], shown: '"c"' }),
+  closApply: (c, s = '') => ({ lines: [`apply λ⊤ → Ref.update r λv → ${c.w('v')}`], shown: '"a"' }),
+  closMap: (c, s = '') => ({ lines: [`_ = List.map [ 1 ] λ_ → Ref.update r λv → ${c.w('v')}`], shown: '"m"' }),
+  closScope: (c, s = '') => ({ lines: [`Task.scope λ_ → Ref.update r λv → ${c.w('v')}`], shown: '"o"' }),
 };
 
 // A holder of the loan `old`: the line that keeps it, and the expression that reads it back.
@@ -125,6 +132,10 @@ fstOf ( a, _ ) = a
 
 withHandle : Ref a → Ref a × Int
 withHandle h = ( h, 1 )
+
+
+apply : (⊤ → ⊤) → ⊤
+apply g = g ⊤
 
 
 ${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}

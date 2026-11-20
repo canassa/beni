@@ -2382,7 +2382,7 @@ contents of a cell are locations, and that a call can change what a location of 
     A park needs no rule of its own while the frame follows a handle: no other fiber holds it. The
     owner's loan rule for a cell that two fibers hold (#981: a loan may not stay alive across a
     suspension point) is not built: such a cell is shared, and a write of its contents is refused, with
-    the copy fix (research report 165 §6, slice 4).
+    the copy fix (research report 165 §6, slice 4; #2581).
 
 11. **A closure writes the contents of a cell it captured** (`Frame.captureContents`, `captureCells`).
     A capture whose layout has a handle is followed as a parameter is (`Root.tracked`): the code that
