@@ -27,10 +27,10 @@ collect : ⊤ → String
 collect ⊤ =
     log = Ref.make []
     a = Task.spawn λ⊤ →
-        Io.sleep 2
+        Io.sleep 40
         Ref.update log λl → List.push l 1
     b = Task.spawn λ⊤ →
-        Io.sleep 1
+        Io.sleep 10
         Ref.update log λl → List.push l 2
     Task.join a
     Task.join b
@@ -42,13 +42,13 @@ parked ⊤ =
     log = Ref.make [ 0 ]
     a = Task.spawn λ⊤ →
         Ref.update log λl → List.push l 1
-        Io.sleep 3
+        Io.sleep 90
         Ref.update log λl → List.push l 2
     b = Task.spawn λ⊤ →
-        Io.sleep 1
+        Io.sleep 10
         Ref.update log λl → List.push l 3
     c = Task.spawn λ⊤ →
-        Io.sleep 2
+        Io.sleep 50
         Ref.update log λl → List.push l 4
     Task.join a
     Task.join b
