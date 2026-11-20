@@ -1,0 +1,6 @@
+# A closure that writes a captured cell reads its contents where the code that runs it runs it: a value taken out of the cell, another cell holding the contents, or a list in the cell, written in place before the call (List.map, a function that calls it, Task.scope) is refused (ownership-v3-kernel.md §13 item 11).
+29:9 list_still_used List.push
+38:9 list_still_used List.push
+47:9 list_still_used List.push
+57:5 list_still_used call
+66:9 list_still_used List.push

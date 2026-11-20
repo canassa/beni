@@ -15,7 +15,11 @@
 //   `getW` (a write of what `Ref.get` answered, not put back: the cell still holds the written value);
 //   a closure that captured the handle and updates the cell (kernel §13 item 11): `clos` (called
 //   directly), `closApply` (handed to a function that calls it), `closMap` (run by `List.map`),
-//   `closScope` (run by `Task.scope`);
+//   `closScope` (run by `Task.scope`); `closTwice` (run twice by a helper), `closTwiceStore` and
+//   `closTwiceStoreDead` (the same, storing a captured value after the update, which is read after or
+//   not), `closWrap` (handed to a helper that answers a wrapper of it, which the frame calls) and
+//   `closOther` (a second cell holds the contents, which the frame writes before a closure updates the
+//   second cell; #2586);
 // - reader: `none` (nothing old is read after the write), `cell` (`Ref.get r` after the write), `loan`
 //   (a value `Ref.get` answered before the write, read after it), `stored` (the value the cell was made
 //   with, read after the write), `mid` (a value `Ref.get` answered between two writes, read after the
@@ -56,6 +60,14 @@ const WRITERS = {
   closApply: (c, s = '') => ({ lines: [`apply λ⊤ → Ref.update r λv → ${c.w('v')}`], shown: '"a"' }),
   closMap: (c, s = '') => ({ lines: [`_ = List.map [ 1 ] λ_ → Ref.update r λv → ${c.w('v')}`], shown: '"m"' }),
   closScope: (c, s = '') => ({ lines: [`Task.scope λ_ → Ref.update r λv → ${c.w('v')}`], shown: '"o"' }),
+  // #2586: a closure `twice` runs, which stores a captured value after its update (read after: live;
+  // unread: by the reader), a wrapper of the closure that a callee answers, and a second cell that holds
+  // the contents, written by the frame before a closure `apply` runs updates it.
+  closTwice: (c, s = '') => ({ lines: [`twice λ⊤ → Ref.update r λv → ${c.w('v')}`], shown: '"t"' }),
+  closTwiceStore: (c, s = '') => ({ lines: [`v9${s} = ${c.init}`, `twice λ⊤ →\n    Ref.update r λv → ${c.w('v')}\n    Ref.set r v9${s}`], shown: `${c.show} v9${s}` }),
+  closTwiceStoreDead: (c, s = '') => ({ lines: [`v9${s} = ${c.init}`, `twice λ⊤ →\n    Ref.update r λv → ${c.w('v')}\n    Ref.set r v9${s}`], shown: '"d"' }),
+  closWrap: (c, s = '') => ({ lines: [`g${s} = wrapFn λx →\n    Ref.update r λv → ${c.w('v')}\n    x`, `_ = g${s} 1`], shown: '"w"' }),
+  closOther: (c, s = '') => ({ lines: [`r9${s} = Ref.make (${c.init})`, `Ref.set r9${s} (Ref.get r)`, `Ref.update r λv → ${c.w('v')}`, `apply λ⊤ → Ref.update r9${s} λv → ${c.w('v')}`], shown: `${c.show} (Ref.get r9${s})` }),
 };
 
 // A holder of the loan `old`: the line that keeps it, and the expression that reads it back.
@@ -69,6 +81,7 @@ const READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'name2', 'name2cell', 
 const FIBERS = ['same', 'parkSelf', 'park', 'writer'];
 
 function isLive(writer, reader) {
+  if (writer === 'closTwiceStore' || writer === 'closOther') return true;
   if (reader === 'loan' || reader === 'stored' || reader === 'mid' || reader === 'name2' || reader === 'store2' || reader === 'storeK') return true;
   if (reader === 'name2cell') return writer === 'getW';
   return reader === 'cell' && writer === 'getW';
@@ -136,6 +149,16 @@ withHandle h = ( h, 1 )
 
 apply : (⊤ → ⊤) → ⊤
 apply g = g ⊤
+
+
+twice : (⊤ → ⊤) → ⊤
+twice f =
+    f ⊤
+    f ⊤
+
+
+wrapFn : (Int → Int) → (Int → Int)
+wrapFn f = λx → f x
 
 
 ${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}

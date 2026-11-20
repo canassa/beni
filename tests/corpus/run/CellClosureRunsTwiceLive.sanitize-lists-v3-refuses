@@ -1,0 +1,7 @@
+# A closure a callee can run more than once writes in place, on a later run, what an earlier run stored in the cell (a captured list, another cell's contents, an answer of the update's function; twice, List.map, List.foldl, a spawned reader): refused (ownership-v3-kernel.md §13 item 11).
+33:5 list_still_used call
+43:5 list_still_used call
+53:5 list_still_used call
+61:9 list_still_used call
+71:9 list_still_used call
+85:5 list_still_used call

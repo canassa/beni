@@ -9491,9 +9491,24 @@ fn runsWithin(use: *const Use) ?*const Use {
     var u = use;
     while (true) {
         if (u.kind == .top or lostAt(u)) return null;
+        // A holder that answers the function, or lets it escape, can run it
+        // after the call as well: a wrapper `λx → f x` it answers runs `f`
+        // where the frame calls the wrapper, any number of times (kernel
+        // §13 item 11).
+        if (keepsFn(u)) return null;
         if (u.kind == .call) return u;
         u = u.up orelse return null;
     }
+}
+
+/// Whether the holder at `use` answers the function at its location, or
+/// lets it escape: its contract has `flag_a` or `flag_e` there.
+fn keepsFn(use: *const Use) bool {
+    if (use.kind == .top or use.j == none) return false;
+    const c = use.c;
+    if (use.j >= c.arity) return true;
+    for (c.flags[c.off[use.j]..c.off[use.j + 1]]) |x| if (x & (flag_a | flag_e) != 0) return true;
+    return false;
 }
 
 /// What the known function `code` does to the cells it captured, where it
@@ -9570,6 +9585,11 @@ fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
             if (lc.renewAt(lc.off[j] + e) != null) rk = true;
         };
         if (!wk and !rk) continue;
+        // The code reads what it writes and renews where it runs, at the
+        // cell's version before its renewal: a write of the contents made
+        // before the call is judged against that read, as against a direct
+        // call's (`apply` reads every argument).
+        try f.readBy(capv, site.inst, sig, lc.flags[lc.off[j]..lc.off[j + 1]]);
         // The handles of the capture: is another operand holding one?
         const hs: u32 = @intCast(f.atoms.items.len);
         for (ses, 0..) |he, h| if (he.kind == .cell) {
@@ -9598,6 +9618,20 @@ fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
             }
             const w: u32 = @intCast(f.atoms.items.len);
             const dup = try f.argLeaves(capv, sig, @intCast(e), &.{}, false, &f.atoms);
+            // The callee can run the function more than once within the
+            // call: a later run writes what an earlier one stored in the
+            // cell. So the write is of each value the renewal of the cell's
+            // contents names at the written location too: a capture's cells
+            // (another location of the cell's own contents among them), outside
+            // the frame's (outside, or a value the callee handed, which no rule
+            // names here), and not a cell the function made in its run.
+            if (lc.renewAt(lc.off[j] + e)) |srcs| for (srcs) |s| switch (s.kind) {
+                .fresh, .twice => {},
+                .outside, .answer => try f.atoms.append(f.gpa, outside_atom),
+                .param => if (s.a == j and s.e == e) {} else if (s.a >= code.own_params and s.a < lc.arity) {
+                    _ = try f.argLeaves(try f.capVal(code, s.a - code.own_params), lc.layouts[s.a], s.e, &.{}, false, &f.atoms);
+                } else try f.atoms.append(f.gpa, outside_atom),
+            };
             try f.demand(w, .{
                 .point = site.inst,
                 .callee_inst = site.callee,

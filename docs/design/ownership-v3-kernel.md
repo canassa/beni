@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -2397,7 +2397,13 @@ contents of a cell are locations, and that a call can change what a location of 
     - **a call of the closure** (`apply`): the captures are arguments, as before; each is read at its
       latest version (`capVal`, item 5);
     - **a call that runs it within the call** (`runsWithin`: every use from the closure up to the call
-      is a known contract that neither loses it nor is the default): each write of a captured cell's
+      is a known contract that neither loses it nor is the default, nor answers it or lets it escape:
+      a holder that answers a wrapper `λx → f x` of it, or keeps it, runs it where the frame calls the
+      wrapper, after the call and any number of times, `keepsFn`; `run/CellClosureWrappedLive`, and
+      core's `Random.map`): the code reads there what its contract reads, writes and renews of each
+      capture, at the version before the call's renewal (`readBy`, as `apply` reads a direct call's
+      arguments): a write of the contents made before the call is judged against that read
+      (`run/CellClosureReadsAtRun`); each write of a captured cell's
       contents is a demand at that call on the frame's latest version, judged against the call's other
       arguments (not the one that holds the closure) and the other captures of each closure on the way
       (`Use.inner`); a renewal makes a version (item 5), which also keeps the old contents at each
@@ -2413,6 +2419,11 @@ contents of a cell are locations, and that a call can change what a location of 
       contents, or a cell its renewal of them names, reach the code that runs it (its answer, an
       escape, the renewal of a cell it was handed: `handsContents`; the four last programs of
       `run/CellClosureWritesLive`);
+      and since the callee can run it more than once, a later run writes in place what an earlier run
+      stored in the cell: the write is of each value the renewal names at the written location too (a
+      capture's cells, another location of the cell's own contents, and `outside` for outside the
+      frame or a value the callee handed; not a cell the closure made in its run,
+      `run/CellClosureRunsTwiceLive`);
     - **any other holder** (the default, a lost use, a function parameter of the frame, a list, a
       spawned fiber): the closure runs at times the frame does not see. Each handle it captured is
       shared (item 8), and a write of a captured cell's contents is refused (`call`).

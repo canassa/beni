@@ -1,0 +1,72 @@
+-- A closure that writes the contents of a cell it captured reads them where
+-- the code that runs it runs it (`ownership-v3-kernel.md` §13 item 11): a
+-- value taken out of the cell and written in place before the call is
+-- refused, since the closure reads the cell's old contents there. By
+-- `List.map`, by a function that calls it, and by `Task.scope`; and a cell
+-- that holds another cell's contents, or a list of the frame, written before
+-- a function runs the closure. Were the write accepted, the closure would
+-- push onto the written list in place.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+apply : (⊤ → ⊤) → ⊤
+apply g = g ⊤
+
+
+mapped : ⊤ → String
+mapped ⊤ =
+    r = Ref.make [ 1 ]
+    xs = Ref.get r
+    _ = List.push xs 1
+    _ = List.map [ 0 ] λ_ → Ref.update r λl → List.push l 2
+    ints (Ref.get r)
+
+
+applied : ⊤ → String
+applied ⊤ =
+    r = Ref.make [ 1 ]
+    xs = Ref.get r
+    _ = List.push xs 1
+    apply λ⊤ → Ref.update r λl → List.push l 2
+    ints (Ref.get r)
+
+
+scoped : ⊤ → String
+scoped ⊤ =
+    r = Ref.make [ 1 ]
+    xs = Ref.get r
+    _ = List.push xs 1
+    Task.scope λ_ → Ref.update r λl → List.push l 2
+    ints (Ref.get r)
+
+
+otherCell : ⊤ → String
+otherCell ⊤ =
+    a = Ref.make [ 0 ]
+    b = Ref.make [ 10 ]
+    Ref.set b (Ref.get a)
+    Ref.update a λxs → List.push xs 4
+    apply λ⊤ → Ref.update b λxs → List.push xs 2
+    ints (Ref.get b)
+
+
+localList : ⊤ → String
+localList ⊤ =
+    ys = [ 0 ]
+    b = Ref.make ys
+    _ = List.push ys 4
+    apply λ⊤ → Ref.update b λxs → List.push xs 2
+    ints (Ref.get b)
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ mapped ⊤, applied ⊤, scoped ⊤, otherCell ⊤, localList ⊤ ]

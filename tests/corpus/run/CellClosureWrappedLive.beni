@@ -1,0 +1,61 @@
+-- A callee that answers a new closure which calls the closure it was handed
+-- does not run it within the call (`ownership-v3-kernel.md` §13 item 11):
+-- the wrapper runs it where the frame calls the wrapper, any number of
+-- times. So a closure that writes the contents of a cell it captured and
+-- goes to such a callee goes where the checker does not follow it, and its
+-- write is refused: a wrapper the frame calls after it took a loan, the same
+-- through core's `Random.map`, and a wrapper a spawned fiber calls. Were the
+-- write accepted, the loan would read the push in place.
+import Io
+import List
+import Node exposing (Program)
+import Random
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+wrapFn : (Int → Int) → (Int → Int)
+wrapFn f = λx → f x
+
+
+wrapped : ⊤ → String
+wrapped ⊤ =
+    r = Ref.make [ 1 ]
+    g = wrapFn λx →
+        Ref.update r λxs → List.push xs 5
+        x
+    old = Ref.get r
+    _ = g 1
+    ints old
+
+
+generated : ⊤ → String
+generated ⊤ =
+    r = Ref.make [ 1 ]
+    gen = Random.map (Random.constant 1) λx →
+        Ref.update r λxs → List.push xs 5
+        x
+    old = Ref.get r
+    _ = Random.value gen
+    ints old
+
+
+spawned : ⊤ → String
+spawned ⊤ =
+    r = Ref.make [ 1 ]
+    g = wrapFn λx →
+        Ref.update r λxs → List.push xs 5
+        x
+    old = Ref.get r
+    f = Task.spawn λ⊤ → g 1
+    _ = Task.join f
+    ints old
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ wrapped ⊤, generated ⊤, spawned ⊤ ]

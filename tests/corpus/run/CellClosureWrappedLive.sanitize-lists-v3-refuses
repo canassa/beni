@@ -1,0 +1,4 @@
+# A closure that writes a captured cell, handed to a callee that answers a wrapper of it (a helper, Random.map, a wrapper a fiber runs), runs where the checker does not follow it: refused (ownership-v3-kernel.md §13 item 11).
+29:9 list_still_used value
+40:11 list_still_used value
+51:9 list_still_used value
