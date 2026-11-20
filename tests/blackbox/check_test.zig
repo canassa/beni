@@ -2568,9 +2568,10 @@ test "ownership v3 (the step 0 prototype): the sanitiser fixtures that the first
     const single = [_]Want{
         .{ .name = "SanitiserAnswerLeft", .at = "36:9", .cause = "escaped", .count = 2 },
         .{ .name = "SanitiserCellStaleLength", .at = "27:11", .cause = "supply", .count = 1 },
-        .{ .name = "SanitiserCellStoredCapture", .at = "28:22", .cause = "escaped", .count = 4 },
+        .{ .name = "SanitiserCellStoredCapture", .at = "28:22", .cause = "later-use", .count = 4 },
         .{ .name = "SanitiserFoldAlternativesShared", .at = "51:16", .cause = "disjoint", .count = 5 },
-        .{ .name = "SanitiserFoldAnswerFedKept", .at = "30:11", .cause = "supply", .count = 3 },
+        // Two since kernel §13: `step`'s store of `a` into its parameter's cell, after its write of `acc`, is no escape before that write; the fold still refuses.
+        .{ .name = "SanitiserFoldAnswerFedKept", .at = "30:11", .cause = "supply", .count = 2 },
         .{ .name = "SanitiserFoldHandsLabelKeeps", .at = "32:29", .cause = "supply", .count = 1 },
         .{ .name = "SanitiserFoldKeepsAnswer", .at = "28:10", .cause = "supply", .count = 6 },
         .{ .name = "SanitiserLabelRounds", .at = "26:9", .cause = "later-use", .count = 1 },
@@ -4364,7 +4365,14 @@ test "ownership v3: the faults of the third blind test are refused" {
 //   writes `x`. The answer of a function parameter can hold what the function
 //   was handed, so its escape is an escape of `x` (kernel §5, test 3); and the
 //   caller judges its writes after every escape of the call (§6.2). Both the
-//   callee's write and the caller's are refused.
+//   callee's write and the caller's were refused. Since kernel §13 a cell's
+//   contents are no escape: `keep`'s store is a renewal of its parameter's
+//   cell, which its caller reads after the call, as it reads an answer. So the
+//   frame reads what it left in the cell where it answers (`readCells`), and
+//   `keep`'s write of `x` is refused there, after the store, by test 4. The
+//   caller reads the cell's renewed contents as the new name of `x` that
+//   `keep` wrote (§5.1), as it reads an answer of a written parameter: the
+//   callee's refusal is the one that a store before a write needs.
 test "ownership v3: the faults that the review of the kernel proved are refused" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -4407,9 +4415,9 @@ test "ownership v3: the faults that the review of the kernel proved are refused"
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Fourth.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     for ([_][]const u8{
-        "  13:5 List.set x: rejected escaped: it escaped before the write\n",
+        "  13:5 List.set x: rejected later-use: it is read again at 13:5 (<expression>)\n",
         "  26:9 call List.update ys[*]: rejected element: one cell can be at two positions of it\n",
-        "  33:9 call Fourth.keep <literal>: rejected escaped: it escaped before the write\n",
+        "  33:9 call Fourth.keep <literal>: accepted fresh\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -5547,7 +5555,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.print (use (Node (T [ inner ]) [ inner ]))
         \\
         },
-        .{ .name = "CycleEscape", .why = "call Main.grow t⟨List⟩ is refused: escaped", .write = "List.push kids", .text =
+        .{ .name = "CycleEscape", .why = "call Main.grow t⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5590,7 +5598,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "CycleAncestor", .why = "call Main.grow t#Node.1[*] is refused: escaped", .write = "List.push l", .text =
+        .{ .name = "CycleAncestor", .why = "call Main.grow t#Node.1[*] is refused: later-use", .write = "List.push l", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5633,7 +5641,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "CycleRow", .why = "call Main.grow t⟨List⟩ is refused: escaped", .write = "List.push kids", .text =
+        .{ .name = "CycleRow", .why = "call Main.grow t⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5679,7 +5687,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "CycleRowField", .why = "call Main.grow t#Node.1.extra is refused: escaped", .write = "List.push b.extra", .text =
+        .{ .name = "CycleRowField", .why = "call Main.grow t#Node.1.extra is refused: later-use", .write = "List.push b.extra", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5727,7 +5735,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "CycleNested", .why = "call Main.grow t#O.1⟨List⟩ is refused: escaped", .write = "List.push kids", .text =
+        .{ .name = "CycleNested", .why = "call Main.grow t#O.1⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5778,7 +5786,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "CycleMerged", .why = "call Main.grow t.x⟨List⟩ is refused: escaped", .write = "List.push kids", .text =
+        .{ .name = "CycleMerged", .why = "call Main.grow t.x⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)
@@ -5847,7 +5855,7 @@ test "ownership v3: the siblings of the sixth blind test are refused" {
         \\    Node.done
         \\
         },
-        .{ .name = "CycleAboveVariable", .why = "call Main.grow l⟨List⟩ is refused: escaped", .write = "List.push ts", .text =
+        .{ .name = "CycleAboveVariable", .why = "call Main.grow l⟨List⟩ is refused: later-use", .write = "List.push ts", .text =
         \\import Io
         \\import List
         \\import Node exposing (Program)

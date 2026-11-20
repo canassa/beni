@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §4.2 and §6 rule 8 revised 2026-11-20 (the lane of research report 165). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -19,7 +19,7 @@ section numbers here are referenced from the code (`kernel §N`): never renumber
 ## 0. Scope
 
 A beni `List` is a plain array. The checker accepts an in-place write only when no later read can observe
-the old value. It judges lists and, since 2026-11-15, records (§11); cells and fibers are later stages of the same
+the old value. It judges lists and, since 2026-11-15, records (§11), since 2026-11-19 dictionaries (§12), and since 2026-11-20 a cell's contents (§13); fibers that share a cell are a later stage of the same
 rules (report 116 §5.4). It runs behind `--ownership=v3`. v1 (`src/own/`) is the production checker and is not touched.
 
 ## 1. The principle
@@ -505,9 +505,9 @@ of one callee read at one holder are **one root** of kind `fresh` (`freshAtom`, 
 function parameter and answered is the cell in the result, and a cell the callee let escape is noted as
 escaped at the call. A known function's cell that it hands a function it captured is read at the inner
 use of that function, and is keyed by the known function's own use, as its answer's cells are
-(`resolve`, `answerSrcs`). *The lane of research report 165: it was keyed by the inner use, so one cell
-had two names, and a function that handed a new list to a captured function that stored it in a cell,
-and answered it, said they were two (`run/FreshHandedAndAnswered`).* A `fresh` root has no value and no layout: it exists as atoms.
+(`resolve`, `answerSrcs`). *Research report 165: it was keyed by the inner use, so one cell had two
+names, and a function that handed a new list to a captured function that stored it in a cell, and
+answered it, said they were two (`run/FreshHandedAndAnswered`).* A `fresh` root has no value and no layout: it exists as atoms.
 
 The site `k` is canonical, so the rounds of a recursive group settle (`freshId`, `Mod.siteId`): a cell the
 frame made is named by the instruction that made it and the entry; a cell a callee made is named by the
@@ -850,9 +850,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    holder hands it, at any depth: so what the holder hands at that parameter escapes where the
    function meets the holder, as where the function lets the parameter itself escape (`flowCode`).
    The answer of the frame's own function parameter holds the function itself (`ownAnswer`, as
-   `callParam`'s does). *The lane of research report 165: only the parameter's own flag was read, and
-   `List.map [ λ⊤ → y ] λq → Ref.set holder (q ⊤)` let `y` be written in place while a top-level cell
-   held it (`run/CallbackAnswerKept`).*
+   `callParam`'s does). *Research report 165: only the parameter's own flag was read, and `List.map [
+   λ⊤ → y ] λq → Ref.set holder (q ⊤)` let `y` be written in place while a top-level cell held it
+   (`run/CallbackAnswerKept`).*
 
    **What a function in a default location may ask.** The code that runs a function in a default
    location (`flowCode` with `top`, a holder that lost it, a partial application) runs it at any time,
@@ -1245,7 +1245,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     derived code reads the second place after the method wrote the first). Return-type dispatch
     (`type_dispatch`) runs its callee the same way. Evidence (`where`) is called by code the walk does
     not follow, any number of times, with values it does not own: a function that writes or keeps a
-    parameter is refused where it is handed, and so is one with no contract. The runtime's `send` is
+    parameter is refused where it is handed, and so is one with no contract, and one that stores into a
+    cell it is handed (`Contract.renew`, §13: `Ref.set` as `where a.set`), which writes and keeps there
+    (`Check.edgeEffect`). The runtime's `send` is
     the alias with the word `sender` (`platforms/browser/Browser.beni`, and `platforms/browser-base/Hosted.beni`, whose `Send` every renderer's `Cmd.Send` aliases), followed through aliases of it;
     a message sent is given up, so each cell of it is a demand (`callParam`). No declaration is read by
     its name, and no method is read as read-only because it is derived, but one: a call of `Js.from` or
@@ -2280,3 +2282,110 @@ join). A fold whose accumulator holds lists of the items (`[ item, …group ]`) 
 cell at two places where the items list holds one cell twice, and rule 8 asks the whole answer
 to be the function's own; a fold inside a fold's callback answers a value the inner callee
 handed back, which rule 8 does not read as own (`List.foldl` in `List.foldl` meets it too).
+
+## 13. Cells written in place
+
+*Added 2026-11-20 (research report 165, slices 1 to 3; #981, #2521). The owner's decision of 2026-10-25
+(#981): a `Ref` owns its contents, `Ref.get` answers a loan, and `Ref.update` and `Ref.modify` edit the
+contents in place where no loan of them is alive; the fix of a refused write is `List.copy`. No copy is a
+fallback: a write v3 accepts runs in place, and one it cannot show safe is refused.*
+
+A cell is judged by the principle of §1 and the write rule of §5, unchanged. What is new is that the
+contents of a cell are locations, and that a call can change what a location of its argument holds.
+
+1. **A cell's contents are locations** (`Loc.visit`, `visitEntry`, `deepMember`). A place of kind `ref`
+   (`Ref`, `Deferred`, `Task.Fiber`) has a location of kind `cell`, its **handle**, and below the step
+   `◆` the layout of its contents: `Ref (List Int)` is `[r, r◆]`. A handle is one array that every name
+   of it shares; it is no wide location (`Loc.Kind.wide`): what it holds is at the locations below it.
+   The type at `◆` is the cell type's one argument (`Check.typeAt`, `contentsType`). A handle in the
+   deep level of a cycle names its contents by no label path apart from the cycle's other members, so
+   every other entry of its layout is read as its contents (`Frame.innerOf`, the pessimistic side).
+2. **The rows read the cell words** (`Check.cellRow`, `wordedFn`). `cellnew`: the handle is a new cell,
+   a site of its own, and the contents hold parameter 0's locations at the same place, which neither
+   escape nor are written (`consumed` beside `cellnew` or `cellstored` is no write). `cellempty`: a new
+   handle, contents `outside` (`Deferred.make`, `Task.spawn`). `cellread` with `lent`: the result is the
+   contents, read and answered (`Ref.get`, `Deferred.wait`, `Task.join`); a loan states positions as
+   `returned` does (§4.4). `lentoptional` stays the pessimistic row. `cellwrite` reads the handle and not
+   the contents: a store drops them. `cellstored` beside `cellwrite` renews the contents with parameter
+   1 (`Ref.set`), and beside `cellcomplete` lets it escape, as before (`Deferred.complete`).
+   `cellupdate` and `cellmodify` hand the function the contents `free` (`flag_s`): the row reads them no
+   more, and keeps what the function answers in their place, or its answer's second part (`modify`,
+   whose result is the first part). The function's answer does not escape.
+3. **Renewal** (`Contract.renew`). A contract says, per parameter location, what the call leaves there:
+   null where it leaves the location as it was, or the sources the location holds from the call on. A
+   store renews every location of the cell's contents. A walked body publishes, for each parameter
+   whose cells a call renewed, the sources of its latest version at each location of its cells'
+   contents (`Frame.publishRenew`), joined with its value at each early return (`?`), whatever the
+   value it returns holds (an `Err` of no location returns too). Two contracts of a
+   round join a renewal with the other's, or with the location's own cells where the other leaves it as
+   it was (`Contract.join`); the rounds start from the bottom contract, so a recursive function's
+   renewal names its parameter's old cells too (the pessimistic side). The dump writes `π1◆ :=` and
+   the sources. A worded body's renewal is below its words' (`Check.falseWord`): every source of the
+   walk's, or the location's own cells where the walk leaves it, the words name there too.
+4. **What the frame follows** (`Root.tracked`). The contents of a cell are known only where the frame
+   names every holder of its handle: a parameter's (the caller's hand: the apart-arguments rule,
+   item 8, makes two names of one handle one); a call's answer whose every handle location holds one
+   handle that the callee made at this call, at no other location, that it did not let escape, and that
+   the answer names first: no renewal and no function of the call put it in another holder before
+   (`Frame.cellResult`, `Root.cell_root`); and a version of one. Every other root a frame makes holds,
+   below each handle, `outside` as well as its atoms (`rootLeaves`): a copy of a handle in a list, a
+   record or a call's answer reads what any holder of the handle may have stored. A capture's, an
+   answer's and a top-level handle's contents are no cell of the frame (§5, test 1).
+5. **A version** (`Frame.renewHandle`, `versionOf`). A call that renews the contents of an argument
+   that is a tracked root whole (`ref` of the root, a version of it, or a join of them) makes a new
+   root of the same place, a **version**: each location of the renewed contents holds the renewal's
+   sources, read as a call's result entry is (`expandSrcs`: a written location the callee answers is
+   a new name, `version`, its old names dead from the call on, §5.1), and every other location what
+   the argument held. A handle at a summary location holds the contents of many cells, of which the
+   call renews one: there the version holds the old contents too. From then on **every reading of the
+   root is a reading of its latest version** (`cellsNow`: an argument, a read, the frame's answer, a
+   construction's part), and a value taken out of the cell before is a root of its own, which holds
+   the old contents: a loan is a snapshot, and a read of it after an update is test 4's later read.
+   An argument that is no tracked root whole renews no version: what the call stores escapes, and each
+   handle the argument holds there is shared (item 8).
+6. **Control flow.** The arms of a `case` each start from the versions before it, and after it a root
+   whose latest differs between arms is the join of the arms' latest, each in its arm's context
+   (`joinCells`, §6 rule 7). A later argument of a call that a lowering can short-circuit
+   (`alwaysRuns`: `&&`, `||`) may not run: what it renews is joined with the versions before it. A
+   hole of markup can be evaluated where the markup is rendered (§6.12): a renewal there makes no
+   version, and is read as one of an argument the frame does not follow.
+7. **What a call leaves in a renewed parameter's cells is read where the frame answers**
+   (`noteReturnCells`, `cellReads`), at every return point, each early return and the end: the caller
+   reads it after the call, as it reads the answer. So a body that stores a value in its parameter's
+   cell and then writes the value in place is refused by test 4, as one that answers a value and then
+   writes it is (`keep cell g x = y = g x; Ref.set cell y; List.set x 0 9`); and so is one that writes
+   its parameter's contents in place and then returns early, on a way where the cell is not renewed
+   and still holds the written contents (`run/CellWrittenBeforeEarlyReturn`). A renewal of a written
+   parameter that the callee answers is the new name of its cells, as a result's is (§5.1): the
+   callee's walk has judged the order of the store, the write and each return. A parameter that no call
+   renewed on any way has no renewal: its cells are as they were, and the caller judges a write of them.
+8. **A handle with another holder is shared** (`shareCell`). Where the frame no longer names every
+   holder of a handle of a tracked root, its contents at that time escape (another holder can read them
+   at any later time), and its version holds `outside` as well from then on (another holder can store
+   into the cell where the frame does not see); a later renewal of it is one of an argument the frame
+   does not follow (item 5). A handle gets another holder where it escapes (`noteEscape`, every escape
+   of §5 test 3), where a closure captures it (`closureOf`: the closure runs where its holder runs it),
+   where a value of no claim holds it (`unknownOf`), where a function the frame does not know is handed
+   it (`callParam`), where another root holds a copy of it (`shareCopies`: a list, a call's answer, the
+   renewed contents of another cell), and where a call's arguments hold it at two locations the
+   callee's walk read as apart (`cellsApart`, the apart-arguments rule of §4.4). A share makes a version,
+   whose runs are atoms of the frame, so it is noted where it is found and made at the next reading of
+   a cell (`flushShare`). A handle whose contents have no location (`Fiber ⊤`) has nothing to share.
+9. **A function value that renews a cell it is handed** (`Frame.flowRenews`), which a holder runs at
+   times the frame does not see: each handle the holder hands it there is shared, and what it stores
+   escapes (`flowStored`).
+10. **Fibers.** Only one fiber runs at a time, and another fiber can reach a cell only through a holder
+    it has. A spawned fiber's body is a closure, so a handle it captures is shared (item 8): its
+    contents escape where the closure is made, and no write of them in place is accepted in any fiber.
+    A park needs no rule of its own while the frame follows a handle: no other fiber holds it. The
+    owner's loan rule for a cell that two fibers hold (#981: a loan may not stay alive across a
+    suspension point) is not built: such a cell is shared, and a write of its contents is refused, with
+    the copy fix (research report 165 §6, slice 4).
+
+What it does not cover yet, each a refusal: a closure that writes the contents of a cell it captured
+(a capture is never `own`, §5 test 1: `run/SanitiserCellReentryApart`, `SanitiserScopeHost`,
+`SanitiserNestedCallbackWrite`, `browser/tea/BallMachine`); a handle handed to the frame's own function
+parameter, which shares it (`run/SanitiserCellLoanKeptApart`'s `handed` and `modified`); a handle at a
+part of a root (a record's field, a tuple's part), which is no tracked root whole and is shared at its
+first renewal; and the reach of a part of a call's answer, which reads the answer whole
+(`run/RefTakeOwned`'s `pairTake`).

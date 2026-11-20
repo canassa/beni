@@ -913,7 +913,9 @@ pub const Mod = struct {
                     .unit, .empty_record, .func, .app, .tuple => return null,
                 },
                 .ctor_arg => m.ctorArgType(t, l.head, l.payload >> 12, l.payload & 0xfff) orelse return null,
-                .contents, .row, .member, .env, .slot, .fslot => return null,
+                // A cell's contents: its one type argument (kernel §13).
+                .contents => m.contentsType(t) orelse return null,
+                .row, .member, .env, .slot, .fslot => return null,
             };
         }
         return t;
@@ -993,10 +995,27 @@ pub const Mod = struct {
                     };
                     break :blk m.ctorArgType(cur, head, ca[0], ca[1]) orelse return null;
                 },
-                .contents, .env, .slot, .level, .row => return null,
+                .contents => m.contentsType(cur) orelse return null,
+                .env, .slot, .level, .row => return null,
             };
         }
         return cur;
+    }
+
+    /// The type of a cell's contents, its one type argument (`Ref a`,
+    /// `Deferred a`, `Fiber a`), or null.
+    fn contentsType(m: *Mod, t: Var) ?Var {
+        _, const c = m.in.store.resolved(t);
+        switch (c) {
+            .structure => |s| switch (s) {
+                .app => |ap| {
+                    const args = m.in.store.vars(ap.args);
+                    return if (args.len == 1) args[0] else null;
+                },
+                .unit, .empty_record, .func, .tuple, .record => return null,
+            },
+            .flex, .rigid, .alias, .err => return null,
+        }
     }
 
     /// The type of argument `arg` of constructor `ctor` (its ordinal) of the
@@ -1432,7 +1451,10 @@ pub const Mod = struct {
             .primitive, .undetermined, .codec => return .{},
         };
         // A function's contract says what a call of it does.
-        if (try m.declContract(target)) |c| if (c.arity != 0) return .{ .writes = c.writes(), .keeps = c.escapes(), .rewrites = Contract.rewritesFn(c) };
+        // A function that stores into a cell it is handed (`Contract.renew`,
+        // kernel §13) changes what the cell holds where the code that runs it
+        // does not follow it: it writes, and keeps what it stores.
+        if (try m.declContract(target)) |c| if (c.arity != 0) return .{ .writes = c.writes() or c.renews(), .keeps = c.escapes() or c.renews(), .rewrites = Contract.rewritesFn(c) };
         // A constant's contract says what its value holds, not what a call
         // of it does: a method written `pub eq = keeper` has no fact here,
         // nor has a function whose walk gave up. Only a declaration whose
@@ -1772,12 +1794,21 @@ pub const Mod = struct {
             // storage and moves its values by reference, never reading what
             // they hold: no location below the storage is read.
             const shallow = !unknown and shallowParam(m.bir.ownSlotsV3(d), j);
-            // What goes into a cell is behind it from then on: it escapes.
-            const into_cell = has(w, .cellstored) or has(rw, .cellnew);
+            // What goes into a `Ref` is its contents (kernel §13): the store
+            // renews them (`cellstored` beside `cellwrite`), and a new cell
+            // holds its value below its handle (`cellnew`). What a
+            // `Deferred` is completed with (`cellcomplete`) escapes, as
+            // every value behind a cell did before.
+            const into_cell = has(w, .cellstored) and !has(pw[0], .cellwrite);
+            // A cell's writers read its handle, not its contents: a store
+            // drops them, and `update` and `modify` hand them to the
+            // function (`flag_s`, below in `cellRow`).
+            const handle_only = has(w, .cellwrite);
             for (pes, 0..) |pe, e| {
                 const fl = &flags[c.off[j] + e];
-                if (!has(w, .unused) and !(shallow and pe.loc != pself)) fl.* |= Contract.flag_r;
-                if (has(w, .consumed) and !into_cell) fl.* |= Contract.flag_w;
+                if (!has(w, .unused) and !(shallow and pe.loc != pself) and !(handle_only and pe.loc != pself)) fl.* |= Contract.flag_r;
+                // What goes into a cell is not written: it is held there.
+                if (has(w, .consumed) and !(has(w, .cellstored) or has(rw, .cellnew))) fl.* |= Contract.flag_w;
                 if (has(w, .written) and pe.loc == pself) fl.* |= Contract.flag_w;
                 // A cell's handle is never `own`: a write of the cell asks nothing of the caller.
                 if (has(w, .escaped) or into_cell or unknown) fl.* |= Contract.flag_e;
@@ -1830,11 +1861,19 @@ pub const Mod = struct {
         // its elements are two cells. A cell's handle (`cellnew`,
         // `cellempty`) is one new cell at each location of its own. A row that
         // makes one new list (`copyof` and its kin) has one site, `0`.
-        if (has(rw, .fresh) or has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty)) {
+        if (has(rw, .fresh) or has(rw, .exclusive)) {
             described = true;
-            const sites = has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty);
+            const sites = has(rw, .exclusive);
             for (res, 0..) |*r, ri| try r.append(gpa, Src.fresh(if (sites) @intCast(ri) else 0, false));
         }
+        // The rows of a cell (kernel §13): a new cell's handle and contents,
+        // a loan of the contents, and what a store leaves in them.
+        var renew: ?[]std.ArrayList(Src) = null;
+        defer if (renew) |rn| {
+            for (rn) |*r| r.deinit(gpa);
+            gpa.free(rn);
+        };
+        if (try m.cellRow(sig, c, pw, rw, res, &renew)) described = true;
         // `copyof` of a record (`Record.copy`, kernel §11): a new object
         // whose fields hold parameter 0's values. The result's locations
         // are one row here, which cannot say which of them are the new
@@ -1941,6 +1980,11 @@ pub const Mod = struct {
         }
         const out = @constCast(c.res);
         for (out, res) |*o, r| o.* = try Contract.normal(m.arena, r.items);
+        if (renew) |rn| {
+            const got = try m.arena.alloc(?[]const Src, c.flags.len);
+            for (got, rn) |*g, r| g.* = if (r.items.len == 0) null else try Contract.normal(m.arena, r.items);
+            c.renew = got;
+        }
         if (std.debug.runtime_safety) try m.checkWordedPlaced(sig, c, pw, rw);
         if (std.debug.runtime_safety) try m.checkWordedCasts(sig, c, pw, rw);
         if (std.debug.runtime_safety) try m.checkWordedTwice(sig, c, pw, rw);
@@ -2010,11 +2054,17 @@ pub const Mod = struct {
         const re = m.loc.layoutEntries(c.layouts[c.arity])[ri];
         switch (s.kind) {
             .outside, .twice => return true,
-            .fresh => return has(rw, .exclusive),
+            .fresh => return has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty),
             .answer => {
                 const w = pw[s.a];
                 const fnc = c.fns[s.a] orelse return false;
                 if (has(w, .aliased)) return false;
+                // `modify`'s result is its function's answer's first part, at the same place.
+                if (has(w, .cellmodify)) {
+                    const rplace = (try m.fnResultPlace(sig, s.a)) orelse return false;
+                    const p0 = (try m.loc.proj(rplace, .{ .kind = .index, .payload = 0 })) orelse return false;
+                    return try m.samePlaceBelow(p0, s.e, re.loc);
+                }
                 const ae = m.loc.layoutEntries(fnc.layouts[fnc.arity])[s.e];
                 const at_place = has(w, .returned) and !has(w, .stored) and ae.loc == re.loc;
                 const ft = m.fnType(sig.vars[s.a].toOptional()) orelse return false;
@@ -2024,6 +2074,17 @@ pub const Mod = struct {
             .param => {
                 const j = s.a;
                 const w = pw[j];
+                // A loan answers the contents, a new cell holds its value:
+                // each at the same place (kernel §13).
+                if (j == 0 and has(rw, .lent) and has(w, .cellread)) {
+                    const pr = (try m.contentsOf(sig.params[0])) orelse return false;
+                    return try m.samePlaceBelow(pr, s.e, re.loc);
+                }
+                if (j == 0 and has(rw, .cellnew)) {
+                    const pr = (try m.contentsOf(sig.result)) orelse return false;
+                    const k = std.mem.indexOfScalar(u32, pr.up, @intCast(ri)) orelse return false;
+                    return m.loc.layoutEntries(try m.loc.layoutOf(pr.child))[k].loc == m.loc.layoutEntries(c.layouts[0])[s.e].loc;
+                }
                 if (w == 0 or has(w, .unknown) or has(w, .aliased)) return false;
                 if (j == 0 and (has(rw, .elementof) or has(rw, .taken))) return false;
                 const pe = m.loc.layoutEntries(c.layouts[j])[s.e];
@@ -2060,7 +2121,125 @@ pub const Mod = struct {
     /// pessimistic row (`undescribed`), and no placement of it states
     /// positions (kernel §4.4).
     fn pessimisticRow(rw: u32) bool {
-        return has(rw, .lent) or has(rw, .lentoptional) or has(rw, .cellread) or has(rw, .unknown);
+        return has(rw, .lentoptional) or has(rw, .unknown);
+    }
+
+    /// The location of a cell's contents in the layout of `place` (a cell
+    /// type), as a projection of its contents' own layout, or null.
+    fn contentsOf(m: *Mod, place: PlaceId) Allocator.Error!?*const Loc.Proj {
+        if (m.places.kind(place) != .ref) return null;
+        return m.loc.proj(place, Step.contents);
+    }
+
+    /// Append `src(k)` to `to` for each entry `k` of `from` that holds the
+    /// location `want` (`holdsAt`), or for every entry of `from` where none
+    /// does: a placement no location names is at every one (kernel §3.4).
+    fn placeFrom(m: *Mod, to: *std.ArrayList(Src), from: []const Loc.Entry, up: ?[]const u32, want: Loc.Entry, kind: Src.Kind, a: u32) Allocator.Error!void {
+        var found = false;
+        for (from, 0..) |fe, k| {
+            const at = if (up) |u| u[k] else @as(u32, @intCast(k));
+            if (at == none) continue;
+            if (!m.holdsAt(fe, want)) continue;
+            found = true;
+            try to.append(m.gpa, .{ .kind = kind, .a = @intCast(a), .e = @intCast(at) });
+        }
+        if (!found) for (from, 0..) |_, k| {
+            const at = if (up) |u| u[k] else @as(u32, @intCast(k));
+            if (at == none) continue;
+            try to.append(m.gpa, .{ .kind = kind, .a = @intCast(a), .e = @intCast(at) });
+        };
+    }
+
+    /// The rows of a cell (kernel §13), read by their words. A new cell
+    /// (`cellnew`, `cellempty`) has a new handle, and its contents are
+    /// parameter 0 or `outside`; a loan (`cellread` → `lent`) answers the
+    /// contents of parameter 0; a store (`cellstored` beside `cellwrite`)
+    /// renews them with the stored value, and `update` and `modify` with
+    /// the function's answer, or its second part, whose first part is the
+    /// result. A `Deferred` is completed (`cellcomplete`), never renewed:
+    /// what it holds escapes, and its contents are `outside`. True when the
+    /// row's result is described.
+    fn cellRow(m: *Mod, sig: Sig, c: *Contract.Contract, pw: []const u32, rw: u32, res: []std.ArrayList(Src), renew_out: *?[]std.ArrayList(Src)) Allocator.Error!bool {
+        const gpa = m.gpa;
+        const arity = c.arity;
+        const res_es = m.loc.layoutEntries(c.layouts[arity]);
+        var described = false;
+        if (has(rw, .cellnew) or has(rw, .cellempty)) {
+            described = true;
+            const rc = try m.contentsOf(sig.result);
+            for (0..res_es.len) |ri| {
+                const below = if (rc) |pr| std.mem.indexOfScalar(u32, pr.up, @intCast(ri)) else null;
+                if (below == null) {
+                    // The handle: one new cell, a site of its own.
+                    try res[ri].append(gpa, Src.fresh(@intCast(ri), false));
+                    continue;
+                }
+                if (has(rw, .cellempty) or arity == 0) {
+                    try res[ri].append(gpa, Src.outside);
+                    continue;
+                }
+                const child = m.loc.layoutEntries(try m.loc.layoutOf(rc.?.child));
+                try m.placeFrom(&res[ri], m.loc.layoutEntries(c.layouts[0]), null, child[below.?], .param, 0);
+            }
+        }
+        if (has(rw, .lent) and arity > 0 and has(pw[0], .cellread)) if (try m.contentsOf(sig.params[0])) |pr| {
+            described = true;
+            const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
+            for (res_es, 0..) |re, ri| try m.placeFrom(&res[ri], child, pr.up, re, .param, 0);
+            // The loan reads and answers the contents.
+            for (pr.up) |u| if (u != none) {
+                @constCast(c.flags)[c.off[0] + u] |= Contract.flag_r | Contract.flag_a;
+            };
+        };
+        if (arity < 2 or !has(pw[0], .cellwrite)) return described;
+        const pr = (try m.contentsOf(sig.params[0])) orelse return described;
+        const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
+        const w = pw[1];
+        const rn = try gpa.alloc(std.ArrayList(Src), c.flags.len);
+        for (rn) |*r| r.* = .empty;
+        renew_out.* = rn;
+        if (has(w, .cellstored)) {
+            for (child, 0..) |ce, k| if (pr.up[k] != none)
+                try m.placeFrom(&rn[c.off[0] + pr.up[k]], m.loc.layoutEntries(c.layouts[1]), null, ce, .param, 1);
+            return described;
+        }
+        if (!has(w, .cellupdate) and !has(w, .cellmodify)) return described;
+        const fnc = c.fns[1] orelse return described;
+        const rplace = (try m.fnResultPlace(sig, 1)) orelse return described;
+        const ans = m.loc.layoutEntries(fnc.layouts[fnc.arity]);
+        if (has(w, .cellupdate)) {
+            for (child, 0..) |ce, k| if (pr.up[k] != none)
+                try m.placeFrom(&rn[c.off[0] + pr.up[k]], ans, null, ce, .answer, 1);
+            return described;
+        }
+        // `modify`: the answer's second part is the contents, its first the result.
+        const p1 = (try m.loc.proj(rplace, .{ .kind = .index, .payload = 1 })) orelse {
+            for (child, 0..) |_, k| if (pr.up[k] != none) for (0..ans.len) |e| try rn[c.off[0] + pr.up[k]].append(gpa, .{ .kind = .answer, .a = 1, .e = @intCast(e) });
+            return described;
+        };
+        const c1 = m.loc.layoutEntries(try m.loc.layoutOf(p1.child));
+        for (child, 0..) |ce, k| if (pr.up[k] != none)
+            try m.placeFrom(&rn[c.off[0] + pr.up[k]], c1, p1.up, ce, .answer, 1);
+        described = true;
+        if (try m.loc.proj(rplace, .{ .kind = .index, .payload = 0 })) |p0| {
+            const c0 = m.loc.layoutEntries(try m.loc.layoutOf(p0.child));
+            for (res_es, 0..) |re, ri| try m.placeFrom(&res[ri], c0, p0.up, re, .answer, 1);
+        } else for (res) |*r| for (0..ans.len) |e| try r.append(gpa, .{ .kind = .answer, .a = 1, .e = @intCast(e) });
+        return described;
+    }
+
+    /// Whether the entry `pe` of the parent of the projection `pr` is the
+    /// projection's entry at the location `loc` of its child's own layout.
+    fn samePlaceBelow(m: *Mod, pr: *const Loc.Proj, pe: u32, loc: u32) Allocator.Error!bool {
+        const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
+        for (pr.up, 0..) |u, k| if (u == pe and child[k].loc == loc) return true;
+        return false;
+    }
+
+    /// The place of the answer of function parameter `j` of `sig`, or null.
+    fn fnResultPlace(m: *Mod, sig: Sig, j: u32) Allocator.Error!?PlaceId {
+        const ft = m.fnType(sig.vars[j].toOptional()) orelse return null;
+        return try m.placeOf(ft.result.toOptional());
     }
 
     /// Whether `stored` on parameter `j`, a value of type `t`, is one write
@@ -2199,6 +2378,16 @@ pub const Mod = struct {
         defer gpa.free(answered);
         @memset(answered, false);
         for (c.res) |srcs| for (srcs) |s| switch (s.kind) {
+            .param => if (s.a < arity) {
+                held[c.off[s.a] + s.e] = true;
+            },
+            .answer => if (s.a < arity) {
+                answered[s.a] = true;
+            },
+            .fresh, .outside, .twice => {},
+        };
+        // What a cell's store leaves in its contents is placed there (kernel §13).
+        for (c.renew) |ro| if (ro) |srcs| for (srcs) |s| switch (s.kind) {
             .param => if (s.a < arity) {
                 held[c.off[s.a] + s.e] = true;
             },
@@ -2589,6 +2778,17 @@ pub const Mod = struct {
                 return try m.falseText(name, "the body answers {s} in the result{s}, and the words `{s}` do not say so", .{ try m.srcText(s), try m.atText(re.loc), rwords });
             }
         }
+        // What the body leaves in a parameter's cells (kernel §13): each
+        // source of the walk's renewal, or the location's own cells where
+        // the walk leaves it as it was, the words name there too.
+        for (0..c.arity) |j| for (c.off[j]..c.off[j + 1]) |i| {
+            const cr = c.renewAt(i);
+            const wr = wc.renewAt(i);
+            if (cr == null and wr == null) continue;
+            const self = [1]Src{.{ .kind = .param, .a = @intCast(j), .e = @intCast(i - c.off[j]) }};
+            for (cr orelse &self) |s| if (!srcCovered(s, wr orelse &self))
+                return try m.falseText(name, "the body leaves {s} in the contents of parameter {d}{s}, and its words `{s}` do not say so", .{ try m.srcText(s), j + 1, try m.atText(m.loc.layoutEntries(c.layouts[j])[i - c.off[j]].loc), try m.wordsText(pw[j], v3, j) });
+        };
         if (c.nonlinear and !wc.nonlinear and !dupsOnly(c))
             return try m.falseText(name, "the body can answer one cell of a parameter at two places of its result, and its words say that it cannot", .{});
         if (c.casts and !wc.casts)
@@ -2888,6 +3088,21 @@ pub const Mod = struct {
                 }
             }
         }
+        // A cell's `update` and `modify` hand the function the contents of
+        // parameter 0, `free`: the row reads them no more, and keeps what
+        // the function answers in their place (kernel §13).
+        const cell_cb = has(w, .cellupdate) or has(w, .cellmodify);
+        if (cell_cb and arity > 0 and sig.params.len > 0) if (try m.contentsOf(sig.params[0])) |pr| {
+            const child = m.loc.layoutEntries(try m.loc.layoutOf(pr.child));
+            for (m.loc.layoutEntries(layouts[0]), 0..) |fe, e| {
+                var srcs: std.ArrayList(Src) = .empty;
+                defer srcs.deinit(m.gpa);
+                try m.placeFrom(&srcs, child, pr.up, fe, .param, 0);
+                supply[off[0] + e] = try Contract.normal(m.arena, srcs.items);
+                free[off[0] + e] = true;
+                for (srcs.items) |s| @constCast(c.flags)[c.off[0] + s.e] |= Contract.flag_s | Contract.flag_r;
+            }
+        };
         // What the row hands the function at a location of another type
         // than the parameter location it comes from (a cast: `feed :
         // borrowed a, once returned (b → c) → c`, JavaScript `f([a])`) is
@@ -2931,7 +3146,9 @@ pub const Mod = struct {
                     unplaced = true;
                 }
             }
-            if (has(w, .stored)) {
+            // A cell's function stores its answer in the cell, not in the
+            // result: `cellRow` renews the contents with it.
+            if (has(w, .stored) and !cell_cb) {
                 const elem_typed = try m.typesOne(ft.result, m.elemType(sigResult(sig)));
                 if (!try m.intoElems(res, sig.result, relem, ae, src, elem_typed)) unplaced = true;
                 if (relem) |pr| {
@@ -2966,7 +3183,7 @@ pub const Mod = struct {
             // An answer that holds a cell and that no word puts in the
             // result goes where no word says: it escapes (kernel §6.10; research
             // report 148). No row of `core/` or a platform has one.
-            .ans_escapes = unplaced or has(w, .cellupdate) or has(w, .cellmodify) or (ans.len != 0 and !has(w, .returned) and !has(w, .stored) and !has(w, .aliased)),
+            .ans_escapes = unplaced or (ans.len != 0 and !has(w, .returned) and !has(w, .stored) and !has(w, .aliased)),
         };
         return fnc;
     }
@@ -3433,6 +3650,11 @@ pub const Mod = struct {
                 if (fl == 0) continue;
                 w.print(" π{d}{s} {s}{s}", .{ j + 1, try m.locText(e.loc), if (fl & Contract.flag_w != 0) "W" else "", if (fl & Contract.flag_e != 0) "E" else "" }) catch return error.OutOfMemory;
             }
+            // What the call leaves in the parameter's cells (kernel §13).
+            for (m.loc.layoutEntries(c.layouts[j]), 0..) |e, k| if (c.renewAt(c.off[j] + k)) |srcs| {
+                w.print(" π{d}{s} :=", .{ j + 1, try m.locText(e.loc) }) catch return error.OutOfMemory;
+                try m.srcsText(w, srcs);
+            };
             if (c.fns[j]) |fnc| {
                 w.print(" π{d} fn{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "" }) catch return error.OutOfMemory;
                 for (0..fnc.arity) |k| for (m.loc.layoutEntries(fnc.layouts[k]), 0..) |e, i| {

@@ -145,6 +145,22 @@ const Root = struct {
     /// whether its escape in the callee was noted here (`freshAtom`).
     site: u64 = 0,
     escaped: bool = false,
+    /// Kernel §13: a root whose cells' contents the frame follows — a
+    /// parameter, a call's answer that holds new cells' handles and no
+    /// other, a version of one. A `local` root that is no such root holds
+    /// `outside` too below each handle (`rootLeaves`).
+    tracked: bool = false,
+    /// A version of a tracked root (`renewHandle`): the root it renews.
+    origin: u32 = none,
+    /// Its layout has a cell's handle (`innerOf`).
+    cells: bool = false,
+    /// A tracked root that a call renewed: the value of its latest version,
+    /// a `ref` of a version root or a `join` of them; else `none`.
+    latest: Val = none,
+    /// `fresh`: the new cell's handle that a tracked root holds, that root
+    /// and the entry (`cellResult`); else `none`.
+    cell_root: u32 = none,
+    cell_e: u32 = 0,
 };
 /// What a location of a root that the frame made holds. Each kind is a run
 /// of atoms (`start`, `len`), and some have an **own atom** `(root, path,
@@ -519,6 +535,22 @@ mark_stack: std.ArrayList(Atom) = .empty,
 meet_index: std.AutoHashMapUnmanaged([2]u32, *const MeetIndex) = .empty,
 /// Per pair of layouts: the call map read the other way (`coverHits`).
 cover_index: std.AutoHashMapUnmanaged([2]u32, *const CoverIndex) = .empty,
+/// Kernel §13. The tracked roots that a call renewed (`Root.latest`), each once.
+cell_roots: std.ArrayList(u32) = .empty,
+/// The handles with another holder, by the tracked root and its entry.
+cell_shared: std.AutoHashMapUnmanaged([2]u32, void) = .empty,
+/// Per layout, by its number: for each entry, whether it is in a cell's
+/// contents (`innerOf`), once made.
+cell_inner: std.ArrayList(?[]const bool) = .empty,
+/// At each return point (each `?`, and the end of the walk): each tracked
+/// parameter's value there, `(root, value)`, and the read of its cells'
+/// contents there, which `cellReads` keeps where the parameter is renewed.
+ret_cells: std.ArrayList([2]u32) = .empty,
+ret_reads: std.ArrayList(Read) = .empty,
+/// The shares that `shareAtoms` noted, `(root, entry, point)`, made by `flushShare`.
+share_pending: std.ArrayList([3]u32) = .empty,
+/// The frame follows some cell's contents: else no hook of kernel §13 does work.
+cells_any: bool = false,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -580,6 +612,11 @@ fn giveUp(f: *Frame, inst: u32) Error!Val {
 pub fn addParam(f: *Frame, place: PlaceId, pat: u32, ty: Var.Optional) Error!void {
     const root = try f.newRoot(.param, place, pat);
     f.roots.items[root].index = @intCast(f.params.items.len);
+    // The caller's hand (kernel §13): the frame follows a parameter's cells.
+    if (f.roots.items[root].cells) {
+        f.roots.items[root].tracked = true;
+        f.cells_any = true;
+    }
     try f.params.append(f.gpa, root);
     try f.param_ty.append(f.gpa, ty);
     try f.bindPattern(pat, try f.rootVal(root));
@@ -587,7 +624,10 @@ pub fn addParam(f: *Frame, place: PlaceId, pat: u32, ty: Var.Optional) Error!voi
 
 pub fn walkBody(f: *Frame, body: u32) Error!void {
     f.body_root = body;
-    try f.returns.append(f.gpa, try f.eval(body, .value, true));
+    // The answer is read at the end of the walk: a tracked root at its last version (kernel §13).
+    const v = try f.cellsNow(try f.eval(body, .value, true));
+    try f.noteReturnCells(body);
+    try f.returns.append(f.gpa, v);
 }
 
 /// A value that the program hands to code of the compiler's own, which keeps
@@ -686,6 +726,10 @@ fn newRoot(f: *Frame, kind: RootKind, place: PlaceId, inst: u32) Error!u32 {
     const layout = try f.m.loc.layoutOf(place);
     const n = f.m.loc.layouts.items[layout].len;
     var r: Root = .{ .kind = kind, .place = place, .layout = layout, .inst = inst, .path = try f.m.loc.pathRoot(place) };
+    switch (kind) {
+        .param, .capture, .local => r.cells = (try f.innerOf(layout)).len != 0,
+        .answer, .fresh, .outside => {},
+    }
     switch (kind) {
         .param, .capture => {
             r.ent = @intCast(f.pflags.items.len);
@@ -1411,6 +1455,9 @@ fn rootLeaves(f: *Frame, root: u32, path_in: u32, re: u32, out: *std.ArrayList(A
                 // The run: the old names (`dead`) of a new name, or the cells of other roots.
                 .version, .derived, .alias => try f.copyAtoms(ent.start, ent.len, root, path, re, out),
             }
+            // A cell's contents in a root the frame does not follow: what any
+            // holder of the handle stores there (kernel §13).
+            if (r.cells and !r.tracked and (try f.innerOf(r.layout))[re]) try out.append(f.gpa, outside_atom);
         },
     }
 }
@@ -1971,6 +2018,9 @@ fn unknownOf(f: *Frame, place: PlaceId, vs: []const Val) Error!Val {
         for (vs) |x| if (x != v_none) return v_outside;
         return v_none;
     }
+    // A value of no claim is a holder the walk does not follow: each handle
+    // it can hold has another holder (kernel §13).
+    for (vs) |v| try f.shareVal(v, none);
     const start: u32 = @intCast(f.lists.items.len);
     for (vs) |v| if (v != v_none and v != v_outside) try f.lists.append(f.gpa, v);
     const count: u32 = @intCast(f.lists.items.len - start);
@@ -2514,7 +2564,7 @@ fn compatible(f: *const Frame, a0: u32, b0: u32) bool {
 fn readAll(f: *Frame, v: Val, point: u32) Error!void {
     if (v == v_none or v == v_outside) return;
     if (f.nodes.items[v].tag == .fnref) return;
-    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx });
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx });
 }
 
 /// All of `v` is read at `point` but its records' field slots (a list
@@ -2543,7 +2593,7 @@ fn readNoSlots(f: *Frame, v: Val, point: u32) Error!void {
     }
     const nmask: u32 = @intCast(f.lists.items.len - start);
     if (nmask == 0) return;
-    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
 }
 
 /// `v` is read at `point` by a callee whose contract flags are `flags` over the signature layout `sig`.
@@ -2584,7 +2634,7 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
     }
     const nmask: u32 = @intCast(f.lists.items.len - start);
     if (nmask == 0) return;
-    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = all });
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = all });
 }
 
 fn useReaches(f: *Frame, u: Read, ws: []const Atom) Error!bool {
@@ -2742,6 +2792,8 @@ fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
     }
     const len: u32 = @intCast(f.esc_atoms.items.len - at);
     try f.escapes.append(f.gpa, .{ .start = at, .len = len, .point = point, .ctx = f.cur_ctx });
+    // An escaped handle has another holder (kernel §13).
+    try f.shareAtoms(start, start + n, point);
 }
 
 /// Set `flag` on the parameter location that atom `a` is, or was taken
@@ -4091,11 +4143,18 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         },
         .@"try" => {
             const v = try f.ev(data.lhs);
-            if (v == v_none) return v_none;
+            // The failure leaves the function here, whatever the scrutinee
+            // holds: what the calls before left in the parameters' cells is
+            // what the caller reads (kernel §13).
+            if (v == v_none) {
+                try f.noteReturnCells(inst);
+                return v_none;
+            }
             // The failure leaves the function with the scrutinee's other arm:
             // an answer that is an object made before (`Contract.old_result`).
             try f.readAll(v, inst);
-            try f.returns.append(f.gpa, v);
+            try f.returns.append(f.gpa, try f.cellsNow(v));
+            try f.noteReturnCells(inst);
             f.tail_old = true;
             // The success: the argument of `Ok` or `Just`, a part of the
             // scrutinee. A `smear` of it would claim its cells and lose that
@@ -4711,6 +4770,8 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
         f.rents.items[r.ent + e] = .{ .kind = .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
     }
     try f.deriveLinear(root, null, &.{});
+    // A handle among the elements is held by the list too (kernel §13).
+    try f.shareCopies(root, null, inst);
     return f.rootVal(root);
 }
 
@@ -4885,7 +4946,7 @@ fn readSlots(f: *Frame, v: Val, ranks: []const u32, point: u32) Error!void {
     try f.lists.appendSlice(f.gpa, es.items);
     const nmask: u32 = @intCast(f.lists.items.len - start);
     if (nmask == 0) return;
-    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
 }
 
 /// The step word of a record construction's kid that holds its field slots
@@ -4912,6 +4973,9 @@ fn recordOf(f: *Frame, place: PlaceId, kids: []const Kid, inst: u32, base: Val) 
     }
     if (try f.layoutLen(place) == 0) return v_none;
     const root = try f.newRoot(.local, place, inst);
+    // The object holds its slots; what a field holds, a cell's contents
+    // among it, the construction's kids hold (kernel §13 reads them there).
+    f.roots.items[root].cells = false;
     const r = f.roots.items[root];
     const es = m.loc.layoutEntries(r.layout);
     _ = f.charge(Loc.scanUnits(es.len));
@@ -5232,14 +5296,26 @@ fn caseOf(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     defer outs.deinit(f.gpa);
     var ctxs: std.ArrayList(u32) = .empty;
     defer ctxs.deinit(f.gpa);
+    // The cells' versions before the arms, and after each (kernel §13).
+    const cells0 = try f.saveCells();
+    var arm_cells: std.ArrayList([]const [2]u32) = .empty;
+    defer arm_cells.deinit(f.gpa);
     for (branches, 0..) |br, k| {
         const bd = m.datas[br.int()];
+        if (cells0) |c0| if (k != 0) {
+            try f.restoreCells(c0);
+        };
         const saved = try f.enterArm(inst, @intCast(k));
         try ctxs.append(f.gpa, f.cur_ctx);
         try f.bindPattern(bd.lhs, scrut);
         try outs.append(f.gpa, try f.eval(bd.rhs, if (mode == .bind) .value else mode, tail));
+        if (cells0 != null) {
+            try f.flushShare();
+            try arm_cells.append(f.gpa, (try f.saveCells()).?);
+        }
         f.cur_ctx = saved;
     }
+    if (cells0 != null and arm_cells.items.len != 0) try f.joinCells(arm_cells.items, ctxs.items);
     return f.joinVal(try m.placeOfInst(inst), outs.items, ctxs.items);
 }
 
@@ -5365,6 +5441,9 @@ fn closureOf(f: *Frame, mb: Member, cap_locals: []const u32) Error!Val {
     var tmp: std.ArrayList(Val) = .empty;
     defer tmp.deinit(f.gpa);
     for (cap_locals) |l| try tmp.append(f.gpa, try f.capSlot(l));
+    // A closure runs where its holder runs it: each handle it captured has
+    // another holder (kernel §13).
+    for (tmp.items) |v| if (f.nodes.items[v].tag != .later) try f.shareVal(v, mb.inst);
     const start: u32 = @intCast(f.lists.items.len);
     try f.lists.appendSlice(f.gpa, tmp.items);
     try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(cap_locals.len), .inst = mb.inst, .own_params = @intCast(mb.params.len) });
@@ -5460,6 +5539,8 @@ fn runsTwice(f: *Frame, all: []const Atom, runs: []const [2]u32) Error!bool {
 
 pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const m = f.m;
+    try f.flushShare();
+    try f.cellReads();
     try f.finishDemands();
     f.finished = true;
     // What the body reads of each parameter.
@@ -5587,8 +5668,10 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     // Which edges of its calls can see a cell of the contract (kernel §6
     // rule 10): no step, so no limit depends on it.
     try f.judgeJsSites(result);
+    // What the body leaves in its parameters' cells (kernel §13).
+    const renew = try f.publishRenew(flags, off, total);
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0() };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .renew = renew };
     return c;
 }
 
@@ -5720,6 +5803,761 @@ fn freshSrc(f: *Frame, a: Atom) Error!Src {
     return Src.fresh(k, escaped);
 }
 
+// ---- cells (kernel §13) ---------------------------------------------------------------
+//
+// A cell's contents are locations below its handle (`◆`). The frame follows
+// them for a root it can name every holder of: a parameter, the answer of a
+// call that holds new cells' handles and nothing else, and a version of one
+// (`Root.tracked`). A call that stores into a cell renews its contents
+// (`Contract.renew`): the frame makes a new **version** of the root, whose
+// contents are what the call left there, and from then on every reading of
+// the root is a reading of that version (`cellsNow`). A value taken out of
+// the cell before (a loan, `Ref.get`'s answer) is a root of its own: it holds
+// the old contents. A handle that gets another holder (a closure, an escape, a
+// copy in another root, a function the frame does not know) is **shared**: its
+// contents escape, and from then on hold `outside` as well (`shareCell`).
+
+/// Per entry of `layout`, whether it is in a cell's contents, below a
+/// handle; empty when the layout has no handle. A handle in the deep level
+/// of a cycle names its contents by no label path apart from the cycle's
+/// other members: each other entry of its layout is read as its contents
+/// (the pessimistic side). Made once for each layout; each pair of a handle
+/// and an entry is work (kernel §8).
+fn innerOf(f: *Frame, layout: u32) Error![]const bool {
+    if (layout < f.cell_inner.items.len) if (f.cell_inner.items[layout]) |x| return x;
+    if (layout >= f.cell_inner.items.len) try f.cell_inner.appendNTimes(f.gpa, null, layout + 1 - f.cell_inner.items.len);
+    const m = f.m;
+    const es = m.loc.layoutEntries(layout);
+    const any = for (es) |e| {
+        if (e.kind == .cell) break true;
+    } else false;
+    if (!any) {
+        f.cell_inner.items[layout] = &.{};
+        return &.{};
+    }
+    const out = try f.gpa.alloc(bool, es.len);
+    @memset(out, false);
+    for (es, 0..) |h, hi| if (h.kind == .cell) {
+        _ = f.charge(es.len);
+        const deep = try f.deepLoc(h.loc);
+        for (es, 0..) |e, k| if (k != hi and (deep or m.loc.isPrefix(h.loc, e.loc))) {
+            out[k] = true;
+        };
+    };
+    f.cell_inner.items[layout] = out;
+    return out;
+}
+
+/// Whether the location `loc` is in the deep level of a cycle.
+fn deepLoc(f: *Frame, loc: u32) Error!bool {
+    var ls: std.ArrayList(u64) = .empty;
+    defer ls.deinit(f.gpa);
+    try f.m.loc.labels(loc, &ls, f.gpa);
+    for (ls.items) |w| if (@as(Loc.Label, @bitCast(w)).cyc) return true;
+    return false;
+}
+
+/// The entries of `layout` in the contents of the handle at entry `h`.
+fn contentsAt(f: *Frame, layout: u32, h: u32, out: *std.ArrayList(u32)) Error!void {
+    const m = f.m;
+    const es = m.loc.layoutEntries(layout);
+    const deep = try f.deepLoc(es[h].loc);
+    _ = f.charge(es.len);
+    for (es, 0..) |e, k| if (k != h and (deep or m.loc.isPrefix(es[h].loc, e.loc))) try out.append(f.gpa, @intCast(k));
+}
+
+/// The tracked root that root `root` is a version of, or itself.
+fn originOf(f: *const Frame, root: u32) u32 {
+    const o = f.roots.items[root].origin;
+    return if (o != none) o else root;
+}
+
+/// `v` with each part of a tracked root read at that root's latest version
+/// (kernel §13): the reading of a value now. A part that is no root's (a
+/// construction, a join) is read part by part.
+fn cellsNow(f: *Frame, v: Val) Error!Val {
+    try f.flushShare();
+    return f.cellsNowIn(v);
+}
+
+fn cellsNowIn(f: *Frame, v: Val) Error!Val {
+    if (f.cell_roots.items.len == 0 or v == v_none or v == v_outside) return v;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .ref => {
+            if (!f.roots.items[n.a].tracked) return v;
+            const l = f.latestOf(f.originOf(n.a)) orelse return v;
+            return f.reroot(l, n.b);
+        },
+        .built => {
+            if (f.charge(n.b)) return v;
+            const kids = try f.gpa.dupe(Kid, f.kids.items[n.a..][0..n.b]);
+            var changed = false;
+            for (kids) |*k| {
+                const nv = try f.cellsNowIn(k.val);
+                if (nv != k.val) changed = true;
+                k.val = nv;
+            }
+            if (!changed) return v;
+            const start: u32 = @intCast(f.kids.items.len);
+            try f.kids.appendSlice(f.gpa, kids);
+            return f.node(.{ .tag = .built, .place = n.place, .a = start, .b = n.b });
+        },
+        .join => {
+            if (f.charge(n.b)) return v;
+            const arms = try f.gpa.dupe(u32, f.lists.items[n.a..][0 .. 2 * n.b]);
+            var changed = false;
+            for (0..n.b) |ki| {
+                const nv = try f.cellsNowIn(arms[2 * ki]);
+                if (nv != arms[2 * ki]) changed = true;
+                arms[2 * ki] = nv;
+            }
+            if (!changed) return v;
+            const start: u32 = @intCast(f.lists.items.len);
+            try f.lists.appendSlice(f.gpa, arms);
+            return f.node(.{ .tag = .join, .place = n.place, .a = start, .b = n.b });
+        },
+        // No part of a tracked root by a path: a function, outside, or a
+        // value of no claim, which `unknownOf` made with its handles shared.
+        .none, .outside, .fnref, .closure, .unknown => return v,
+        .later => unreachable, // read through `capVal` only
+    }
+}
+
+/// The latest value `l` of a root (a `ref` of a version, or a `join` of
+/// them), read at the path `path` below the root: the versions of one root
+/// have its place and layout, so a path of it is a path of each.
+fn reroot(f: *Frame, l: Val, path: u32) Error!Val {
+    const n = f.nodes.items[l];
+    switch (n.tag) {
+        .ref => return f.refVal(n.a, path),
+        .join => {
+            const arms = try f.gpa.dupe(u32, f.lists.items[n.a..][0 .. 2 * n.b]);
+            for (0..n.b) |ki| arms[2 * ki] = try f.reroot(arms[2 * ki], path);
+            const start: u32 = @intCast(f.lists.items.len);
+            try f.lists.appendSlice(f.gpa, arms);
+            return f.node(.{ .tag = .join, .place = f.m.loc.paths.items[path].place, .a = start, .b = n.b });
+        },
+        .none, .outside, .fnref, .closure, .unknown, .built => return l,
+        .later => unreachable, // read through `capVal` only
+    }
+}
+
+/// A new version of the tracked root `o`, whose value now is `cur`: each
+/// entry holds what `cur` holds there. The caller renews the entries of the
+/// contents it stores into, then derives `linear` (`finishVersion`).
+fn versionOf(f: *Frame, o: u32, cur: Val, inst: u32) Error!u32 {
+    const m = f.m;
+    const place = f.roots.items[o].place;
+    const v = try f.newRoot(.local, place, inst);
+    f.roots.items[v].tracked = true;
+    f.roots.items[v].origin = o;
+    const ent0 = f.roots.items[v].ent;
+    const es = m.loc.layoutEntries(f.roots.items[v].layout);
+    for (es, 0..) |e, k| {
+        const start: u32 = @intCast(f.atoms.items.len);
+        const dup = try f.leavesAs(cur, place, @intCast(k), &f.atoms);
+        try f.uniqueTail(&f.atoms, start);
+        f.rents.items[ent0 + k] = .{ .kind = .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = !e.single and (dup or f.curTwice(cur, @intCast(k))) };
+    }
+    return v;
+}
+
+/// Whether entry `k` of a tracked root's value `cur` is `twice` in a root it reads.
+fn curTwice(f: *const Frame, cur: Val, k: u32) bool {
+    const n = f.nodes.items[cur];
+    switch (n.tag) {
+        .ref => {
+            const r = f.roots.items[n.a];
+            return r.kind == .local and f.rents.items[r.ent + k].twice;
+        },
+        .join => {
+            for (0..n.b) |ki| if (f.curTwice(f.lists.items[n.a + 2 * ki], k)) return true;
+            return false;
+        },
+        .none, .outside, .fnref, .closure, .unknown, .built, .later => return false,
+    }
+}
+
+/// `linear` of a version, from its atoms; it is the root's latest from now on.
+fn finishVersion(f: *Frame, o: u32, v: u32) Error!void {
+    const n = f.m.loc.layouts.items[f.roots.items[v].layout].len;
+    const answers = try f.gpa.alloc(bool, n);
+    @memset(answers, false);
+    try f.deriveLinear(v, null, answers);
+    try f.setLatest(o, try f.rootVal(v));
+}
+
+/// The tracked roots and entries whose handles atom `a` can be (kernel §13):
+/// a tracked parameter's handle, a new cell's handle that a tracked root
+/// holds (`Root.cell_root`), and through the runs of the frame's roots at a
+/// handle's location. A capture's, an answer's and a handle outside the
+/// frame are no root the frame follows.
+fn cellOrigins(f: *Frame, a: Atom, out: *std.ArrayList([3]u32)) Error!void {
+    const m = f.m;
+    var stack: std.ArrayList(Atom) = .empty;
+    defer stack.deinit(f.gpa);
+    try stack.append(f.gpa, a);
+    while (stack.pop()) |x| {
+        if (f.charge(1)) return;
+        const r = f.roots.items[x.root];
+        switch (r.kind) {
+            .param => if (r.tracked and m.loc.layoutEntries(r.layout)[x.e].kind == .cell) try out.append(f.gpa, .{ x.root, x.e, none }),
+            .fresh => if (r.cell_root != none) try out.append(f.gpa, .{ r.cell_root, r.cell_e, none }),
+            .local => {
+                if (m.loc.layoutEntries(r.layout)[x.e].kind != .cell) continue;
+                const ent = f.rents.items[r.ent + x.e];
+                _ = f.charge(ent.len);
+                try stack.appendSlice(f.gpa, f.atoms.items[ent.start..][0..ent.len]);
+            },
+            .outside, .capture, .answer => {},
+        }
+    }
+}
+
+/// Each handle of a root the frame follows that the atoms
+/// `f.atoms[start..end]` can be has another holder (kernel §13). It is
+/// noted, and made at the next `flushShare`: a share makes a version, whose
+/// runs go to `f.atoms`, and the caller can be making a run there.
+fn shareAtoms(f: *Frame, start: usize, end: usize, point: u32) Error!void {
+    if (!f.cells_any) return;
+    for (start..end) |i| {
+        const before = f.share_pending.items.len;
+        try f.cellOrigins(f.atoms.items[i], &f.share_pending);
+        for (f.share_pending.items[before..]) |*o| o[2] = point;
+    }
+}
+
+/// The shares `shareAtoms` noted, made: a share escapes contents, which
+/// can note more.
+fn flushShare(f: *Frame) Error!void {
+    while (f.share_pending.pop()) |o| try f.shareCell(o[0], o[1], o[2]);
+}
+
+/// Each handle that value `v` can hold has another holder (noted).
+fn shareVal(f: *Frame, v: Val, point: u32) Error!void {
+    if (!f.cells_any or v == v_none or v == v_outside) return;
+    const start = f.atoms.items.len;
+    _ = try f.allLeaves(v, &f.atoms);
+    try f.shareAtoms(start, f.atoms.items.len, point);
+    f.atoms.shrinkRetainingCapacity(start);
+}
+
+/// Each handle that a handle's location of root `root` holds, other than
+/// the root's own (a version's, or a new cell's that `cellResult` named), has
+/// another holder: the root copied it (a list, a record, a call's answer, a
+/// cell's renewed contents).
+fn shareCopies(f: *Frame, root: u32, only: ?[]const u32, point: u32) Error!void {
+    if (!f.cells_any) return;
+    const r = f.roots.items[root];
+    const es = f.m.loc.layoutEntries(r.layout);
+    for (es, 0..) |e, k| {
+        if (e.kind != .cell) continue;
+        if (only) |ks| if (std.mem.indexOfScalar(u32, ks, @intCast(k)) == null) continue;
+        const ent = f.rents.items[r.ent + k];
+        try f.shareAtoms(ent.start, ent.start + ent.len, point);
+    }
+}
+
+/// The handle at entry `e` of tracked root `o` has another holder (kernel
+/// §13): what its contents hold now escapes, since the other holder can read
+/// them at any later time, and from now on they hold `outside` too, since it
+/// can store into them where the frame does not see.
+fn shareCell(f: *Frame, o: u32, e: u32, point: u32) Error!void {
+    const got = try f.cell_shared.getOrPut(f.gpa, .{ o, e });
+    if (got.found_existing) return;
+    const r = f.roots.items[o];
+    const cur = f.latestOf(o) orelse try f.rootVal(o);
+    var ks: std.ArrayList(u32) = .empty;
+    defer ks.deinit(f.gpa);
+    try f.contentsAt(r.layout, e, &ks);
+    // Contents of a type of no location (`Fiber ⊤`) hold no cell: nothing
+    // to escape, and no version to make.
+    if (ks.items.len == 0) return;
+    const start: u32 = @intCast(f.atoms.items.len);
+    for (ks.items) |k| _ = try f.leavesAs(cur, r.place, k, &f.atoms);
+    try f.noteEscape(start, point);
+    const v = try f.versionOf(o, cur, point);
+    const ent0 = f.roots.items[v].ent;
+    for (ks.items) |k| {
+        const old = f.rents.items[ent0 + k];
+        const at: u32 = @intCast(f.atoms.items.len);
+        const olds = try f.gpa.dupe(Atom, f.atoms.items[old.start..][0..old.len]);
+        try f.atoms.appendSlice(f.gpa, olds);
+        try f.atoms.append(f.gpa, outside_atom);
+        f.rents.items[ent0 + k] = .{ .kind = .alias, .start = at, .len = @intCast(f.atoms.items.len - at), .twice = old.twice };
+    }
+    try f.finishVersion(o, v);
+}
+
+/// The answer of a call, root `root`: where each handle's location holds one
+/// handle the callee made in this call, which no other location holds and
+/// which it did not let escape, the frame follows the root's contents
+/// (kernel §13). Else every handle it holds has another holder, and its
+/// contents hold `outside` too (`rootLeaves`).
+fn cellResult(f: *Frame, root: u32, roots_before: usize, point: u32) Error!void {
+    const r = f.roots.items[root];
+    if (!r.cells) return;
+    const es = f.m.loc.layoutEntries(r.layout);
+    var ok = true;
+    for (es, 0..) |e, k| {
+        if (e.kind != .cell) continue;
+        const ent = f.rents.items[r.ent + k];
+        if (ent.hasOwn() or ent.twice or ent.len != 1) {
+            ok = false;
+            break;
+        }
+        const a = f.atoms.items[ent.start];
+        const ar = f.roots.items[a.root];
+        if (ar.kind != .fresh or a.root < roots_before or ar.escaped or ar.cell_root != none) {
+            ok = false;
+            break;
+        }
+        // One handle at two locations of the answer.
+        for (es[0..k], 0..) |e2, k2| if (e2.kind == .cell) {
+            const ent2 = f.rents.items[r.ent + k2];
+            if (ent2.len == 1 and f.atoms.items[ent2.start].root == a.root) ok = false;
+        };
+        if (!ok) break;
+    }
+    if (!ok) {
+        try f.shareCopies(root, null, point);
+        return f.flushShare();
+    }
+    f.roots.items[root].tracked = true;
+    f.cells_any = true;
+    for (es, 0..) |e, k| if (e.kind == .cell) {
+        const h = f.atoms.items[f.rents.items[r.ent + k].start].root;
+        f.roots.items[h].cell_root = root;
+        f.roots.items[h].cell_e = @intCast(k);
+    };
+}
+
+/// The renewals of a call (kernel §13, `Contract.renew`): for each handle of
+/// a parameter whose contents the callee renews, the argument's root gets a
+/// new version where the frame follows it, and otherwise what the callee
+/// stores escapes and the handle has another holder.
+fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val, casts: bool, inst: u32) Error!void {
+    const m = f.m;
+    try f.flushShare();
+    for (0..c.arity) |j| {
+        const sig = c.layouts[j];
+        const ses = m.loc.layoutEntries(sig);
+        var done: ?[]bool = null;
+        for (ses, 0..) |he, h| {
+            if (he.kind != .cell) continue;
+            if (done) |d| if (d[h]) continue;
+            var ks: std.ArrayList(u32) = .empty;
+            defer ks.deinit(f.gpa);
+            try f.contentsAt(sig, @intCast(h), &ks);
+            const renewed = for (ks.items) |k| {
+                if (c.renewAt(c.off[j] + k) != null) break true;
+            } else false;
+            if (!renewed) continue;
+            if (done == null) {
+                done = try f.gpa.alloc(bool, ses.len);
+                @memset(done.?, false);
+            }
+            for (ks.items) |k| done.?[k] = true;
+            try f.renewHandle(base, c, @intCast(j), @intCast(h), ks.items, args[j], casts, inst);
+        }
+    }
+}
+
+fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, inst: u32) Error!void {
+    const m = f.m;
+    const sig = c.layouts[j];
+    // A hole of markup can be evaluated where the markup is rendered, after
+    // what the walk sees next (kernel §6.12): no version is made there.
+    const tgt = if (f.markup_reads == null) try f.renewTarget(v, sig, h) else null;
+    if (tgt) |t| if (!f.cell_shared.contains(.{ t.o, t.hx })) {
+        const r = f.roots.items[t.o];
+        const xl = r.layout;
+        const xes = m.loc.layoutEntries(xl);
+        const cov = try m.loc.cover(sig, xl);
+        var xks: std.ArrayList(u32) = .empty;
+        defer xks.deinit(f.gpa);
+        try f.contentsAt(xl, t.hx, &xks);
+        // A summary location holds the contents of many cells, of which the
+        // call renews one: the others keep what they held.
+        const strong = xes[t.hx].single;
+        const ver = try f.versionOf(t.o, v, inst);
+        const ent0 = f.roots.items[ver].ent;
+        for (xks.items) |k| {
+            const start: u32 = @intCast(f.atoms.items.len);
+            var st: SrcState = .{ .inst = inst, .typed = !casts };
+            const cr = cov[k];
+            if (cr == none) {
+                try f.atoms.append(f.gpa, outside_atom);
+            } else if (cr == Loc.all) {
+                for (ks) |sk| if (c.renewAt(c.off[j] + sk)) |srcs| try f.expandSrcs(base, srcs, sig, sk, xl, k, &st);
+            } else if (c.renewAt(c.off[j] + cr)) |srcs| {
+                try f.expandSrcs(base, srcs, sig, cr, xl, k, &st);
+            } else {
+                // A location of the contents that the callee leaves as it was.
+                _ = try f.leavesAs(v, r.place, k, &f.atoms);
+            }
+            if (!strong) _ = try f.leavesAs(v, r.place, k, &f.atoms);
+            try f.uniqueTail(&f.atoms, start);
+            f.rents.items[ent0 + k] = .{ .kind = if (st.written) .version else .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = !xes[k].single and (st.twice or !strong or f.curTwice(v, k)) };
+        }
+        // A handle the call stored in the contents is held there as well as
+        // where it was (`shareCopies`).
+        try f.shareCopies(ver, xks.items, inst);
+        try f.finishVersion(t.o, ver);
+        return f.flushShare();
+    };
+    // Not followed (kernel §13): what the call stores in the cell escapes,
+    // and each handle of a root the frame follows that the argument holds
+    // there has another holder.
+    const start: u32 = @intCast(f.atoms.items.len);
+    for (ks) |sk| if (c.renewAt(c.off[j] + sk)) |srcs| {
+        // Every part of what it stores: the signature reads it as one place.
+        var st: SrcState = .{ .inst = inst, .typed = !casts, .whole = true };
+        try f.expandSrcs(base, srcs, sig, sk, sig, sk, &st);
+    };
+    try f.noteEscape(start, inst);
+    const hs = f.atoms.items.len;
+    _ = try f.argLeaves(v, sig, h, &.{}, false, &f.atoms);
+    try f.shareAtoms(hs, f.atoms.items.len, inst);
+    try f.flushShare();
+}
+
+const CellTarget = struct { o: u32, hx: u32 };
+
+/// The tracked root whose handle an argument `v` is at the signature's
+/// handle entry `h`, with that handle's entry: `v` is the root whole (or one
+/// of its versions, or a join of them), and the call map puts exactly one
+/// entry of the root's layout, a handle, at `h`. Else null.
+fn renewTarget(f: *Frame, v: Val, sig: u32, h: u32) Error!?CellTarget {
+    const m = f.m;
+    var o: u32 = none;
+    if (!f.wholeTracked(v, &o, 0)) return null;
+    const r = f.roots.items[o];
+    const cov = try m.loc.cover(sig, r.layout);
+    const xes = m.loc.layoutEntries(r.layout);
+    var hx: u32 = none;
+    _ = f.charge(cov.len);
+    for (cov, 0..) |cr, k| {
+        if (cr == h) {
+            if (hx != none) return null;
+            hx = @intCast(k);
+        } else if (cr == Loc.all and xes[k].kind == .cell) return null;
+    }
+    if (hx == none or xes[hx].kind != .cell) return null;
+    return .{ .o = o, .hx = hx };
+}
+
+fn wholeTracked(f: *const Frame, v: Val, o: *u32, depth: u32) bool {
+    if (depth > 8) return false;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .ref => {
+            const r = f.roots.items[n.a];
+            if (!r.tracked or n.b != r.path) return false;
+            const x = f.originOf(n.a);
+            if (o.* == none) o.* = x else if (o.* != x) return false;
+            return true;
+        },
+        .join => {
+            for (0..n.b) |ki| if (!f.wholeTracked(f.lists.items[n.a + 2 * ki], o, depth + 1)) return false;
+            return true;
+        },
+        .none, .outside, .fnref, .closure, .unknown, .built, .later => return false,
+    }
+}
+
+/// Before a call that reads, writes or renews the contents of cells: a
+/// handle that the arguments hold at two such locations (two parameters, or
+/// two locations of one) is two names of one cell to the callee, whose walk
+/// read them as apart (kernel §4.4, the apart-arguments rule): it has
+/// another holder.
+fn cellsApart(f: *Frame, c: *const Contract, args: []const Val, inst: u32) Error!void {
+    if (!f.cells_any) return;
+    const m = f.m;
+    var seen: std.ArrayList([2]u32) = .empty;
+    defer seen.deinit(f.gpa);
+    var twice: std.ArrayList([2]u32) = .empty;
+    defer twice.deinit(f.gpa);
+    for (0..c.arity) |j| {
+        const sig = c.layouts[j];
+        const inner = try f.innerOf(sig);
+        if (inner.len == 0) continue;
+        for (m.loc.layoutEntries(sig), 0..) |he, h| {
+            if (he.kind != .cell) continue;
+            var ks: std.ArrayList(u32) = .empty;
+            defer ks.deinit(f.gpa);
+            try f.contentsAt(sig, @intCast(h), &ks);
+            var touched = c.flags[c.off[j] + h] != 0;
+            for (ks.items) |k| {
+                if (c.flags[c.off[j] + k] != 0 or c.renewAt(c.off[j] + k) != null) touched = true;
+            }
+            if (!touched) continue;
+            const start = f.atoms.items.len;
+            const dup = try f.argLeaves(args[j], sig, @intCast(h), &.{}, false, &f.atoms);
+            var os: std.ArrayList([3]u32) = .empty;
+            defer os.deinit(f.gpa);
+            for (f.atoms.items[start..]) |a| try f.cellOrigins(a, &os);
+            f.atoms.shrinkRetainingCapacity(start);
+            // One location of one argument names each handle once, though its
+            // values (the arms of a join) can each name it.
+            const here = seen.items.len;
+            for (os.items) |o| {
+                const again = for (seen.items, 0..) |x, i| {
+                    if (x[0] == o[0] and x[1] == o[1]) break i;
+                } else null;
+                if (again) |i| {
+                    if (i < here) try twice.append(f.gpa, .{ o[0], o[1] });
+                    continue;
+                }
+                if (dup and !he.single) try twice.append(f.gpa, .{ o[0], o[1] });
+                try seen.append(f.gpa, .{ o[0], o[1] });
+            }
+        }
+    }
+    for (twice.items) |o| try f.shareCell(o[0], o[1], inst);
+    try f.flushShare();
+}
+
+/// A known function that renews the contents of a cell it is handed (kernel
+/// §13) runs where its holder runs it, at times the frame does not see: each
+/// handle it is handed there has another holder, and what it stores escapes.
+fn flowRenews(f: *Frame, code: Code, use: *const Use) Error!void {
+    const m = f.m;
+    const lc = code.contract;
+    if (!lc.renews()) return;
+    const inst = use.site.inst;
+    for (0..lc.arity) |k| {
+        const sig = lc.layouts[k];
+        for (m.loc.layoutEntries(sig), 0..) |he, h| {
+            if (he.kind != .cell) continue;
+            var ks: std.ArrayList(u32) = .empty;
+            defer ks.deinit(f.gpa);
+            try f.contentsAt(sig, @intCast(h), &ks);
+            var renewed = false;
+            for (ks.items) |le| if (lc.renewAt(lc.off[k] + le)) |srcs| {
+                renewed = true;
+                for (srcs) |s| try f.flowStored(code, use, s, inst);
+            };
+            if (!renewed) continue;
+            // The handle: what the holder hands there, or the captured value.
+            if (k >= code.own_params) {
+                const start = f.atoms.items.len;
+                _ = try f.argLeaves(try f.capVal(code, k - code.own_params), sig, @intCast(h), &.{}, false, &f.atoms);
+                try f.shareAtoms(start, f.atoms.items.len, inst);
+            } else if (use.kind != .top) {
+                var slots: std.ArrayList(Slot) = .empty;
+                defer slots.deinit(f.gpa);
+                var sink: ShareSink = .{ .inst = inst };
+                if (try f.slotsOf(use, @intCast(k), sig, @intCast(h), null, &slots)) {
+                    for (slots.items) |slot| for (slot.srcs) |ss| try f.resolve(use, ss, &.{}, false, &sink, 0);
+                } else try sink.lost(f, use);
+            }
+        }
+    }
+}
+
+/// A source `s` of what the known function `code` stores in a cell, at
+/// `use`: it escapes.
+fn flowStored(f: *Frame, code: Code, use: *const Use, s: Src, inst: u32) Error!void {
+    const lc = code.contract;
+    switch (s.kind) {
+        .outside, .twice => {},
+        // A cell the function made: no holder of the frame has it.
+        .fresh => {},
+        .param => {
+            if (s.a >= code.own_params) {
+                const capv = try f.capVal(code, s.a - code.own_params);
+                const start: u32 = @intCast(f.atoms.items.len);
+                _ = try f.argLeaves(capv, lc.layouts[s.a], s.e, &.{}, false, &f.atoms);
+                try f.noteEscape(start, inst);
+            } else if (use.kind != .top) {
+                var slots: std.ArrayList(Slot) = .empty;
+                defer slots.deinit(f.gpa);
+                var sink: EscSink = .{ .inst = inst };
+                if (try f.slotsOf(use, s.a, lc.layouts[s.a], s.e, null, &slots)) {
+                    for (slots.items) |slot| for (slot.srcs) |ss| try f.resolve(use, ss, &.{}, false, &sink, 0);
+                } else try sink.lost(f, use);
+            }
+        },
+        // The answer of a function the function was handed: what the holder
+        // handed it can be there.
+        .answer => {
+            var u: ?*const Use = use;
+            while (u) |x| : (u = f.upOf(x)) for (x.args) |v| try f.escape(v, inst);
+            for (0..code.ncaps) |kc| try f.escape(try f.capVal(code, kc), inst);
+        },
+    }
+}
+
+/// The parts of a source are handles with another holder (`flowRenews`).
+const ShareSink = struct {
+    inst: u32,
+
+    fn outside(_: *ShareSink, _: *Frame) Error!void {}
+    fn held(_: *ShareSink, _: *Frame) Error!void {}
+    fn lost(s: *ShareSink, f: *Frame, use: *const Use) Error!void {
+        var u: ?*const Use = use;
+        while (u) |x| : (u = f.upOf(x)) for (x.args) |v| try f.shareVal(v, s.inst);
+    }
+    fn atoms(s: *ShareSink, f: *Frame, h: Handed) Error!void {
+        try f.shareAtoms(h.start, f.atoms.items.len, s.inst);
+    }
+    fn answer(s: *ShareSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64, _: bool) Error!void {
+        const start: u32 = @intCast(f.atoms.items.len);
+        var st: SrcState = .{ .inst = s.inst, .whole = true };
+        try f.answerOfParam(level, src, suffix, &st, 0);
+        try f.shareAtoms(start, f.atoms.items.len, s.inst);
+    }
+};
+
+/// The renewals a frame publishes (kernel §13): for each tracked parameter
+/// that a call renewed, at each location of its cells' contents, the
+/// sources of its latest version, joined with its value at each early
+/// return. Empty where no parameter was renewed.
+fn publishRenew(f: *Frame, flags: []u8, off: []const u32, total: u32) Error![]const ?[]const Src {
+    const m = f.m;
+    try f.flushShare();
+    if (f.cell_roots.items.len == 0) return &.{};
+    const rn = try m.arena.alloc(?[]const Src, total);
+    @memset(rn, null);
+    var any = false;
+    var vals: std.ArrayList(Val) = .empty;
+    defer vals.deinit(f.gpa);
+    var tmp: std.ArrayList(Atom) = .empty;
+    defer tmp.deinit(f.gpa);
+    var srcs: std.ArrayList(Src) = .empty;
+    defer srcs.deinit(f.gpa);
+    for (f.params.items, 0..) |root, j| {
+        const r = f.roots.items[root];
+        if (!r.tracked or !f.renewedAt(root)) continue;
+        vals.clearRetainingCapacity();
+        for (f.ret_cells.items) |rc| if (rc[0] == root) try vals.append(f.gpa, rc[1]);
+        const val = if (vals.items.len == 1) vals.items[0] else try f.joinVal(r.place, vals.items, &.{});
+        const inner = try f.innerOf(r.layout);
+        const es = m.loc.layoutEntries(r.layout);
+        for (inner, 0..) |in, k| if (in) {
+            tmp.clearRetainingCapacity();
+            const dup = try f.leavesAs(val, r.place, @intCast(k), &tmp);
+            try f.uniqueTail(&tmp, 0);
+            srcs.clearRetainingCapacity();
+            f.newVisit();
+            for (tmp.items) |a| try f.atomSrcsIn(a, &srcs);
+            if (dup and !es[k].single) try srcs.append(f.gpa, Src.twice);
+            const out = try CMod.normal(m.arena, srcs.items);
+            rn[off[j] + k] = out;
+            // What the call leaves in the cell is answered there: another
+            // operand of a call that writes, and read (kernel §5, test 2).
+            for (out) |s| if (s.kind == .param) {
+                flags[off[s.a] + s.e] |= flag_a | flag_r;
+            };
+            any = true;
+        };
+    }
+    return if (any) rn else &.{};
+}
+
+/// At a return point (a `?`, the end of the walk): each tracked
+/// parameter's value there, for `publishRenew`, and the read of its cells'
+/// contents there, at this time and in this context (`cellReads`).
+fn noteReturnCells(f: *Frame, point: u32) Error!void {
+    if (!f.cells_any) return;
+    try f.flushShare();
+    for (f.params.items) |root| if (f.roots.items[root].tracked) {
+        const v = f.latestOf(root) orelse try f.rootVal(root);
+        try f.ret_cells.append(f.gpa, .{ root, v });
+        // The contents of its cells, not the rest of it: the caller reads
+        // the rest where it reads it.
+        const inner = try f.innerOf(f.roots.items[root].layout);
+        const start: u32 = @intCast(f.lists.items.len);
+        for (inner, 0..) |in, k| if (in) try f.lists.append(f.gpa, @intCast(k));
+        const nmask: u32 = @intCast(f.lists.items.len - start);
+        try f.ret_reads.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false, .tail = true });
+    };
+}
+
+/// Whether a call renewed tracked parameter `root`'s cells on a way to
+/// some return point: its value there is a version, not the root itself.
+fn renewedAt(f: *const Frame, root: u32) bool {
+    for (f.ret_cells.items) |rc| if (rc[0] == root) {
+        const n = f.nodes.items[rc[1]];
+        if (!(n.tag == .ref and n.a == root)) return true;
+    };
+    return false;
+}
+
+/// Where the frame answers, what its calls left in a renewed parameter's
+/// cells is read, by the caller after the call, as its answer is (kernel
+/// §13), at every return point: one where a call renewed them, and one
+/// where the cells still hold their old contents, which the caller reads as
+/// the renewal's old names (a body that wrote them in place before an
+/// early return is refused there).
+fn cellReads(f: *Frame) Error!void {
+    for (f.params.items) |root| if (f.roots.items[root].tracked and f.renewedAt(root)) {
+        for (f.ret_cells.items, f.ret_reads.items) |rc, rd| if (rc[0] == root and rd.nmask != 0) try f.uses.append(f.gpa, rd);
+    };
+}
+
+/// The latest versions of the tracked roots, to be joined after a part of
+/// the walk that may not run (`joinCells`).
+fn saveCells(f: *Frame) Error!?[]const [2]u32 {
+    if (!f.cells_any) return null;
+    try f.flushShare();
+    var out: std.ArrayList([2]u32) = .empty;
+    for (f.cell_roots.items) |o| if (f.roots.items[o].latest != none) try out.append(f.gpa, .{ o, f.roots.items[o].latest });
+    return out.items;
+}
+
+/// The latest versions `saveCells` saved, again.
+fn restoreCells(f: *Frame, saved: []const [2]u32) Error!void {
+    for (f.cell_roots.items) |o| f.roots.items[o].latest = none;
+    f.cell_roots.clearRetainingCapacity();
+    for (saved) |x| {
+        f.roots.items[x[0]].latest = x[1];
+        try f.cell_roots.append(f.gpa, x[0]);
+    }
+}
+
+/// The value of tracked root `o`'s latest version, or null when a call renewed none.
+fn latestOf(f: *const Frame, o: u32) ?Val {
+    const l = f.roots.items[o].latest;
+    return if (l == none) null else l;
+}
+
+fn setLatest(f: *Frame, o: u32, v: Val) Error!void {
+    if (f.roots.items[o].latest == none) try f.cell_roots.append(f.gpa, o);
+    f.roots.items[o].latest = v;
+}
+
+fn savedOf(saved: []const [2]u32, o: u32) ?Val {
+    for (saved) |x| if (x[0] == o) return x[1];
+    return null;
+}
+
+/// After the arms of a `case` (`ctxs` each arm's context, `arms` the latest
+/// versions each arm left), or after a part of the walk that may not run (one
+/// arm, the state before, with no context): a root whose latest differs
+/// between them is read as the join of them, each in its arm (kernel §13).
+fn joinCells(f: *Frame, arms: []const []const [2]u32, ctxs: []const u32) Error!void {
+    var keys: std.ArrayList(u32) = .empty;
+    defer keys.deinit(f.gpa);
+    for (arms) |a| for (a) |x| if (std.mem.indexOfScalar(u32, keys.items, x[0]) == null) try keys.append(f.gpa, x[0]);
+    _ = f.charge(keys.items.len * arms.len);
+    std.mem.sort(u32, keys.items, {}, std.sort.asc(u32));
+    var vals: std.ArrayList(Val) = .empty;
+    defer vals.deinit(f.gpa);
+    try f.restoreCells(&.{});
+    for (keys.items) |o| {
+        vals.clearRetainingCapacity();
+        for (arms) |a| try vals.append(f.gpa, savedOf(a, o) orelse try f.rootVal(o));
+        const same = for (vals.items[1..]) |x| {
+            if (x != vals.items[0]) break false;
+        } else true;
+        const v = if (same) vals.items[0] else try f.joinVal(f.roots.items[o].place, vals.items, ctxs);
+        try f.setLatest(o, v);
+    }
+}
+
 // ---- calls -----------------------------------------------------------------------------
 
 fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
@@ -5792,11 +6630,22 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     if (code) |c| if (c.contract.entry and args.len == 1) return f.entryCall(inst, c.decl, args[0].int());
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
+    // A later argument of a callee that the lowering can short-circuit (`&&`,
+    // `||`: `alwaysRuns`) may not run: what it renews is joined with the
+    // cells as they were (kernel §13).
+    var cells_before: ?[]const [2]u32 = null;
+    const all_run = m.tags[callee] == .top and !m.in.isCore(m.in.module);
     for (args, 0..) |a, k| {
+        if (k == 1 and !all_run) cells_before = try f.saveCells();
         // An argument at a function parameter flows to that parameter's
         // contract (`apply`). The argument of an identity is the call's value.
         const is_fn = if (code) |c| k < c.contract.arity and (c.contract.fns[k] != null or f.identityCall(c)) else false;
         try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
+    }
+    if (cells_before) |before| {
+        try f.flushShare();
+        const after = (try f.saveCells()).?;
+        try f.joinCells(&.{ after, before }, &.{});
     }
     // A call in a hole of markup can run after the other holes (`markup`).
     f.call_inst = inst;
@@ -6576,6 +7425,16 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     defer all.deinit(f.gpa);
     try all.appendSlice(f.gpa, vals);
     for (0..code.ncaps) |k| try all.append(f.gpa, try f.capVal(code, k));
+    // Each argument read as it is now: a tracked root at its latest version
+    // (kernel §13). A handle at two locations the callee reads apart has
+    // another holder first (`cellsApart`).
+    if (f.cells_any) {
+        for (all.items) |*v| v.* = try f.cellsNow(v.*);
+        if (all.items.len == c.arity) {
+            try f.cellsApart(c, all.items, inst);
+            for (all.items) |*v| v.* = try f.cellsNow(v.*);
+        }
+    }
     if (all.items.len != c.arity) {
         // A partial or an over-application: no rule follows it.
         for (all.items) |v| {
@@ -6696,6 +7555,8 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     if (casts) try f.escapeHidden(&base, c, cov, place, inst);
     if (c.casts and !(code.decl[0] != none and m.isWorded(code.decl))) try f.escapeHandedOff(c, code, args, &site, inst);
     try f.escapeWide(c, args, arg_insts, place, inst);
+    // What the call leaves in the cells it is handed (kernel §13).
+    if (c.renews()) try f.renewCells(&base, c, args, casts, inst);
     // An answer of a type with no location holds `outside` (`rootVal`).
     if (es.len == 0) return v_outside;
     // The contract is written for arguments of which no cell is at two
@@ -6704,6 +7565,10 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // are apart, and a summary location fed by two sources, or by an
     // answer, is `twice`.
     const args_apart = try f.argsApartAt(args, c, arg_insts) and !try f.argsSplit(args, c);
+    // A new cell's handle that the answer holds is the answer's alone only
+    // where the answer names it first: not one the call's renewals or flows
+    // put in another holder (`cellResult`, kernel §13).
+    const roots_before = f.roots.items.len;
     const root = try f.newRoot(.local, place, inst);
     f.roots.items[root].call = true;
     const ent0 = f.roots.items[root].ent;
@@ -6807,6 +7672,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         }
     }
     try f.deriveLinearSplit(root, !c.nonlinear and args_apart, has_answer, split);
+    try f.cellResult(root, roots_before, inst);
     return f.rootVal(root);
 }
 
@@ -8353,6 +9219,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         }
         const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code };
         try f.defaultParams(code, &top);
+        try f.flowRenews(code, &top);
         return f.flowCaptures(code, &top);
     }
     if (f.rewritesOf(&use) and f.keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
@@ -8390,6 +9257,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         }
     }
     try f.escapeUnplacedAnswer(code, &use);
+    try f.flowRenews(code, &use);
     try f.flowCaptures(code, &use);
 }
 
@@ -9216,7 +10084,9 @@ fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!v
     const ai = try f.answerRoot(di, st.inst);
     // The answer can hold the function itself, and what it captured: as at
     // a call (`callParam`), so that where the answer escapes the function
-    // does too, and what its holder hands it there.
+    // does too, and what its holder hands it there (kernel §13: a callee
+    // that stores the answer of a function parameter in a cell the frame
+    // does not follow).
     const self: Atom = .{ .root = root, .path = f.roots.items[root].path, .e = 0 };
     const base = &f.answers.items[ai].base;
     if (for (base.items) |b| {
@@ -9568,6 +10438,9 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
         return f.unknownResult(inst, vals);
     }
     f.drafts.items[di].called = true;
+    // A function the frame does not know can keep a handle, or store into
+    // it, at any time (kernel §13).
+    for (vals) |v| try f.shareVal(v, inst);
     // The runtime's `send` (the word `sender` on the platform's alias): the
     // message is given up, so each cell of it must be the sender's own.
     const r0 = f.roots.items[root];
@@ -9660,7 +10533,7 @@ fn readSelf(f: *Frame, v: Val, point: u32) Error!void {
     for (m.loc.layoutEntries(try m.loc.layoutOf(place)), 0..) |be, k| if (be.loc == self) try f.lists.append(f.gpa, @intCast(k));
     const nmask: u32 = @intCast(f.lists.items.len - start);
     if (nmask == 0) return;
-    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = v, .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
 }
 
 /// Whether the value `v` of `inst` is an object that this instruction made

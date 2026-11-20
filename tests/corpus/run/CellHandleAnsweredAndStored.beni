@@ -1,0 +1,36 @@
+-- A callee that makes a cell, stores its handle in another cell and answers
+-- it: the answer is not the handle's only holder, so its contents are not
+-- followed (`ownership-v3-kernel.md` §13, item 4). Before, the answer was
+-- read as the only holder, and the update in place wrote the contents that
+-- the other cell reads.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+mk : Ref (Maybe (Ref (List Int))) → Ref (List Int)
+mk box =
+    r = Ref.make [ 1 ]
+    Ref.set box (Just r)
+    r
+
+
+main : Program
+main =
+    box = Ref.make Nothing
+    r = mk box
+    Ref.set r [ 7 ]
+    old =
+        case Ref.get box of
+            Just c →
+                Ref.get c
+
+            Nothing →
+                []
+    Ref.update r λzs → List.push zs 2
+    Node.print (ints old)

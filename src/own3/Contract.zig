@@ -179,6 +179,26 @@ pub const Contract = struct {
     /// identities only): a call answers its argument as it is, whatever type
     /// the body read it at (`Frame.identityCall`; research report 151).
     exact: bool = false,
+    /// What a call leaves in a parameter's cells (kernel §13, *Renewal*):
+    /// per parameter location, as `flags` is, null where the call leaves
+    /// the location as it was, or the sources it holds from the call on. A
+    /// location below a cell's contents step (`◆`) is renewed where the call
+    /// stores into the cell (`Ref.set`, `update`, `modify`, a body that calls
+    /// them): every location of the contents is, and each then holds its
+    /// sources and nothing else. Empty where no location is renewed. A
+    /// source `param` names the argument's cells as they were at the call.
+    renew: []const ?[]const Src = &.{},
+
+    /// The renewal of location `i` of `flags`, or null.
+    pub fn renewAt(c: *const Contract, i: usize) ?[]const Src {
+        if (c.renew.len == 0) return null;
+        return c.renew[i];
+    }
+
+    pub fn renews(c: *const Contract) bool {
+        for (c.renew) |r| if (r != null) return true;
+        return false;
+    }
 
     pub fn writes(c: *const Contract) bool {
         for (c.flags) |f| if (f & flag_w != 0) return true;
@@ -239,6 +259,12 @@ pub fn eql(a: *const Contract, b: *const Contract) bool {
     if (a.res.len != b.res.len) return false;
     for (a.res, b.res) |s, t| if (!srcsEql(s, t)) return false;
     for (a.fns, b.fns) |f, g| if (!fnEql(f, g)) return false;
+    for (0..a.flags.len) |i| {
+        const x = a.renewAt(i);
+        const y = b.renewAt(i);
+        if ((x == null) != (y == null)) return false;
+        if (x) |xs| if (!srcsEql(xs, y.?)) return false;
+    }
     return true;
 }
 
@@ -284,8 +310,21 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
     for (res, a.res, b.res) |*r, x, y| r.* = try union2(arena, x, y);
     const fns = try arena.alloc(?*const Fn, a.fns.len);
     for (fns, a.fns, b.fns) |*f, x, y| f.* = try joinFn(arena, x, y);
+    // A location that one contract renews and the other leaves as it was
+    // holds the renewal's sources or its own cells as they were (kernel §13).
+    var renew: []const ?[]const Src = &.{};
+    if (a.renews() or b.renews()) {
+        const rn = try arena.alloc(?[]const Src, a.flags.len);
+        for (0..a.arity) |j| for (a.off[j]..a.off[j + 1]) |i| {
+            const x = a.renewAt(i);
+            const y = b.renewAt(i);
+            const self = [1]Src{.{ .kind = .param, .a = @intCast(j), .e = @intCast(i - a.off[j]) }};
+            rn[i] = if (x == null and y == null) null else try normal(arena, try std.mem.concat(arena, Src, &.{ x orelse &self, y orelse &self }));
+        };
+        renew = rn;
+    }
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .renew = renew };
     return out;
 }
 
@@ -344,8 +383,10 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     for (res, c.res) |*r, x| r.* = try a.dupe(Src, x);
     const fns = try a.alloc(?*const Fn, c.fns.len);
     for (fns, c.fns) |*f, x| f.* = if (x) |g| try dupFn(a, g) else null;
+    const renew = try a.alloc(?[]const Src, c.renew.len);
+    for (renew, c.renew) |*r, x| r.* = if (x) |xs| try a.dupe(Src, xs) else null;
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .renew = renew };
     return out;
 }
 

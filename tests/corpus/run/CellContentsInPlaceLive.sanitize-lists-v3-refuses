@@ -1,0 +1,8 @@
+# Each write of a cell's contents has another holder of the old contents (a loan, a stored value, the value the cell was made with, a closure, a second name, one handle for two, a fiber after a park): refused (ownership-v3-kernel.md §13).
+26:5 list_still_used call
+35:5 list_still_used call
+43:5 list_still_used call
+51:5 list_still_used call
+64:5 list_still_used call
+78:5 list_still_used call
+89:5 list_still_used call

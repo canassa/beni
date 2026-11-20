@@ -99,13 +99,16 @@ pub const Kind = enum(u8) {
     closure,
     /// A foreign value that does not cross: JavaScript's.
     @"opaque",
-    /// A cell (`Ref`, `Deferred`): its contents are never `own`.
+    /// A cell's handle (`Ref`, `Deferred`, `Fiber`): its contents are below it, at the step `◆` (kernel §13).
     cell,
     /// A record's field slot (kernel §11): a record update writes it in place.
     field,
 
+    /// Whether a location names every object below it. A list names its own
+    /// storage, a slot one field's, and a cell's handle its one array: what
+    /// each holds below is at locations of its own (kernel §11, §13).
     pub fn wide(k: Kind) bool {
-        return k != .list and k != .field;
+        return k != .list and k != .field and k != .cell;
     }
 };
 
@@ -669,9 +672,9 @@ pub const Table = struct {
         }
         if (objectKind(t.places.kind(place))) |k| {
             try t.addEntry(b, loc, k);
-            // What a cell holds is never `own`, and nothing is below a
-            // variable, a function or a foreign value.
-            if (k != .list) return;
+            // A list's elements and a cell's contents are below it (kernel
+            // §13); nothing is below a variable, a function or a foreign value.
+            if (k != .list and k != .cell) return;
         }
         try t.addSlots(b, place, loc, false);
         const st = t.places.steps(place);
@@ -690,7 +693,7 @@ pub const Table = struct {
         if (b.over) return;
         if (objectKind(t.places.kind(place))) |k| {
             try t.addEntry(b, loc, k);
-            if (k != .list) return;
+            if (k != .list and k != .cell) return;
         }
         try t.addSlots(b, place, loc, false);
         const st = t.places.steps(place);
@@ -730,7 +733,7 @@ pub const Table = struct {
         try b.members.append(t.gpa, m.int());
         if (objectKind(t.places.kind(m))) |k| {
             try t.addEntry(b, try t.extend(entry, t.memberLabel(m, k)), k);
-            if (k != .list) return;
+            if (k != .list and k != .cell) return;
         }
         try t.addSlots(b, m, entry, true);
         const st = t.places.steps(m);

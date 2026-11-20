@@ -15,7 +15,11 @@
 //   `getW` (a write of what `Ref.get` answered, not put back: the cell still holds the written value);
 // - reader: `none` (nothing old is read after the write), `cell` (`Ref.get r` after the write), `loan`
 //   (a value `Ref.get` answered before the write, read after it), `stored` (the value the cell was made
-//   with, read after the write);
+//   with, read after the write), `mid` (a value `Ref.get` answered between two writes, read after the
+//   second), `name2` (a loan taken before the write through a second name of the handle, one a callee
+//   answers beside a number, read after it), `name2cell` (`Ref.get` through that second name after the
+//   write: dead), `store2` (a value stored through that second name before the write, read after it),
+//   `storeK` (the same, stored by a closure that captured the handle; research report 166);
 // - holder: where the loan is kept (`name`, `tuple`, `closure`); `-` for the other readers;
 // - fibers: `same` (one fiber, no park), `parkSelf` (one fiber, a park between the take and the write),
 //   `park` (the reader in one fiber takes, parks and reads; the writer in another writes while it is
@@ -40,11 +44,11 @@ const CONTENTS = {
 
 // A writer: the lines that write the contents of `r`, and the text they leave to print.
 const WRITERS = {
-  upd: (c) => ({ lines: [`Ref.update r λv → ${c.w('v')}`], shown: '"u"' }),
-  mod: (c) => ({ lines: [`k = Ref.modify r λv → ( 7, ${c.w('v')} )`], shown: 'String.fromInt k' }),
-  getSet: (c) => ({ lines: [`Ref.set r (${c.w('(Ref.get r)')})`], shown: '"s"' }),
-  helper: () => ({ lines: ['bump r'], shown: '"h"' }),
-  getW: (c) => ({ lines: [`w = ${c.w('(Ref.get r)')}`], shown: `${c.show} w` }),
+  upd: (c, s = '') => ({ lines: [`Ref.update r λv → ${c.w('v')}`], shown: '"u"' }),
+  mod: (c, s = '') => ({ lines: [`k${s} = Ref.modify r λv → ( 7, ${c.w('v')} )`], shown: 'String.fromInt k' }),
+  getSet: (c, s = '') => ({ lines: [`Ref.set r (${c.w('(Ref.get r)')})`], shown: '"s"' }),
+  helper: (c, s = '') => ({ lines: ['bump r'], shown: '"h"' }),
+  getW: (c, s = '') => ({ lines: [`w${s} = ${c.w('(Ref.get r)')}`], shown: `${c.show} w` }),
 };
 
 // A holder of the loan `old`: the line that keeps it, and the expression that reads it back.
@@ -54,11 +58,12 @@ const HOLDERS = {
   closure: { pre: 'h = λ⊤ → old', get: 'h ⊤' },
 };
 
-const READERS = ['none', 'cell', 'loan', 'stored'];
+const READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'name2', 'name2cell', 'store2', 'storeK'];
 const FIBERS = ['same', 'parkSelf', 'park', 'writer'];
 
 function isLive(writer, reader) {
-  if (reader === 'loan' || reader === 'stored') return true;
+  if (reader === 'loan' || reader === 'stored' || reader === 'mid' || reader === 'name2' || reader === 'store2' || reader === 'storeK') return true;
+  if (reader === 'name2cell') return writer === 'getW';
   return reader === 'cell' && writer === 'getW';
 }
 
@@ -67,8 +72,8 @@ function gen(cname, maker, writer, reader, holder, fibers) {
   const wr = WRITERS[writer](c);
   const h = HOLDERS[holder];
   // What the reader prints after the write.
-  const readOld = reader === 'loan' ? `${c.show} (${h.get})` : reader === 'stored' ? `${c.show} v0` : reader === 'cell' ? `${c.show} (Ref.get r)` : '"-"';
-  const take = reader === 'loan' ? ['old = Ref.get r', ...(h.pre ? [h.pre] : [])] : [];
+  const readOld = reader === 'loan' ? `${c.show} (${h.get})` : reader === 'stored' ? `${c.show} v0` : reader === 'cell' ? `${c.show} (Ref.get r)` : reader === 'mid' || reader === 'name2' ? `${c.show} old` : reader === 'store2' || reader === 'storeK' ? `${c.show} v1` : reader === 'name2cell' ? `${c.show} (Ref.get r2)` : '"-"';
+  const take = reader === 'loan' ? ['old = Ref.get r', ...(h.pre ? [h.pre] : [])] : reader === 'mid' ? [...WRITERS[writer](c, '1').lines, 'old = Ref.get r'] : reader === 'name2' ? ['( r2, _ ) = withHandle r', 'old = Ref.get r2'] : reader === 'name2cell' ? ['( r2, _ ) = withHandle r'] : reader === 'store2' ? ['( r2, _ ) = withHandle r', `v1 = ${c.init}`, 'Ref.set r2 v1'] : reader === 'storeK' ? [`v1 = ${c.init}`, 'put1 = λ⊤ → Ref.set r v1', 'put1 ⊤'] : [];
   const lines = [];
   if (maker === 'local') lines.push(`v0 = ${c.init}`, 'r = Ref.make v0');
   if (fibers === 'same') {
@@ -116,6 +121,10 @@ render d = String.join (List.map (Dict.toList d) λ( k, v ) → "\${String.fromI
 
 fstOf : a × Int → a
 fstOf ( a, _ ) = a
+
+
+withHandle : Ref a → Ref a × Int
+withHandle h = ( h, 1 )
 
 
 ${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
