@@ -8364,8 +8364,15 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     }
     for (0..use.fnc.arity) |k| {
         const n = lc.off[k + 1] - lc.off[k];
+        // A function parameter whose answer the function lets escape: what
+        // the holder hands there can be in that answer, so it escapes, as
+        // where the function lets the parameter itself escape. Before, only
+        // the flag of the parameter's location was read, and a callback that
+        // kept the answer of the function it was handed (`λq → Ref.set holder
+        // (q ⊤)`, `List.map [ λ⊤ → y ]`) let `y` be written in place.
+        const ans_esc = if (lc.fns[k]) |lf| lf.ans_escapes else false;
         for (0..n) |le| {
-            const fl = lc.flags[lc.off[k] + le];
+            const fl = lc.flags[lc.off[k] + le] | (if (ans_esc) flag_e else 0);
             if (fl & flag_w != 0) {
                 var seen: Seen = .{};
                 try f.ownSupply(&use, code, @intCast(k), @intCast(le), &seen);
@@ -8724,7 +8731,13 @@ fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool
         // A cell the holder made: its one root at this call, an atom like any other (kernel §4.2).
         .fresh => {
             const start: u32 = @intCast(f.atoms.items.len);
-            try f.freshAtom(use.key, use.holder, f.m.isDraft(use.c), src.a, src.e != 0, use.site.inst, &f.atoms);
+            // A source of a known function's contract at an inner use is a cell
+            // of that function, made in the run its own use names: the key of
+            // that use, as `answerSrcs` names the cells it answers. With the inner
+            // use's key, one cell that the function hands a captured function
+            // and answers had two names (kernel §4.2).
+            const key = if (use.kind == .inner) use.up.?.key else use.key;
+            try f.freshAtom(key, use.holder, f.m.isDraft(use.c), src.a, src.e != 0, use.site.inst, &f.atoms);
             try sink.atoms(f, .{ .start = start, .dup = false, .use = use, .a = none, .e = 0, .suffix = suffix, .captured = false });
         },
         .outside => try sink.outside(f),
@@ -9201,6 +9214,14 @@ fn ownAnswer(f: *Frame, root: u32, alayout: u32, ae: u32, st: *SrcState) Error!v
     const di = try f.draftOf(root, null);
     f.drafts.items[di].used = true;
     const ai = try f.answerRoot(di, st.inst);
+    // The answer can hold the function itself, and what it captured: as at
+    // a call (`callParam`), so that where the answer escapes the function
+    // does too, and what its holder hands it there.
+    const self: Atom = .{ .root = root, .path = f.roots.items[root].path, .e = 0 };
+    const base = &f.answers.items[ai].base;
+    if (for (base.items) |b| {
+        if (atomEql(b, self)) break false;
+    } else true) try base.append(f.gpa, self);
     const root_id = f.answers.items[ai].root;
     const ar = f.roots.items[root_id];
     const dr = f.drafts.items[di];

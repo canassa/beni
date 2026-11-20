@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §4.2 and §6 rule 8 revised 2026-11-20 (the lane of research report 165). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -503,7 +503,11 @@ says the body let it escape. Two sources with one `k` may be one cell. In the ca
 of one callee read at one holder are **one root** of kind `fresh` (`freshAtom`, keyed by the holder's
 `Use.key`, the contract and `k`), so a cell at two result entries overlaps with itself, a cell handed to a
 function parameter and answered is the cell in the result, and a cell the callee let escape is noted as
-escaped at the call. A `fresh` root has no value and no layout: it exists as atoms.
+escaped at the call. A known function's cell that it hands a function it captured is read at the inner
+use of that function, and is keyed by the known function's own use, as its answer's cells are
+(`resolve`, `answerSrcs`). *The lane of research report 165: it was keyed by the inner use, so one cell
+had two names, and a function that handed a new list to a captured function that stored it in a cell,
+and answered it, said they were two (`run/FreshHandedAndAnswered`).* A `fresh` root has no value and no layout: it exists as atoms.
 
 The site `k` is canonical, so the rounds of a recursive group settle (`freshId`, `Mod.siteId`): a cell the
 frame made is named by the instruction that made it and the entry; a cell a callee made is named by the
@@ -841,6 +845,14 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    once. *Report 118 §4.5: the text asked "did not let go" of a parameter only, and a new list that the
    function put in a `Ref` and answered came back as `own`. A cell the function made is one source
    among the others, and the same three facts are read for it.*
+
+   **A function parameter whose answer the function lets escape** (`Fn.ans_escapes`) can answer what the
+   holder hands it, at any depth: so what the holder hands at that parameter escapes where the
+   function meets the holder, as where the function lets the parameter itself escape (`flowCode`).
+   The answer of the frame's own function parameter holds the function itself (`ownAnswer`, as
+   `callParam`'s does). *The lane of research report 165: only the parameter's own flag was read, and
+   `List.map [ λ⊤ → y ] λq → Ref.set holder (q ⊤)` let `y` be written in place while a top-level cell
+   held it (`run/CallbackAnswerKept`).*
 
    **What a function in a default location may ask.** The code that runs a function in a default
    location (`flowCode` with `top`, a holder that lost it, a partial application) runs it at any time,

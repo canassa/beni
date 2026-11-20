@@ -1,0 +1,2 @@
+# The closure λ⊤ → y is handed to a callback that keeps its answer in a top-level cell: y escapes, and its push is refused (ownership-v3-kernel.md §6 rule 8).
+30:9 list_still_used List.push
