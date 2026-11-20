@@ -31,7 +31,9 @@ slices of §9, which the next lane takes. #2521, #981.*
 - **No owner decision is open.** #981's decision (a `Ref` owns its contents; `Ref.get` answers a loan
   that may not be read after a suspension point or escape; the fix is `List.copy`) is the rule of §6,
   and every other choice here is technical.
-- **No verdict changed**: this lane changes no code of the compiler. The v3 dumps of the 2 475
+- **One fault of the oracle, fixed** (§7, the review): the record sanitiser compared a field with `===`,
+  so it missed a write of `-0` over `0` and trapped on an unwritten `NaN`. It compares with `Object.is`.
+- **No verdict changed**: this lane changes no code of the checker. The v3 dumps of the 2 475
   ownership roots and the real-writes ledger (309 of 319) were taken on the base for the next lane's
   diff (§10).
 
@@ -221,6 +223,20 @@ fiber A takes `old = Ref.get r`, sleeps, and reads `old`, while fiber B sleeps l
 `Ref.update`. Each TRAP is also DIFF in place. The refusals left are writes of what `Ref.get` answered,
 which is `outside` today. The base refuses all 720.
 
+**The review** (one adversarial reader, read-only, on the mutant: 79 programs — lists, records and
+dictionaries read through `length`, `==`, `Debug.toString`, `size`, `member`; callbacks inside
+`Ref.update`, `Ref.modify` answers, a `Ref` of a `Ref`, a cell in a record or a list; `race`, `bracket`,
+`par`, `scope`, `spawnDetached`, `Log`). Every stale read the mutant accepts is caught but one: a record
+field written from `0` to `-0`. The record sanitiser (`sanitize_runtime.mjs`, `record`) left a field
+alone when its old and new values were `===`, and `0 === -0`, so `1 / old.x` read `Infinity` sanitised
+and `-Infinity` in place: only the in-place leg saw it. The same test poisoned a field that holds `NaN`
+and that no write changed (`NaN !== NaN`), a false alarm on a program the base accepts rightly. The test
+is `Object.is` now; `run/SanitiserRecordNaNField` (`.sanitize-lists-v3`) traps on the base and passes
+with the fix. The reader's other notes need nothing: prepends are no in-place write today, so the
+runtimes' `front` is not reached; a view (`List.drop`, a pattern's rest) traps under the sanitiser where
+the in-place run cannot tell (the base refuses each); and a read of a part a write did not change
+(`length` after `set`) traps rightly, since the object was written.
+
 ## 8. The kernel rules (for the next lane: kernel §13, *Cells*)
 
 The text the checker slice adds, as one new section (no section renumbered):
@@ -250,7 +266,7 @@ The text the checker slice adds, as one new section (no section renumbered):
 
 | Slice | What | State |
 |---|---|---|
-| 0 | the plan, the oracle's proof (a mutant), `cells.mjs`, the base's dumps and ledger | landed (this report) |
+| 0 | the plan, the oracle's proof (a mutant) and its `Object.is` fix, `cells.mjs`, the base's dumps and ledger | landed (this report) |
 | 1 | `Loc` descends into `◆`; the rows of §8 item 2; `Contract.renew` (walk, publish, import, `join`, `eql`, the dump, `falseWord`'s *below*); version roots in `apply`; kernel §13 | open |
 | 2 | shared handles (§8 item 4): the three ways a handle gets another holder, the contents' escape, stores into a shared handle | open, with slice 1: slice 1 alone is unsound for any program whose handle has a second holder |
 | 3 | `run/` twins for #2521's eleven programs and #981's shape, live twins refused; the copying fixtures of #981 without their copies | open |
@@ -283,7 +299,7 @@ On the base (`5b981be777`, ReleaseSafe self-hosted):
 ## 11. Reproduce
 
 ```sh
-zig build beni-fmt-check   # zig-out/safe/bin/beni; this report changes no compiler code, so any commit from 5b981be777 to it
+zig build beni-fmt-check   # zig-out/safe/bin/beni; this report changes no checker code, so any commit from 5b981be777 to it
 TMPDIR=<disk> node bench/ownership-v3-dumps.mjs zig-out/safe/bin/beni <dir>/before 16
 node bench/ownership-sweeps/cells.mjs <dir>/cells
 node bench/ownership-sweeps/run.mjs --beni=zig-out/safe/bin/beni --checker=v3 --mode=both --jobs=16 --tmp=<disk> <dir>/cells

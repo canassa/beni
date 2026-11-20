@@ -208,7 +208,7 @@ export const len = (xs) => {
 // object: every name the program kept of it is one object. Here an update
 // makes a copy, so the objects of one in-place identity are one group, the
 // newest last. A name older than the newest reads the newest's fields in
-// place: each field whose value differs from the newest's is poisoned on it,
+// place: each field whose value differs from the newest's (`Object.is`) is poisoned on it,
 // so a read of it traps where an in-place run would read another value.
 // `same` traps an identity compare of two members of one group.
 const groups = new WeakMap();
@@ -223,7 +223,9 @@ export const record = (base, copy, site) => {
     for (const key of Reflect.ownKeys(copy)) {
       const d = Object.getOwnPropertyDescriptor(old, key);
       if (d === undefined || d.get !== undefined) continue;
-      if (d.value === copy[key]) continue;
+      // `Object.is`: a NaN that no write changed is the same value, and a
+      // field written from `0` to `-0` is not (research report 165).
+      if (Object.is(d.value, copy[key])) continue;
       Object.defineProperty(old, key, {
         get: () => {
           throw new Error(`beni: a stale read of a record (read ${String(key)}), which ${site} changed in place`);
