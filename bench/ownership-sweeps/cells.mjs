@@ -35,7 +35,8 @@
 //   `park` (the reader in one fiber takes, parks and reads; the writer in another writes while it is
 //   parked), `writer` (the write in a spawned fiber that the reader joins); `par` and `scoped` (the
 //   reader and the writer of `park` as `Task.par`'s halves, or two fibers of one `Task.scope`),
-//   `bracket` (the write as `Task.bracket`'s body), `deferred` (the writer fiber waits on a `Deferred`
+//   `bracket` (the write as `Task.bracket`'s body), `race` (the write as the half of `Task.race` that
+//   finishes first), `deferred` (the writer fiber waits on a `Deferred`
 //   the reader completes after its take), `queue` (the handle goes to the writer fiber through a
 //   `Queue`), `parkLater` (`park` with the writer's fiber spawned first), `peek` (the writer's fiber,
 //   then a helper that takes a value out of the cell, parks and reads it), `getter` (the same through a
@@ -97,7 +98,7 @@ const READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'name2', 'name2cell', 
 // `part0` and `part1` take one part of a pair out of the cell before the write and read it after: the
 // written first part (live) or the second, which no write touches (dead).
 const PART_READERS = ['part0', 'part1'];
-const FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek', 'getter', 'generic'];
+const FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek', 'getter', 'generic', 'race'];
 
 function isLive(writer, reader, fibers, holder) {
   if (reader === 'part1') return writer === 'closTwiceStore' || writer === 'closOther' || ((fibers === 'peek' || fibers === 'getter' || fibers === 'generic') && writer !== 'getW');
@@ -157,6 +158,9 @@ function gen(cname, maker, writer, reader, holder, fibers) {
     const readerBody = [...take, 'Io.sleep 5', readOld];
     const writerBody = ['Io.sleep 1', ...wr.lines, wr.shown];
     lines.push(`Task.scope λs →\n    a = Task.spawnIn s λ⊤ →\n${ind(readerBody.join('\n'), 8)}\n    b = Task.spawnIn s λ⊤ →\n${ind(writerBody.join('\n'), 8)}\n    ra = Task.join a\n    rb = Task.join b\n    [ rb, ra ]`);
+  } else if (fibers === 'race') {
+    // The write as the half of `Task.race` that finishes first; the other half sleeps and is cancelled.
+    lines.push(...take, `rb = Task.race\n    (λ⊤ →\n${ind(['Io.sleep 1', ...wr.lines, wr.shown].join('\n'), 8)}\n    )\n    λ⊤ →\n        Io.sleep 40\n        "late"`, `[ rb, ${readOld} ]`);
   } else if (fibers === 'bracket') {
     // The write as the body of `Task.bracket`.
     lines.push(...take, `rb = Task.bracket (λ⊤ → ⊤) (λ_ _ → ⊤) λ_ →\n${ind([...wr.lines, wr.shown].join('\n'), 4)}`, `[ rb, ${readOld} ]`);
