@@ -6724,11 +6724,30 @@ fn opReaches(f: *Frame, o: Val, ws: []const Atom, root: u32) Error!bool {
         const code = f.codes.items[f.nodes.items[o].a];
         for (0..code.ncaps) |k| {
             const cv = try f.capVal(code, k);
+            if (keepsCapture(code, k)) {
+                if (try f.otherReaches(.{ .v = cv }, ws, none, &.{})) return true;
+                continue;
+            }
             if (try f.opReaches(cv, ws, root)) return true;
         }
         return false;
     }
     return f.otherReaches(.{ .v = o }, ws, none, &.{});
+}
+
+/// Whether the known function `code` hands something of its capture `k` to
+/// the code that runs it: its answer or a renewal names the capture, or it
+/// lets it escape. Then a handle it captured is no handle read through
+/// itself: the callee can hold what it answers (a value taken out of the
+/// cell, or the handle) across its own switch points (kernel §13 item 12).
+fn keepsCapture(code: Code, k: usize) bool {
+    const lc = code.contract;
+    const j = code.own_params + k;
+    if (j >= lc.arity) return true;
+    for (lc.flags[lc.off[j]..lc.off[j + 1]]) |x| if (x & flag_e != 0) return true;
+    for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j) return true;
+    for (0..lc.arity) |a| if (a != j) for (lc.off[a]..lc.off[a + 1]) |i| if (lc.renewAt(i)) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j) return true;
+    return false;
 }
 
 /// Whether value `v` is tracked root `o` whole, or a version of it: a handle
@@ -7033,7 +7052,7 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val) Error!void {
             const oc = f.codes.items[f.nodes.items[o].a];
             for (0..oc.ncaps) |kc| {
                 const cv = try f.capVal(oc, kc);
-                if (!f.isHandleOf(cv, w.o)) try others.append(f.gpa, .{ .v = cv });
+                if (!f.isHandleOf(cv, w.o) or keepsCapture(oc, kc)) try others.append(f.gpa, .{ .v = cv });
             }
             continue;
         }

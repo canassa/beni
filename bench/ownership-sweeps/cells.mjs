@@ -35,7 +35,8 @@
 //   `bracket` (the write as `Task.bracket`'s body), `deferred` (the writer fiber waits on a `Deferred`
 //   the reader completes after its take), `queue` (the handle goes to the writer fiber through a
 //   `Queue`), `parkLater` (`park` with the writer's fiber spawned first), `peek` (the writer's fiber,
-//   then a helper that takes a value out of the cell, parks and reads it; kernel §13 item 12).
+//   then a helper that takes a value out of the cell, parks and reads it), `getter` (the same through a
+//   function the helper is handed, which answers a value taken out of the cell; kernel §13 item 12).
 //
 // The twin is `live` when the reader reads an old value after the write (a `loan` or `stored` reader, and
 // the `cell` reader of `getW`), `dead` otherwise. A refusal of a `dead` twin is a precision loss; a TRAP or
@@ -83,11 +84,11 @@ const HOLDERS = {
 };
 
 const READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'name2', 'name2cell', 'store2', 'storeK'];
-const FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek'];
+const FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek', 'getter'];
 
 function isLive(writer, reader, fibers) {
   // `peek`'s helper reads a value it took before its park, while the writer writes.
-  if (fibers === 'peek' && writer !== 'getW') return true;
+  if ((fibers === 'peek' || fibers === 'getter') && writer !== 'getW') return true;
   if (writer === 'closTwiceStore' || writer === 'closOther') return true;
   if (reader === 'loan' || reader === 'stored' || reader === 'mid' || reader === 'name2' || reader === 'store2' || reader === 'storeK') return true;
   if (reader === 'name2cell') return writer === 'getW';
@@ -124,6 +125,9 @@ function gen(cname, maker, writer, reader, holder, fibers) {
   } else if (fibers === 'peek') {
     // The writer's fiber spawned, then a helper that takes a value out of the cell, parks and reads it.
     lines.push(`b = Task.spawn λ⊤ →\n${ind(['Io.sleep 1', ...wr.lines, wr.shown].join('\n'), 4)}`, 'ra = peek r', 'rb = Task.join b', '[ rb, ra ]');
+  } else if (fibers === 'getter') {
+    // `peek` through a function that answers a value taken out of the cell.
+    lines.push(`b = Task.spawn λ⊤ →\n${ind(['Io.sleep 1', ...wr.lines, wr.shown].join('\n'), 4)}`, 'ra = peekWith λ⊤ → Ref.get r', 'rb = Task.join b', '[ rb, ra ]');
   } else if (fibers === 'par') {
     // The reader and the writer as the two halves of `Task.par`.
     const readerBody = [...take, 'Io.sleep 5', readOld];
@@ -147,6 +151,7 @@ function gen(cname, maker, writer, reader, holder, fibers) {
     // The write in a fiber that the reader joins.
     lines.push(...take, `b = Task.spawn λ⊤ →\n${ind([...wr.lines, wr.shown].join('\n'), 4)}`, 'rb = Task.join b', `[ rb, ${readOld} ]`);
   }
+  const peekWith = fibers === 'getter' ? `peekWith : (⊤ → ${c.t}) → String\npeekWith g =\n    old = g ⊤\n    Io.sleep 5\n    ${c.show} old\n\n\n` : '';
   const peek = fibers === 'peek' ? `peek : Ref ${/\s/.test(c.t) ? `(${c.t})` : c.t} → String\npeek h =\n    old = Ref.get h\n    Io.sleep 5\n    ${c.show} old\n\n\n` : '';
   const fromQueue = fibers === 'queue' ? `fromQueue : Queue (Ref ${/\s/.test(c.t) ? `(${c.t})` : c.t}) → String\nfromQueue q =\n    case Queue.take q of\n        Just r →\n${ind([...wr.lines, wr.shown].join('\n'), 12)}\n\n        Nothing →\n            "-"\n\n\n` : '';
   const sig = maker === 'local' ? `go : ⊤ → List String\ngo ⊤ =` : `go : Ref ${/ /.test(c.t) ? `(${c.t})` : c.t}, ${c.t} → List String\ngo r v0 =`;
@@ -201,7 +206,7 @@ wrapFn : (Int → Int) → (Int → Int)
 wrapFn f = λx → f x
 
 
-${fromQueue}${peek}${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
+${fromQueue}${peek}${peekWith}${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
 ${ind(lines.join('\n'), 4)}
 
 

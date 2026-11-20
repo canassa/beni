@@ -2455,7 +2455,9 @@ contents of a cell are locations, and that a call can change what a location of 
       within (item 11), it reads what its contract reads of the capture there, its write is a demand at
       that call on the frame's latest version, of what an earlier run stored too, judged against the
       call's operands (but a handle read through itself, and a closure's capture of the handle, which
-      read the contents where they run; at a return point, the answer) and the writer's other
+      read the contents where they run, unless the closure answers something of the capture, lets it
+      escape or stores it, `keepsCapture`: the callee can hold that loan, or the handle, across its own
+      switch points, `run/CellFibersInPlaceLive`'s `getter`; at a return point, the answer) and the writer's other
       captures, and its renewal makes a version that keeps the old contents (`maybe`). So a value taken
       out of the cell and read after a switch point, or handed to it, is refused there, with the
       `List.copy` fix.

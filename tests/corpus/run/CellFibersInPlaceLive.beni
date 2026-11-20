@@ -5,8 +5,9 @@
 -- joins the writer and reads after; a writer that takes a loan, parks and
 -- reads it; a reader fiber that does so, spawned after the writer; a helper
 -- that does so; a writer whose answer, which `Task.join` hands back, is a
--- loan; and an update whose function runs other fibers while it holds the
--- contents. Were a write accepted, the loan would read it in place.
+-- loan; an update whose function runs other fibers while it holds the
+-- contents; and a helper handed a function that answers a value taken out of
+-- the cell, or the cell, which it holds across its park. Were a write accepted, the loan would read it in place.
 import Io
 import List
 import Node exposing (Program)
@@ -99,6 +100,52 @@ switching ⊤ =
     ints (Ref.get log)
 
 
+peekWith : (⊤ → List Int) → String
+peekWith g =
+    old = g ⊤
+    Io.sleep 2
+    ints old
+
+
+getter : ⊤ → String
+getter ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    got = peekWith λ⊤ → Ref.get log
+    Task.join b
+    got
+
+
+peekCell : (⊤ → Ref (List Int)) → String
+peekCell hx =
+    h = hx ⊤
+    old = Ref.get h
+    Io.sleep 2
+    ints old
+
+
+cellGetter : ⊤ → String
+cellGetter ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    got = peekCell λ⊤ → log
+    Task.join b
+    got
+
+
 main : Program
 main = Io.run λ⊤ →
-    Node.printLines [ joined ⊤, writerLoan ⊤, readerLater ⊤, helper ⊤, answered ⊤, switching ⊤ ]
+    Node.printLines
+        [ joined ⊤
+        , writerLoan ⊤
+        , readerLater ⊤
+        , helper ⊤
+        , answered ⊤
+        , switching ⊤
+        , getter ⊤
+        , cellGetter ⊤
+        ]
