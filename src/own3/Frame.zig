@@ -181,6 +181,11 @@ const REntry = struct {
 const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true, tail: bool = false };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
 const Ctx = struct { parent: u32, case: u32, arm: u32, depth: u32 };
+/// A call or a method call as the walk applied it (`noteJsSite`): the
+/// instructions its edges are at (the callee's reference and the call, or
+/// `none`), what it was handed (`vals`, a run of `js_site_vals`), what it
+/// answered, and whether it made the frame cast.
+const JsSite = struct { pos: [2]u32, vals: u32, nvals: u32, result: Val, casts: bool };
 
 /// A function value whose code the frame knows.
 const Code = struct {
@@ -482,6 +487,14 @@ fresh_roots: std.AutoHashMapUnmanaged(FreshKey, u32) = .empty,
 /// The last call whose arguments `call` evaluated, and their values.
 call_inst: u32 = none,
 call_vals: []const Val = &.{},
+/// Each call and method call of this frame, with what it was handed and
+/// answered (`noteJsSite`), judged when the frame's answer is known
+/// (`judgeJsSites`): which of their edges can see a cell of the contract
+/// (kernel §6 rule 10, *An edge counts only where what it can see reaches
+/// the contract*). Kept only where the module's bodies are read for
+/// JavaScript (`Mod.js_seen`).
+js_sites: std.ArrayList(JsSite) = .empty,
+js_site_vals: std.ArrayList(Val) = .empty,
 /// The walk's clock (`timeOf`): the time of the last operation, its
 /// instruction, and the count of expressions entered when it was taken.
 clock: u32 = 0,
@@ -5571,6 +5584,9 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     for (dups.items) |d| if (d) {
         nonlinear = true;
     };
+    // Which edges of its calls can see a cell of the contract (kernel §6
+    // rule 10): no step, so no limit depends on it.
+    try f.judgeJsSites(result);
     const c = try m.arena.create(Contract);
     c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0() };
     return c;
@@ -5785,21 +5801,195 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     // A call in a hole of markup can run after the other holes (`markup`).
     f.call_inst = inst;
     f.call_vals = try f.gpa.dupe(Val, vals.items);
-    if (code) |c| return f.apply(inst, callee, c, vals.items, args);
-    if (fn_root != none) return f.callParam(inst, callee, fn_root, vals.items, args);
-    // A markup primitive answers markup (kernel §6.12): the answer holds
-    // each argument, the markup it is handed is read only where the platform
-    // renders it, and what else it is handed (`map`'s function) the runtime
-    // keeps past the render, so that escapes.
-    if (primitive) {
-        for (args, vals.items) |a, v| if (!m.isMarkup(m.typeOfInst(a.int()))) try f.escape(v, inst);
-        return f.unknownOf(try m.placeOfInst(inst), vals.items);
+    const casts_before = f.casts;
+    const result: Val = blk: {
+        if (code) |c| break :blk try f.apply(inst, callee, c, vals.items, args);
+        if (fn_root != none) break :blk try f.callParam(inst, callee, fn_root, vals.items, args);
+        // A markup primitive answers markup (kernel §6.12): the answer holds
+        // each argument, the markup it is handed is read only where the platform
+        // renders it, and what else it is handed (`map`'s function) the runtime
+        // keeps past the render, so that escapes.
+        if (primitive) {
+            for (args, vals.items) |a, v| if (!m.isMarkup(m.typeOfInst(a.int()))) try f.escape(v, inst);
+            break :blk try f.unknownOf(try m.placeOfInst(inst), vals.items);
+        }
+        // Unknown code: it can keep each argument, and its answer can hold each of them and the callee's captures.
+        for (vals.items) |v| try f.escape(v, inst);
+        try f.escape(callee_val, inst);
+        try vals.append(f.gpa, callee_val);
+        break :blk try f.unknownResult(inst, vals.items);
+    };
+    const named = m.tags[callee] == .top or m.tags[callee] == .ext_value;
+    try f.noteJsSite(.{ if (named) callee else none, inst }, vals.items, result, f.casts and !casts_before);
+    return result;
+}
+
+/// A call or a method call that the walk applied, kept with what it was
+/// handed and answered, where the module's bodies are read for JavaScript
+/// (`Check.reachesJs`): its edges are judged by these values when the
+/// frame's answer is known (`judgeJsSites`). It reads nothing now and
+/// counts no work.
+fn noteJsSite(f: *Frame, pos: [2]u32, vals: []const Val, result: Val, casts: bool) Error!void {
+    if (f.m.js_seen.bit_length == 0) return;
+    const start: u32 = @intCast(f.js_site_vals.items.len);
+    try f.js_site_vals.appendSlice(f.gpa, vals);
+    try f.js_sites.append(f.gpa, .{ .pos = pos, .vals = start, .nvals = @intCast(vals.len), .result = result, .casts = casts });
+}
+
+/// Which edges of this frame's calls can see a cell of its contract (kernel
+/// §6 rule 10, *An edge counts only where what it can see reaches the
+/// contract*), once its answer `answer` is known: a call counts where a
+/// value it was handed can hold a location of a parameter, a capture or a
+/// function parameter's answer, where a root it was handed or answered is
+/// one the answer can hold, or where it made the frame cast. Each call's
+/// instructions are marked seen in `Mod.js_seen`, and those that count in
+/// `Mod.js_dirty`: a call seen by every walk and counted by none is one
+/// whose JavaScript sees nothing the contract describes. It reads the
+/// values as they are (`siteHolds`), with no step: it counts no work.
+fn judgeJsSites(f: *Frame, answer: Val) Error!void {
+    const m = f.m;
+    if (m.js_seen.bit_length == 0 or f.js_sites.items.len == 0) return;
+    var st: SiteScan = .{};
+    defer st.deinit(f.gpa);
+    try st.init(f.gpa, f.nodes.items.len, f.roots.items.len);
+    // The roots the answer can hold.
+    var in_answer = try std.DynamicBitSetUnmanaged.initEmpty(f.gpa, f.roots.items.len);
+    defer in_answer.deinit(f.gpa);
+    st.next();
+    if (answer != v_none) _ = try f.siteHolds(answer, &st, null);
+    for (st.found.items) |r| in_answer.set(r);
+    for (f.js_sites.items) |s| {
+        st.next();
+        var counts = s.casts;
+        for (f.js_site_vals.items[s.vals..][0..s.nvals]) |v| {
+            if (counts) break;
+            if (try f.siteHolds(v, &st, &in_answer)) counts = true;
+        }
+        if (!counts and s.result != v_none and try f.siteHolds(s.result, &st, &in_answer)) counts = true;
+        for (s.pos) |p| if (p != none and p < m.js_seen.bit_length) {
+            m.js_seen.set(p);
+            if (counts) m.js_dirty.set(p);
+        };
     }
-    // Unknown code: it can keep each argument, and its answer can hold each of them and the callee's captures.
-    for (vals.items) |v| try f.escape(v, inst);
-    try f.escape(callee_val, inst);
-    try vals.append(f.gpa, callee_val);
-    return f.unknownResult(inst, vals.items);
+}
+
+/// The state of `siteHolds`: the nodes and roots one scan visited (marked
+/// by `gen`), and the roots it found.
+const SiteScan = struct {
+    gen: u32 = 0,
+    node_gen: []u32 = &.{},
+    root_gen: []u32 = &.{},
+    found: std.ArrayList(u32) = .empty,
+    stack: std.ArrayList(u32) = .empty,
+
+    fn init(s: *SiteScan, gpa: Allocator, nn: usize, nr: usize) Error!void {
+        s.node_gen = try gpa.alloc(u32, nn);
+        @memset(s.node_gen, 0);
+        s.root_gen = try gpa.alloc(u32, nr);
+        @memset(s.root_gen, 0);
+    }
+    fn deinit(s: *SiteScan, gpa: Allocator) void {
+        gpa.free(s.node_gen);
+        gpa.free(s.root_gen);
+        s.found.deinit(gpa);
+        s.stack.deinit(gpa);
+    }
+    fn next(s: *SiteScan) void {
+        s.gen += 1;
+        s.found.clearRetainingCapacity();
+    }
+};
+
+/// Whether value `v` can hold a location of a parameter, a capture or a
+/// function parameter's answer, or (where `answer` is given) a root of
+/// `answer` (`judgeJsSites`). It follows the value's nodes, the root each
+/// reference names, and the runs of every root it meets, at any depth: the
+/// cells the walk says the value can hold. Each root it meets is appended
+/// to `st.found`. With no `answer` it only collects them, and answers false.
+/// A capture not yet bound holds what it will be bound to,
+/// which is not known: it counts. No step: it counts no work, and reads no
+/// memo of the walk's.
+fn siteHolds(f: *Frame, v0: Val, st: *SiteScan, answer: ?*const std.DynamicBitSetUnmanaged) Error!bool {
+    const m = f.m;
+    // Nodes made after the scan's tables: none, since the walk is over.
+    st.stack.clearRetainingCapacity();
+    try st.stack.append(f.gpa, v0);
+    while (st.stack.pop()) |v| {
+        if (v >= st.node_gen.len) {
+            if (answer != null) return true;
+            continue;
+        }
+        if (st.node_gen[v] == st.gen) continue;
+        st.node_gen[v] = st.gen;
+        const n = f.nodes.items[v];
+        switch (n.tag) {
+            .none, .outside, .fnref => {},
+            .ref => {
+                const r = f.roots.items[n.a];
+                switch (r.kind) {
+                    // A part of a parameter with no location holds none of its cells.
+                    .param, .capture, .answer => for (m.loc.paths.items[n.b].to_root) |re| {
+                        if (re != none and answer != null) return true;
+                    },
+                    .outside => {},
+                    .local, .fresh => if (try f.rootHolds(n.a, st, answer)) return true,
+                }
+            },
+            .built => for (0..n.b) |ki| try st.stack.append(f.gpa, f.kids.items[n.a + ki].val),
+            .join => for (0..n.b) |ki| try st.stack.append(f.gpa, f.lists.items[n.a + 2 * ki]),
+            .unknown => for (0..n.b) |ki| try st.stack.append(f.gpa, f.lists.items[n.a + ki]),
+            .closure => {
+                const c = f.codes.items[n.a];
+                for (0..c.ncaps) |k| {
+                    const cv = f.lists.items[c.caps + k];
+                    if (f.nodes.items[cv].tag == .later) {
+                        if (answer != null) return true;
+                        continue;
+                    }
+                    try st.stack.append(f.gpa, cv);
+                }
+            },
+            .later => if (answer != null) return true,
+        }
+    }
+    return false;
+}
+
+/// `siteHolds` of a root the frame made, or a cell a callee made: the root
+/// is held, and so is every cell of the runs of its entries.
+fn rootHolds(f: *Frame, root0: u32, st: *SiteScan, answer: ?*const std.DynamicBitSetUnmanaged) Error!bool {
+    const m = f.m;
+    var roots: std.ArrayList(u32) = .empty;
+    defer roots.deinit(f.gpa);
+    try roots.append(f.gpa, root0);
+    while (roots.pop()) |root| {
+        if (root >= st.root_gen.len) {
+            if (answer != null) return true;
+            continue;
+        }
+        if (st.root_gen[root] == st.gen) continue;
+        st.root_gen[root] = st.gen;
+        try st.found.append(f.gpa, root);
+        if (answer) |a| if (a.isSet(root)) return true;
+        const r = f.roots.items[root];
+        switch (r.kind) {
+            .param, .capture, .answer => if (answer != null) return true,
+            .outside, .fresh => {},
+            .local => for (0..m.loc.layouts.items[r.layout].len) |i| {
+                const ent = f.rents.items[r.ent + i];
+                for (f.atoms.items[ent.start..][0..ent.len]) |x| {
+                    const xr = f.roots.items[x.root];
+                    switch (xr.kind) {
+                        .outside => {},
+                        // A run's atom names a location.
+                        .param, .capture, .answer => if (answer != null) return true,
+                        .local, .fresh => try roots.append(f.gpa, x.root),
+                    }
+                }
+            },
+        }
+    }
+    return false;
 }
 
 /// A code binding whose rounds run, named in a walk: the code itself, or
@@ -5878,17 +6068,22 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         try vals.append(f.gpa, try f.eval(a.int(), if (is_fn) .fn_arg else .value, false));
     }
     const derived = try f.evidence(inst);
-    switch (target) {
-        .reads => {
-            for (vals.items) |v| try f.readAll(v, inst);
-            try f.derivedEffect(inst, derived, vals.items, all.items);
-            return f.unknownResult(inst, vals.items);
-        },
-        .decl, .unknown => {},
-    }
-    if (code) |c| return f.apply(inst, inst, c, vals.items, all.items);
-    for (vals.items) |v| try f.escape(v, inst);
-    return f.unknownResult(inst, vals.items);
+    const casts_before = f.casts;
+    const result: Val = blk: {
+        switch (target) {
+            .reads => {
+                for (vals.items) |v| try f.readAll(v, inst);
+                try f.derivedEffect(inst, derived, vals.items, all.items);
+                break :blk try f.unknownResult(inst, vals.items);
+            },
+            .decl, .unknown => {},
+        }
+        if (code) |c| break :blk try f.apply(inst, inst, c, vals.items, all.items);
+        for (vals.items) |v| try f.escape(v, inst);
+        break :blk try f.unknownResult(inst, vals.items);
+    };
+    try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
+    return result;
 }
 
 /// Code that the checker does not follow at the dispatch site `inst` (kernel

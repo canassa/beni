@@ -1,8 +1,20 @@
-# Each row's words claim less than the walk of its body found, which reaches no JavaScript, or its walk gave up and its words cannot be checked: the platform's build refuses each (ownership-v3-kernel.md §6 rule 10, *A worded body is checked against its walk*).
-9:1 false_ownership_word peekBody
-14:1 false_ownership_word same
-19:1 false_ownership_word later
-24:1 false_ownership_word keepFn
-31:1 false_ownership_word peekCompare
-39:1 false_ownership_word peekRotate
-137:1 false_ownership_word freshTwice
+# Each row's words claim less than the walk of its body found, which reaches no JavaScript, or its walk gave up and its words cannot be checked, or it is an alias of a function whose contract is not below its words or cannot be compared with them: the platform's build refuses each (ownership-v3-kernel.md §6 rule 10, *A worded body is checked against its walk*).
+12:1 false_ownership_word peekBody
+17:1 false_ownership_word same
+22:1 false_ownership_word later
+27:1 false_ownership_word keepFn
+34:1 false_ownership_word peekCompare
+42:1 false_ownership_word peekRotate
+140:1 false_ownership_word freshTwice
+149:1 false_ownership_word peekRound
+154:1 false_ownership_word sameRound
+159:1 false_ownership_word peekText
+167:1 false_ownership_word peekSame
+180:1 false_ownership_word aliasSame
+190:1 false_ownership_word aliasPeek
+195:1 false_ownership_word aliasWrap
+205:1 false_ownership_word aliasAny
+215:1 false_ownership_word dupeMade
+222:1 false_ownership_word giveMade
+232:1 false_ownership_word ifSame
+237:1 false_ownership_word fieldSame

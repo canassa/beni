@@ -325,6 +325,13 @@ pub const Mod = struct {
     limits: std.ArrayList(Limit) = .empty,
     /// Per declaration: its body reaches JavaScript (`reachesJs`).
     js: []bool = &.{},
+    /// Per instruction, where the module's bodies are read for JavaScript
+    /// (`Options.rows`): a call or method call at it that a finished frame
+    /// applied (`Frame.judgeJsSites`), and whether one of those walks found
+    /// that what it can see reaches the frame's contract (kernel §6 rule
+    /// 10). Empty elsewhere, and then nothing is kept.
+    js_seen: std.DynamicBitSetUnmanaged = .{},
+    js_dirty: std.DynamicBitSetUnmanaged = .{},
     /// The worded declarations whose walk found what their words do not
     /// say (`falseWord`, kernel §6 rule 10), at each one's name.
     false_words: std.ArrayList(Limit) = .empty,
@@ -1937,7 +1944,38 @@ pub const Mod = struct {
         if (std.debug.runtime_safety) try m.checkWordedPlaced(sig, c, pw, rw);
         if (std.debug.runtime_safety) try m.checkWordedCasts(sig, c, pw, rw);
         if (std.debug.runtime_safety) try m.checkWordedTwice(sig, c, pw, rw);
+        if (std.debug.runtime_safety) m.checkCorePhantoms(di, c);
         return c;
+    }
+
+    /// The rows of core outside `Js` whose words name a new cell at a type
+    /// variable of their result, each of which makes none there
+    /// (`phantomAt`): `builder`'s holes; a key, which holds no cell; an empty
+    /// dictionary; and the words `fresh` beside `copyof` or a callback's
+    /// `aliased` answer, which names the cells that are there. `Js`'s rows
+    /// answer JavaScript's primitives at a type variable (`same : … → fresh
+    /// bool`), or never answer (`throw`).
+    const core_phantoms = [_][2][]const u8{
+        .{ "List", "builder" }, .{ "Dict", "keyIndex" }, .{ "Dict", "empty" },
+        .{ "Record", "copy" },  .{ "Task", "raceOk" },   .{ "Task", "timeout" },
+    };
+
+    /// Safe builds: a row of core whose words name a new cell at a type
+    /// variable of its result is one of `core_phantoms`, or of `Js` (kernel
+    /// §6 rule 10, *What it does not judge*; §9). The check of core's worded
+    /// bodies reads a new cell at a type variable as none, which is true of
+    /// those rows: a new one stops every build until it is read and named.
+    fn checkCorePhantoms(m: *Mod, di: u32, c: *const Contract.Contract) void {
+        if (!m.in.isCore(m.in.module) or m.isJsModule(m.in.module)) return;
+        const mod = m.names.module_names[m.in.module];
+        const name = m.names.declName(m.in.module, di);
+        for (m.loc.layoutEntries(c.layouts[c.arity]), c.res) |re, srcs| {
+            if (re.kind != .@"var" or !hasKind(srcs, .fresh)) continue;
+            for (core_phantoms) |n| {
+                if (std.mem.eql(u8, n[0], mod) and std.mem.eql(u8, n[1], name)) break;
+            } else std.debug.panic("own3: the row {s}.{s} of core names a new cell at a type variable of its result, and is not one of the rows whose new cell there is none (ownership-v3-kernel.md §6 rule 10, *What it does not judge*; `Check.core_phantoms`)", .{ mod, name });
+            return;
+        }
     }
 
     /// Whether a word of a row states where source `s` is at the summary
@@ -2241,6 +2279,15 @@ pub const Mod = struct {
     ///   own body reaches JavaScript, of this module or of another
     ///   (`Published.js`).
     ///
+    /// An edge counts only where what it can see reaches the contract
+    /// (research report 164): a call that every finished walk applied and
+    /// none found handed a cell of a parameter, a capture or a function
+    /// parameter's answer, or answering into the frame's answer, or
+    /// casting (`Frame.judgeJsSites`), counts not; any other edge counts
+    /// only where the type it is read at holds a cell (`touchesCells`); a
+    /// row of the reference table is read at the instruction that holds its
+    /// name, where one does.
+    ///
     /// A worded callee is read by its words, and its own body is checked
     /// where it is declared: it does not carry the bit. One pass over each
     /// declaration's edges, then a walk back along the edges into
@@ -2263,6 +2310,11 @@ pub const Mod = struct {
         defer at.deinit(gpa);
         var queue: std.ArrayList(u32) = .empty;
         defer queue.deinit(gpa);
+        // Per declaration of this module: the declaration (one more than its
+        // index) whose instructions last named it.
+        const named = try gpa.alloc(u32, nd);
+        defer gpa.free(named);
+        @memset(named, 0);
         const dt: *const Dispatch = m.in.dispatch orelse &Dispatch.empty;
         const in_js = m.isJsModule(m.in.module);
         for (bir.decls, 0..) |d, di| {
@@ -2270,7 +2322,23 @@ pub const Mod = struct {
             edges.clearRetainingCapacity();
             at.clearRetainingCapacity();
             try Edges.declEdgesAt(&edges, &at, gpa, bir, dt, @intCast(di), null);
+            // The declarations of this module that an instruction names: a
+            // row of the reference table that names one is that reference,
+            // read at its instruction.
+            for (edges.items, at.items) |e, pos| switch (e) {
+                .top => |t| if (pos != Edges.no_position and t < nd) {
+                    named[t] = @intCast(di + 1);
+                },
+                else => {},
+            };
             const direct = for (edges.items, at.items) |e, pos| {
+                // A call that every walk applied, and none found able to see
+                // a cell of its frame's contract (`Frame.judgeJsSites`).
+                if (pos < m.js_seen.bit_length and m.js_seen.isSet(pos) and !m.js_dirty.isSet(pos)) continue;
+                if (pos == Edges.no_position) switch (e) {
+                    .top => |t| if (t < nd and named[t] == di + 1) continue,
+                    else => {},
+                };
                 const t: [2]u32 = switch (e) {
                     .top => |t| .{ m.in.module, t },
                     .ext => |x| blk: {
@@ -2290,12 +2358,11 @@ pub const Mod = struct {
                     .primitive, .undetermined => continue,
                 };
                 const td = m.declOf(t) orelse break true;
-                if (in_js or m.isJsModule(t[0])) {
-                    if (try m.touchesCells(pos)) break true;
-                    continue;
-                }
+                // Read at a type that holds no cell, it can see none.
+                if (!try m.touchesCells(pos)) continue;
+                if (in_js or m.isJsModule(t[0])) break true;
                 switch (calleeKind(m.in.birs[t[0]], td)) {
-                    .js => if (try m.touchesCells(pos)) break true,
+                    .js => break true,
                     .worded => {
                         if (try m.handsUnseen(t)) break true;
                         if ((try m.declContract(t)).?.casts) break true;
@@ -2396,20 +2463,81 @@ pub const Mod = struct {
         };
     }
 
+    /// Whether a new cell of walk contract `c` at a location of kind `kind`
+    /// is none (kernel §6 rule 10, *What it does not judge*): in a module of
+    /// core, at a type variable, where the walk does not cast. A body of core
+    /// gets a new cell at a type variable only from a row of core that names
+    /// one there with no parameter of that variable, and each of those makes
+    /// none: `List.builder`'s holes, `Dict.keyIndex`'s key (a key holds no
+    /// cell, §12), `Js.throw`, which never answers; or from the element
+    /// location of an empty list it made (`[]`), which the walk reads as one.
+    /// A platform's row can answer a real one (`foreign make : ⊤ → fresh a`),
+    /// so a platform's body is judged in full (research report 164).
+    fn phantomAt(m: *const Mod, c: *const Contract.Contract, kind: Loc.Kind) bool {
+        return kind == .@"var" and !c.casts and m.in.isCore(m.in.module);
+    }
+
+    /// Whether layouts `a` and `b` have the same entries, one by one: a
+    /// contract read from another module has layouts of its own numbers
+    /// (`Contract.Reader`), of the same locations.
+    fn sameLayouts(m: *const Mod, a: []const u32, b: []const u32) bool {
+        if (a.len != b.len) return false;
+        for (a, b) |x, y| {
+            if (x == y) continue;
+            const xs = m.loc.layoutEntries(x);
+            const ys = m.loc.layoutEntries(y);
+            if (xs.len != ys.len) return false;
+            for (xs, ys) |p, q| if (p.loc != q.loc or p.kind != q.kind or p.single != q.single) return false;
+        }
+        return true;
+    }
+
+    /// The function that worded declaration `d`, words `wc`, is an alias of
+    /// (kernel §6 rule 10, *A declaration with no parameter whose body is a
+    /// function*): a declaration with no parameter, words of a function, and
+    /// a body that is a name of a declaration, followed through names with no
+    /// words (`calleeOf`). Null for any other declaration.
+    fn aliasOf(m: *const Mod, d: Bir.Decl, wc: *const Contract.Contract) ?[2]u32 {
+        if (d.params != 0 or wc.arity == 0) return null;
+        const body = d.body.unwrap() orelse return null;
+        return switch (m.tags[body.int()]) {
+            .top, .ext_value => m.calleeOf(body.int()) orelse .{ none, none },
+            else => null,
+        };
+    }
+
+    /// The first fact of the contract of function `t` that the words `wc`
+    /// of its alias `di` do not say, as the text of a refusal, or null: an
+    /// alias's contract is that function's, so the words are compared with
+    /// it (`falseWord`). A function with no contract, or with a contract of
+    /// other layouts than the words' (a type variable read at the alias's
+    /// types), gives nothing to compare with: refused, with the fix.
+    fn aliasWord(m: *Mod, di: u32, wc: *const Contract.Contract, t: [2]u32) Allocator.Error!?[]const u8 {
+        const name = m.names.declName(m.in.module, di);
+        const c = (if (t[0] == none) null else try m.declContract(t)) orelse
+            return try m.falseText(name, "it is an alias of a function with no contract (its walk gave up, or its module passed a limit), so no word of it can be checked; write it with its parameters", .{});
+        if (c.arity != wc.arity or !m.sameLayouts(c.layouts, wc.layouts))
+            return try m.falseText(name, "it is an alias of a function whose contract is at other types than its words', so no word of it can be checked; write it with its parameters, whose walk is at its own types", .{});
+        return m.falseWord(di, wc, c);
+    }
+
     /// The first fact of walk contract `c` of worded declaration `di` that
     /// its words' contract `wc` does not say, as the text of a refusal, or
     /// null when `c` is below `wc` (kernel §6 rule 10, *A worded body is
     /// checked against its walk*): what a caller reads of the walk, the
     /// words say too, or something more pessimistic. Both contracts are of
-    /// this module's table and of one signature; a pair of other layouts (a
-    /// function value declared with no parameter, whose walk is its
-    /// lambda's) is not compared. Counts no work.
+    /// this module's table and of one signature. A walk of other layouts than
+    /// the words' (a declaration with no parameter whose body is a function
+    /// value that is no name, no lambda and no partial: an `if`, a `let`, a
+    /// field, a call's answer) has nothing to compare the words with: it is
+    /// refused, with the fix. Counts no work.
     fn falseWord(m: *Mod, di: u32, wc: *const Contract.Contract, c: *const Contract.Contract) Allocator.Error!?[]const u8 {
         const d = m.bir.decls[di];
         // `entry` is a protocol of the runtime (rule 13), and `Record.copy`'s
         // `copyof` is applied by its caller's own rule (`Frame.recordCopy`).
         if (wc.entry or wc.record_copy) return null;
-        if (wc.arity != c.arity or !std.mem.eql(u32, wc.layouts, c.layouts)) return null;
+        if (wc.arity != c.arity or !m.sameLayouts(wc.layouts, c.layouts))
+            return try m.falseText(m.names.declName(m.in.module, di), "its body is a function value whose walk is not at its words' types (a value with no parameter that is no name, no lambda and no partial), so no word of it can be checked; write it with its parameters", .{});
         var pw = try m.gpa.alloc(u32, wc.arity);
         defer m.gpa.free(pw);
         @memset(pw, 0);
@@ -2445,8 +2573,11 @@ pub const Mod = struct {
             // the body made is there, it can be the one at two places, and
             // the count is the walk's own: judged. Where only cells it was
             // handed are there, it is asserted by the words that state
-            // positions, and not judged (`srcCovered`).
-            if (hasKind(srcs, .twice) and !hasKind(wsrcs, .twice) and hasKind(srcs, .fresh))
+            // positions, and not judged (`srcCovered`). In a module of core, a
+            // new cell at a type variable of the result is none where the body
+            // does not cast (`phantomAt`).
+            const made_here = hasKind(srcs, .fresh) and !m.phantomAt(c, re.kind);
+            if (hasKind(srcs, .twice) and !hasKind(wsrcs, .twice) and made_here)
                 return try m.falseText(name, "the body answers one new cell at two places of the result{s}, and the words `{s}` say that each is at one", .{ try m.atText(re.loc), rwords });
             for (srcs) |s| {
                 if (srcCovered(s, wsrcs)) {
@@ -2467,7 +2598,7 @@ pub const Mod = struct {
         for (0..c.arity) |j| {
             const g = c.fns[j] orelse continue;
             const wg = wc.fns[j] orelse continue;
-            if (g.arity != wg.arity or !std.mem.eql(u32, g.layouts, wg.layouts)) continue;
+            if (g.arity != wg.arity or !m.sameLayouts(g.layouts, wg.layouts)) continue;
             const words = try m.wordsText(pw[j], v3, j);
             if (g.called and !wg.called) return try m.falseText(name, "the body calls function parameter {d}, and its words `{s}` say that it does not", .{ j + 1, words });
             if (g.lost and !wg.lost) return try m.falseText(name, "the body keeps function parameter {d} where no contract describes its holder, and its words `{s}` say that it does not (`once` and `many` say that it is called and not kept)", .{ j + 1, words });
@@ -2484,7 +2615,9 @@ pub const Mod = struct {
                     const covered = switch (s.kind) {
                         .param, .answer, .twice => srcCovered(s, wg.supply[slot]),
                         // A cell the body made: a caller names it only where the body answers it too.
-                        .fresh => !answersSite(c, s.a) or hasKind(wg.supply[slot], .fresh),
+                        // In a module of core, at a type variable, where the body does not
+                        // cast, it is none (`phantomAt`).
+                        .fresh => m.phantomAt(c, fe.kind) or !answersSite(c, s.a) or hasKind(wg.supply[slot], .fresh),
                         // Outside every frame: a function the owner hands it to may not write it.
                         .outside => !wg.free[slot] or hasKind(wg.supply[slot], .outside),
                     };
@@ -3575,6 +3708,12 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     @memset(m.incomplete, false);
     if (std.debug.runtime_safety) m.walked = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
     defer if (std.debug.runtime_safety) m.walked.deinit(gpa);
+    if (options.rows) {
+        m.js_seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
+        m.js_dirty = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
+    }
+    defer m.js_seen.deinit(gpa);
+    defer m.js_dirty.deinit(gpa);
     m.group_pos = try gpa.alloc(u32, nd);
     defer gpa.free(m.group_pos);
     @memset(m.group_pos, none);
@@ -3700,7 +3839,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
             // A walk that gave up or passed a limit found nothing to check
             // the words against, and its words are trusted all the same:
             // they are refused.
-            const text = if (w) |c| try m.falseWord(@intCast(di), wc, c) else try m.falseText(m.names.declName(in.module, @intCast(di)), "its body reaches no JavaScript, and its walk gave up or passed a limit, so no word of it can be checked", .{});
+            const text = if (m.aliasOf(d, wc)) |t| try m.aliasWord(@intCast(di), wc, t) else if (w) |c| try m.falseWord(@intCast(di), wc, c) else try m.falseText(m.names.declName(in.module, @intCast(di)), "its body reaches no JavaScript, and its walk gave up or passed a limit, so no word of it can be checked", .{});
             if (text) |t| try m.false_words.append(m.arena, .{ .text = t, .token = d.name_token });
         }
     }

@@ -1,6 +1,9 @@
 --! A test platform: worded rows with beni bodies that reach no JavaScript, whose words claim less than their bodies do.
 
 import Dict exposing (Dict)
+import Help
+import Js
+import Mk
 import Ref exposing (Ref)
 
 
@@ -137,3 +140,102 @@ pub freshTwice : ⊤ → fresh exclusive List (List Int)
 freshTwice ⊤ =
     t = [ 1 ]
     [ t, t ]
+
+
+--| `shallow`, and the body reads the list at key 1 beside a call of
+--| `round`, a body over JavaScript that is handed a `Float` and answers an
+--| `Int`: it sees no cell of `d`, so the body is checked.
+pub peekRound : borrowed shallow Dict Int (List Int) → Int
+peekRound d = if round 1.5 == 2 then List.length (Maybe.withDefault (Dict.get d 1) []) else 0
+
+
+--| `fresh`, and the body answers its parameter beside a call of `round`.
+pub sameRound : borrowed List Int → fresh List Int
+sameRound l = if round 1.5 == 2 then l else []
+
+
+--| `shallow` beside text that JavaScript makes from numbers.
+pub peekText : borrowed shallow Dict Int (List Int) → Int
+peekText d =
+    s = String.fromInt (7 // 2) ++ Debug.toString (toFloat 1)
+    if String.length s > 0 then List.length (Maybe.withDefault (Dict.get d 1) []) else 0
+
+
+--| `shallow` beside an identity compare of two new lists, in a helper of
+--| no words: what JavaScript is handed holds no cell of `d`.
+pub peekSame : borrowed shallow Dict Int (List Int) → Int
+peekSame d =
+    if newSame ⊤ && Js.same [ 1 ] [ 1 ] then
+        0
+    else
+        List.length (Maybe.withDefault (Dict.get d 1) [])
+
+
+newSame : ⊤ → Bool
+newSame ⊤ = Js.same [ 2 ] [ 2 ]
+
+
+--| `fresh`, an alias of a function that answers its parameter.
+pub aliasSame : borrowed List Int → fresh List Int
+aliasSame = keep
+
+
+keep : List Int → List Int
+keep l = l
+
+
+--| `shallow`, an alias of a function of another module that reads the
+--| list at key 1.
+pub aliasPeek : borrowed shallow Dict Int (List Int) → Int
+aliasPeek = Help.inner
+
+
+--| `fresh`, an alias of a function that answers a record holding its parameter.
+pub aliasWrap : borrowed List Int → fresh { items : List Int }
+aliasWrap = wrap
+
+
+wrap : List Int → { items : List Int }
+wrap l = { items = l }
+
+
+--| An alias of a function at a type variable: its contract is at other
+--| types than the words', so no word of it can be checked.
+pub aliasAny : borrowed List Int → fresh List Int
+aliasAny = anyCopy
+
+
+anyCopy : a → a
+anyCopy x = x
+
+
+--| `exclusive`, and the body answers one new value at two places: at a
+--| type variable, the value of a row of the platform, which can be a cell.
+pub dupeMade : ⊤ → fresh exclusive List a
+dupeMade ⊤ =
+    x = Mk.make ⊤
+    [ x, x ]
+
+
+--| `once`, and the body hands the function a new value it answers too.
+pub giveMade : once (a → ⊤) → fresh a
+giveMade g =
+    x = Mk.make ⊤
+    g x
+    x
+
+
+--| `fresh`, and the function value an `if` answers is `keep`: a body of no
+--| parameter that is no name, no lambda and no partial has no walk at the
+--| words' types.
+pub ifSame : borrowed List Int → fresh List Int
+ifSame = if True then keep else keep
+
+
+--| `fresh`, and the function value a field holds is `keep`.
+pub fieldSame : borrowed List Int → fresh List Int
+fieldSame = table.f
+
+
+table : { f : List Int → List Int }
+table = { f = keep }

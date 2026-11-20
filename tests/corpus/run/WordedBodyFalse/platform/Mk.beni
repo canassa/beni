@@ -1,0 +1,4 @@
+--! A module of the test platform: a row whose JavaScript answers a new list at any type.
+
+--| A new value at a type variable: JavaScript can make one, where beni cannot.
+pub foreign pure make : ⊤ → fresh a
