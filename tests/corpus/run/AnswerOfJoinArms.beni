@@ -1,6 +1,6 @@
 -- The dead twin of `AnswerOfJoinArmsLive`: the answer that holds the list
 -- is read before the push, and nothing reads it after, so the push edits
--- the list in place (ownership-v3-kernel.md §6 rule 7).
+-- the list in place (ownership-v3-kernel.md §6 rules 2 and 7).
 import List
 import Node exposing (Program)
 import String

@@ -1,0 +1,1 @@
+Each push is accepted under v3 and runs in place: a part of a call's answer reads the answer's entries below it (ownership-v3-kernel.md §4.1, #2583).

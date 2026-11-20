@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -496,6 +496,15 @@ location is the pessimistic row (`Check.wordedContract`). *Research report 148: 
 the corpus's polymorphic recursion a function that pushed an element of its parameter's folded payload
 then had a contract that wrote nothing of its parameter (`PolyRecBranch.ww`).*
 
+**A part of a root reads the entries below it** (`Frame.rootReach`, `runsReach`, `entriesBelow`). An
+entry's run is every cell of other roots that its location can hold (§2), and a part names exactly the
+locations its path maps to (`to_root`). So a read of a part of a root the frame made tests the runs of
+those entries and no other: a read of one part of a pair is no read of the other, whatever made the root
+(a construction, a call's answer, a cell's contents). A part with a location the root's layout does not
+name reads every entry, as above. *#2583: a call's answer read whole at each of its parts, so
+`case sel p of ( a, b ) → … List.push a 8 … b` was refused; `run/CallAnswerPartsApart` and its live
+twin.*
+
 ### 4.2 A fresh cell has a name
 
 A cell a body makes is `Src.fresh(k, escaped)` in its contract: `k` is its **allocation site**, `escaped`
@@ -771,7 +780,8 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    escape a function's answer) **before** each written location is a demand at the call with the other
    arguments as operands, so a write is judged against every escape of the call; the result's entries are the contract's sources expanded to
    atoms (`expandSrcs`: a parameter source to the argument's leaves, `fresh` to a `fresh` root, `outside`
-   to `outside_atom`, an answer to what the function there answers). A callee with no contract is unknown
+   to `outside_atom`, an answer to what the function there answers: of a join of functions, what each arm answers, each
+   function and its captures one answer in work, `SrcState.visit`; #2588). A callee with no contract is unknown
    code (§3.2). A contract of another arity is a partial application: every value flows to `top` and
    escapes, and the callee is at `top` (rule 8's invariant). **A function that a holder runs is handed, at
    each of its own function parameters, a function in the default state** (`defaultParams`): whatever a
@@ -2058,7 +2068,7 @@ cells, and an update is a write of some of them.
    derived `==` or `compare`, `Js.same`) reads every slot.
 5. **A list write writes list cells** (`DemandIn.list_only`): where a callee writes a location of kind
    `list`, a field slot among the atoms (an `unknown` value's, which can be any cell) is no cell of it.
-   A part of a root reaches only the slots below it (`rootReach`).
+   A part of a root reaches only the slots below it (`rootReach`), as it reaches only its own entries (§4.1).
 6. **A message's slots are handed on, not asked for** (`callParam`, `sendSlots`). A send asks for the
    cells a write in `update` could edit (§6.11); `update` never writes a message (§6.13). So the slots
    of a message are supplied to `send` as to any function parameter: a write of them after the send is
@@ -2490,7 +2500,6 @@ writer whose closure goes to `Task.par` or `race`, whose contract's answer names
 the handle escapes with what the answer can hold; a closure that only stores into the cell; a closure that writes the contents of a cell it captured
 and goes where the walk does not follow it and is no writer (items 11 and 12; `browser/tea/BallMachine`,
 where the closures go to the runtime); a handle handed to the frame's own function
-parameter, which shares it (`run/SanitiserCellLoanKeptApart`'s `handed` and `modified`); a handle at a
+parameter, which shares it (`run/SanitiserCellLoanKeptApart`'s `handed` and `modified`); and a handle at a
 part of a root (a record's field, a tuple's part), which is no tracked root whole and is shared at its
-first renewal; and the reach of a part of a call's answer, which reads the answer whole
-(`run/RefTakeOwned`'s `pairTake`).
+first renewal.

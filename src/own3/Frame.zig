@@ -2165,26 +2165,19 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
             var made = false;
             if (try f.runEntries(root, &made)) |re| return f.runsReach(root, p, re, w, made);
             if (f.charge(len)) return true;
-            const res = f.m.loc.layoutEntries(r.layout);
             // The entries below this part, marked once (a step each, kernel §8):
-            // a record's field slot that is not below it holds no cell of it (kernel §11).
+            // an entry that is not below it holds no cell of it (kernel §4.1,
+            // *A part of a root reads the entries below it*; §11 item 5).
             var below: std.DynamicBitSetUnmanaged = .{};
             defer below.deinit(f.gpa);
-            const has_slots = for (res) |e| {
-                if (e.kind == .field) break true;
-            } else false;
-            if (has_slots and p.to_root.len != len) {
-                if (f.charge(p.to_root.len)) return true;
-                below = try std.DynamicBitSetUnmanaged.initEmpty(f.gpa, len);
-                for (p.to_root) |re| if (re != none) below.set(re);
-            }
+            if (try f.entriesBelow(p, len, &below)) return true;
             for (0..len) |i| {
                 const ent = f.rents.items[r.ent + i];
                 switch (ent.kind) {
                     .own, .taken => continue,
                     .alias, .derived, .version => {},
                 }
-                if (res[i].kind == .field and below.bit_length != 0 and !below.isSet(i)) continue;
+                if (below.bit_length != 0 and !below.isSet(i)) continue;
                 if (try f.runReaches(root, @intCast(i), ent, w)) return true;
             }
         },
@@ -2199,8 +2192,8 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
 
 /// The entries of a root the frame made whose runs `rootReach` reads: an
 /// `alias`, `derived` or `version` entry with a run (an empty run reaches
-/// nothing, `runReaches`), and whether its layout has a field slot.
-const RunEntries = struct { ents: []const u32, has_slots: bool };
+/// nothing, `runReaches`).
+const RunEntries = struct { ents: []const u32 };
 
 /// `RunEntries` of root `root`, made once, a step for each entry (kernel
 /// §8), when its entries are made: `deriveLinear` ran over them, last. A
@@ -2221,9 +2214,7 @@ fn runEntries(f: *Frame, root: u32, made: *bool) Error!?RunEntries {
         made.* = true;
         _ = f.charge(res.len);
         var ents: std.ArrayList(u32) = .empty;
-        var has_slots = false;
-        for (res, 0..) |e, i| {
-            if (e.kind == .field) has_slots = true;
+        for (0..res.len) |i| {
             const ent = f.rents.items[r.ent + i];
             switch (ent.kind) {
                 .own, .taken => continue,
@@ -2232,7 +2223,7 @@ fn runEntries(f: *Frame, root: u32, made: *bool) Error!?RunEntries {
             if (ent.len == 0) continue;
             try ents.append(f.gpa, @intCast(i));
         }
-        got.* = .{ .ents = ents.items, .has_slots = has_slots };
+        got.* = .{ .ents = ents.items };
     }
     if (safety and res.len <= 256) {
         // The entries never change once made.
@@ -2259,20 +2250,33 @@ fn runsReach(f: *Frame, root: u32, p: Loc.Path, re: RunEntries, w: []const Atom,
     // (`runEntries`), and its own entries after.
     if (!made and f.charge(@min(1 + re.ents.len, len))) return true;
     if (made and f.m.steps_over) return true;
-    const res = f.m.loc.layoutEntries(r.layout);
-    // The entries below this part (a step each, kernel §8): a record's
-    // field slot that is not below it holds no cell of it (kernel §11).
+    // The entries below this part (a step each, kernel §8): an entry that
+    // is not below it holds no cell of it (kernel §4.1, §11 item 5).
     var below: std.DynamicBitSetUnmanaged = .{};
     defer below.deinit(f.gpa);
-    if (re.has_slots and p.to_root.len != len) {
-        if (f.charge(p.to_root.len)) return true;
-        below = try std.DynamicBitSetUnmanaged.initEmpty(f.gpa, len);
-        for (p.to_root) |x| if (x != none) below.set(x);
-    }
+    if (try f.entriesBelow(p, len, &below)) return true;
     for (re.ents) |i| {
-        if (res[i].kind == .field and below.bit_length != 0 and !below.isSet(i)) continue;
+        if (below.bit_length != 0 and !below.isSet(i)) continue;
         if (try f.runReaches(root, i, f.rents.items[r.ent + i], w)) return true;
     }
+    return false;
+}
+
+/// The entries of a root's layout of `len` entries that the part at path
+/// `p` names (its `to_root`), into `below`; left empty, which reads every
+/// entry, for the root's own path and for a part with a location the
+/// root's layout does not name (a folded type, kernel §4.1: it can hold any
+/// cell of the root). An entry's run is every cell of other roots that its
+/// location can hold (kernel §2), so a part reads the runs of its own
+/// locations and no other: a read of one part of a pair is no read of the
+/// other (#2583). Each entry marked is a step (kernel §8); true past the
+/// budget.
+fn entriesBelow(f: *Frame, p: Loc.Path, len: usize, below: *std.DynamicBitSetUnmanaged) Error!bool {
+    if (p.depth == 0) return false;
+    if (f.charge(p.to_root.len)) return true;
+    for (p.to_root) |x| if (x == none) return false;
+    below.* = try std.DynamicBitSetUnmanaged.initEmpty(f.gpa, len);
+    for (p.to_root) |x| below.set(x);
     return false;
 }
 

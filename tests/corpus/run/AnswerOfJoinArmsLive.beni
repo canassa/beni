@@ -2,7 +2,7 @@
 -- callee hands it: here the second arm keeps its parameter in its answer.
 -- The callee's answer holds what either arm answers, so the list it was
 -- handed is read through `v` after the push and the push is refused
--- (ownership-v3-kernel.md §6 rule 7). Each arm is its own answer: the walk
+-- (ownership-v3-kernel.md §6 rules 2 and 7). Each arm is its own answer: the walk
 -- stopped at the first arm, which answers no list, and read `v` as holding
 -- nothing.
 import List
