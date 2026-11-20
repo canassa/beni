@@ -2841,7 +2841,9 @@ test "ownership v3: the faults of round 2 are refused" {
         "  76:9 call a q: rejected later-use: it is read again at 77:21 (<call List.length>)\n",
         // `selfPass`: the lists of the deeper nodes are a demand on `t` too.
         "  95:9 call walk t⟨List⟩: rejected later-use: it is read again at 96:13 (<call Round2.sum>)\n",
-        "  107:10 List.push k: rejected escaped: it escaped before the write\n",
+        // `capEsc`: the closure that `List.map` runs keeps `k` in the cell it
+        // captured, which the frame follows and reads after (kernel §13 item 11).
+        "  107:10 List.push k: rejected later-use: it is read again at 108:35 (<call Ref.get>)\n",
         // `capEsc2`: the function that answers the closure lets its parameter escape.
         "  123:10 List.push k: rejected escaped: it escaped before the write\n",
         // `ansTwice`: the two elements are one answer of `f`.

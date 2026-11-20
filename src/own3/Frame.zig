@@ -3152,7 +3152,12 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         const a = f.atoms.items[w + i];
         switch (f.roots.items[a.root].kind) {
             .outside => d.refused = .unknown,
-            .capture => d.refused = .captured,
+            // The contents of a captured cell are written as a parameter's
+            // are: each holder that runs the code judges the write against
+            // its own holders (kernel §13 item 11).
+            .capture => if (!try f.captureContents(a)) {
+                d.refused = .captured;
+            },
             .answer => if (in.op != .supply) {
                 d.refused = .call;
             },
@@ -4004,6 +4009,12 @@ fn capture(f: *Frame, local: u32) Error!Val {
     if (try f.layoutLen(place) == 0) return v_outside;
     const root = try f.newRoot(.capture, place, none);
     f.roots.items[root].index = @intCast(f.params.items.len);
+    // A capture's cells are followed as a parameter's are (kernel §13 item
+    // 11): each holder that runs the code judges what it does to them.
+    if (f.roots.items[root].cells) {
+        f.roots.items[root].tracked = true;
+        f.cells_any = true;
+    }
     try f.params.append(f.gpa, root);
     try f.param_ty.append(f.gpa, m.typeOfLocal(f.d, local));
     try f.cap_locals.append(f.gpa, local);
@@ -5441,9 +5452,12 @@ fn closureOf(f: *Frame, mb: Member, cap_locals: []const u32) Error!Val {
     var tmp: std.ArrayList(Val) = .empty;
     defer tmp.deinit(f.gpa);
     for (cap_locals) |l| try tmp.append(f.gpa, try f.capSlot(l));
-    // A closure runs where its holder runs it: each handle it captured has
-    // another holder (kernel §13).
-    for (tmp.items) |v| if (f.nodes.items[v].tag != .later) try f.shareVal(v, mb.inst);
+    // A closure runs where its holder runs it: each use of it reads, writes
+    // and renews what it captured (`apply`, `flowCode`), and a holder that
+    // the walk does not follow shares each handle it captured (kernel §13
+    // items 8 and 11). A closure in a hole of markup runs where the markup
+    // renders (§6.12): each handle it captured has another holder now.
+    if (f.markup_reads != null) for (tmp.items) |v| if (f.nodes.items[v].tag != .later) try f.shareVal(v, mb.inst);
     const start: u32 = @intCast(f.lists.items.len);
     try f.lists.appendSlice(f.gpa, tmp.items);
     try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(cap_locals.len), .inst = mb.inst, .own_params = @intCast(mb.params.len) });
@@ -5477,7 +5491,10 @@ fn capVal(f: *Frame, code: Code, k: usize) Error!Val {
     const i = code.caps + k;
     const v = f.lists.items[i];
     const n = f.nodes.items[v];
-    if (n.tag != .later) return v;
+    // A captured handle is read where the code runs: at its latest version
+    // (kernel §13 items 5 and 11). No share is made here: the caller may
+    // be making a run of `f.atoms`.
+    if (n.tag != .later) return f.cellsNowIn(v);
     const l = f.d.locals_start + n.a;
     if (m.lframe[l] == 0 and m.lcode[l] != none) try f.makeCode(n.a);
     if (m.lframe[l] != f.id) {
@@ -5486,7 +5503,7 @@ fn capVal(f: *Frame, code: Code, k: usize) Error!Val {
     }
     if (safety) std.debug.assert(m.lv[l] != v_unbound);
     f.lists.items[i] = m.lv[l];
-    return m.lv[l];
+    return f.cellsNowIn(m.lv[l]);
 }
 
 /// The frame's contract, once its body is walked.
@@ -5848,6 +5865,16 @@ fn innerOf(f: *Frame, layout: u32) Error![]const bool {
     return out;
 }
 
+/// Whether atom `a` of a capture root is in the contents of a cell the
+/// frame follows (kernel §13 item 11): a write there is judged where the
+/// code runs, as a parameter's is.
+fn captureContents(f: *Frame, a: Atom) Error!bool {
+    const r = f.roots.items[a.root];
+    if (r.kind != .capture or !r.tracked) return false;
+    const inner = try f.innerOf(r.layout);
+    return a.e < inner.len and inner[a.e];
+}
+
 /// Whether the location `loc` is in the deep level of a cycle.
 fn deepLoc(f: *Frame, loc: u32) Error!bool {
     var ls: std.ArrayList(u64) = .empty;
@@ -5989,10 +6016,10 @@ fn finishVersion(f: *Frame, o: u32, v: u32) Error!void {
 }
 
 /// The tracked roots and entries whose handles atom `a` can be (kernel §13):
-/// a tracked parameter's handle, a new cell's handle that a tracked root
-/// holds (`Root.cell_root`), and through the runs of the frame's roots at a
-/// handle's location. A capture's, an answer's and a handle outside the
-/// frame are no root the frame follows.
+/// a tracked parameter's or capture's handle (item 11), a new cell's handle
+/// that a tracked root holds (`Root.cell_root`), and through the runs of the
+/// frame's roots at a handle's location. An answer's and a handle outside
+/// the frame are no root the frame follows.
 fn cellOrigins(f: *Frame, a: Atom, out: *std.ArrayList([3]u32)) Error!void {
     const m = f.m;
     var stack: std.ArrayList(Atom) = .empty;
@@ -6002,7 +6029,7 @@ fn cellOrigins(f: *Frame, a: Atom, out: *std.ArrayList([3]u32)) Error!void {
         if (f.charge(1)) return;
         const r = f.roots.items[x.root];
         switch (r.kind) {
-            .param => if (r.tracked and m.loc.layoutEntries(r.layout)[x.e].kind == .cell) try out.append(f.gpa, .{ x.root, x.e, none }),
+            .param, .capture => if (r.tracked and m.loc.layoutEntries(r.layout)[x.e].kind == .cell) try out.append(f.gpa, .{ x.root, x.e, none }),
             .fresh => if (r.cell_root != none) try out.append(f.gpa, .{ r.cell_root, r.cell_e, none }),
             .local => {
                 if (m.loc.layoutEntries(r.layout)[x.e].kind != .cell) continue;
@@ -6010,7 +6037,7 @@ fn cellOrigins(f: *Frame, a: Atom, out: *std.ArrayList([3]u32)) Error!void {
                 _ = f.charge(ent.len);
                 try stack.appendSlice(f.gpa, f.atoms.items[ent.start..][0..ent.len]);
             },
-            .outside, .capture, .answer => {},
+            .outside, .answer => {},
         }
     }
 }
@@ -6159,12 +6186,15 @@ fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val
                 @memset(done.?, false);
             }
             for (ks.items) |k| done.?[k] = true;
-            try f.renewHandle(base, c, @intCast(j), @intCast(h), ks.items, args[j], casts, inst);
+            try f.renewHandle(base, c, @intCast(j), @intCast(h), ks.items, args[j], casts, false, inst);
         }
     }
 }
 
-fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, inst: u32) Error!void {
+/// `maybe`: the call may leave the contents as they were (a function a
+/// callee runs any number of times, kernel §13 item 11): a location whose
+/// renewal does not name its own old contents keeps them too.
+fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, maybe: bool, inst: u32) Error!void {
     const m = f.m;
     const sig = c.layouts[j];
     // A hole of markup can be evaluated where the markup is rendered, after
@@ -6197,9 +6227,38 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
                 // A location of the contents that the callee leaves as it was.
                 _ = try f.leavesAs(v, r.place, k, &f.atoms);
             }
-            if (!strong) _ = try f.leavesAs(v, r.place, k, &f.atoms);
+            if (!strong or (maybe and !selfRenew(c, j, cr))) _ = try f.leavesAs(v, r.place, k, &f.atoms);
             try f.uniqueTail(&f.atoms, start);
             f.rents.items[ent0 + k] = .{ .kind = if (st.written) .version else .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = !xes[k].single and (st.twice or !strong or f.curTwice(v, k)) };
+        }
+        // A captured cell is held by the code's holder too, which reads it at
+        // any later time (kernel §13 item 11): what the call stores there
+        // that the holder cannot name escapes in this frame — a value the
+        // code was handed (a callee that runs it can hand it back), or one
+        // read through such a value. The cell's own old contents, another
+        // capture and a cell the code made are named to the holder by the
+        // renewal, and read where the code answers (item 7); a cell it made
+        // that it answers too is no answer of its own (`freshOwn`).
+        if (f.roots.items[t.o].kind == .capture) {
+            var kept: std.ArrayList(Atom) = .empty;
+            defer kept.deinit(f.gpa);
+            for (xks.items) |k| {
+                const ent = f.rents.items[ent0 + k];
+                for (f.atoms.items[ent.start..][0..ent.len]) |a| {
+                    if (f.originOf(a.root) == t.o) continue;
+                    const ar = f.roots.items[a.root];
+                    const named = switch (ar.kind) {
+                        .capture, .fresh => true,
+                        .local => f.rents.items[ar.ent + a.e].kind == .own,
+                        .outside, .param, .answer => false,
+                    };
+                    if (!named) try kept.append(f.gpa, a);
+                }
+            }
+            const es: u32 = @intCast(f.atoms.items.len);
+            try f.atoms.appendSlice(f.gpa, kept.items);
+            try f.noteEscape(es, inst);
+            f.atoms.shrinkRetainingCapacity(es);
         }
         // A handle the call stored in the contents is held there as well as
         // where it was (`shareCopies`).
@@ -6221,6 +6280,16 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
     _ = try f.argLeaves(v, sig, h, &.{}, false, &f.atoms);
     try f.shareAtoms(hs, f.atoms.items.len, inst);
     try f.flushShare();
+}
+
+/// Whether the renewal of parameter `j` at its entry `cr` names that
+/// entry's own old contents: then a call that leaves the contents as they
+/// were leaves cells the renewal names.
+fn selfRenew(c: *const Contract, j: u32, cr: u32) bool {
+    if (cr >= Loc.all) return false;
+    const srcs = c.renewAt(c.off[j] + cr) orelse return true;
+    for (srcs) |s| if (s.kind == .param and s.a == j and s.e == cr) return true;
+    return false;
 }
 
 const CellTarget = struct { o: u32, hx: u32 };
@@ -6322,12 +6391,14 @@ fn cellsApart(f: *Frame, c: *const Contract, args: []const Val, inst: u32) Error
 /// A known function that renews the contents of a cell it is handed (kernel
 /// §13) runs where its holder runs it, at times the frame does not see: each
 /// handle it is handed there has another holder, and what it stores escapes.
-fn flowRenews(f: *Frame, code: Code, use: *const Use) Error!void {
+/// `own_only`: the captures' renewals were made where the code runs (`captureCells`).
+fn flowRenews(f: *Frame, code: Code, use: *const Use, own_only: bool) Error!void {
     const m = f.m;
     const lc = code.contract;
     if (!lc.renews()) return;
     const inst = use.site.inst;
     for (0..lc.arity) |k| {
+        if (own_only and k >= code.own_params) break;
         const sig = lc.layouts[k];
         for (m.loc.layoutEntries(sig), 0..) |he, h| {
             if (he.kind != .cell) continue;
@@ -9210,6 +9281,10 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // its function parameters a function in the default state, which
         // keeps what it is handed (`defaultParams`).
         if (f.writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
+        if (try f.writesCaptured(code)) try f.refuse(&use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
+        // It runs at times the frame does not see: each handle it captured
+        // has another holder (kernel §13 items 8 and 11).
+        for (0..code.ncaps) |k| try f.shareVal(try f.capVal(code, k), inst);
         try f.captureEscapes(code, inst);
         if (use.kind != .top) {
             // A callee lost it. It can keep what it hands, and it can run the
@@ -9219,7 +9294,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         }
         const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code };
         try f.defaultParams(code, &top);
-        try f.flowRenews(code, &top);
+        try f.flowRenews(code, &top, false);
         return f.flowCaptures(code, &top);
     }
     if (f.rewritesOf(&use) and f.keepsOwn(lc, code.own_params)) try f.refuse(&use, .supply, "the function keeps a value that the callee changes later");
@@ -9257,7 +9332,8 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         }
     }
     try f.escapeUnplacedAnswer(code, &use);
-    try f.flowRenews(code, &use);
+    try f.captureCells(code, &use);
+    try f.flowRenews(code, &use, true);
     try f.flowCaptures(code, &use);
 }
 
@@ -9390,6 +9466,192 @@ fn captureEscapes(f: *Frame, code: Code, inst: u32) Error!void {
             try f.noteEscape(start, inst);
         };
     }
+}
+
+/// Whether the known function `code` writes in place the contents of a
+/// cell it captured (kernel §13 item 11).
+fn writesCaptured(f: *Frame, code: Code) Error!bool {
+    const lc = code.contract;
+    for (0..code.ncaps) |k| {
+        const j = code.own_params + k;
+        if (j >= lc.arity) break;
+        const inner = try f.innerOf(lc.layouts[j]);
+        if (inner.len == 0) continue;
+        const n = lc.off[j + 1] - lc.off[j];
+        _ = f.charge(Loc.scanUnits(n));
+        for (0..n) |e| if (inner[e] and lc.flags[lc.off[j] + e] & flag_w != 0) return true;
+    }
+    return false;
+}
+
+/// The call whose callee runs the function at `use`, or null where a level
+/// on the way is the default or loses it: the function then runs at times
+/// the frame does not see.
+fn runsWithin(use: *const Use) ?*const Use {
+    var u = use;
+    while (true) {
+        if (u.kind == .top or lostAt(u)) return null;
+        if (u.kind == .call) return u;
+        u = u.up orelse return null;
+    }
+}
+
+/// What the known function `code` does to the cells it captured, where it
+/// runs (kernel §13 item 11). Where a call runs it within the call
+/// (`runsWithin`), each write in place of a captured cell's contents is a
+/// demand at the call on what the frame holds there now (`capVal`, the
+/// latest version), judged by §5 against the call's other operands and the
+/// other captures of each function on the way (the callee runs it while it
+/// holds those), and each renewal makes a version of the frame's root, which
+/// keeps the old contents too where the renewal does not name them (the
+/// callee may not run it: `renewHandle`'s `maybe`). A handle that one of
+/// those operands holds as well is two names of one cell at the call: a
+/// write is refused, and a renewal is one of an argument the frame does not
+/// follow (`flowRenews`). Where no call runs the function within, it goes
+/// where the walk does not follow it: a write is refused (`flowCode`).
+fn captureCells(f: *Frame, code: Code, use: *const Use) Error!void {
+    const m = f.m;
+    const lc = code.contract;
+    const writes = try f.writesCaptured(code);
+    if (!writes and !lc.renews()) return;
+    const top = runsWithin(use);
+    if (writes and top == null) try f.refuse(use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
+    try f.flushShare();
+    const site = use.site;
+    // The operands the callee holds while it runs the function: the call's
+    // other arguments (not the one that holds the function), and the other
+    // captures of each function on the way down to `code`.
+    var others: std.ArrayList(Other) = .empty;
+    defer others.deinit(f.gpa);
+    for (site.others, 0..) |o, i| try others.append(f.gpa, if (top != null and i == top.?.j) .{ .v = v_none } else o);
+    var u = use;
+    while (u.kind == .inner) {
+        const up = u.up.?;
+        const uc = up.code orelse break;
+        for (0..uc.ncaps) |k| {
+            const j = uc.own_params + k;
+            if (j == u.j or j >= uc.contract.arity) continue;
+            try others.append(f.gpa, .{ .v = try f.capVal(uc, k), .sig = uc.contract.layouts[j], .flags = uc.contract.flags[uc.contract.off[j]..uc.contract.off[j + 1]] });
+        }
+        u = up;
+    }
+    const first: usize = others.items.len;
+    for (0..code.ncaps) |k| {
+        const j = code.own_params + k;
+        if (j >= lc.arity) break;
+        try others.append(f.gpa, .{ .v = try f.capVal(code, k), .sig = lc.layouts[j], .flags = lc.flags[lc.off[j]..lc.off[j + 1]] });
+    }
+    // The base level of a renewal's sources: the captured values at their
+    // parameters; the function's own parameters are what the callee hands
+    // it, which no source may name here (`capturedSrcs`).
+    const args = try f.gpa.alloc(Val, lc.arity);
+    defer f.gpa.free(args);
+    @memset(args, v_none);
+    for (0..code.ncaps) |k| if (code.own_params + k < lc.arity) {
+        args[code.own_params + k] = others.items[first + k].v;
+    };
+    const bsite: Site = .{ .inst = site.inst, .callee = site.callee };
+    const base: Use = .{ .kind = .call, .id = f.useId(), .key = std.hash.Wyhash.hash(use.key, std.mem.asBytes(&code.inst)), .holder = code.id(), .c = lc, .args = args, .site = &bsite };
+    for (0..code.ncaps) |k| {
+        const j: u32 = @intCast(code.own_params + k);
+        if (j >= lc.arity) break;
+        const sig = lc.layouts[j];
+        const inner = try f.innerOf(sig);
+        if (inner.len == 0) continue;
+        const ses = m.loc.layoutEntries(sig);
+        const capv = others.items[first + k].v;
+        const n = lc.off[j + 1] - lc.off[j];
+        var wk = false;
+        var rk = false;
+        for (0..n) |e| if (inner[e]) {
+            if (lc.flags[lc.off[j] + e] & flag_w != 0) wk = true;
+            if (lc.renewAt(lc.off[j] + e) != null) rk = true;
+        };
+        if (!wk and !rk) continue;
+        // The handles of the capture: is another operand holding one?
+        const hs: u32 = @intCast(f.atoms.items.len);
+        for (ses, 0..) |he, h| if (he.kind == .cell) {
+            _ = try f.argLeaves(capv, sig, @intCast(h), &.{}, false, &f.atoms);
+        };
+        const handles = try f.gpa.dupe(Atom, f.atoms.items[hs..]);
+        defer f.gpa.free(handles);
+        f.atoms.shrinkRetainingCapacity(hs);
+        const held = for (others.items, 0..) |o, i| {
+            if (i == first + k or o.v == v_none) continue;
+            if (try f.reach(o.v, handles)) break true;
+        } else false;
+        if (wk and top != null) for (0..n) |e| {
+            if (!inner[e] or lc.flags[lc.off[j] + e] & flag_w == 0) continue;
+            if (held) {
+                try f.refuse(use, .disjoint, "a function writes the contents of a cell it captured, and the callee or another function on the way holds the cell too");
+                break;
+            }
+            const w: u32 = @intCast(f.atoms.items.len);
+            const dup = try f.argLeaves(capv, sig, @intCast(e), &.{}, false, &f.atoms);
+            try f.demand(w, .{
+                .point = site.inst,
+                .callee_inst = site.callee,
+                .loc = ses[e].loc,
+                .others = others.items,
+                .arg = first + k,
+                .se = @intCast(e),
+                .dup = dup and !ses[e].single,
+                .list_only = ses[e].kind == .list,
+                .kind = .callsite,
+            });
+        };
+        if (!rk) continue;
+        if (top != null and !held and capturedSrcs(lc, j, code.own_params, inner)) {
+            var done: ?[]bool = null;
+            defer if (done) |d| f.gpa.free(d);
+            for (ses, 0..) |he, h| {
+                if (he.kind != .cell) continue;
+                if (done) |d| if (d[h]) continue;
+                var ks: std.ArrayList(u32) = .empty;
+                defer ks.deinit(f.gpa);
+                try f.contentsAt(sig, @intCast(h), &ks);
+                const renewed = for (ks.items) |x| {
+                    if (lc.renewAt(lc.off[j] + x) != null) break true;
+                } else false;
+                if (!renewed) continue;
+                if (done == null) {
+                    done = try f.gpa.alloc(bool, ses.len);
+                    @memset(done.?, false);
+                }
+                for (ks.items) |x| done.?[x] = true;
+                try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, site.inst);
+            }
+            continue;
+        }
+        // Not followed: what it stores escapes, and the handle has another holder.
+        for (0..n) |e| if (lc.renewAt(lc.off[j] + e)) |srcs| {
+            for (srcs) |s| try f.flowStored(code, use, s, site.inst);
+        };
+        const start = f.atoms.items.len;
+        for (ses, 0..) |he, h| if (he.kind == .cell) {
+            _ = try f.argLeaves(capv, sig, @intCast(h), &.{}, false, &f.atoms);
+        };
+        try f.shareAtoms(start, f.atoms.items.len, site.inst);
+        f.atoms.shrinkRetainingCapacity(start);
+        try f.flushShare();
+    }
+}
+
+/// Whether every source that the renewals of capture parameter `j` name is
+/// a capture of the code, a cell it made or outside the frame: no value the
+/// callee hands the code, which the frame cannot name.
+fn capturedSrcs(lc: *const Contract, j: u32, own: u32, inner: []const bool) bool {
+    const n = lc.off[j + 1] - lc.off[j];
+    for (0..n) |e| {
+        if (!inner[e]) continue;
+        const srcs = lc.renewAt(lc.off[j] + e) orelse continue;
+        for (srcs) |s| switch (s.kind) {
+            .outside, .twice, .fresh => {},
+            .param => if (s.a < own) return false,
+            .answer => return false,
+        };
+    }
+    return true;
 }
 
 /// Each function that the known function `code` captured is in a location
@@ -9992,6 +10254,9 @@ fn freshOwn(m: *Mod, lc: *const Contract, re: u32, ls: Src) bool {
         const g = lfo orelse continue;
         for (g.supply) |srcs| for (srcs) |x| if (x.kind == .fresh and x.a == ls.a) return false;
     }
+    // A cell the call leaves in a cell it was handed or captured is held
+    // there too (kernel §13 items 3 and 11).
+    for (lc.renew) |ro| if (ro) |srcs| for (srcs) |x| if (x.kind == .fresh and x.a == ls.a) return false;
     return true;
 }
 
@@ -10001,6 +10266,8 @@ fn freshOwn(m: *Mod, lc: *const Contract, re: u32, ls: Src) bool {
 /// function (kernel §6.13).
 fn paramOwn(lc: *const Contract, re: u32, ls: Src) bool {
     if (ls.a >= lc.arity or lc.flags[lc.off[ls.a] + ls.e] & flag_e != 0) return false;
+    // A location the call leaves in a cell is held there too (kernel §13).
+    for (lc.renew) |ro| if (ro) |srcs| for (srcs) |x| if (x.kind == .param and x.a == ls.a and x.e == ls.e) return false;
     // A contract that says no cell of a parameter is at two locations of
     // its result answers the location at one of them in each run, though
     // its arms answer it at two (`{ m | w = m.w2, w2 = m.w }` in one arm,

@@ -2,7 +2,7 @@
 -- write of a cell's contents here has another holder of the old contents, so
 -- each is refused. A loan taken before the update and read after it; a value
 -- stored in the cell and read after the cell's update; a value the cell was
--- made with; a closure that captured the handle, so the contents escape; a
+-- made with; a closure that captured a value taken out of the cell; a
 -- helper that answers the handle beside a number, a second name of it; one
 -- handle handed for two cells; and a fiber that reads a loan after a park
 -- while another updates the cell. Were a write accepted, the old holder would
@@ -47,7 +47,8 @@ madeWith ⊤ =
 captured : ⊤ → String
 captured ⊤ =
     r = Ref.make [ 1 ]
-    k = λ⊤ → ints (Ref.get r)
+    old = Ref.get r
+    k = λ⊤ → ints old
     Ref.update r λxs → List.push xs 2
     k ⊤
 

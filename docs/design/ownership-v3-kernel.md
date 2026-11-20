@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -2329,8 +2329,9 @@ contents of a cell are locations, and that a call can change what a location of 
    the answer names first: no renewal and no function of the call put it in another holder before
    (`Frame.cellResult`, `Root.cell_root`); and a version of one. Every other root a frame makes holds,
    below each handle, `outside` as well as its atoms (`rootLeaves`): a copy of a handle in a list, a
-   record or a call's answer reads what any holder of the handle may have stored. A capture's, an
-   answer's and a top-level handle's contents are no cell of the frame (§5, test 1).
+   record or a call's answer reads what any holder of the handle may have stored. A capture's cells
+   are followed as a parameter's are (item 11); an answer's and a top-level handle's contents are no
+   cell of the frame (§5, test 1).
 5. **A version** (`Frame.renewHandle`, `versionOf`). A call that renews the contents of an argument
    that is a tracked root whole (`ref` of the root, a version of it, or a join of them) makes a new
    root of the same place, a **version**: each location of the renewed contents holds the renewal's
@@ -2364,7 +2365,8 @@ contents of a cell are locations, and that a call can change what a location of 
    at any later time), and its version holds `outside` as well from then on (another holder can store
    into the cell where the frame does not see); a later renewal of it is one of an argument the frame
    does not follow (item 5). A handle gets another holder where it escapes (`noteEscape`, every escape
-   of §5 test 3), where a closure captures it (`closureOf`: the closure runs where its holder runs it),
+   of §5 test 3), where a closure that captured it goes to a holder the walk does not follow (`flowCode`'s
+   default and lost uses, item 11; a closure made in a hole of markup, at once),
    where a value of no claim holds it (`unknownOf`), where a function the frame does not know is handed
    it (`callParam`), where another root holds a copy of it (`shareCopies`: a list, a call's answer, the
    renewed contents of another cell), and where a call's arguments hold it at two locations the
@@ -2376,15 +2378,46 @@ contents of a cell are locations, and that a call can change what a location of 
    escapes (`flowStored`).
 10. **Fibers.** Only one fiber runs at a time, and another fiber can reach a cell only through a holder
     it has. A spawned fiber's body is a closure, so a handle it captures is shared (item 8): its
-    contents escape where the closure is made, and no write of them in place is accepted in any fiber.
+    contents escape where the closure is spawned, and no write of them in place is accepted in any fiber.
     A park needs no rule of its own while the frame follows a handle: no other fiber holds it. The
     owner's loan rule for a cell that two fibers hold (#981: a loan may not stay alive across a
     suspension point) is not built: such a cell is shared, and a write of its contents is refused, with
     the copy fix (research report 165 §6, slice 4).
 
+11. **A closure writes the contents of a cell it captured** (`Frame.captureContents`, `captureCells`).
+    A capture whose layout has a handle is followed as a parameter is (`Root.tracked`): the code that
+    runs the closure is its caller. So in the closure's own frame a write of a captured cell's contents
+    passes §5 test 1, is judged there by tests 2 to 4 against the closure's own holders, and the contract
+    publishes it (`W` at the capture's `◆`) with the renewal (item 3); a capture's cells are read where
+    the closure answers (item 7). A store into a captured cell lets escape, in the closure's frame, what
+    the holder cannot name: a value the closure was handed, or one read through such a value (a callee
+    that runs the closure can hand it back and write it: `run/SanitiserCellStaleLength`). The cell's
+    own old contents, another capture and a cell the closure made are named to the holder by the
+    renewal. The holder judges the closure where it runs it:
+    - **a call of the closure** (`apply`): the captures are arguments, as before; each is read at its
+      latest version (`capVal`, item 5);
+    - **a call that runs it within the call** (`runsWithin`: every use from the closure up to the call
+      is a known contract that neither loses it nor is the default): each write of a captured cell's
+      contents is a demand at that call on the frame's latest version, judged against the call's other
+      arguments (not the one that holds the closure) and the other captures of each closure on the way
+      (`Use.inner`); a renewal makes a version (item 5), which also keeps the old contents at each
+      location whose renewal does not name them (`renewHandle`'s `maybe`: the callee may run the
+      closure no time at all), where its sources name only captures, cells the closure made and
+      `outside` (`capturedSrcs`). A handle of the capture that another of those operands holds is two
+      names of one cell at the call (the apart-arguments rule, §4.4): a write there is refused
+      (`disjoint`), and a renewal is one of an argument the frame does not follow (item 5);
+    - **any other holder** (the default, a lost use, a function parameter of the frame, a list, a
+      spawned fiber): the closure runs at times the frame does not see. Each handle it captured is
+      shared (item 8), and a write of a captured cell's contents is refused (`call`).
+    A closure is no holder of its captures until it runs: a handle it captured is not shared where it is
+    made, so the frame keeps writing the contents in place until the closure goes where the walk does not
+    follow it. `run/CellClosureWrites` and its live twin `run/CellClosureWritesLive`;
+    `run/SanitiserCellReentryApart`, `SanitiserScopeHost` and `SanitiserNestedCallbackWrite` are
+    accepted and run in place.
+
 What it does not cover yet, each a refusal: a closure that writes the contents of a cell it captured
-(a capture is never `own`, §5 test 1: `run/SanitiserCellReentryApart`, `SanitiserScopeHost`,
-`SanitiserNestedCallbackWrite`, `browser/tea/BallMachine`); a handle handed to the frame's own function
+and goes where the walk does not follow it, a spawned fiber's among them (item 11; `browser/tea/BallMachine`,
+where the closures go to the runtime); a handle handed to the frame's own function
 parameter, which shares it (`run/SanitiserCellLoanKeptApart`'s `handed` and `modified`); a handle at a
 part of a root (a record's field, a tuple's part), which is no tracked root whole and is shared at its
 first renewal; and the reach of a part of a call's answer, which reads the answer whole
