@@ -883,42 +883,63 @@ pub const Mod = struct {
         var ls: std.ArrayList(u64) = .empty;
         defer ls.deinit(m.gpa);
         try m.loc.labels(loc, &ls, m.gpa);
-        const store = m.in.store;
         for (ls.items) |w| {
             const l: Loc.Label = @bitCast(w);
             if (l.cyc) return null;
-            _, const c = store.resolved(t);
-            const s = switch (c) {
-                .structure => |s| s,
-                .flex, .rigid, .alias, .err => return null,
-            };
-            t = switch (l.kind) {
-                .elem => m.elemType(t) orelse return null,
-                .index => switch (s) {
-                    .tuple => |r| blk: {
-                        const xs = store.vars(r);
-                        if (l.payload >= xs.len) return null;
-                        break :blk xs[l.payload];
-                    },
-                    .unit, .empty_record, .func, .app, .record => return null,
-                },
-                .field => switch (s) {
-                    .record => |r| blk: {
-                        for (store.fields(r.fields)) |fd| {
-                            const sym = @backingInt(fd.name);
-                            if (sym < m.in.ranks.len and m.in.ranks[sym] == l.payload) break :blk fd.value;
-                        }
-                        return null;
-                    },
-                    .unit, .empty_record, .func, .app, .tuple => return null,
-                },
-                .ctor_arg => m.ctorArgType(t, l.head, l.payload >> 12, l.payload & 0xfff) orelse return null,
-                // A cell's contents: its one type argument (kernel §13).
-                .contents => m.contentsType(t) orelse return null,
+            t = m.typeStep(t, switch (l.kind) {
+                .elem => .elem,
+                .index => .{ .index = l.payload },
+                .field => .{ .field = l.payload },
+                .ctor_arg => .{ .ctor_arg = .{ .head = l.head, .ctor = l.payload >> 12, .arg = l.payload & 0xfff } },
+                .contents => .contents,
                 .row, .member, .env, .slot, .fslot => return null,
-            };
+            }) orelse return null;
         }
         return t;
+    }
+
+    /// One step of `typeAt` and `typeAtPath`: an element, a tuple's index,
+    /// a record's field by its rank, a constructor's argument (of the head
+    /// the label names, or, with none, of the type's own head), a cell's
+    /// contents. `null` where type `t` is no structure or has no such part.
+    const TypeStep = union(enum) {
+        elem,
+        index: u32,
+        field: u32,
+        ctor_arg: struct { head: ?u32, ctor: u32, arg: u32 },
+        contents,
+    };
+
+    fn typeStep(m: *Mod, t: Var, step: TypeStep) ?Var {
+        const store = m.in.store;
+        _, const c = store.resolved(t);
+        const st = switch (c) {
+            .structure => |x| x,
+            .flex, .rigid, .alias, .err => return null,
+        };
+        return switch (step) {
+            .elem => m.elemType(t),
+            .index => |i| switch (st) {
+                .tuple => |r| blk: {
+                    const xs = store.vars(r);
+                    break :blk if (i < xs.len) xs[i] else null;
+                },
+                .unit, .empty_record, .func, .app, .record => null,
+            },
+            .field => |rank| switch (st) {
+                .record => |r| for (store.fields(r.fields)) |fd| {
+                    const sym = @backingInt(fd.name);
+                    if (sym < m.in.ranks.len and m.in.ranks[sym] == rank) break fd.value;
+                } else null,
+                .unit, .empty_record, .func, .app, .tuple => null,
+            },
+            .ctor_arg => |ca| m.ctorArgType(t, ca.head orelse switch (st) {
+                .app => |ap| ap.type.int(),
+                .unit, .empty_record, .func, .tuple, .record => return null,
+            }, ca.ctor, ca.arg),
+            // A cell's contents: its one type argument (kernel §13).
+            .contents => m.contentsType(t),
+        };
     }
 
     /// Whether `aliased` puts the location `loc` of a parameter of type
@@ -957,47 +978,21 @@ pub const Mod = struct {
             k += 1;
             p = pp.parent;
         }
-        const store = m.in.store;
         var cur = t;
         while (k > 0) {
             k -= 1;
             const s = steps[k];
-            _, const c = store.resolved(cur);
-            const st = switch (c) {
-                .structure => |x| x,
-                .flex, .rigid, .alias, .err => return null,
-            };
-            cur = switch (s.kind) {
-                .elem => m.elemType(cur) orelse return null,
-                .index => switch (st) {
-                    .tuple => |r| blk: {
-                        const xs = store.vars(r);
-                        if (s.payload >= xs.len) return null;
-                        break :blk xs[s.payload];
-                    },
-                    .unit, .empty_record, .func, .app, .record => return null,
-                },
-                .field => switch (st) {
-                    .record => |r| blk: {
-                        for (store.fields(r.fields)) |fd| {
-                            const sym = @backingInt(fd.name);
-                            if (sym < m.in.ranks.len and m.in.ranks[sym] == s.payload) break :blk fd.value;
-                        }
-                        return null;
-                    },
-                    .unit, .empty_record, .func, .app, .tuple => return null,
-                },
+            cur = m.typeStep(cur, switch (s.kind) {
+                .elem => .elem,
+                .index => .{ .index = s.payload },
+                .field => .{ .field = s.payload },
                 .ctor_arg => blk: {
                     const ca = m.places.ctorArgOf(s);
-                    const head = switch (st) {
-                        .app => |ap| ap.type.int(),
-                        .unit, .empty_record, .func, .tuple, .record => return null,
-                    };
-                    break :blk m.ctorArgType(cur, head, ca[0], ca[1]) orelse return null;
+                    break :blk .{ .ctor_arg = .{ .head = null, .ctor = ca[0], .arg = ca[1] } };
                 },
-                .contents => m.contentsType(cur) orelse return null,
+                .contents => .contents,
                 .env, .slot, .level, .row => return null,
-            };
+            }) orelse return null;
         }
         return cur;
     }

@@ -424,9 +424,6 @@ pub const Table = struct {
         return t.places.holds(p).isEmpty();
     }
 
-    /// The place that `loc`'s labels reach from `place`, step by step, or
-    /// null where `place` has no step of it, or the path names a slot, a row
-    /// or a member of a cycle's deep level, which no place step names.
     /// The step of `place` that the label `w` of a location names, as
     /// `placeAtWalk` finds it (and of the same type, where the label names
     /// one: a constructor's argument, an opaque type's slot), or `null` (a
@@ -445,6 +442,10 @@ pub const Table = struct {
         return null;
     }
 
+    /// The place that `loc`'s labels reach from `place`, step by step, or
+    /// null where `place` has no step of it, or the path names a slot, a row
+    /// or a member of a cycle's deep level, which no place step names.
+    /// Each answer is kept (`place_at_memo`); a walk of the labels is counted.
     pub fn placeAt(t: *Table, place: PlaceId, loc: u32) Allocator.Error!?PlaceId {
         const key: [2]u32 = .{ place.int(), loc };
         if (t.place_at_memo.get(key)) |hit| return if (hit == none) null else @fromBackingInt(hit);

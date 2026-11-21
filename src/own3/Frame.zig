@@ -912,7 +912,7 @@ fn pathPrefix(f: *const Frame, a: u32, b: u32) bool {
 /// `indexWrite` indexed it.
 fn overlapWrite(f: *Frame, xs: []const Atom, ys: []const Atom) bool {
     if (f.wIndexed(ys)) {
-        for (xs) |x| if (f.overlapIndexed(x)) return true;
+        for (xs) |x| if (f.overlapIndexed(x, f.w_ix.of.len)) return true;
         return false;
     }
     return f.overlapAny(xs, ys);
@@ -2362,11 +2362,11 @@ fn atomsReachIndexed(f: *Frame, xs: []const Atom) bool {
             if (f.charge(1)) return true;
             continue;
         }
-        if (f.overlapIndexed(x)) return true;
+        if (f.overlapIndexed(x, f.w_ix.of.len + 1)) return true;
         const r = f.roots.items[x.root];
         if (r.kind == .answer and x.root != f.skip_answer) for (f.answers.items[r.ent].base.items) |b| {
             if (f.isOld(b) or !f.atomLive(b)) continue;
-            if (f.overlapIndexed(b)) return true;
+            if (f.overlapIndexed(b, f.w_ix.of.len)) return true;
         };
     }
     return false;
@@ -2374,11 +2374,12 @@ fn atomsReachIndexed(f: *Frame, xs: []const Atom) bool {
 
 /// Whether atom `x` overlaps an atom of the write in judgement (`w_ix`):
 /// a lookup, and each atom of its group compared (kernel §8). Past the
-/// budget it does.
-fn overlapIndexed(f: *Frame, x: Atom) bool {
+/// budget it does. `scan` is what the scan it replaces charges for `x`
+/// (`overlapAny`: the write's atoms; `atomsReach`: one more for an atom of
+/// its own), and the lookup never charges more.
+fn overlapIndexed(f: *Frame, x: Atom, scan: usize) bool {
     const g = f.w_ix.group(x.root, x.e);
-    // Never more than the scan of the write costs (`atomsReach`).
-    if (f.charge(@min(Loc.lookup_units + g.len, f.w_ix.of.len + 1))) return true;
+    if (f.charge(@min(Loc.lookup_units + g.len, scan))) return true;
     for (g) |y| if (f.overlap(x, y)) return true;
     return false;
 }
