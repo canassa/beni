@@ -329,6 +329,99 @@ main = Io.run λ⊤ →
 `;
 }
 
+// #2595: a function answers a cell inside a `Maybe` or a `Result` after a `?` whose operand holds the
+// contents' type, a `Maybe`/`Result` of another type than the answer. Programs are
+// `try.<contents>.<wrap>.<op>.<site>.<use>.<twin>`: `wrap` the answer's `maybe` or `result`; `op` the
+// operand (`fresh`, a new value; `arg`, the function's argument; `err`, `Result` only: the argument in
+// `Err`, the answer `Result C (Ref Int)`); `site` where the `?` is (`top`, a `case` arm, a `local`
+// function of a block, after a `park`, an `unannot` function); `use` what the caller does with the
+// answer (`read` the cell; `argAfter`: update the cell, then read the argument; `writeArg`: write the
+// argument in place, then read the answer; `fiber`: a spawned fiber updates the cell while the frame
+// parks and reads the argument).
+function tryLive(op, use) {
+  if (op === 'arg') return use === 'argAfter' || use === 'writeArg' || use === 'fiber';
+  if (op === 'err') return use === 'writeArg';
+  return false;
+}
+
+function genTry(cname, wrap, op, site, use) {
+  const c = CONTENTS[cname];
+  const refT = /\s/.test(c.t) ? `(${c.t})` : c.t;
+  const M = wrap === 'maybe' ? 'Maybe' : 'Result String';
+  const OK = wrap === 'maybe' ? 'Just' : 'Ok';
+  const inner = op === 'err' ? 'Int' : `(Ref ${refT})`;
+  const ansT = op === 'err' ? `Result ${refT} (Ref Int)` : `${M} ${inner}`;
+  const fail = op === 'err' ? `Err (${c.init})` : wrap === 'maybe' ? 'Nothing' : 'Err "z"';
+  const operand = (a) => (op === 'fresh' ? 'src ⊤' : op === 'arg' ? `wrap ${a}` : `check ${a}`);
+  const okc = op === 'err' ? 'Ok' : OK;
+  const body = (a) => `x = (${operand(a)})?\n${okc} (Ref.make x)`;
+  let fn;
+  if (site === 'top') fn = `f : ${c.t} → ${ansT}\nf a =\n${ind(body('a'), 4)}`;
+  else if (site === 'unannot') fn = `f a =\n${ind(body('a'), 4)}`;
+  else if (site === 'park') fn = `f : ${c.t} → ${ansT}\nf a =\n    Task.yieldNow ⊤\n${ind(body('a'), 4)}`;
+  else if (site === 'arm') fn = `f : ${c.t} → ${ansT}\nf a =\n    case List.length [ 1 ] of\n        0 →\n            ${fail}\n\n        _ →\n${ind(body('a'), 12)}`;
+  else fn = `f : ${c.t} → ${ansT}\nf a =\n    inner b =\n${ind(body('b'), 8)}\n    inner a`;
+  const showCell = op === 'err' ? 'String.fromInt (Ref.get c)' : `${c.show} (Ref.get c)`;
+  const errArm = op === 'err' ? `Err ee →\n    [ ${c.show} ee ]` : wrap === 'maybe' ? 'Nothing →\n    [ "-" ]' : 'Err m →\n    [ m ]';
+  const upd = op === 'err' ? 'Ref.update c λw → w + 1' : `Ref.update c λw → ${c.w('w')}`;
+  let lines;
+  if (use === 'read') lines = [`v = ${c.init}`, `case f v of\n    ${okc} c →\n        [ ${showCell} ]\n\n${ind(errArm, 4)}`];
+  else if (use === 'argAfter') lines = [`v = ${c.init}`, `case f v of\n    ${okc} c →\n        ${upd}\n        [ ${c.show} v, ${showCell} ]\n\n${ind(errArm, 4)}`];
+  else if (use === 'writeArg') lines = [`v = ${c.init}`, 'r = f v', `v2 = ${c.w('v')}`, `case r of\n    ${okc} c →\n        [ ${c.show} v2, ${showCell} ]\n\n${ind(errArm, 4)}`];
+  else lines = [`v = ${c.init}`, `case f v of\n    ${okc} c →\n        b = Task.spawn λ⊤ → ${upd}\n        Task.yieldNow ⊤\n        s = ${c.show} v\n        Task.join b\n        [ s, ${showCell} ]\n\n${ind(errArm, 4)}`];
+  return `-- try.${cname}.${wrap}.${op}.${site}.${use}: see bench/ownership-sweeps/cells.mjs.
+import Dict exposing (Dict)
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+type alias R =
+    { items : List Int, n : Int }
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showR : R → String
+showR s = "\${String.fromInt s.n}:\${ints s.items}"
+
+
+render : Dict Int (List Int) → String
+render d = String.join (List.map (Dict.toList d) λ( k, v ) → "\${String.fromInt k}=\${ints v}") ";"
+
+
+showP : List Int × List Int → String
+showP p = "\${ints p.0}/\${ints p.1}"
+
+
+src : ⊤ → ${M} ${refT}
+src ⊤ = ${OK} (${c.init})
+
+
+wrap : ${c.t} → ${M} ${refT}
+wrap a = ${OK} a
+
+
+check : ${c.t} → Result ${refT} Int
+check a = Err a
+
+
+${fn}
+
+
+go : ⊤ → List String
+go ⊤ =
+${ind(lines.join('\n'), 4)}
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (go ⊤)
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -345,6 +438,11 @@ for (const cname of Object.keys(CONTENTS)) for (const maker of ['local', 'param'
   if (COND.has(writer) && (!COND_READERS.includes(reader) || (reader === 'loan' && !COND_HOLDERS.includes(holder)) || !COND_FIBERS.includes(fibers))) continue;
   const twin = isLive(writer, reader, fibers, holder) ? 'live' : 'dead';
   emit(`${cname}.${maker}.${writer}.${reader}.${holder}.${fibers}.${twin}`, { 'Main.beni': gen(cname, maker, writer, reader, holder, fibers) });
+}
+for (const cname of Object.keys(CONTENTS)) for (const wrap of ['maybe', 'result']) for (const op of ['fresh', 'arg', 'err']) for (const site of ['top', 'arm', 'local', 'park', 'unannot']) for (const use of ['read', 'argAfter', 'writeArg', 'fiber']) {
+  if (op === 'err' && wrap !== 'result') continue;
+  const twin = tryLive(op, use) ? 'live' : 'dead';
+  emit(`try.${cname}.${wrap}.${op}.${site}.${use}.${twin}`, { 'Main.beni': genTry(cname, wrap, op, site, use) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);

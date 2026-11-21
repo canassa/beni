@@ -3223,6 +3223,7 @@ pub const Mod = struct {
             try f.addParam(place, p.int(), ty);
         }
         const result_place = if (sig) |s| (if (params.len == s.params.len) s.result else try m.placeOfInst(body.int())) else try m.placeOfInst(body.int());
+        f.answer_place = result_place;
         try f.walkBody(body.int());
         // Past the budget no walk goes on (kernel §8): `finish` is not run,
         // and the declaration gives up below.

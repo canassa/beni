@@ -1,0 +1,158 @@
+-- A function answers a cell inside a `Maybe` or a `Result` after a `?`
+-- whose operand is a `Maybe` or a `Result` of another type, which holds a
+-- list, a record or a dictionary (#2595): at the top of a function, in a
+-- `case` arm, in a local function of a block, after a park, in a function
+-- with no annotation, and the operand's value stored in the new cell. Where
+-- the `?` fails, the function answers `Nothing` or the operand's `Err`, never
+-- its success part: before, the operand was read at the answer's type, a
+-- list at the place of a cell's handle, and the check stopped. A caller that
+-- writes a fresh list after the call writes it in place.
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias R =
+    items : List Int
+    n : Int
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+two : ⊤ → Maybe (List Int)
+two ⊤ = Just [ 2 ]
+
+
+none : ⊤ → Maybe (List Int)
+none ⊤ = Nothing
+
+
+okList : ⊤ → Result String (List Int)
+okList ⊤ = Ok [ 3, 4 ]
+
+
+bad : ⊤ → Result String (Dict Int (List Int))
+bad ⊤ = Err "bad"
+
+
+cellAfterTry : ⊤ → Maybe (Ref (List Int))
+cellAfterTry ⊤ =
+    x = (two ⊤)?
+    Just (Ref.make [ 5 ])
+
+
+cellFails : ⊤ → Maybe (Ref (List Int))
+cellFails ⊤ =
+    x = (none ⊤)?
+    Just (Ref.make x)
+
+
+recordCell : ⊤ → Maybe (Ref R)
+recordCell ⊤ =
+    xs = (two ⊤)?
+    Just (Ref.make { items = xs, n = 3 })
+
+
+resultCell : ⊤ → Result String (Ref (List Int))
+resultCell ⊤ =
+    x = (okList ⊤)?
+    Ok (Ref.make x)
+
+
+dictFails : ⊤ → Result String (Ref (Dict Int (List Int)))
+dictFails ⊤ =
+    d = (bad ⊤)?
+    Ok (Ref.make d)
+
+
+inArm : Int → Maybe (Ref (List Int))
+inArm k =
+    case k of
+        0 →
+            Nothing
+
+        _ →
+            x = (two ⊤)?
+            Just (Ref.make x)
+
+
+inLocal : ⊤ → Result String (Ref (List Int))
+inLocal ⊤ =
+    pick n =
+        x = (okList ⊤)?
+        Ok (Ref.make (List.push x n))
+    pick 7
+
+
+afterPark : ⊤ → Maybe (Ref (List Int))
+afterPark ⊤ =
+    Task.yieldNow ⊤
+    x = (two ⊤)?
+    Just (Ref.make x)
+
+
+noAnnotation ⊤ =
+    x = (okList ⊤)?
+    Ok (Ref.make x)
+
+
+showM : Maybe (Ref (List Int)) → String
+showM m =
+    case m of
+        Just c →
+            ints (Ref.get c)
+
+        Nothing →
+            "none"
+
+
+showR : Result String (Ref (List Int)) → String
+showR r =
+    case r of
+        Ok c →
+            ints (Ref.get c)
+
+        Err msg →
+            msg
+
+
+go : ⊤ → List String
+go ⊤ =
+    fresh = [ 1, 2 ]
+    r = resultCell ⊤
+    written = List.push fresh 9
+    rec =
+        case recordCell ⊤ of
+            Just c →
+                String.fromInt (Ref.get c).n
+
+            Nothing →
+                "none"
+    dict =
+        case dictFails ⊤ of
+            Ok c →
+                String.fromInt (Dict.size (Ref.get c))
+
+            Err msg →
+                msg
+    [ showM (cellAfterTry ⊤)
+    , showM (cellFails ⊤)
+    , rec
+    , showR r
+    , dict
+    , showM (inArm 1)
+    , showR (inLocal ⊤)
+    , showM (afterPark ⊤)
+    , showR (noAnnotation ⊤)
+    , ints written
+    ]
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (go ⊤)

@@ -398,6 +398,9 @@ depth: u32 = 0,
 failed: bool = false,
 /// An answer of the body can be an object that was there before (`Contract.old_result`).
 tail_old: bool = false,
+/// The place the frame answers at (`finish`), where a `?` builds the value
+/// its failure answers; null where the walk answers at no type of its own.
+answer_place: ?PlaceId = null,
 /// The body read a value at a type variable that is not its own type (`narrowed`), or used the answer of a callee that did (`Contract.casts`).
 casts: bool = false,
 
@@ -2508,6 +2511,26 @@ fn project(f: *Frame, v: Val, s: Step) Error!Val {
     }
 }
 
+/// The value that a `?` on `scrut` (whose value is `v`) answers where it
+/// fails, at the frame's answer place: the scrutinee's object, read at the
+/// answer's type. Its success part is not in it: `Nothing` holds nothing,
+/// and `Err e` holds the scrutinee's `e`, a part at the same step of both
+/// types (language.md §6.6). The scrutinee itself read at the answer's type
+/// put its success part's cells at the answer's success locations, which
+/// are another type's: a list read as a cell's handle, and the contents
+/// below that handle at no location of the scrutinee.
+fn tryFailure(f: *Frame, scrut: u32, v: Val) Error!Val {
+    const m = f.m;
+    const at = f.answer_place orelse return v;
+    const sp = try m.placeOfInst(scrut);
+    if (try m.loc.layoutOf(sp) == try m.loc.layoutOf(at)) return v;
+    if ((try m.trySuccess(scrut)) == null) return v;
+    if (m.places.kind(at) != .ctor or m.places.head(at) != m.places.head(sp)) return v;
+    if (m.places.head(sp) == m.in.types.well_known.maybe.int()) return v_none;
+    const s = try m.ctorStep(1, 0);
+    return f.built(at, &.{.{ .step = s.word(), .val = try f.project(v, s) }});
+}
+
 /// The most parts of a construction that `project` scans; one of more parts
 /// is indexed by step (`builtPart`).
 const scan_parts = 16;
@@ -4238,7 +4261,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // an answer that is an object made before (`Contract.old_result`).
             try f.readAll(v, inst);
             try f.writersAtReturn(inst, v);
-            try f.returns.append(f.gpa, try f.cellsNow(v));
+            try f.returns.append(f.gpa, try f.tryFailure(data.lhs, try f.cellsNow(v)));
             try f.noteReturnCells(inst);
             f.tail_old = true;
             // The success: the argument of `Ok` or `Just`, a part of the
@@ -5482,13 +5505,14 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
                 const place = if (k < pvars.len) try m.placeOf(pvars[k].toOptional()) else m.var_place;
                 try child.addParam(place, p.int(), if (k < pvars.len) pvars[k].toOptional() else .none);
             }
+            const rplace = if (fnt) |ft| try m.placeOf(ft.result.toOptional()) else m.var_place;
+            child.answer_place = rplace;
             try child.walkBody(mb.body);
             // Past the budget no walk goes on (kernel §8).
             if (m.steps_over) {
                 f.failed = true;
                 return vals;
             }
-            const rplace = if (fnt) |ft| try m.placeOf(ft.result.toOptional()) else m.var_place;
             const c = try child.finish(rplace);
             if (child.failed) f.failed = true;
             caps[i] = try f.gpa.dupe(u32, child.cap_locals.items);

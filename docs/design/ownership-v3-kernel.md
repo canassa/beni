@@ -838,9 +838,13 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    argument `k` is the field the alias writes `k`-th, read out of its slot where the pattern matches
    (§11.4), whatever form binds it (`case`, `let`, `as`, a parameter, a lambda); `?` on `Result` or
    `Maybe` is the argument of the first constructor (`language.md` §6.6), any other type `unknown` over
-   the scrutinee; the failure answers the scrutinee (a read). *Research report 147: the alias's pattern
+   the scrutinee; the failure answers the scrutinee (a read), at the frame's answer place
+   (`tryFailure`): where the two layouts differ it is `Nothing`, which holds nothing, or the scrutinee's
+   `Err` argument at the answer's `Err`, never the success part. *Research report 147: the alias's pattern
    projected by a constructor's step, which a record does not have, so it bound nothing and its contract
-   read no slot.*
+   read no slot. #2595: the scrutinee itself, read at an answer of another type, put a list at a cell's
+   handle and the contents below it at no location of the scrutinee, and a safe build stopped
+   (`run/CellTryAnswer`, its live twin `CellTryAnswerLive`).*
 7. **`if` and `case`** (`caseOf`, `joinVal`): the value is a `join` of the arms, each with its context; two
    arms of one `case` are never one run (`compatible`), so a holder in another arm is no holder.
 8. **Loops** are recursion and the worded loops of `core/`: a function handed to a callee flows to the

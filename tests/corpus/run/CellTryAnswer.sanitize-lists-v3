@@ -1,0 +1,1 @@
+A function answers a cell inside a Maybe or a Result after a `?` whose operand is a Maybe or a Result of another type (#2595): where the `?` fails, the answer holds the operand's `Err` and never its success part, so each fixture of the shape is checked and the fresh list written after the call is written in place (ownership-v3-kernel.md §13). Its live twin is CellTryAnswerLive.

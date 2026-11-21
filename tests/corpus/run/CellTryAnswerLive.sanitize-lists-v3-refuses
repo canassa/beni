@@ -1,0 +1,9 @@
+# A function answers a cell inside a Maybe or a Result after a `?` (#2595), and the answer holds its argument: in the new cell, or as the operand's `Err`. A write of the cell's contents (in one fiber, or a spawned one) before a read of the argument, and a write of the argument before a read of the `Err`, are refused: each read sees the old value.
+56:13 list_still_used call
+66:5 list_still_used call
+68:17 list_still_used value
+68:17 list_still_used call
+69:13 list_still_used call
+71:13 list_still_used call
+72:24 list_still_used call
+82:10 list_still_used List.set
