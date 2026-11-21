@@ -6971,13 +6971,16 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
             // where an operand can read it there, it escapes; else another
             // fiber is the only one that can, and a later write of it in
             // place is noted for the holder (`parkedWrite`).
-            if (ops_hit) try f.escapeStored(root, w, wn, inst) else try f.noteParked(root, @intCast(h), w, wn, at);
             // A writer of the cell that runs while the body is parked writes
-            // the stored value in place: where something outside this run
-            // holds it (a value the body was handed or captured, a cell no
-            // rule names), the holder's writers of the cell are refused (the
-            // mark).
-            if (!ops_hit and f.storedForeign(root, w, wn)) f.pflags.items[r.ent + h] |= CMod.flag_m;
+            // the stored value in place, where another holder of it (a value
+            // the body was handed or captured, another cell it stored it in,
+            // its answer) sees the write: the holder's writers of the cell are
+            // refused (the mark).
+            if (ops_hit) {
+                try f.escapeStored(root, w, wn, inst);
+            } else if (try f.noteParked(root, @intCast(h), w, wn, at)) {
+                f.pflags.items[r.ent + h] |= CMod.flag_m;
+            }
         }
         if (probed) try f.renameContents(root, cur, inst, at);
     }
@@ -6994,22 +6997,8 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
 /// parameter or capture `root` hold a value the body stored there: an atom
 /// that is not the cell's own old contents (kernel §13 item 12, *What the
 /// body stored is marked at a switch point*).
-/// Whether the contents `f.atoms[w..][0..wn]` of a cell of tracked parameter
-/// or capture `root` hold, beside the cell's own old contents, a value from
-/// outside this run of the body: a parameter's or a capture's cells, an
-/// answer of a function parameter, or a cell no rule names.
-fn storedForeign(f: *const Frame, root: u32, w: u32, wn: u32) bool {
-    for (f.atoms.items[w..][0..wn]) |a| {
-        if (a.root != 0 and f.originOf(a.root) == root) continue;
-        switch (f.roots.items[a.root].kind) {
-            .param, .capture, .answer, .outside => return true,
-            .local, .fresh => {},
-        }
-    }
-    return false;
-}
-
-fn noteParked(f: *Frame, root: u32, h: u32, w: u32, wn: u32, at: u32) Error!void {
+/// True where it noted a stored value.
+fn noteParked(f: *Frame, root: u32, h: u32, w: u32, wn: u32, at: u32) Error!bool {
     const start: u32 = @intCast(f.parked_atoms.items.len);
     for (f.atoms.items[w..][0..wn]) |a| {
         if (f.roots.items[a.root].kind == .outside or f.originOf(a.root) == root) continue;
@@ -7017,6 +7006,7 @@ fn noteParked(f: *Frame, root: u32, h: u32, w: u32, wn: u32, at: u32) Error!void
     }
     const len: u32 = @intCast(f.parked_atoms.items.len - start);
     if (len != 0) try f.parked.append(f.gpa, .{ .start = start, .len = len, .at = at, .ctx = f.cur_ctx, .root = root, .h = h });
+    return len != 0;
 }
 
 /// A write of the atoms `ws` at time `at`: where it writes in place what the
