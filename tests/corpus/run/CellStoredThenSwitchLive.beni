@@ -7,7 +7,9 @@
 -- captured the cell and copies what the helper stored, run between the
 -- store and the write (handed to the helper, or a closure the writing
 -- closure calls); and the helper handed as a value to a function that calls
--- it while a reader fiber holds the cell. Each read sees
+-- it while a reader fiber holds the cell; and a helper that stores a list
+-- its caller still holds and parks, while a writer fiber of the cell pushes
+-- onto it. Each read sees
 -- the new value where a copy would keep the old one, so each is refused.
 import Io
 import List
@@ -117,6 +119,24 @@ asValue ⊤ =
     a = reader r
     applyTo r storePark
     Task.join a
+
+
+storeSwitch : Ref (List Int), List Int → ⊤
+storeSwitch h x =
+    Ref.set h x
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+
+
+handedStored : ⊤ → String
+handedStored ⊤ =
+    r = Ref.make [ 1 ]
+    x = [ 4 ]
+    w = Task.spawn λ⊤ → Ref.update r λl → List.push l 7
+    storeSwitch r x
+    s = ints x
+    Task.join w
+    "${s}/${ints (Ref.get r)}"
 
 
 main : Program

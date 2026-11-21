@@ -6972,6 +6972,12 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
             // fiber is the only one that can, and a later write of it in
             // place is noted for the holder (`parkedWrite`).
             if (ops_hit) try f.escapeStored(root, w, wn, inst) else try f.noteParked(root, @intCast(h), w, wn, at);
+            // A writer of the cell that runs while the body is parked writes
+            // the stored value in place: where something outside this run
+            // holds it (a value the body was handed or captured, a cell no
+            // rule names), the holder's writers of the cell are refused (the
+            // mark).
+            if (!ops_hit and f.storedForeign(root, w, wn)) f.pflags.items[r.ent + h] |= CMod.flag_m;
         }
         if (probed) try f.renameContents(root, cur, inst, at);
     }
@@ -6988,6 +6994,21 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
 /// parameter or capture `root` hold a value the body stored there: an atom
 /// that is not the cell's own old contents (kernel §13 item 12, *What the
 /// body stored is marked at a switch point*).
+/// Whether the contents `f.atoms[w..][0..wn]` of a cell of tracked parameter
+/// or capture `root` hold, beside the cell's own old contents, a value from
+/// outside this run of the body: a parameter's or a capture's cells, an
+/// answer of a function parameter, or a cell no rule names.
+fn storedForeign(f: *const Frame, root: u32, w: u32, wn: u32) bool {
+    for (f.atoms.items[w..][0..wn]) |a| {
+        if (a.root != 0 and f.originOf(a.root) == root) continue;
+        switch (f.roots.items[a.root].kind) {
+            .param, .capture, .answer, .outside => return true,
+            .local, .fresh => {},
+        }
+    }
+    return false;
+}
+
 fn noteParked(f: *Frame, root: u32, h: u32, w: u32, wn: u32, at: u32) Error!void {
     const start: u32 = @intCast(f.parked_atoms.items.len);
     for (f.atoms.items[w..][0..wn]) |a| {

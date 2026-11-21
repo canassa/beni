@@ -2551,7 +2551,11 @@ contents of a cell are locations, and that a call can change what a location of 
       takes. At any other switch point the body notes what it stored in each handle of a tracked
       parameter or capture (`noteParked`), and a later write of it in place, at or after that switch
       point (the switching call's own write among them), puts `flag_p` on the handle
-      (`parkedWrite`). The body accepts the write; the holder judges it where it names the handle
+      (`parkedWrite`). A writer of the cell that runs while the body is parked writes the stored
+      value in place; where that value comes from outside the run (a value the body was handed or
+      captured, the answer of a function parameter, a cell no rule names), its other holder sees
+      the write, so the handle has the mark (`storedForeign`): the holder's writers of the cell are
+      refused. The body accepts the write; the holder judges it where it names the handle
       (`parkedHeld`): another operand of the call that reaches the handle (a closure handed beside it
       that captured it, a second name of it) refuses the call, as that code runs between the store
       and the write; a parameter's or a capture's handle puts `flag_p` in the holder's own contract; a
@@ -2568,7 +2572,8 @@ contents of a cell are locations, and that a call can change what a location of 
       a spawned closure that does it, a helper called while a reader fiber holds the cell, a
       callback that captured the cell and runs between the store and the write, and such a helper
       handed as a value, are refused (`run/CellStoredParkedLive`, `run/CellStoredThenSwitchLive`;
-      the lane's second adversarial reviewer found the last two, 32 programs).
+      the lane's second adversarial reviewer found the last two, 32 programs, and a third one the
+      writer fiber that pushes onto a list the helper stored while its caller still holds it, 20).
     - **Marks reach the frame** (`applyMarks`, `markHandles`): a callee's or a closure's mark on a handle
       it is handed or captured marks the holder: a parameter's or a capture's in the frame's contract,
       a root the frame made in `cell_marked`. So does a call whose contract hands a cell's contents to a
