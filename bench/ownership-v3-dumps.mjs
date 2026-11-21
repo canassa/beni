@@ -21,10 +21,11 @@ const index = [];
 function run(r, i) {
   return new Promise((res) => {
     const p = spawn("timeout", ["300", beni, "dump", "--stage=ownership", "--ownership-everywhere", "--ownership=v3", ...r.argv], { cwd: repo });
-    let s = "";
-    p.stdout.on("data", (d) => (s += d));
-    p.stderr.on("data", (d) => (s += d));
-    p.on("close", (code) => { writeFileSync(join(out, `${r.name.replaceAll("/", "__")}.txt`), `# ${r.name} exit ${code}\n` + s); res(); });
+    // The chunks are joined as bytes: a chunk can end inside a character.
+    const chunks = [];
+    p.stdout.on("data", (d) => chunks.push(d));
+    p.stderr.on("data", (d) => chunks.push(d));
+    p.on("close", (code) => { writeFileSync(join(out, `${r.name.replaceAll("/", "__")}.txt`), `# ${r.name} exit ${code}\n` + Buffer.concat(chunks).toString()); res(); });
   });
 }
 async function worker() { while (next < roots.length) { const i = next++; index[i] = roots[i].name; await run(roots[i], i); } }

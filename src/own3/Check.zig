@@ -3231,6 +3231,7 @@ pub const Mod = struct {
         // One budget for the declaration, whatever the number of its walks
         // (kernel §8): the rounds of its group count against it together.
         m.beginDecl(di);
+        const mark = m.lines.items.len;
         @memset(m.lframe[d.locals_start..d.locals_end], 0);
         @memset(m.lv[d.locals_start..d.locals_end], Frame.v_unbound);
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
@@ -3253,12 +3254,14 @@ pub const Mod = struct {
         if (m.steps_over) {
             // A walk past its steps (kernel §8): the declaration gives up, loudly.
             m.module_over = true;
+            m.gaveUp(mark);
             try m.declLimit(di, try m.budgetLine(di, ""));
             m.failed_decl[di] = true;
             m.incomplete[di] = true;
             return null;
         }
         if (f.failed) {
+            m.gaveUp(mark);
             try m.declLimit(di, try std.fmt.allocPrint(m.arena, "limit {s}: the walk gave up", .{m.names.declName(m.in.module, di)}));
             m.failed_decl[di] = true;
             m.incomplete[di] = true;
@@ -3271,6 +3274,19 @@ pub const Mod = struct {
             return c;
         }
         return c;
+    }
+
+    /// A walk that gave up, or passed its steps, accepts nothing (kernel
+    /// §3.3, §8): each line it made since `mark` that is accepted is
+    /// refused at the limit. A line of a code whose own walk ended well, or
+    /// one judged before a later step passed the budget, is the walk's too.
+    fn gaveUp(m: *Mod, mark: usize) void {
+        for (m.lines.items[mark..]) |*l| if (!l.refused) {
+            l.refused = true;
+            l.cause = .limit;
+            l.detail = "the walk of this declaration gave up";
+            l.hoists = &.{};
+        };
     }
 
     /// Walk the `via` conversions of schema declaration `di` (kernel
@@ -3298,6 +3314,7 @@ pub const Mod = struct {
         @memset(m.lbinder[d.locals_start..d.locals_end], 0);
         var f = try Frame.init(m, null, di, false, none);
         m.beginDecl(di);
+        const mark = m.lines.items.len;
         for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .schema_via) {
             if (m.steps_over) break;
             try f.walkHeld(m.datas[i].lhs);
@@ -3305,6 +3322,7 @@ pub const Mod = struct {
         if (!m.steps_over) _ = try f.finish(m.var_place);
         m.endDecl(di);
         if (m.steps_over or f.failed) m.incomplete[di] = true;
+        if (m.steps_over or f.failed) m.gaveUp(mark);
         if (m.steps_over) m.module_over = true;
         if (m.steps_over) {
             try m.declLimit(di, try m.budgetLine(di, ""));
@@ -3335,9 +3353,11 @@ pub const Mod = struct {
             if (m.stopped()) return;
             var f = try Frame.init(m, null, di, false, none);
             m.beginDecl(di);
+            const mark = m.lines.items.len;
             try f.walkExported(.{ m.in.module, di }, body.int());
             if (!m.steps_over) _ = try f.finish(m.var_place);
             m.endDecl(di);
+            if (m.steps_over or f.failed) m.gaveUp(mark);
             if (m.steps_over) {
                 m.module_over = true;
                 try m.declLimit(di, try m.budgetLine(di, " of the export"));

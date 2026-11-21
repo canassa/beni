@@ -4990,8 +4990,10 @@ test "ownership v3: the faults of the review of report 120 are refused" {
 // (here `unknown`: the message holds a top-level list) is accepted on the
 // entry rule. Where the walk then gives up (a lambda nested past the frame
 // depth), that line was accepted all the same, beside the limit; the module
-// authorised no write, but the line said the send was judged. Its safe twin,
-// the same program with no deep lambda, keeps the accepted line.
+// authorised no write, but the line said the send was judged. The same where
+// the sends' own lambda is walked well and another part of the declaration
+// gives up (`Model.beni`): each line of a walk that gave up is refused. Its
+// safe twin, the same program with no deep lambda, keeps the accepted line.
 test "ownership v3: a walk that gave up accepts no send" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -5030,6 +5032,9 @@ test "ownership v3: a walk that gave up accepts no send" {
         \\        { init =
         \\            λ⊤ →
         \\                ( 0
+    ;
+    const mid =
+        \\
         \\                , Cmd.perform λsend →
         \\                    send (Both top)
         \\                    send (Count
@@ -5043,7 +5048,7 @@ test "ownership v3: a walk that gave up accepts no send" {
         \\        }
         \\
     ;
-    try w.write("Twin.beni", try std.mem.concat(a, u8, &.{ head, " 0", tail }));
+    try w.write("Twin.beni", try std.mem.concat(a, u8, &.{ head, mid, " 0", tail }));
     // 210 lambdas, each in the last: past the 200 frames that `solveCodes`
     // walks before the walk gives up (`child.depth > 200`).
     for (0..210) |_| {
@@ -5051,10 +5056,16 @@ test "ownership v3: a walk that gave up accepts no send" {
         deep.clearRetainingCapacity();
         try deep.print(a, "(λ⊤ → {s}) ⊤", .{inner});
     }
-    try w.write("Deep.beni", try std.mem.concat(a, u8, &.{ head, " (", deep.items, ")", tail }));
+    try w.write("Deep.beni", try std.mem.concat(a, u8, &.{ head, mid, " (", deep.items, ")", tail }));
+    try w.write("Model.beni", try std.mem.concat(a, u8, &.{ head, " + (", deep.items, ")", mid, " 0", tail }));
     for ([_]struct { file: []const u8, lines: []const []const u8 }{
         .{ .file = "Twin.beni", .lines = &.{"  33:21 send <constructor …>: accepted entry\n"} },
         .{ .file = "Deep.beni", .lines = &.{
+            "  33:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
+            "  34:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
+            "  limit main: the walk gave up\n",
+        } },
+        .{ .file = "Model.beni", .lines = &.{
             "  33:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
             "  34:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
             "  limit main: the walk gave up\n",

@@ -100,7 +100,9 @@ default. The answer of unknown code is `unknown` over its arguments and the call
 
 Where the walk cannot say what a value is — a local read before its binding, code with no contract to read
 in its rounds, a tag that is not an expression — it **gives up** (`giveUp`): the frame is `failed`, the walk
-completes so that every line is made, every demand of the frame is refused (`finishDemands`), and the
+completes so that every line is made, every demand of the frame is refused (`finishDemands`), every line
+the declaration's walk accepted is refused at the limit (`Check.gaveUp`: a send's, an entry's, a line of a
+code whose own walk ended well, one judged before a later step passed the budget), and the
 declaration **publishes no contract** (`Check.walkDecl` returns null, `Check.solveGroup` keeps null). A
 caller reads a callee with no contract as unknown code. Safe builds assert that a declaration whose walk
 gave up has no contract at `publish` (`Check.checkModule`).
@@ -2049,7 +2051,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a row of core outside `Js` whose words name a new cell at a type variable of its result is one of `Check.core_phantoms` (`List.builder`, `Dict.keyIndex`, `Dict.empty`, `Record.copy`, `Task.raceOk`, `Task.timeout`), each of which makes none there: the check of core's worded bodies reads such a cell as none (`Check.phantomAt`). With a row of core that answers a real cell at a type variable, that reading would let a false word of core pass. It counts no work | `Check.checkCorePhantoms`, in `wordedContract` | §6 rule 10 |
 | `slotHeld`'s index of a layout's record slots answers what a scan of the layout answers, for layouts of at most 256 entries | `Frame.slotHeld` | §3.4, §8 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
-| each check of this table that counts no work restores every count it could change (the declaration's steps, the module's units, `Loc.Table.units`, the walk's give-up), and builds nothing that a later step reads by key or by index: no entry of the location table (a location, a layout, a projection, a path, a map, a memo's answer; `Loc.Table.no_fill`), no place, and no node, root or memo answer of the frame (`Frame.quiet_parts`). A later lookup of an entry a check built would be free in the safe build and counted in a release build, so the two would read the budget differently. So a safe build reaches a release build's verdicts, limits included; a check that would build such an entry panics | `Check.Mod.quiet`, `Frame.quiet`, `Loc.Table.building` | §8 |
+| each check of this table that counts no work restores every count it could change (the declaration's steps, the module's units, `Loc.Table.units`, the walk's give-up), and builds nothing that a later step reads by key or by index: no entry of the location table (a location, a layout, a projection, a path, a map, a memo's answer; `Loc.Table.no_fill`), no place, and no node, root or memo entry of the frame: each list and map of `Frame.quiet_parts` keeps its length (an answer a check could write into a slot made before it is not compared; no check reaches one today). A later lookup of an entry a check built would be free in the safe build and counted in a release build, so the two would read the budget differently. So a safe build reaches a release build's verdicts, limits included; a check that would build such an entry panics | `Check.Mod.quiet`, `Frame.quiet`, `Loc.Table.building` | §8 |
 
 ## 10. What the kernel costs
 
