@@ -395,6 +395,10 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     const dest = &d.per_module[mi_u];
     for (lines, r.lines) |l, rl| {
         if (!l.refused) continue;
+        // A line refused because its walk gave up is no write of a list or
+        // a record: the module's limit is the error (below), and stops the
+        // build of the app.
+        if (rl.cause == .limit and r.limits.len != 0) continue;
         // And a function that writes its parameter that a platform puts
         // where no rule follows it (`pub push = idL List.push`, kept at
         // its top level): a program runs it through the platform's value

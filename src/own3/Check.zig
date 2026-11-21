@@ -3488,7 +3488,9 @@ pub const Mod = struct {
                 // A member passed its steps in this round (kernel §8): its
                 // walk gave up and its limit line is made. The rounds stop;
                 // a contract of a round before the fixed point says less
-                // than the group does, so no member publishes one.
+                // than the group does, so no member publishes one, and the
+                // round accepts nothing (kernel §3.3).
+                m.gaveUp(mark);
                 for (members) |di| {
                     m.contracts[di] = null;
                     m.failed_decl[di] = true;
@@ -3505,6 +3507,7 @@ pub const Mod = struct {
                     first = di;
                 };
                 const text = if (members.len == 1) try std.fmt.allocPrint(m.arena, "limit {s}: the group did not settle", .{m.names.declName(m.in.module, first)}) else try std.fmt.allocPrint(m.arena, "limit {s}: the group of {d} declarations did not settle", .{ m.names.declName(m.in.module, first), members.len });
+                m.gaveUp(mark);
                 try m.declLimit(first, text);
                 // A contract of a round that is not the last says less than the
                 // group does: no member publishes one (kernel §8). An importer

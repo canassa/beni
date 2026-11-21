@@ -4992,7 +4992,8 @@ test "ownership v3: the faults of the review of report 120 are refused" {
 // depth), that line was accepted all the same, beside the limit; the module
 // authorised no write, but the line said the send was judged. The same where
 // the sends' own lambda is walked well and another part of the declaration
-// gives up (`Model.beni`): each line of a walk that gave up is refused. Its
+// gives up (`Model.beni`): each line of a walk that gave up is refused, and
+// only the limit is an error. Its
 // safe twin, the same program with no deep lambda, keeps the accepted line.
 test "ownership v3: a walk that gave up accepts no send" {
     var w = try World.init(testing.allocator, testing.io);
@@ -5078,6 +5079,12 @@ test "ownership v3: a walk that gave up accepts no send" {
             return error.TestExpectedLine;
         };
     }
+    // Enforced, the module's limit is its one error: a line refused because
+    // the walk gave up is no write of a list, and has no `List.copy` fix.
+    const r = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=browser-tea", "Model.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "limit main: the walk gave up") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "List.copy") == null);
 }
 
 // Research reports 121 and 122, the fifth blind test (readers C and D): ten
