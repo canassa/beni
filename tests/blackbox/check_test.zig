@@ -4985,6 +4985,90 @@ test "ownership v3: the faults of the review of report 120 are refused" {
     }
 }
 
+// A walk that gave up accepts nothing (kernel §3.3), a send included. A send
+// asks nothing of the sender, so a send refused for a cause of its own walk
+// (here `unknown`: the message holds a top-level list) is accepted on the
+// entry rule. Where the walk then gives up (a lambda nested past the frame
+// depth), that line was accepted all the same, beside the limit; the module
+// authorised no write, but the line said the send was judged. Its safe twin,
+// the same program with no deep lambda, keeps the accepted line.
+test "ownership v3: a walk that gave up accepts no send" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var deep: std.ArrayList(u8) = .empty;
+    try deep.appendSlice(a, "0");
+    const head =
+        \\import Cmd exposing (Cmd)
+        \\import Html exposing (Html)
+        \\import Sub
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Both (List Int)
+        \\    | Count Int
+        \\
+        \\
+        \\update : Msg, Int → Int × Cmd Msg
+        \\update msg model =
+        \\    case msg of
+        \\        Both xs →
+        \\            ( model + List.length xs, Cmd.none )
+        \\
+        \\        Count n →
+        \\            ( model + n, Cmd.none )
+        \\
+        \\
+        \\top : List Int
+        \\top = [ 3, 4 ]
+        \\
+        \\
+        \\main : Tea.Program
+        \\main =
+        \\    Tea.element
+        \\        { init =
+        \\            λ⊤ →
+        \\                ( 0
+        \\                , Cmd.perform λsend →
+        \\                    send (Both top)
+        \\                    send (Count
+    ;
+    const tail =
+        \\)
+        \\                )
+        \\        , update = update
+        \\        , view = λmodel → <p>{String.fromInt model}</p>
+        \\        , subscriptions = λ_ → Sub.none
+        \\        }
+        \\
+    ;
+    try w.write("Twin.beni", try std.mem.concat(a, u8, &.{ head, " 0", tail }));
+    // 210 lambdas, each in the last: past the 200 frames that `solveCodes`
+    // walks before the walk gives up (`child.depth > 200`).
+    for (0..210) |_| {
+        const inner = try a.dupe(u8, deep.items);
+        deep.clearRetainingCapacity();
+        try deep.print(a, "(λ⊤ → {s}) ⊤", .{inner});
+    }
+    try w.write("Deep.beni", try std.mem.concat(a, u8, &.{ head, " (", deep.items, ")", tail }));
+    for ([_]struct { file: []const u8, lines: []const []const u8 }{
+        .{ .file = "Twin.beni", .lines = &.{"  33:21 send <constructor …>: accepted entry\n"} },
+        .{ .file = "Deep.beni", .lines = &.{
+            "  33:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
+            "  34:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
+            "  limit main: the walk gave up\n",
+        } },
+    }) |c| {
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=browser-tea", c.file }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        for (c.lines) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("{s}: missing line {s}in:\n{s}\n", .{ c.file, line, r.stdout });
+            return error.TestExpectedLine;
+        };
+    }
+}
+
 // Research reports 121 and 122, the fifth blind test (readers C and D): ten
 // programs that v3 accepted and that then read a list after an in-place
 // write, each with a safe twin. Every live program is refused, and every twin

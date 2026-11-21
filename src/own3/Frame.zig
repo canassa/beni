@@ -3646,8 +3646,12 @@ fn finishDemands(f: *Frame) Error!void {
             // where it is handed (rule 2, `defaultParams`). The test above
             // says only whether the function is handed the message `free`.
             // The line is accepted, on the entry rule where the cells are
-            // not the sender's own; a walk that gave up accepts nothing.
-            if (d.refused) |cause| if (cause != .limit) {
+            // not the sender's own; a walk that gave up accepts nothing,
+            // whatever cause the send was refused for before it gave up.
+            if (f.failed or f.m.steps_over) {
+                d.refused = .limit;
+                d.detail = "the walk of this declaration gave up";
+            } else if (d.refused) |cause| if (cause != .limit) {
                 var line = d.*;
                 line.refused = null;
                 line.detail = "";
