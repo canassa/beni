@@ -234,6 +234,11 @@ pub const Table = struct {
     /// map it builds, and each location a call map's search climbs. The
     /// module's budget counts them with the walks' (`Check.Mod.overBudget`).
     units: u64 = 0,
+    /// Safe builds: the depth of the checks in progress that count no work
+    /// (kernel §9, `Check.Mod.quiet`). Such a check reads only what the
+    /// walk built: an entry it built would make the walk's own lookup of it
+    /// later a free one, which a release build, with no check, counts.
+    no_fill: u32 = 0,
     empty_layout: u32 = none,
     /// The layout of a place whose type has more locations than
     /// `max_layout_entries`: one summary location of a type variable. A walk
@@ -280,11 +285,19 @@ pub const Table = struct {
         t.over.deinit(gpa);
     }
 
+    /// Safe builds: the table is about to build an entry (a location, a
+    /// layout, a projection, a path, a map, a memo's answer); no check that
+    /// counts no work may (`no_fill`).
+    fn building(t: *const Table) void {
+        if (std.debug.runtime_safety and t.no_fill != 0) std.debug.panic("own3: a check that counts no work built an entry of the location table (kernel §9)", .{});
+    }
+
     // ---- the location trie ---------------------------------------------------
 
     pub fn extend(t: *Table, parent: u32, label: Label) Allocator.Error!u32 {
         const got = try t.loc_index.getOrPut(t.gpa, .{ .parent = parent, .label = label.word() });
         if (got.found_existing) return got.value_ptr.*;
+        t.building();
         const id: u32 = @intCast(t.loc_parent.items.len);
         got.value_ptr.* = id;
         try t.loc_parent.append(t.gpa, parent);
@@ -337,6 +350,7 @@ pub const Table = struct {
     // ---- layouts ---------------------------------------------------------------
 
     pub fn addLayout(t: *Table, es: []const Entry) Allocator.Error!u32 {
+        t.building();
         const id: u32 = @intCast(t.layouts.items.len);
         try t.layouts.append(t.gpa, try t.arena.dupe(Entry, es));
         try t.reps.append(t.gpa, &.{});
@@ -450,6 +464,7 @@ pub const Table = struct {
         const key: [2]u32 = .{ place.int(), loc };
         if (t.place_at_memo.get(key)) |hit| return if (hit == none) null else @fromBackingInt(hit);
         const got = try t.placeAtWalk(place, loc);
+        t.building();
         try t.place_at_memo.put(t.gpa, key, if (got) |g| g.int() else none);
         return got;
     }
@@ -488,6 +503,7 @@ pub const Table = struct {
         var seen = try std.DynamicBitSetUnmanaged.initEmpty(t.gpa, t.places.count());
         defer seen.deinit(t.gpa);
         const b = try t.holeWalk(place, &seen);
+        t.building();
         if (pi >= t.hole_memo.items.len) try t.hole_memo.appendNTimes(t.gpa, 0, @as(usize, t.places.count()) + 1 - t.hole_memo.items.len);
         t.hole_memo.items[pi] = if (b) 2 else 1;
         return b;
@@ -531,6 +547,7 @@ pub const Table = struct {
         var seen = try std.DynamicBitSetUnmanaged.initEmpty(t.gpa, t.places.count());
         defer seen.deinit(t.gpa);
         const b = try t.familyWalk(place, &seen);
+        t.building();
         if (pi >= t.family_memo.items.len) try t.family_memo.appendNTimes(t.gpa, 0, @as(usize, t.places.count()) + 1 - t.family_memo.items.len);
         t.family_memo.items[pi] = if (b) 2 else 1;
         return b;
@@ -591,6 +608,7 @@ pub const Table = struct {
         if (pi >= t.layout_of.items.len) try t.layout_of.appendNTimes(t.gpa, none, @as(usize, t.places.count()) + 1 - t.layout_of.items.len);
         const have = t.layout_of.items[pi];
         if (have != none) return have;
+        t.building();
         if (t.places.holds(place).isEmpty()) {
             t.layout_of.items[pi] = t.empty_layout;
             return t.empty_layout;
@@ -815,6 +833,7 @@ pub const Table = struct {
     pub fn proj(t: *Table, place: PlaceId, s: Step) Allocator.Error!?*const Proj {
         const key: ProjKey = .{ .place = place.int(), .step = s.word() };
         if (t.proj_index.get(key)) |i| return if (i == none) null else t.projs.items[i];
+        t.building();
         const child = t.places.child(place, s) orelse {
             try t.proj_index.put(t.gpa, key, none);
             return null;
@@ -903,6 +922,7 @@ pub const Table = struct {
         const pi = place.int();
         if (pi >= t.path_root.items.len) try t.path_root.appendNTimes(t.gpa, none, @as(usize, t.places.count()) + 1 - t.path_root.items.len);
         if (t.path_root.items[pi] != none) return t.path_root.items[pi];
+        t.building();
         const n = t.layouts.items[try t.layoutOf(place)].len;
         t.units +|= n;
         const ident = try t.arena.alloc(u32, n);
@@ -917,6 +937,7 @@ pub const Table = struct {
     pub fn pathExtend(t: *Table, path: u32, s: Step) Allocator.Error!?u32 {
         const key: PathKey = .{ .parent = path, .step = s.word() };
         if (t.path_index.get(key)) |i| return if (i == none) null else i;
+        t.building();
         const p = t.paths.items[path];
         const pr = (try t.proj(p.place, s)) orelse {
             try t.path_index.put(t.gpa, key, none);
@@ -1010,6 +1031,7 @@ pub const Table = struct {
         if (view == of) return null;
         const key: CoverKey = .{ .sig = view, .of = of };
         if (t.coarse.get(key)) |x| return x;
+        t.building();
         const ves = t.layoutEntries(view);
         const oes = t.layoutEntries(of);
         // Per entry of `view`, the entry of `of` that holds its cells; and
@@ -1049,6 +1071,7 @@ pub const Table = struct {
     pub fn cover(t: *Table, sig: u32, of: u32) Allocator.Error![]const u32 {
         const key: CoverKey = .{ .sig = sig, .of = of };
         if (t.covers.get(key)) |m| return m;
+        t.building();
         const se = t.layoutEntries(sig);
         const oe = t.layoutEntries(of);
         const m = try t.arena.alloc(u32, oe.len);

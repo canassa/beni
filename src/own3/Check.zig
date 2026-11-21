@@ -399,6 +399,26 @@ pub const Mod = struct {
         return m.module_over or m.loc.over.items.len != 0;
     }
 
+    /// What a check of a safe build that counts no work (kernel §9) leaves
+    /// as it found: the walk's and the location table's counts, and the
+    /// table itself, which the check may read and may not build
+    /// (`Loc.Table.no_fill`). So a safe build reaches a release build's
+    /// verdicts, its limits and budgets included.
+    pub const Quiet = struct { steps: u64, module_units: u64, loc_units: u64, over: bool };
+
+    pub fn quiet(m: *Mod) Quiet {
+        m.loc.no_fill += 1;
+        return .{ .steps = m.steps, .module_units = m.module_units, .loc_units = m.loc.units, .over = m.steps_over };
+    }
+
+    pub fn loud(m: *Mod, q: Quiet) void {
+        m.steps = q.steps;
+        m.module_units = q.module_units;
+        m.loc.units = q.loc_units;
+        m.steps_over = q.over;
+        m.loc.no_fill -= 1;
+    }
+
     pub fn overBudget(m: *const Mod) bool {
         return m.steps > m.decl_limit or m.module_units +| m.loc.units > m.module_budget;
     }
@@ -651,6 +671,8 @@ pub const Mod = struct {
     /// of research report 130.
     fn chargePlaces(m: *Mod) void {
         const now = @as(u64, m.places.count()) + m.places.step_tab.list.len;
+        if (std.debug.runtime_safety and m.loc.no_fill != 0 and (now != m.place_records or m.adapter.var_work != m.var_records))
+            std.debug.panic("own3: a check that counts no work built a place (kernel §9)", .{});
         m.loc.units +|= (now -| m.place_records) *| call_units;
         m.place_records = now;
         // Each store variable that the adapter closed, and each field of a
@@ -1985,10 +2007,14 @@ pub const Mod = struct {
         }
         // Words say nothing of where another fiber can run (kernel §13 item 12).
         c.switches = true;
-        if (std.debug.runtime_safety) try m.checkWordedPlaced(sig, c, pw, rw);
-        if (std.debug.runtime_safety) try m.checkWordedCasts(sig, c, pw, rw);
-        if (std.debug.runtime_safety) try m.checkWordedTwice(sig, c, pw, rw);
-        if (std.debug.runtime_safety) m.checkCorePhantoms(di, c);
+        if (std.debug.runtime_safety) {
+            const q = m.quiet();
+            defer m.loud(q);
+            try m.checkWordedPlaced(sig, c, pw, rw);
+            try m.checkWordedCasts(sig, c, pw, rw);
+            try m.checkWordedTwice(sig, c, pw, rw);
+            m.checkCorePhantoms(di, c);
+        }
         return c;
     }
 
@@ -2278,8 +2304,6 @@ pub const Mod = struct {
     /// 156's fault), core's first `fresh` row of a list of records
     /// (`Schema`'s issues) panics. Counts no work.
     fn checkWordedTwice(m: *Mod, sig: Sig, c: *const Contract.Contract, pw: []const u32, rw: u32) Allocator.Error!void {
-        const units = m.loc.units;
-        defer m.loc.units = units;
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
         // A row that does not say `exclusive` (or make a cell's handle)
         // names one site for all its new cells: two locations can be one cell.
@@ -2315,8 +2339,6 @@ pub const Mod = struct {
     /// row of `returned a → b` panics. Kernel §6 rule 10, §9. Counts no work.
     fn checkWordedCasts(m: *Mod, sig: Sig, c: *const Contract.Contract, pw: []const u32, rw: u32) Allocator.Error!void {
         if (c.casts) return;
-        const units = m.loc.units;
-        defer m.loc.units = units;
         const rty = sigResult(sig);
         const res_es = m.loc.layoutEntries(c.layouts[c.arity]);
         for (0..c.arity) |j| {

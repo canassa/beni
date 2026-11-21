@@ -1320,12 +1320,43 @@ fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
     return !(x.via_e != y.via_e or !loc.comparable(x.via_path, y.via_path));
 }
 
+/// Safe builds: a check that counts no work (`Check.Mod.quiet`), and the
+/// frame's give-up as it was. Nor does it build what a later step of the
+/// walk reads by key or by index (`quiet_parts`): a node, a root, a memo's
+/// answer. A later step would find it and count less than a release build,
+/// which runs no check, counts for building it.
+const Quiet = struct { m: Mod.Quiet, failed: bool, parts: [quiet_parts.len]usize };
+
+const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers" };
+
+fn quietParts(f: *const Frame) [quiet_parts.len]usize {
+    var out: [quiet_parts.len]usize = undefined;
+    inline for (quiet_parts, 0..) |name, i| {
+        const x = @field(f, name);
+        out[i] = if (@hasField(@TypeOf(x), "items")) x.items.len else x.count();
+    }
+    return out;
+}
+
+fn quiet(f: *Frame) Quiet {
+    return .{ .m = f.m.quiet(), .failed = f.failed, .parts = f.quietParts() };
+}
+
+fn loud(f: *Frame, q: Quiet) void {
+    f.m.loud(q.m);
+    f.failed = q.failed;
+    const now = f.quietParts();
+    inline for (quiet_parts, 0..) |name, i| if (now[i] != q.parts[i]) std.debug.panic("own3: a check that counts no work built {s} of the frame (kernel §9)", .{name});
+}
+
 /// In safe builds: `runsShare` answers what the test in pairs of every two
 /// runs answers, on a set small enough to test both ways (kernel §9), with
 /// its groups compared in pairs and with each tested by tables. No way counts
 /// here; past the budget the counted test said yes, and no answer is checked.
 fn checkShare(f: *const Frame, atoms: []const Atom, runs: []const [2]u32, sel: ?[]const bool) Error!void {
     if (!safety or f.m.steps_over) return;
+    const q = f.m.quiet();
+    defer f.m.loud(q);
     var old = false;
     pairs: for (runs, 0..) |r1, i| for (runs[i + 1 ..], i + 1..) |r2, j| {
         if (sel) |sl| if (!sl[i] and !sl[j]) continue;
@@ -2017,7 +2048,11 @@ fn leavesSet(f: *Frame, v: Val, place: PlaceId, js: []const u32, out: *std.Array
     // A slot of the view that `v`'s own layout has no slot for: a tuple or a
     // constructor read as a record, whose object no cell names (`slotsLost`).
     if (try f.slotsLost(view, n.place, js)) try out.append(f.gpa, outside_atom);
-    if (std.debug.runtime_safety) try f.checkPlaced(view, own, n.place, cov, holes, js);
+    if (std.debug.runtime_safety) {
+        const q = f.quiet();
+        defer f.loud(q);
+        try f.checkPlaced(view, own, n.place, cov, holes, js);
+    }
     const dup = try f.leavesOwn(v, ks.slice(), out);
     return dup or coarse_dup;
 }
@@ -4841,6 +4876,8 @@ fn built(f: *Frame, place: PlaceId, kids: []const Kid) Error!Val {
     // fields alone held no slot, and an update of it wrote no cell
     // (research report 147). The check counts no work (kernel §9).
     if (std.debug.runtime_safety and f.m.isRecordPlace(place)) {
+        const q = f.quiet();
+        defer f.loud(q);
         const has_object = for (kids) |k| {
             if (k.step == slot_kid) break true;
         } else false;
@@ -5878,15 +5915,11 @@ fn checkEmpty(f: *Frame, v: Val, place: PlaceId, e: u32) Error!void {
     var tmp: std.ArrayList(Atom) = .empty;
     defer tmp.deinit(f.gpa);
     // The check counts nothing: a safe build's budget is a release build's.
-    const steps = m.steps;
-    const units = m.module_units;
-    const over = m.steps_over;
-    const failed = f.failed;
-    _ = try f.leavesOwn(v, &.{k}, &tmp);
-    m.steps = steps;
-    m.module_units = units;
-    m.steps_over = over;
-    f.failed = failed;
+    {
+        const q = f.quiet();
+        defer f.loud(q);
+        _ = try f.leavesOwn(v, &.{k}, &tmp);
+    }
     if (tmp.items.len != 0) std.debug.panic("own3: result location {d} of a contract has no source, and the wide entry {d} above it holds {d} cells (kernel §3.4)", .{ e, k, tmp.items.len });
 }
 
@@ -7983,14 +8016,9 @@ fn slotHeld(f: *Frame, own: u32, asked: []const u64) Error!bool {
         if (asked_cyc and std.mem.indexOfScalar(u32, ix.any, last.payload) != null) ans = true;
     }
     if (std.debug.runtime_safety and es.len <= 256) {
-        const units = f.m.steps;
-        const module_units = f.m.module_units;
-        const over = f.m.steps_over;
-        const scanned = try f.slotHeldScan(own, asked);
-        f.m.steps = units;
-        f.m.module_units = module_units;
-        f.m.steps_over = over;
-        std.debug.assert(scanned == ans);
+        const q = f.quiet();
+        defer f.loud(q);
+        std.debug.assert(try f.slotHeldScan(own, asked) == ans);
     }
     return ans;
 }
@@ -8177,7 +8205,11 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
     _ = f.charge(hit.items.len);
     // Safe builds (kernel §9): the location asked is placed in the value's
     // own layout, as `leavesSet` checks (`checkPlaced`).
-    if (std.debug.runtime_safety and hit.items.len == 0 and own != sig) try f.checkPlaced(sig, own, n.place, cov, try m.loc.holes(sig, own), &.{se});
+    if (std.debug.runtime_safety and hit.items.len == 0 and own != sig) {
+        const q = f.quiet();
+        defer f.loud(q);
+        try f.checkPlaced(sig, own, n.place, cov, try m.loc.holes(sig, own), &.{se});
+    }
     if (suffix.len != 0 or exact) {
         var want: ?u32 = m.loc.layoutEntries(sig)[se].loc;
         for (suffix) |l| {
@@ -8903,17 +8935,13 @@ fn readAtVar(f: *Frame, v: Val, inst: u32) Error!void {
 fn checkMadeEscaped(f: *Frame, v: Val) Error!void {
     const m = f.m;
     if (m.steps_over or f.failed) return;
-    const steps = m.steps;
-    const units = m.module_units;
-    const over = m.steps_over;
-    const failed = f.failed;
     var xs: std.ArrayList(Atom) = .empty;
     defer xs.deinit(f.gpa);
-    _ = try f.allLeaves(v, &xs);
-    m.steps = steps;
-    m.module_units = units;
-    m.steps_over = over;
-    f.failed = failed;
+    {
+        const q = f.quiet();
+        defer f.loud(q);
+        _ = try f.allLeaves(v, &xs);
+    }
     for (xs.items) |a| {
         if (a.root == 0) continue;
         const held = for (f.esc_atoms.items) |x| {
@@ -9718,6 +9746,8 @@ fn meetsOf(f: *Frame, la: u32, ea: u32, lb: u32, out: *std.ArrayList(u32)) Error
         try out.append(f.gpa, eb);
     }
     if (safety and smallLayout(f, lb)) {
+        const q = f.quiet();
+        defer f.loud(q);
         // The index says what `locsMeet` says, pair for pair.
         for (0..f.m.loc.layoutEntries(lb).len) |eb| {
             const in_out = std.mem.indexOfScalar(u32, out.items, @intCast(eb)) != null;
@@ -10859,7 +10889,11 @@ const AnswersAt = struct {
 
     fn check(s: AnswersAt, f: *Frame, ul: u32, fl: u32, k: usize, cv: u32) Error!bool {
         const got = s.at(k, cv);
-        if (safety and smallLayout(f, ul) and smallLayout(f, fl)) std.debug.assert(got == try f.answersAt(ul, s.ae, fl, k, cv));
+        if (safety and smallLayout(f, ul) and smallLayout(f, fl)) {
+            const q = f.quiet();
+            defer f.loud(q);
+            std.debug.assert(got == try f.answersAt(ul, s.ae, fl, k, cv));
+        }
         return got;
     }
 };
