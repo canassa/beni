@@ -1,16 +1,15 @@
-# A writer stores a new value into a cell, parks, then writes it in place while another fiber holds a loan of it taken during the park (yieldNow, sleep, Deferred.wait, a helper, a helper called by the frame and a fiber, an update answering a new list, modify, List.copy, record and Dict contents, List.length alone, a loan a function answers, a write through a helper): what the writer stored escapes at its park, and each write is refused (ownership-v3-kernel.md §13 item 12).
-31:5 list_still_used call
-38:5 list_still_used call
-52:9 list_still_used call
-65:9 list_still_used call
-79:9 list_still_used call
-112:9 list_still_used call
-125:9 list_still_used call
-138:9 list_still_used call
-151:9 list_still_used call
-151:9 record_still_used call
-151:9 record_still_used call
-164:9 list_still_used call
-177:9 list_still_used call
-190:9 list_still_used call
-209:9 list_still_used call
+# A writer stores a new value into a cell, parks, then writes it in place while another fiber holds a loan of it taken during the park (yieldNow, sleep, Deferred.wait, a helper, a helper called by the frame and a fiber, an update answering a new list, modify, List.copy, record and Dict contents, List.length alone, a loan a function answers, a write through a helper): each is refused where the writer goes out of sight, or where the helper is called while the cell has another holder (ownership-v3-kernel.md §13 item 12).
+49:9 list_still_used value
+62:9 list_still_used value
+76:9 list_still_used value
+90:9 list_still_used value
+100:9 list_still_used value
+101:9 list_still_used value
+109:9 list_still_used value
+122:9 list_still_used value
+135:9 list_still_used value
+148:9 list_still_used value
+161:9 list_still_used value
+174:9 list_still_used value
+187:9 list_still_used value
+206:9 list_still_used value

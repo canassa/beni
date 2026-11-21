@@ -1,0 +1,1 @@
+A helper stores a value into its parameter's cell, reaches a call where another fiber could run, and then it or its caller writes the stored value in place (#2592): the caller's cell has no other holder, so each write is accepted and runs in place (ownership-v3-kernel.md §13 item 12, amended). Its live twin is CellStoredThenSwitchLive.

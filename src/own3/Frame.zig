@@ -597,6 +597,8 @@ judge_probe: bool = false,
 cell_marked: std.AutoHashMapUnmanaged([2]u32, void) = .empty,
 /// At each switch point, each tracked parameter's or capture's contents.
 probes: std.ArrayList(Probe) = .empty,
+parked: std.ArrayList(Parked) = .empty,
+parked_atoms: std.ArrayList(Atom) = .empty,
 /// The functions that write the contents of a cell the frame made and run
 /// where the walk does not follow them, a spawned fiber's among them.
 writers: std.ArrayList(Writer) = .empty,
@@ -611,6 +613,11 @@ const FreshKey = struct { key: u64, holder: u64, k: u32 };
 /// point at time `at`; refused where a value taken out of them before is
 /// read after, or the call reads one (`refused`, set at the call).
 const Probe = struct { w: u32, wn: u32, at: u32, ctx: u32, root: u32, h: u32, refused: bool };
+/// At a switch point: what the body had stored in the cell at handle `h` of
+/// tracked parameter or capture `root`, `parked_atoms[start..][0..len]`
+/// (kernel §13 item 12, *What the body stored is in the cell while another
+/// fiber runs*). A later write of it in place puts `flag_p` on the handle.
+const Parked = struct { start: u32, len: u32, at: u32, ctx: u32, root: u32, h: u32 };
 /// A function that writes the contents of capture `k` of the known code
 /// `code` (an index of `codes`), the handle at entry `e` of root `o` that
 /// the frame made, and goes where the walk does not follow it at `site`.
@@ -3303,6 +3310,9 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
             }
         }
     }
+    // A write in place of what the body stored in a parameter's or a
+    // capture's cell before another fiber could run (kernel §13 item 12).
+    if (f.parked.items.len != 0) try f.parkedWrite(f.atoms.items[w..][0..wn], d.at);
     // The contract asks the caller for what the body writes of a parameter.
     if (in.op != .supply) try f.markAtoms(f.atoms.items[w..][0..wn], flag_w);
     // A write of a cell that a function parameter was handed before: a function that keeps it reads the edit.
@@ -6953,7 +6963,9 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
             f.judge_at = none;
             f.judge_probe = false;
             try f.probes.append(f.gpa, .{ .w = w, .wn = wn, .at = at, .ctx = f.cur_ctx, .root = root, .h = @intCast(h), .refused = refused });
-            try f.escapeStored(root, w, wn, inst);
+            // What the body stored in the cell is there while another fiber
+            // runs: a later write of it in place is noted (`parkedWrite`).
+            try f.noteParked(root, @intCast(h), w, wn, at);
         }
         if (probed) try f.renameContents(root, cur, inst, at);
     }
@@ -6966,6 +6978,64 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
 /// escapes. The caller judges the cell's own old contents where it runs the
 /// code (its runs, probes and marks); what the body put there is named to it
 /// only where the body ends, after the body wrote it in place.
+/// Whether the contents `f.atoms[w..][0..wn]` of a cell of tracked
+/// parameter or capture `root` hold a value the body stored there: an atom
+/// that is not the cell's own old contents (kernel §13 item 12, *What the
+/// body stored is marked at a switch point*).
+fn noteParked(f: *Frame, root: u32, h: u32, w: u32, wn: u32, at: u32) Error!void {
+    const start: u32 = @intCast(f.parked_atoms.items.len);
+    for (f.atoms.items[w..][0..wn]) |a| {
+        if (f.roots.items[a.root].kind == .outside or f.originOf(a.root) == root) continue;
+        try f.parked_atoms.append(f.gpa, a);
+    }
+    const len: u32 = @intCast(f.parked_atoms.items.len - start);
+    if (len != 0) try f.parked.append(f.gpa, .{ .start = start, .len = len, .at = at, .ctx = f.cur_ctx, .root = root, .h = h });
+}
+
+/// A write of the atoms `ws` at time `at`: where it writes in place what the
+/// body stored in a cell of a tracked parameter or capture before a switch
+/// point at or before it (`noteParked`), the handle has `flag_p` (kernel
+/// §13 item 12): the holder judges whether another fiber can hold the cell.
+fn parkedWrite(f: *Frame, ws: []const Atom, at: u32) Error!void {
+    if (f.charge(f.parked.items.len)) return;
+    for (f.parked.items) |p| {
+        if (p.at > at or !f.compatible(p.ctx, f.cur_ctx)) continue;
+        if (!f.overlapWrite(f.parked_atoms.items[p.start..][0..p.len], ws)) continue;
+        const r = f.roots.items[p.root];
+        f.pflags.items[r.ent + p.h] |= CMod.flag_p;
+    }
+}
+
+/// Code whose contract has `flag_p` on a handle that `v` holds at entry
+/// `h` of `sig` runs here: it writes in place a value it stored in the cell
+/// before another fiber could run (kernel §13 item 12). A parameter's or a
+/// capture's handle says so in the frame's contract; a root the frame made
+/// and follows, with no other holder, has no other fiber that could take
+/// the value. True where some holder of the handle is none of these: the
+/// write is refused.
+fn parkedHeld(f: *Frame, v: Val, sig: u32, h: u32) Error!bool {
+    if (v == v_none) return false;
+    if (v == v_outside) return true;
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    _ = try f.argLeaves(v, sig, h, &.{}, false, &f.atoms);
+    const hs = try f.gpa.dupe(Atom, f.atoms.items[start..]);
+    defer f.gpa.free(hs);
+    try f.markAtoms(hs, CMod.flag_p);
+    var os: std.ArrayList([3]u32) = .empty;
+    defer os.deinit(f.gpa);
+    for (hs) |a| {
+        const before = os.items.len;
+        try f.cellOrigins(a, &os);
+        if (os.items.len == before) return true;
+    }
+    for (os.items) |o| {
+        const r = f.roots.items[o[0]];
+        if (!r.tracked or f.cell_shared.contains(.{ o[0], o[1] })) return true;
+    }
+    return false;
+}
+
 fn escapeStored(f: *Frame, root: u32, w: u32, wn: u32, inst: u32) Error!void {
     const es0: u32 = @intCast(f.atoms.items.len);
     for (w..w + wn) |i| {
@@ -7143,7 +7213,7 @@ fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
     // before, which costs it nothing.
     var writes = false;
     for (lc.flags[lc.off[j]..lc.off[j + 1]], 0..) |x, e| {
-        if (x & CMod.flag_m != 0) return false;
+        if (x & (CMod.flag_m | CMod.flag_p) != 0) return false;
         if ((inner[e] or ses[e].kind == .cell) and x & flag_e != 0) return false;
         if (inner[e] and x & flag_w != 0) writes = true;
     }
@@ -8308,6 +8378,14 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // The handles the callee marks, or hands to a function that can run
     // other fibers while it holds their contents (kernel §13 item 12).
     try f.applyMarks(c, args);
+    // A callee that writes in place what it stored in a cell before another
+    // fiber could run (kernel §13 item 12).
+    if (f.cells_any) for (0..@min(c.arity, args.len)) |j| {
+        const sig = c.layouts[j];
+        for (m.loc.layoutEntries(sig), 0..) |he, h| if (he.kind == .cell and c.flags[c.off[j] + h] & CMod.flag_p != 0) {
+            if (try f.parkedHeld(args[j], sig, @intCast(h))) try m.addRefusal(f, inst, .escaped, "the callee writes in place a value it stored in the cell before another fiber could run, and the cell has another holder");
+        };
+    };
     // What the callee writes.
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
@@ -10033,6 +10111,10 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         defer f.gpa.free(reg);
         for (reg, 0..) |*x, k| x.* = f.cells_any and (f.isWriter(code, k) or try f.registerWriter(v, code, @intCast(k), inst));
         if (try f.writesCapturedBut(code, reg)) try f.refuse(&use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
+        // One that writes in place what it stored in a cell it captured,
+        // after another fiber could run: another fiber can hold the cell
+        // (kernel §13 item 12).
+        if (f.cells_any and storesParked(code)) try f.refuse(&use, .call, "a function that writes in place a value it stored in a cell it captured, after another fiber could run, goes where another fiber can hold the cell");
         // It runs at times the frame does not see: each handle it captured
         // has another holder (kernel §13 items 8 and 11).
         for (0..code.ncaps) |k| if (!reg[k]) try f.shareVal(try f.capVal(code, k), inst);
@@ -10086,6 +10168,18 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     try f.captureCells(v, code, &use);
     try f.flowRenews(code, &use, true);
     try f.flowCaptures(code, &use);
+}
+
+/// Whether the contract of `code` has `flag_p` on a handle of a capture
+/// (kernel §13 item 12).
+fn storesParked(code: Code) bool {
+    const lc = code.contract;
+    for (0..code.ncaps) |k| {
+        const j = code.own_params + k;
+        if (j >= lc.arity) break;
+        for (lc.flags[lc.off[j]..lc.off[j + 1]]) |x| if (x & CMod.flag_p != 0) return true;
+    }
+    return false;
 }
 
 /// The result entries of the known function `code` that no entry of the
@@ -10291,6 +10385,17 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
         const sig = lc.layouts[j];
         for (m.loc.layoutEntries(sig), 0..) |he, h| if (he.kind == .cell and lc.flags[lc.off[j] + h] & CMod.flag_m != 0) {
             try f.markHandles(try f.capVal(code, k), sig, @intCast(h));
+        };
+        // A function that writes in place what it stored in a cell it
+        // captured before another fiber could run (kernel §13 item 12): out
+        // of sight another fiber holds the cell; run within a call, its
+        // holders are judged as a callee's are.
+        for (m.loc.layoutEntries(sig), 0..) |he, h| if (he.kind == .cell and lc.flags[lc.off[j] + h] & CMod.flag_p != 0) {
+            if (runsWithin(use) == null) {
+                try f.refuse(use, .call, "a function that writes in place a value it stored in a cell it captured, after another fiber could run, goes where another fiber can hold the cell");
+            } else if (try f.parkedHeld(try f.capVal(code, k), sig, @intCast(h))) {
+                try f.refuse(use, .escaped, "the function writes in place a value it stored in a cell it captured before another fiber could run, and the cell has another holder");
+            }
         };
     };
     const writes = try f.writesCaptured(code);

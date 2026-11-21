@@ -104,11 +104,18 @@ pub const flag_a: u8 = 16;
 /// its own holder of the handle, and a function that writes the contents in
 /// another fiber is refused where a holder of the cell has the mark.
 pub const flag_m: u8 = 32;
+/// On a cell's handle (kernel §13 item 12, *What the body stored is in the
+/// cell while another fiber runs*): the body writes in place, at or after a
+/// call where another fiber can run, a value it stored in the cell before
+/// that call. No read at the call: a holder of the handle that another
+/// fiber can hold too refuses the call, and a holder that is itself a
+/// parameter or a capture says so in its own contract.
+pub const flag_p: u8 = 64;
 
 /// Whether the flags `x` of a location say the body reads it at the call:
-/// any flag but the answer's and the mark.
+/// any flag but the answer's and the marks.
 pub fn reads(x: u8) bool {
-    return x & ~(flag_a | flag_m) != 0;
+    return x & ~(flag_a | flag_m | flag_p) != 0;
 }
 
 /// What a body does with a function parameter: the use of that location
