@@ -2544,23 +2544,31 @@ contents of a cell are locations, and that a call can change what a location of 
       what it stored is no unit of one run (`run/CellStoredParkedLive`). It is the pessimistic side:
       a body that stores into a parameter's cell and then makes any call that may be impure lets the
       stored value escape for its caller too, even where no other fiber holds the cell (#2592).
-      *Amended 2026-11-21 (#2592): the holder judges it.* Only a call in a hole of markup still lets
-      what the body stored escape. At any other switch point the body notes what it stored in each
-      handle of a tracked parameter or capture (`noteParked`), and a later write of it in place, at
-      or after that switch point (the switching call's own write among them), puts `flag_p` on the
-      handle (`parkedWrite`). The body accepts the write; the holder judges it where it names the
-      handle (`parkedHeld`): a parameter's or a capture's handle puts `flag_p` in the holder's own
-      contract; a root the frame made and follows, with no other holder, is fine, since a fiber
-      that could take the stored value while the body is parked holds the handle: a closure that
-      captured it went out of sight and shared it (item 8), or a writer, which runs there and holds
-      no loan across a switch point of its own (the mark); any other holder, or a handle the frame
-      does not follow, refuses the call. A function whose contract has `flag_p` on a capture's
-      handle is no writer, and is refused where it goes out of sight (`storesParked`): another
-      fiber holds the cell then. So `g r = (Ref.set r [ 9 ]; _ = List.length (Ref.get r); ⊤)` and
+      *Amended 2026-11-21 (#2592): the holder judges it.* What the body stored still escapes at a
+      call in a hole of markup, and at a switch point where an operand of the call can read the
+      contents there (the probe's operands: a closure that captured the handle, code that does not
+      follow it): that code runs in this fiber between the store and the write and can keep what it
+      takes. At any other switch point the body notes what it stored in each handle of a tracked
+      parameter or capture (`noteParked`), and a later write of it in place, at or after that switch
+      point (the switching call's own write among them), puts `flag_p` on the handle
+      (`parkedWrite`). The body accepts the write; the holder judges it where it names the handle
+      (`parkedHeld`): another operand of the call that reaches the handle (a closure handed beside it
+      that captured it, a second name of it) refuses the call, as that code runs between the store
+      and the write; a parameter's or a capture's handle puts `flag_p` in the holder's own contract; a
+      root the frame made and follows, with no other holder, is fine, since a fiber that could take
+      the stored value while the body is parked holds the handle: a closure that captured it went
+      out of sight and shared it (item 8), or a writer, which runs there and holds no loan across a
+      switch point of its own (the mark); any other holder, or a handle the frame does not follow,
+      refuses the call. A function whose contract has `flag_p` on a capture's handle is no writer,
+      and is refused where it goes out of sight (`storesParked`); one with `flag_p` on its own
+      parameter's handle is refused wherever it flows as a value (`paramsParked`), since only a call
+      of it names what the holder hands there. So `g r = (Ref.set r [ 9 ]; _ = List.length (Ref.get r); ⊤)` and
       then `Ref.update r push` in the caller is accepted, and so is a helper that stores, parks and
       writes what it stored when its caller's cell has no other holder (`run/CellStoredThenSwitch`);
-      a spawned closure that does it, or a helper called while a reader fiber holds the cell, is
-      refused (`run/CellStoredParkedLive`, `run/CellStoredThenSwitchLive`).
+      a spawned closure that does it, a helper called while a reader fiber holds the cell, a
+      callback that captured the cell and runs between the store and the write, and such a helper
+      handed as a value, are refused (`run/CellStoredParkedLive`, `run/CellStoredThenSwitchLive`;
+      the lane's second adversarial reviewer found the last two, 32 programs).
     - **Marks reach the frame** (`applyMarks`, `markHandles`): a callee's or a closure's mark on a handle
       it is handed or captured marks the holder: a parameter's or a capture's in the frame's contract,
       a root the frame made in `cell_marked`. So does a call whose contract hands a cell's contents to a

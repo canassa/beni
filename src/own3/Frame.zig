@@ -6952,6 +6952,10 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
                 refused = true;
                 break;
             };
+            // An operand that can read the contents where the call runs (a
+            // closure that captured the handle, code that does not follow
+            // it) can take what the body stored there and keep it.
+            const ops_hit = refused;
             if (!refused) for (f.escapes.items) |e| {
                 if (!f.compatible(e.ctx, f.cur_ctx)) continue;
                 if (f.overlapWrite(f.esc_atoms.items[e.start..][0..e.len], ws)) {
@@ -6963,9 +6967,11 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
             f.judge_at = none;
             f.judge_probe = false;
             try f.probes.append(f.gpa, .{ .w = w, .wn = wn, .at = at, .ctx = f.cur_ctx, .root = root, .h = @intCast(h), .refused = refused });
-            // What the body stored in the cell is there while another fiber
-            // runs: a later write of it in place is noted (`parkedWrite`).
-            try f.noteParked(root, @intCast(h), w, wn, at);
+            // What the body stored in the cell is there while the call runs:
+            // where an operand can read it there, it escapes; else another
+            // fiber is the only one that can, and a later write of it in
+            // place is noted for the holder (`parkedWrite`).
+            if (ops_hit) try f.escapeStored(root, w, wn, inst) else try f.noteParked(root, @intCast(h), w, wn, at);
         }
         if (probed) try f.renameContents(root, cur, inst, at);
     }
@@ -7013,7 +7019,7 @@ fn parkedWrite(f: *Frame, ws: []const Atom, at: u32) Error!void {
 /// and follows, with no other holder, has no other fiber that could take
 /// the value. True where some holder of the handle is none of these: the
 /// write is refused.
-fn parkedHeld(f: *Frame, v: Val, sig: u32, h: u32) Error!bool {
+fn parkedHeld(f: *Frame, v: Val, sig: u32, h: u32, others: []const Val) Error!bool {
     if (v == v_none) return false;
     if (v == v_outside) return true;
     const start = f.atoms.items.len;
@@ -7021,6 +7027,10 @@ fn parkedHeld(f: *Frame, v: Val, sig: u32, h: u32) Error!bool {
     _ = try f.argLeaves(v, sig, h, &.{}, false, &f.atoms);
     const hs = try f.gpa.dupe(Atom, f.atoms.items[start..]);
     defer f.gpa.free(hs);
+    // Another operand that holds the handle (a closure that captured it, a
+    // value that holds it) runs or is read while the code runs, and can
+    // take what it stored there.
+    for (others) |o| if (o != v_none and o != v_outside and try f.reach(o, hs)) return true;
     try f.markAtoms(hs, CMod.flag_p);
     var os: std.ArrayList([3]u32) = .empty;
     defer os.deinit(f.gpa);
@@ -8383,7 +8393,10 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     if (f.cells_any) for (0..@min(c.arity, args.len)) |j| {
         const sig = c.layouts[j];
         for (m.loc.layoutEntries(sig), 0..) |he, h| if (he.kind == .cell and c.flags[c.off[j] + h] & CMod.flag_p != 0) {
-            if (try f.parkedHeld(args[j], sig, @intCast(h))) try m.addRefusal(f, inst, .escaped, "the callee writes in place a value it stored in the cell before another fiber could run, and the cell has another holder");
+            var rest: std.ArrayList(Val) = .empty;
+            defer rest.deinit(f.gpa);
+            for (args, 0..) |a, k| if (k != j) try rest.append(f.gpa, a);
+            if (try f.parkedHeld(args[j], sig, @intCast(h), rest.items)) try m.addRefusal(f, inst, .escaped, "the callee writes in place a value it stored in the cell before another fiber could run, and the cell has another holder");
         };
     };
     // What the callee writes.
@@ -10098,6 +10111,10 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     var use = use_in.*;
     use.code = code;
     const inst = use.site.inst;
+    // A function that writes in place what it stored in a cell it is
+    // handed, after another fiber could run, is judged only where it is
+    // called (`applyAt`, kernel §13 item 12): as a value, no holder judges it.
+    if (paramsParked(code)) try f.refuse(&use, .call, "a function that writes in place a value it stored in a cell it is handed, after another fiber could run, is used as a value");
     if (use.kind == .top or lostAt(&use) or code.own_params != use.fnc.arity) {
         // No contract describes the holder: the function must ask nothing
         // (kernel §6.8). It writes no parameter, and the holder hands each of
@@ -10168,6 +10185,16 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     try f.captureCells(v, code, &use);
     try f.flowRenews(code, &use, true);
     try f.flowCaptures(code, &use);
+}
+
+/// Whether the contract of `code` has `flag_p` on a handle of one of its
+/// own parameters (kernel §13 item 12).
+fn paramsParked(code: Code) bool {
+    const lc = code.contract;
+    for (0..@min(code.own_params, lc.arity)) |j| {
+        for (lc.flags[lc.off[j]..lc.off[j + 1]]) |x| if (x & CMod.flag_p != 0) return true;
+    }
+    return false;
 }
 
 /// Whether the contract of `code` has `flag_p` on a handle of a capture
@@ -10393,7 +10420,14 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
         for (m.loc.layoutEntries(sig), 0..) |he, h| if (he.kind == .cell and lc.flags[lc.off[j] + h] & CMod.flag_p != 0) {
             if (runsWithin(use) == null) {
                 try f.refuse(use, .call, "a function that writes in place a value it stored in a cell it captured, after another fiber could run, goes where another fiber can hold the cell");
-            } else if (try f.parkedHeld(try f.capVal(code, k), sig, @intCast(h))) {
+            } else if (blk: {
+                var others: std.ArrayList(Val) = .empty;
+                defer others.deinit(f.gpa);
+                for (0..code.ncaps) |k2| if (k2 != k) try others.append(f.gpa, try f.capVal(code, k2));
+                const rt = runsWithin(use).?;
+                for (use.site.others, 0..) |o, i| if (i != rt.j) try others.append(f.gpa, o.v);
+                break :blk try f.parkedHeld(try f.capVal(code, k), sig, @intCast(h), others.items);
+            }) {
                 try f.refuse(use, .escaped, "the function writes in place a value it stored in a cell it captured before another fiber could run, and the cell has another holder");
             }
         };

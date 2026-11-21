@@ -3,7 +3,11 @@
 -- while a reader fiber that holds the cell takes it during the park and
 -- reads it after: the helper called directly, through a second helper,
 -- and through a helper whose own parameter the frame hands; and a helper
--- that reads the value it stored after writing it in place. Each read sees
+-- that reads the value it stored after writing it in place; a callback that
+-- captured the cell and copies what the helper stored, run between the
+-- store and the write (handed to the helper, or a closure the writing
+-- closure calls); and the helper handed as a value to a function that calls
+-- it while a reader fiber holds the cell. Each read sees
 -- the new value where a copy would keep the old one, so each is refused.
 import Io
 import List
@@ -74,5 +78,55 @@ held ⊤ =
     heldStored r
 
 
+withCb : Ref (List Int), (⊤ → ⊤) → ⊤
+withCb r g =
+    Ref.set r [ 4 ]
+    g ⊤
+    Ref.update r λl → List.push l 5
+
+
+applyTo : Ref (List Int), (Ref (List Int) → ⊤) → ⊤
+applyTo h g = g h
+
+
+callback : ⊤ → String
+callback ⊤ =
+    r = Ref.make [ 1 ]
+    out = Ref.make [ 0 ]
+    withCb r λ⊤ → Ref.set out (Ref.get r)
+    ints (Ref.get out)
+
+
+twoClosures : ⊤ → String
+twoClosures ⊤ =
+    r = Ref.make [ 1 ]
+    out = Ref.make [ 0 ]
+    peek = λ⊤ → Ref.set out (Ref.get r)
+    go =
+        λ⊤ →
+            Ref.set r [ 4 ]
+            peek ⊤
+            Ref.update r λl → List.push l 5
+    go ⊤
+    ints (Ref.get out)
+
+
+asValue : ⊤ → String
+asValue ⊤ =
+    r = Ref.make [ 1 ]
+    a = reader r
+    applyTo r storePark
+    Task.join a
+
+
 main : Program
-main = Io.run λ⊤ → Node.printLines [ direct ⊤, twoDeep ⊤, handed (Ref.make [ 1 ]), held ⊤ ]
+main = Io.run λ⊤ →
+    Node.printLines
+        [ direct ⊤
+        , twoDeep ⊤
+        , handed (Ref.make [ 1 ])
+        , held ⊤
+        , callback ⊤
+        , twoClosures ⊤
+        , asValue ⊤
+        ]
