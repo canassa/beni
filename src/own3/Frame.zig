@@ -122,7 +122,10 @@ const Kid = struct { step: u32, val: Val };
 /// (kernel §13 item 12), at that time, or `none`: for a probe at that time
 /// or before it, the holder is no holder of a value taken before the switch.
 /// Read only while a probe is judged (`isOld`); a write reads `dead` alone.
-pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none, pos: u32 = none, via2: u32 = none, via2_e: u32 = none, ren: u32 = none };
+/// `ctx`: the innermost arm of a `case` whose join the atom was found
+/// through, or `none` (kernel §6 rule 7, amended): the value holds the cell
+/// only on a run through that arm. Read only by the later-read test (`atomLive`).
+pub const Atom = struct { root: u32, path: u32, e: u32, via: u32 = none, via_path: u32 = none, via_e: u32 = none, dead: u32 = none, pos: u32 = none, via2: u32 = none, via2_e: u32 = none, ren: u32 = none, ctx: u32 = none };
 /// `outside`: root 0, the one root of every cell outside the frame (kernel
 /// §3.1). `fresh`: a cell a callee made, named by the call and the callee's
 /// allocation site (kernel §4.2); it has no layout and no value, only atoms.
@@ -426,11 +429,25 @@ skip_answer: u32 = none,
 judge_ctx: u32 = none,
 /// While a write is judged: its time (`isOld`).
 judge_at: u32 = none,
+/// While the later reads of a write are judged: an atom found through another
+/// arm of a `case` that holds the write is no holder (`atomLive`).
+ctx_filter: bool = false,
 /// Set by `argLeaves` when the fallback cover gave an entry.
 hit_all: bool = false,
 /// Set by `argEntries` when a part that `pairedLeaves` asks for is no
 /// location of the argument's own layout, and every entry is read.
 suffix_fallback: bool = false,
+/// Set by `pairedLeavesAt` around its read: the part asked is at the
+/// suffix below the callee's wide location even where the suffix is empty,
+/// the cell at that place and not every cell below it (`argEntries`).
+paired_exact: bool = false,
+/// Set by `answerSrcs` around a `resolve` of what a holder hands a
+/// parameter the answer names at the same place: the handed cell at that
+/// place, read as `paired_exact` reads it.
+resolve_exact: bool = false,
+/// Set by `expandSrcs` around `pairedLeaves`: the callee, or a function
+/// handed to it, casts, and no read is `paired_exact`.
+pair_casts: bool = false,
 /// Set by `argEntries` when a wide entry of the argument read at a summary
 /// location below it gave an entry (`Loc.holes`): no single place.
 coarse_hit: bool = false,
@@ -1433,7 +1450,7 @@ fn twiceAt(f: *const Frame, a: Atom) bool {
 }
 
 fn atomEql(a: Atom, b: Atom) bool {
-    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead and a.pos == b.pos and a.via2 == b.via2 and a.via2_e == b.via2_e and a.ren == b.ren;
+    return a.root == b.root and a.path == b.path and a.e == b.e and a.via == b.via and a.via_path == b.via_path and a.via_e == b.via_e and a.dead == b.dead and a.pos == b.pos and a.via2 == b.via2 and a.via2_e == b.via2_e and a.ren == b.ren and a.ctx == b.ctx;
 }
 
 /// Remove from `list.items[from..]` each atom that an earlier atom of the run
@@ -1896,7 +1913,13 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
             var dup = false;
             for (0..n.b) |ki| {
                 if (!f.armLive(n, ki)) continue;
+                const before = out.items.len;
                 if (try f.leavesSet(f.lists.items[n.a + 2 * ki], n.place, ks, out)) dup = true;
+                // What the arm holds, it holds on a run through the arm (kernel §6 rule 7).
+                const ctx = f.lists.items[n.a + 2 * ki + 1];
+                if (ctx != none) for (out.items[before..]) |*a| {
+                    if (a.ctx == none and a.root != 0) a.ctx = ctx;
+                };
             }
             return dup;
         },
@@ -2293,12 +2316,21 @@ fn entriesBelow(f: *Frame, p: Loc.Path, len: usize, below: *std.DynamicBitSetUnm
 
 /// Whether a cell of `xs` can be a cell of `w`: the same cells, or the answer
 /// of a function parameter that was handed one.
+/// Whether atom `x` can be a holder while the write in judgement runs: not
+/// one found through another arm of a `case` that holds the write (kernel §6
+/// rule 7, amended). Only the later-read test asks (`ctx_filter`).
+fn atomLive(f: *const Frame, x: Atom) bool {
+    if (!f.ctx_filter or x.ctx == none or f.judge_ctx == none) return true;
+    return f.compatible(x.ctx, f.judge_ctx);
+}
+
 fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
     if (f.wIndexed(w)) return f.atomsReachIndexed(xs);
     for (xs) |x| {
         // Each comparison made is work (kernel §8); past the budget it reaches.
-        // An old name is a step: it is compared with nothing.
-        if (f.isOld(x)) {
+        // An old name is a step: it is compared with nothing; so is a cell
+        // of another arm (`atomLive`).
+        if (f.isOld(x) or !f.atomLive(x)) {
             if (f.charge(1)) return true;
             continue;
         }
@@ -2306,7 +2338,7 @@ fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
         for (w) |y| if (f.overlap(x, y)) return true;
         const r = f.roots.items[x.root];
         if (r.kind == .answer and x.root != f.skip_answer) for (f.answers.items[r.ent].base.items) |b| {
-            if (f.isOld(b)) continue;
+            if (f.isOld(b) or !f.atomLive(b)) continue;
             if (f.charge(w.len)) return true;
             for (w) |y| if (f.overlap(b, y)) return true;
         };
@@ -2319,14 +2351,14 @@ fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
 /// other can overlap it. The same answer as the scan (research report 145).
 fn atomsReachIndexed(f: *Frame, xs: []const Atom) bool {
     for (xs) |x| {
-        if (f.isOld(x)) {
+        if (f.isOld(x) or !f.atomLive(x)) {
             if (f.charge(1)) return true;
             continue;
         }
         if (f.overlapIndexed(x)) return true;
         const r = f.roots.items[x.root];
         if (r.kind == .answer and x.root != f.skip_answer) for (f.answers.items[r.ent].base.items) |b| {
-            if (f.isOld(b)) continue;
+            if (f.isOld(b) or !f.atomLive(b)) continue;
             if (f.overlapIndexed(b)) return true;
         };
     }
@@ -3430,6 +3462,20 @@ fn runsBefore(f: *Frame, w: u32, r: u32) Error!bool {
 }
 
 /// Whether the part `child` of `parent` is evaluated whenever `parent` is.
+/// Whether the callee at `callee` is one that the JavaScript lowering
+/// evaluates as `&&` or `||` (`js/Lower.zig`'s `logicalOp`): core's
+/// `Basics.and` or `Basics.or`, named directly. A callee that resolves to
+/// no declaration can be either.
+fn shortCircuits(f: *const Frame, callee: u32) bool {
+    const m = f.m;
+    if (m.tags[callee] != .top and m.tags[callee] != .ext_value) return false;
+    const t = m.calleeOf(callee) orelse return true;
+    if (!m.in.isCore(t[0]) or t[0] >= m.names.module_names.len) return false;
+    if (!std.mem.eql(u8, m.names.module_names[t[0]], "Basics")) return false;
+    const name = m.names.declName(t[0], t[1]);
+    return std.mem.eql(u8, name, "and") or std.mem.eql(u8, name, "or");
+}
+
 fn alwaysRuns(f: *Frame, parent: u32, child: u32) Error!bool {
     const bir = f.m.bir;
     const p: Inst.Index = @fromBackingInt(parent);
@@ -3550,6 +3596,8 @@ fn finishDemands(f: *Frame) Error!void {
             // *A read of a written field, read first*): kept only where the
             // update is accepted.
             var hoists: std.ArrayList(OwnHoists.Read) = .empty;
+            f.ctx_filter = true;
+            defer f.ctx_filter = false;
             if (d.refused == null) for (f.uses.items) |u| {
                 // A read at a later time: the walk goes in the program's order (`timeOf`).
                 if (u.at <= d.at) continue;
@@ -7333,10 +7381,11 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
     // A later argument of a callee that the lowering can short-circuit (`&&`,
-    // `||`: `alwaysRuns`) may not run: what it renews is joined with the
-    // cells as they were (kernel §13).
+    // `||`: `shortCircuits`) may not run: what it renews is joined with the
+    // cells as they were (kernel §13 item 6). Every other call runs each of
+    // its arguments (`language.md` §6, *Evaluation order*).
     var cells_before: ?[]const [2]u32 = null;
-    const all_run = m.tags[callee] == .top and !m.in.isCore(m.in.module);
+    const all_run = !f.shortCircuits(callee);
     for (args, 0..) |a, k| {
         if (k == 1 and !all_run) cells_before = try f.saveCells();
         // An argument at a function parameter flows to that parameter's
@@ -7999,6 +8048,9 @@ fn rootSlotLost(f: *Frame, own: PlaceId, rank: u32) Error!bool {
 /// claim, or a value whose every cell is at each location (`leaves` at 0).
 fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: bool, ks: *Entries) Error!bool {
     const m = f.m;
+    // The paired read of `pairedLeavesAt` asks this one entry (`paired_exact`).
+    const exact = f.paired_exact;
+    f.paired_exact = false;
     const n = f.nodes.items[v];
     switch (n.tag) {
         .none, .fnref, .outside, .closure, .unknown => return false,
@@ -8030,7 +8082,7 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
     // Safe builds (kernel §9): the location asked is placed in the value's
     // own layout, as `leavesSet` checks (`checkPlaced`).
     if (std.debug.runtime_safety and hit.items.len == 0 and own != sig) try f.checkPlaced(sig, own, n.place, cov, try m.loc.holes(sig, own), &.{se});
-    if (suffix.len != 0) {
+    if (suffix.len != 0 or exact) {
         var want: ?u32 = m.loc.layoutEntries(sig)[se].loc;
         for (suffix) |l| {
             want = m.loc.find(want.?, l);
@@ -8057,15 +8109,15 @@ fn argEntries(f: *Frame, v: Val, sig: u32, se: u32, suffix: []const u64, deep: b
         // A slot asked below a type variable of the signature (the caller's
         // view of what a cast answers) that the argument's own layout does
         // not hold (`slotHeld`): no cell names the object (kernel §3.4).
-        const sl: Loc.Label = @bitCast(suffix[suffix.len - 1]);
-        if (sl.kind == .fslot) {
+        if (suffix.len != 0 and @as(Loc.Label, @bitCast(suffix[suffix.len - 1])).kind == .fslot) {
             var asked: std.ArrayList(u64) = .empty;
             defer asked.deinit(f.gpa);
             try m.loc.labels(m.loc.layoutEntries(sig)[se].loc, &asked, f.gpa);
             try asked.appendSlice(f.gpa, suffix);
             if (!try f.slotHeld(own, asked.items)) f.slot_lost = true;
         }
-    } else if (f.isOwnSlot(m.loc.layoutEntries(sig)[se].loc)) {
+    }
+    if (suffix.len == 0 and f.isOwnSlot(m.loc.layoutEntries(sig)[se].loc)) {
         // A slot of the record at the argument's root that its own place has
         // no slot for (`rootSlotLost`).
         const l: Loc.Label = @bitCast(m.loc.loc_label.items[m.loc.layoutEntries(sig)[se].loc]);
@@ -9216,6 +9268,11 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
                     // not at entry `e` (kernel §3.4, *A value of no location
                     // in a typed answer*).
                     if (st.typed and args[s.a] == v_outside and ai != none and try f.layoutLen(try f.m.placeOfInst(ai)) == 0) continue;
+                    // A callee that casts, or a function handed to it that
+                    // does, can answer another part of the argument at a
+                    // place: no part is read at the place alone there.
+                    f.pair_casts = c.casts or try f.argsCast(c, args);
+                    defer f.pair_casts = false;
                     if (try f.pairedLeaves(args[s.a], ai, c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
                     if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
                     // At positions of the argument's list (kernel §6 rule 10, *A position*).
@@ -9406,7 +9463,9 @@ fn pairedLeavesAt(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rla
     const skip = m.loc.loc_depth.items[rentry.loc];
     // A wide entry of the caller's own type stands for each cell below that place.
     f.suffix_fallback = false;
+    f.paired_exact = !f.pair_casts;
     const dup = try f.argLeaves(v, psig, pe, labels.items[skip..], m.loc.layoutEntries(rlayout)[e].kind.wide(), &f.atoms);
+    f.paired_exact = false;
     // The argument has no location at that part (a value that a conversion
     // gave another type): every cell it has is read there, and a summary
     // location of the caller is then no single place (kernel §3.4).
@@ -10694,7 +10753,10 @@ fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool
                 return;
             }
             const start: u32 = @intCast(f.atoms.items.len);
+            f.paired_exact = f.resolve_exact and depth == 0;
+            f.resolve_exact = false;
             const dup = try f.argLeaves(use.args[src.a], use.c.layouts[src.a], src.e, suffix, deep, &f.atoms);
+            f.paired_exact = false;
             try sink.atoms(f, .{ .start = start, .dup = dup, .use = use, .a = src.a, .e = src.e, .suffix = suffix, .captured = use.kind == .inner });
         },
     }
@@ -11338,7 +11400,18 @@ fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u3
                 if (!slot.free) st.twice = true;
                 // The part of what is handed that the function's parameter entry is.
                 const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, psuffix);
-                for (slot.srcs) |ss| try f.resolve(use, ss, part, wide, &sink, 0);
+                // The parameter's entry is at that part, or below it: what is
+                // handed at that place, not every cell below it (kernel §13 item 2).
+                const exact = !wide and slot.fe != none and blk: {
+                    const floc = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc;
+                    const uloc = m.loc.layoutEntries(fnc.layouts[ls.a])[slot.fe].loc;
+                    break :blk uloc == floc or m.loc.isPrefix(uloc, floc);
+                };
+                for (slot.srcs) |ss| {
+                    f.resolve_exact = exact;
+                    defer f.resolve_exact = false;
+                    try f.resolve(use, ss, part, wide, &sink, 0);
+                }
             }
         },
     };

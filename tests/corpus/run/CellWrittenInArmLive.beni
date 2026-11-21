@@ -1,0 +1,119 @@
+-- The live twins of CellWrittenInArm (#2594): a value taken out of a cell
+-- or a list on a run where an arm writes it, and read after the write. The
+-- loan taken before the `if`, a loan taken in the writing arm, a loan in an
+-- arm inside it, a cell picked by an `if` and its other name, and a list
+-- read by its own name after an arm wrote it: each read sees the old value,
+-- so each write is refused.
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+idl : List Int → List Int
+idl l = l
+
+
+loanBefore : Int → String
+loanBefore x =
+    cl = Ref.make [ 1 ]
+    y = Ref.get cl
+    if x > 0 then
+        Ref.update cl λl → List.push l 7
+    ints y
+
+
+loanBoth : Int → String
+loanBoth x =
+    cl = Ref.make [ 1 ]
+    y = Ref.get cl
+    if x > 0 then
+        Ref.update cl λl → List.push l 7
+    else
+        Ref.update cl λl → List.set l 0 8
+    ints y
+
+
+listAfter : Int → String
+listAfter x =
+    xs = [ 1 ]
+    ys = if x > 0 then List.set xs 0 7 else xs
+    "${ints (idl ys)}/${ints xs}"
+
+
+picked : Int → String
+picked x =
+    c1 = Ref.make [ 1 ]
+    c2 = Ref.make [ 2 ]
+    y = Ref.get c1
+    r = if x > 0 then c1 else c2
+    Ref.update r λl → List.push l 7
+    ints y
+
+
+armLoan : Int → String
+armLoan x =
+    cl = Ref.make [ 1 ]
+    z =
+        if x > 0 then
+            y = Ref.get cl
+            Ref.update cl λl → List.push l 7
+            y
+        else
+            [ 0 ]
+    ints z
+
+
+innerArm : Int → String
+innerArm x =
+    cl = Ref.make [ 1 ]
+    z =
+        if x > 0 then
+            w = if x > 1 then Ref.get cl else [ 0 ]
+            Ref.update cl λl → List.push l 7
+            w
+        else
+            [ 5 ]
+    ints z
+
+
+otherArmLoan : Int → String
+otherArmLoan x =
+    cl = Ref.make [ 1 ]
+    z =
+        if x > 0 then
+            Ref.update cl λl → List.push l 7
+            [ 0 ]
+        else
+            Ref.get cl
+    Ref.update cl λl → List.push l 8
+    ints z
+
+
+dictLoan : Int → String
+dictLoan x =
+    cd = Ref.make (Dict.fromList [ ( 1, [ 1 ] ) ])
+    d0 = Ref.get cd
+    if x > 0 then
+        Ref.update cd λd → Dict.insert d 2 [ 2 ]
+    String.fromInt (Dict.size d0)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ loanBefore 1
+        , loanBoth 0
+        , listAfter 1
+        , picked 1
+        , armLoan 1
+        , innerArm 2
+        , otherArmLoan 0
+        , dictLoan 1
+        ]

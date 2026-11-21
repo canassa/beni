@@ -161,6 +161,16 @@ as a pair: both parts are `x`). Four facts that rest on "apart" are read so:
   are apart (`otherReaches`);
 - **a part a result is read at** (`pairedLeaves`): where the part is no location of the argument's own
   layout and every entry is read, a summary location of the caller is no single place (`dup`).
+  *Amended 2026-11-21 (#2594, #2580).* Where the callee's location is wide and the caller's is the
+  location at that same place (no suffix below it), the part is the argument's cell at that place, and
+  not every cell below it (`paired_exact`): `Ref.make [ [ 1 ] ]` holds the outer list at `r◆` and the
+  inner one at `r◆[*]`, as the row's words say (§13 item 2), where before `r◆` held both, and a
+  helper that writes `r◆` and `r◆[*]` was refused `disjoint` on one cell at its two operands. A
+  parameter of a function the answer names at the same place reads what its holder hands there the
+  same way (`answerSrcs`, `resolve_exact`), so the renewal `Ref.update r λv → List.push v [ 30 ]`
+  publishes is `π1◆ := π1@1`, not `π1@1 π1@2`. Where the argument has no entry at that place, every
+  entry below the wide location is read, as before (`suffix_fallback`). A wide location of the
+  caller's own reading still reads every cell below it.
 
 And a contract that holds one cell of its parameter at two places of its answer (`nonlinear`) answers no
 value as it is: it is applied as a call, not as an identity (`isIdentity`).
@@ -847,6 +857,14 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    (`run/CellTryAnswer`, its live twin `CellTryAnswerLive`).*
 7. **`if` and `case`** (`caseOf`, `joinVal`): the value is a `join` of the arms, each with its context; two
    arms of one `case` are never one run (`compatible`), so a holder in another arm is no holder.
+   *Amended 2026-11-21 (#2594).* The arm stays on what a run takes from the join: each atom that a
+   walk of the join finds in an arm holds that arm's context (`Atom.ctx`, the innermost arm it came
+   through), and a call's answer, a version and every other run made of the join keep it. A later
+   read is no holder of an atom whose arm is another arm of a `case` that holds the write
+   (`atomLive`, in the later-read test of §5 alone): on the run where the write runs, the join was
+   never that arm's value. So `ys = if c then List.set xs 0 7 else xs` read through `idl ys`, and a
+   cell written in one arm and read after the `if` (§13 item 6), are accepted. Two atoms of one cell
+   from two arms are two atoms of the run (`atomEql` compares the context), so neither arm's is lost.
 8. **Loops** are recursion and the worded loops of `core/`: a function handed to a callee flows to the
    callee's contract for it (`flow`); where the callee hands the function its own answer (a fold), the
    answer must be the function's own (`answerOwn`), because the callee hands it back as a parameter that
@@ -2364,6 +2382,14 @@ contents of a cell are locations, and that a call can change what a location of 
    (`alwaysRuns`: `&&`, `||`) may not run: what it renews is joined with the versions before it. A
    hole of markup can be evaluated where the markup is rendered (§6.12): a renewal there makes no
    version, and is read as one of an argument the frame does not follow.
+   *Amended 2026-11-21 (#2594).* The callees a lowering short-circuits are core's `Basics.and` and
+   `Basics.or` named directly (`shortCircuits`, as `js/Lower.zig`'s `logicalOp` reads them), and a
+   name that resolves to no declaration; every other call runs each argument in order
+   (`language.md` §6, *Evaluation order*), so what a later argument renews is the latest version
+   after it. Before, every callee of another module or of core counted, and `x + f3 a 3` read the
+   cell's old contents after `f3` wrote them (`run/CellWrittenInOperand`). An arm's join keeps its
+   context (§6 rule 7, amended): what a later read takes from the arm that did not write is no holder
+   of the other arm's write.
 7. **What a call leaves in a renewed parameter's cells is read where the frame answers**
    (`noteReturnCells`, `cellReads`), at every return point, each early return and the end: the caller
    reads it after the call, as it reads the answer. So a body that stores a value in its parameter's

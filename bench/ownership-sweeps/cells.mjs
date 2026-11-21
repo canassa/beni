@@ -29,7 +29,10 @@
 //   every fiber shape but `getter` and `generic`; a writer that stores a new value, parks, and writes it in
 //   place (#2591): `storePark` (`Task.yieldNow`), `storeSleep` (`Io.sleep`), `storeNew` (an update that
 //   answers a new value) and `storeHelper` (a helper over its parameter's cell), with the readers `none`,
-//   `cell`, `loan` (`name`, `closure`) and `stored`;
+//   `cell`, `loan` (`name`, `closure`) and `stored`; the frame's own write in an arm that runs, then a
+//   read after the `if` or `case` (#2594): `armIf`, `armElse`, `armBoth`, `armCase`, `armVal`, `armMod`
+//   and `armHelper`, live where `upd` is, with the readers `none`, `cell`, `loan` (`name`, `closure`,
+//   `list`), `stored`, `mid`, `name2`, `name2cell`, `part0` and `part1`;
 // - reader: `none` (nothing old is read after the write), `cell` (`Ref.get r` after the write), `loan`
 //   (a value `Ref.get` answered before the write, read after it), `stored` (the value the cell was made
 //   with, read after the write), `mid` (a value `Ref.get` answered between two writes, read after the
@@ -112,7 +115,32 @@ const WRITERS = {
   storeNew: (c, s = '') => ({ lines: [`Ref.update r λ_ → ${c.init}`, 'Task.yieldNow ⊤', `Ref.update r λv → ${c.w('v')}`], shown: '"sn"' }),
   storeHelper: (c, s = '') => ({ lines: ['storeThenPark r'], shown: '"sh"' }),
   condBoth: (c, s = '') => ({ lines: [`st${s} = λ⊤ → if off 1 then Ref.set r (${c.init}) else Ref.set r (${c.init})`, `st${s} ⊤`, `Ref.update r λv → ${c.w('v')}`], shown: '"b"' }),
+  // #2594: the frame writes the contents in place in an arm that runs, then reads after the `if` or
+  // `case`: `armIf` (an `if` with no `else`), `armElse` (the `else` arm), `armBoth` (both arms),
+  // `armCase` (a `case` arm), `armVal` (an `if` that gives a value), `armMod` (`Ref.modify` in a
+  // value-giving arm), `armHelper` (a helper that updates its parameter's cell, in an arm). Each is
+  // live where `upd` is.
+  armIf: (c, s = '') => ({ lines: [`if on 1 then\n    Ref.update r λv → ${c.w('v')}`], shown: '"ai"' }),
+  armElse: (c, s = '') => ({ lines: [`if off 1 then\n    ⊤\nelse\n    Ref.update r λv → ${c.w('v')}`], shown: '"ae"' }),
+  armBoth: (c, s = '') => ({ lines: [`if on 1 then\n    Ref.update r λv → ${c.w('v')}\nelse\n    Ref.update r λv → ${c.w('v')}`], shown: '"ab"' }),
+  armCase: (c, s = '') => ({ lines: [`case List.length [ 1 ] of\n    1 →\n        Ref.update r λv → ${c.w('v')}\n\n    _ →\n        ⊤`], shown: '"ac"' }),
+  armVal: (c, s = '') => ({ lines: [`k${s} =\n    if on 1 then\n        Ref.update r λv → ${c.w('v')}\n        1\n\n    else\n        2`], shown: `String.fromInt k${s}` }),
+  armMod: (c, s = '') => ({ lines: [`k${s} = if on 1 then Ref.modify r λv → ( 7, ${c.w('v')} ) else 3`], shown: `String.fromInt k${s}` }),
+  armHelper: (c, s = '') => ({ lines: [`if on 1 then\n    bump r`], shown: '"ah"' }),
 };
+const ARM = new Set(['armIf', 'armElse', 'armBoth', 'armCase', 'armVal', 'armMod', 'armHelper']);
+const ARM_READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'name2', 'name2cell', 'part0', 'part1'];
+const ARM_HOLDERS = ['name', 'closure', 'list'];
+const ARM_FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'race', 'parkLater', 'peek', 'midPark'];
+const ARMHELPERS = `on : Int → Bool
+on k = k < 5
+
+
+off : Int → Bool
+off k = k > 5
+
+
+`;
 // The #2590 writers run over a part of the product: the readers and holders that hold the old contents,
 // and the fiber shapes but `getter` and `generic`.
 const COND = new Set(['condIf', 'condCase', 'condAnd', 'condTry', 'condLocal', 'condHelper', 'condInner', 'condApply', 'condScope', 'condBoth']);
@@ -166,6 +194,8 @@ const PART_READERS = ['part0', 'part1'];
 const FIBERS = ['midPark', 'same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek', 'getter', 'generic', 'race'];
 
 function isLive(writer, reader, fibers, holder) {
+  // A write in an arm that runs is the write `upd` makes.
+  if (ARM.has(writer)) writer = 'upd';
   // Both arms store a new value: the old contents are never written.
   if (writer === 'condBoth') return false;
   // A loan taken while the writer is parked: the stored value, which a store-park-write writer writes.
@@ -319,7 +349,7 @@ wrapFn : (Int → Int) → (Int → Int)
 wrapFn f = λx → f x
 
 
-${COND.has(writer) ? CONDHELPERS : ''}${writer === 'storeHelper' ? `storeThenPark : Ref ${refT} → ⊤\nstoreThenPark r =\n    Ref.set r (${c.init})\n    Task.yieldNow ⊤\n    Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${fromQueue}${peek}${peekWith}${holdAt}${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
+${COND.has(writer) ? CONDHELPERS : ''}${ARM.has(writer) ? ARMHELPERS : ''}${writer === 'storeHelper' ? `storeThenPark : Ref ${refT} → ⊤\nstoreThenPark r =\n    Ref.set r (${c.init})\n    Task.yieldNow ⊤\n    Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${fromQueue}${peek}${peekWith}${holdAt}${writer === 'helper' || writer === 'armHelper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
 ${ind(lines.join('\n'), 4)}
 
 
@@ -435,6 +465,7 @@ for (const cname of Object.keys(CONTENTS)) for (const maker of ['local', 'param'
   if (PART_READERS.includes(reader) && cname !== 'pair') continue;
   if (fibers === 'midPark' && !(reader === 'loan' && holder === 'name')) continue;
   if (STORE.has(writer) && (!STORE_READERS.includes(reader) || (reader === 'loan' && !COND_HOLDERS.includes(holder)) || !STORE_FIBERS.includes(fibers))) continue;
+  if (ARM.has(writer) && (!ARM_READERS.includes(reader) || (reader === 'loan' && !ARM_HOLDERS.includes(holder)) || !ARM_FIBERS.includes(fibers))) continue;
   if (COND.has(writer) && (!COND_READERS.includes(reader) || (reader === 'loan' && !COND_HOLDERS.includes(holder)) || !COND_FIBERS.includes(fibers))) continue;
   const twin = isLive(writer, reader, fibers, holder) ? 'live' : 'dead';
   emit(`${cname}.${maker}.${writer}.${reader}.${holder}.${fibers}.${twin}`, { 'Main.beni': gen(cname, maker, writer, reader, holder, fibers) });

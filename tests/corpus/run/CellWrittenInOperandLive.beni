@@ -1,0 +1,50 @@
+-- The live twins of CellWrittenInOperand (#2594): a value taken out of the
+-- cell before a later argument of a call updates it, read after: a loan
+-- by its name, a loan in the first part of a tuple whose second part
+-- updates the cell, and a loan handed as the first argument of a call
+-- whose second argument updates it. Each read sees the old value, so each
+-- write is refused.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+f3 : Ref (List Int), Int → Int
+f3 h n =
+    Ref.update h λl → List.push l n
+    List.length (Ref.get h)
+
+
+keep : List Int, Int → String
+keep xs n = "${ints xs}/${String.fromInt n}"
+
+
+loanByName : ⊤ → String
+loanByName ⊤ =
+    a = Ref.make [ 1 ]
+    old = Ref.get a
+    y = 1 + f3 a 3
+    "${String.fromInt y} ${ints old}"
+
+
+inTuple : ⊤ → String
+inTuple ⊤ =
+    a = Ref.make [ 1 ]
+    ( p, q ) = ( Ref.get a, f3 a 2 )
+    "${ints p} ${String.fromInt q}"
+
+
+firstArg : ⊤ → String
+firstArg ⊤ =
+    a = Ref.make [ 1 ]
+    keep (Ref.get a) (f3 a 2)
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ loanByName ⊤, inTuple ⊤, firstArg ⊤ ]

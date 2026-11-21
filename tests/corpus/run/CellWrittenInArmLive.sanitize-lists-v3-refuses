@@ -1,0 +1,10 @@
+# The live twins of CellWrittenInArm (#2594): a loan taken before an arm writes the cell, in the writing arm, in an arm inside it, a cell picked by an `if` read by its other name, and a list read by its own name after an arm wrote it. Each read sees the old value, so each write is refused; the write in the arm whose loan the other arm takes is accepted.
+28:9 list_still_used call
+37:9 list_still_used call
+39:9 list_still_used call
+46:24 list_still_used List.set
+56:5 list_still_used call
+66:13 list_still_used call
+79:13 list_still_used call
+95:5 list_still_used call
+104:9 list_still_used call

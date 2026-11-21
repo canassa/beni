@@ -1,0 +1,1 @@
+A helper that updates a cell is called as a later argument of an operator, of a function of another module, and of a tuple (#2594). Every call but && and || runs each argument, so the cell read after it is the helper's latest version, and each write is accepted and runs in place (ownership-v3-kernel.md §13 item 6, amended). Its live twin is CellWrittenInOperandLive.

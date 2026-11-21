@@ -1,0 +1,4 @@
+# The live twins of CellWrittenInOperand (#2594): a loan taken before a later argument of a call updates the cell, read after it by its name, as a tuple's first part, or as the call's first argument. Each read sees the old value, so each write is refused.
+32:13 list_still_used call
+39:29 list_still_used call
+46:23 list_still_used call

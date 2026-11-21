@@ -1,0 +1,100 @@
+-- A cell made of a value of more than one location holds each part at its
+-- own place (#2594, #2580): `Ref.make [ [ 1 ] ]` holds the outer list at
+-- the contents and the inner one at their elements, and an update's
+-- renewal names each part at its place. So a helper that writes a cell's
+-- list and its elements is accepted on every call; so is a `Dict` cache a
+-- closure fills and an undo stack of copies (ownership-v3-kernel.md
+-- §3.4, amended).
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showN : List (List Int) → String
+showN ls = String.join (List.map ls ints) "|"
+
+
+showD : Dict Int (List Int) → String
+showD d = String.join (List.map (Dict.toList d) λ( a, b ) → "${String.fromInt a}=${ints b}") " "
+
+
+bumpL : Ref (List (List Int)) → ⊤
+bumpL r = Ref.update r λv → List.push v [ 30 ]
+
+
+touchD : Ref (Dict Int (List Int)), Int → Int
+touchD c key =
+    Ref.update c λd → Dict.remove d key
+    Dict.size (Ref.get c)
+
+
+threeCalls : ⊤ → String
+threeCalls ⊤ =
+    r = Ref.make [ [ 1 ] ]
+    bumpL r
+    bumpL r
+    bumpL r
+    showN (Ref.get r)
+
+
+dictHelper : ⊤ → String
+dictHelper ⊤ =
+    cd = Ref.make (Dict.fromList [ ( 1, [ 38 ] ), ( 2, [ 39 ] ) ])
+    n = touchD cd 1
+    "${String.fromInt n} ${showD (Ref.get cd)}"
+
+
+cache : ⊤ → String
+cache ⊤ =
+    c = Ref.make (Dict.fromList [ ( 0, [ 0 ] ) ])
+    lookup =
+        λk →
+            case Dict.get (Ref.get c) k of
+                Just v →
+                    List.length v
+
+                Nothing →
+                    Ref.update c λd → Dict.insert d k (List.range 1 k)
+                    k
+    ns = List.map [ 3, 4, 3, 5 ] lookup
+    "${ints ns} ${showD (Ref.get c)}"
+
+
+undo : ⊤ → String
+undo ⊤ =
+    cur = Ref.make [ 0 ]
+    hist = Ref.make [ [ 0 ] ]
+    _ = List.foldl (List.range 1 12) 0 λi acc →
+        if Int.mod i 5 == 0 then
+            case List.last (Ref.get hist) of
+                Just prev →
+                    Ref.set cur (List.copy prev)
+
+                Nothing →
+                    ⊤
+        else
+            snap = List.copy (Ref.get cur)
+            Ref.update hist λh → List.push h snap
+            Ref.update cur λl → List.push l i
+        acc + 1
+    "${ints (Ref.get cur)} ${String.fromInt (List.length (Ref.get hist))}"
+
+
+closureInsert : ⊤ → String
+closureInsert ⊤ =
+    cd = Ref.make (Dict.fromList [ ( 1, [ 38 ] ) ])
+    put = λx → Ref.update cd λl → Dict.insert l x [ x ]
+    put 60
+    put 61
+    showD (Ref.get cd)
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ threeCalls ⊤, dictHelper ⊤, cache ⊤, undo ⊤, closureInsert ⊤ ]

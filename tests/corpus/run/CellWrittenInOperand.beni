@@ -1,0 +1,53 @@
+-- A helper that updates a cell is called as a later argument of a call:
+-- an operator, a function of another module, a constructor's argument
+-- (#2594). Every call but `&&` and `||` runs each argument, so the cell
+-- read after it is the helper's latest version, and each write is
+-- accepted and runs in place (ownership-v3-kernel.md §13 item 6, amended).
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+f3 : Ref (List Int), Int → Int
+f3 h n =
+    Ref.update h λl → List.push l n
+    List.length (Ref.get h)
+
+
+plus : ⊤ → String
+plus ⊤ =
+    a = Ref.make [ 1 ]
+    x = f3 a 2
+    y = x + f3 a 3
+    "${String.fromInt y} ${ints (Ref.get a)}"
+
+
+times : ⊤ → String
+times ⊤ =
+    a = Ref.make [ 1 ]
+    y = f3 a 2 * f3 a 3
+    "${String.fromInt y} ${ints (Ref.get a)}"
+
+
+inMax : ⊤ → String
+inMax ⊤ =
+    a = Ref.make [ 1 ]
+    y = max (f3 a 1) (f3 a 2)
+    "${String.fromInt y} ${ints (Ref.get a)}"
+
+
+inPair : ⊤ → String
+inPair ⊤ =
+    a = Ref.make [ 1 ]
+    ( p, q ) = ( f3 a 1, f3 a 2 )
+    "${String.fromInt (p + q)} ${ints (Ref.get a)}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ plus ⊤, times ⊤, inMax ⊤, inPair ⊤ ]
