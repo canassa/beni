@@ -169,7 +169,8 @@ function isLive(writer, reader, fibers, holder) {
   // Both arms store a new value: the old contents are never written.
   if (writer === 'condBoth') return false;
   // A loan taken while the writer is parked: the stored value, which a store-park-write writer writes.
-  if (fibers === 'midPark') return STORE.has(writer);
+  // (`closTwiceStore` and `closOther` write a value the reader holds in every shape.)
+  if (fibers === 'midPark') return STORE.has(writer) || writer === 'closTwiceStore' || writer === 'closOther' || writer === 'closTwiceStoreDead';
   // A store-park-write writer writes the value it stored, which no other reader holds.
   if (STORE.has(writer)) return false;
   if (reader === 'part1') return writer === 'closTwiceStore' || writer === 'closOther' || ((fibers === 'peek' || fibers === 'getter' || fibers === 'generic') && writer !== 'getW');
