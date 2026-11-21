@@ -6747,8 +6747,20 @@ fn switchPoint(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract) Erro
     if (f.markup_reads != null) {
         for (f.params.items) |root| if (f.roots.items[root].tracked) {
             const r = f.roots.items[root];
+            const cur = f.latestOf(root) orelse try f.rootVal(root);
             for (f.m.loc.layoutEntries(r.layout), 0..) |he, h| if (he.kind == .cell) {
                 f.pflags.items[r.ent + h] |= CMod.flag_m;
+                if (f.cell_shared.contains(.{ root, @intCast(h) })) continue;
+                // What the body stored there escapes, as at any switch point.
+                var ks: std.ArrayList(u32) = .empty;
+                defer ks.deinit(f.gpa);
+                try f.contentsAt(r.layout, @intCast(h), &ks);
+                const w: u32 = @intCast(f.atoms.items.len);
+                for (ks.items) |k| _ = try f.leavesAs(cur, r.place, k, &f.atoms);
+                try f.uniqueTail(&f.atoms, w);
+                const wn: u32 = @intCast(f.atoms.items.len - w);
+                try f.escapeStored(root, w, wn, inst);
+                f.atoms.shrinkRetainingCapacity(w);
             };
         };
         for (f.writers.items) |w| try f.cell_marked.put(f.gpa, .{ w.o, w.e }, {});
@@ -6869,9 +6881,28 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
             f.judge_at = none;
             f.judge_probe = false;
             try f.probes.append(f.gpa, .{ .w = w, .wn = wn, .at = at, .ctx = f.cur_ctx, .root = root, .h = @intCast(h), .refused = refused });
+            try f.escapeStored(root, w, wn, inst);
         }
         if (probed) try f.renameContents(root, cur, inst, at);
     }
+}
+
+/// At a switch point: what the body stored in a cell of tracked parameter or
+/// capture `root` (the atoms `f.atoms[w..][0..wn]` of its contents that are
+/// not the cell's own old contents) is there while another fiber runs, which
+/// can take it through another holder of the handle (kernel §13 item 12): it
+/// escapes. The caller judges the cell's own old contents where it runs the
+/// code (its runs, probes and marks); what the body put there is named to it
+/// only where the body ends, after the body wrote it in place.
+fn escapeStored(f: *Frame, root: u32, w: u32, wn: u32, inst: u32) Error!void {
+    const es0: u32 = @intCast(f.atoms.items.len);
+    for (w..w + wn) |i| {
+        const a = f.atoms.items[i];
+        if (f.roots.items[a.root].kind == .outside or f.originOf(a.root) == root) continue;
+        try f.atoms.append(f.gpa, a);
+    }
+    if (f.atoms.items.len > es0) try f.noteEscape(es0, inst);
+    f.atoms.shrinkRetainingCapacity(es0);
 }
 
 /// A version of tracked root `root` whose value now is `cur`, the same

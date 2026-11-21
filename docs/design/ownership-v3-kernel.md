@@ -2489,6 +2489,16 @@ contents of a cell are locations, and that a call can change what a location of 
       time (`Atom.ren`), so a value taken out of the cell after the call is no value taken before it.
       No rename is a write (`dead` stays: a write before the call is judged against reads after it as
       before) and none is a renewal (`onlyRenamed`, item 3).
+    - **What the body stored escapes at a switch point** (`escapeStored`, from `probeCells` and from a
+      call in a hole of markup). At a switch point, the contents of each handle of a tracked parameter
+      or capture that are not the cell's own old contents (a value the body stored there, a cell it
+      made, another root's cells) are in the cell while another fiber runs, which can take a loan of
+      them through another holder of the handle; the caller judges only the old contents (its runs,
+      probes and marks), and learns what the body stored only where the body ends. So they escape
+      there, and a later write of them in place is refused: a writer that stores, parks and writes
+      what it stored is no unit of one run (`run/CellStoredParkedLive`). It is the pessimistic side:
+      a body that stores into a parameter's cell and then makes any call that may be impure lets the
+      stored value escape for its caller too, even where no other fiber holds the cell (#2592).
     - **Marks reach the frame** (`applyMarks`, `markHandles`): a callee's or a closure's mark on a handle
       it is handed or captured marks the holder: a parameter's or a capture's in the frame's contract,
       a root the frame made in `cell_marked`. So does a call whose contract hands a cell's contents to a
