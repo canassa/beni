@@ -2394,7 +2394,14 @@ contents of a cell are locations, and that a call can change what a location of 
 
 11. **A closure writes the contents of a cell it captured** (`Frame.captureContents`, `captureCells`).
     A capture whose layout has a handle is followed as a parameter is (`Root.tracked`): the code that
-    runs the closure is its caller. So in the closure's own frame a write of a captured cell's contents
+    runs the closure is its caller. Its root is made where the body first names it, which can be inside
+    an arm or after an early return; it is joined and noted as a parameter's is, from the start of the
+    body: the arms of every `case` and every operand that may not run are joined in a closure's frame
+    (`saveCells`, item 6), and each return point before it holds the capture as it was there, its value
+    in the renewal (item 3) and the read of its contents (item 7), as does the mark of a call in a hole
+    of markup before it (item 12; `backfillCapture`). Before, an arm that stores nothing, a `?` before
+    the store and all storing arms but the last walked were dropped from the renewal
+    (`run/CellClosureJoinsPathsLive`). So in the closure's own frame a write of a captured cell's contents
     passes §5 test 1, is judged there by tests 2 to 4 against the closure's own holders, and the contract
     publishes it (`W` at the capture's `◆`) with the renewal (item 3); a capture's cells are read where
     the closure answers (item 7). A store into a captured cell lets escape, in the closure's frame, what

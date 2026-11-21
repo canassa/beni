@@ -19,7 +19,14 @@
 //   `closTwiceStoreDead` (the same, storing a captured value after the update, which is read after or
 //   not), `closWrap` (handed to a helper that answers a wrapper of it, which the frame calls) and
 //   `closOther` (a second cell holds the contents, which the frame writes before a closure updates the
-//   second cell; #2586);
+//   second cell; #2586); a closure or local function that stores a new value into the cell it captured on
+//   a way its body does not take, then an update (#2590: kernel §13 items 3, 6 and 11): `condIf` (an `if`
+//   with no `else`), `condCase` (a `case` arm), `condAnd` (`&&`), `condTry` (a `?` before the store),
+//   `condLocal` (a local function with a parameter), `condHelper` (a helper that closes over its
+//   parameter's cell), `condInner`, `condApply` and `condScope` (the store and the update in one closure,
+//   called directly, by `apply`, by `Task.scope`) and `condBoth` (two arms that both store: dead); these
+//   run with the readers `none`, `cell`, `loan` (held by `name` or `closure`), `stored` and `mid`, and
+//   every fiber shape but `getter` and `generic`;
 // - reader: `none` (nothing old is read after the write), `cell` (`Ref.get r` after the write), `loan`
 //   (a value `Ref.get` answered before the write, read after it), `stored` (the value the cell was made
 //   with, read after the write), `mid` (a value `Ref.get` answered between two writes, read after the
@@ -81,7 +88,49 @@ const WRITERS = {
   closTwiceStoreDead: (c, s = '') => ({ lines: [`v9${s} = ${c.init}`, `twice λ⊤ →\n    Ref.update r λv → ${c.w('v')}\n    Ref.set r v9${s}`], shown: '"d"' }),
   closWrap: (c, s = '') => ({ lines: [`g${s} = wrapFn λx →\n    Ref.update r λv → ${c.w('v')}\n    x`, `_ = g${s} 1`], shown: '"w"' }),
   closOther: (c, s = '') => ({ lines: [`r9${s} = Ref.make (${c.init})`, `Ref.set r9${s} (Ref.get r)`, `Ref.update r λv → ${c.w('v')}`, `apply λ⊤ → Ref.update r9${s} λv → ${c.w('v')}`], shown: `${c.show} (Ref.get r9${s})` }),
+  // #2590: a closure or local function stores a new value into the cell it captured on one way of its
+  // body only (the condition is false when it runs), then the cell is updated: an `if` with no `else`, a
+  // `case` arm, `&&`, a `?` before the store, a local function with a parameter, a helper that closes over
+  // its parameter's cell, the store and the update inside one closure (called directly, by `apply`, by
+  // `Task.scope`), and two arms that both store (`condBoth`: the old contents are never written).
+  condIf: (c, s = '') => ({ lines: [`st${s} = λ⊤ → if off 1 then Ref.set r (${c.init}) else ⊤`, `st${s} ⊤`, `Ref.update r λv → ${c.w('v')}`], shown: '"i"' }),
+  condCase: (c, s = '') => ({ lines: [`st${s} = λ⊤ →\n    case List.length [ 1 ] of\n        0 → Ref.set r (${c.init})\n        _ → ⊤`, `st${s} ⊤`, `Ref.update r λv → ${c.w('v')}`], shown: '"k"' }),
+  condAnd: (c, s = '') => ({ lines: [`st${s} = λ⊤ → off 1 && storeB r (${c.init})`, `_ = st${s} ⊤`, `Ref.update r λv → ${c.w('v')}`], shown: '"n"' }),
+  condTry: (c, s = '') => ({ lines: [`st${s} : ⊤ → Result String ⊤`, `st${s} ⊤ =\n    stepOk 1?\n    Ref.set r (${c.init})\n    Ok ⊤`, `_ = st${s} ⊤`, `Ref.update r λv → ${c.w('v')}`], shown: '"y"' }),
+  condLocal: (c, s = '') => ({ lines: [`st${s} on = if on then Ref.set r (${c.init}) else ⊤`, `st${s} (off 1)`, `Ref.update r λv → ${c.w('v')}`], shown: '"l"' }),
+  condHelper: (c, s = '') => ({ lines: [`storeIf r (off 1) (${c.init})`, `Ref.update r λv → ${c.w('v')}`], shown: '"e"' }),
+  condInner: (c, s = '') => ({ lines: [`st${s} = λ⊤ →\n    if off 1 then Ref.set r (${c.init}) else ⊤\n    Ref.update r λv → ${c.w('v')}`, `st${s} ⊤`], shown: '"j"' }),
+  condApply: (c, s = '') => ({ lines: [`apply λ⊤ →\n    if off 1 then Ref.set r (${c.init}) else ⊤\n    Ref.update r λv → ${c.w('v')}`], shown: '"p"' }),
+  condScope: (c, s = '') => ({ lines: [`Task.scope λ_ →\n    if off 1 then Ref.set r (${c.init}) else ⊤\n    Ref.update r λv → ${c.w('v')}`], shown: '"q"' }),
+  condBoth: (c, s = '') => ({ lines: [`st${s} = λ⊤ → if off 1 then Ref.set r (${c.init}) else Ref.set r (${c.init})`, `st${s} ⊤`, `Ref.update r λv → ${c.w('v')}`], shown: '"b"' }),
 };
+// The #2590 writers run over a part of the product: the readers and holders that hold the old contents,
+// and the fiber shapes but `getter` and `generic`.
+const COND = new Set(['condIf', 'condCase', 'condAnd', 'condTry', 'condLocal', 'condHelper', 'condInner', 'condApply', 'condScope', 'condBoth']);
+const COND_READERS = ['none', 'cell', 'loan', 'stored', 'mid'];
+const COND_HOLDERS = ['name', 'closure'];
+const CONDHELPERS = `off : Int → Bool
+off k = k > 5
+
+
+stepOk : Int → Result String ⊤
+stepOk k = if k > 5 then Ok ⊤ else Err "x"
+
+
+storeB : Ref a, a → Bool
+storeB h x =
+    Ref.set h x
+    True
+
+
+storeIf : Ref a, Bool, a → ⊤
+storeIf h b x =
+    st = λ⊤ → if b then Ref.set h x else ⊤
+    st ⊤
+
+
+`;
+const COND_FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'race', 'deferred', 'queue', 'parkLater', 'peek'];
 
 // A holder of the loan `old`: the line that keeps it, and the expression that reads it back.
 const HOLDERS = {
@@ -101,6 +150,8 @@ const PART_READERS = ['part0', 'part1'];
 const FIBERS = ['same', 'parkSelf', 'park', 'writer', 'par', 'scoped', 'bracket', 'deferred', 'queue', 'parkLater', 'peek', 'getter', 'generic', 'race'];
 
 function isLive(writer, reader, fibers, holder) {
+  // Both arms store a new value: the old contents are never written.
+  if (writer === 'condBoth') return false;
   if (reader === 'part1') return writer === 'closTwiceStore' || writer === 'closOther' || ((fibers === 'peek' || fibers === 'getter' || fibers === 'generic') && writer !== 'getW');
   if (reader === 'part0') return true;
   if (reader === 'loan' && holder === 'listLen') return writer === 'closTwiceStore' || writer === 'closOther' || ((fibers === 'peek' || fibers === 'getter' || fibers === 'generic') && writer !== 'getW');
@@ -244,7 +295,7 @@ wrapFn : (Int → Int) → (Int → Int)
 wrapFn f = λx → f x
 
 
-${fromQueue}${peek}${peekWith}${holdAt}${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
+${COND.has(writer) ? CONDHELPERS : ''}${fromQueue}${peek}${peekWith}${holdAt}${writer === 'helper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
 ${ind(lines.join('\n'), 4)}
 
 
@@ -265,6 +316,7 @@ const emit = (name, files) => {
 };
 for (const cname of Object.keys(CONTENTS)) for (const maker of ['local', 'param']) for (const writer of Object.keys(WRITERS)) for (const reader of READERS) for (const holder of reader === 'loan' ? Object.keys(HOLDERS) : ['-']) for (const fibers of FIBERS) {
   if (PART_READERS.includes(reader) && cname !== 'pair') continue;
+  if (COND.has(writer) && (!COND_READERS.includes(reader) || (reader === 'loan' && !COND_HOLDERS.includes(holder)) || !COND_FIBERS.includes(fibers))) continue;
   const twin = isLive(writer, reader, fibers, holder) ? 'live' : 'dead';
   emit(`${cname}.${maker}.${writer}.${reader}.${holder}.${fibers}.${twin}`, { 'Main.beni': gen(cname, maker, writer, reader, holder, fibers) });
 }

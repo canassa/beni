@@ -554,6 +554,14 @@ cell_inner: std.ArrayList(?[]const bool) = .empty,
 /// contents there, which `cellReads` keeps where the parameter is renewed.
 ret_cells: std.ArrayList([2]u32) = .empty,
 ret_reads: std.ArrayList(Read) = .empty,
+/// In a lambda's frame, each return point so far, `(point, time, context)`,
+/// whether or not a cell was followed there: a capture's root is made where
+/// the body first names it, and gets the entries of `ret_cells` and
+/// `ret_reads` of the return points before (`backfillCapture`).
+ret_points: std.ArrayList([3]u32) = .empty,
+/// A call in a hole of markup was a switch point (kernel §13 item 12): a
+/// capture named after it is marked as the frame's parameters were there.
+markup_switched: bool = false,
 /// The shares that `shareAtoms` noted, `(root, entry, point)`, made by `flushShare`.
 share_pending: std.ArrayList([3]u32) = .empty,
 /// The frame follows some cell's contents: else no hook of kernel §13 does work.
@@ -4056,7 +4064,33 @@ fn capture(f: *Frame, local: u32) Error!Val {
     try f.params.append(f.gpa, root);
     try f.param_ty.append(f.gpa, m.typeOfLocal(f.d, local));
     try f.cap_locals.append(f.gpa, local);
+    if (f.roots.items[root].tracked) try f.backfillCapture(root);
     return f.rootVal(root);
+}
+
+/// A capture's root is made where the body first names it, which can be
+/// inside an arm or after a return point; a parameter's is made before the
+/// body. What the frame noted of its parameters' cells before is noted of
+/// the capture's too, as the cells were then (kernel §13 items 3, 7 and
+/// 12): at each earlier return point its value, which `publishRenew` joins,
+/// and the read of its contents (`cellReads`); and the mark of a switch
+/// point in a hole of markup. The arms it is named in are joined by
+/// `saveCells`, which saves in every lambda's frame (item 6).
+fn backfillCapture(f: *Frame, root: u32) Error!void {
+    const r = f.roots.items[root];
+    if (f.markup_switched) for (f.m.loc.layoutEntries(r.layout), 0..) |he, h| if (he.kind == .cell) {
+        f.pflags.items[r.ent + h] |= CMod.flag_m;
+    };
+    if (f.ret_points.items.len == 0) return;
+    const v = try f.rootVal(root);
+    const inner = try f.innerOf(r.layout);
+    for (f.ret_points.items) |rp| {
+        try f.ret_cells.append(f.gpa, .{ root, v });
+        const start: u32 = @intCast(f.lists.items.len);
+        for (inner, 0..) |in, k| if (in) try f.lists.append(f.gpa, @intCast(k));
+        const nmask: u32 = @intCast(f.lists.items.len - start);
+        try f.ret_reads.append(f.gpa, .{ .point = rp[0], .at = rp[1], .val = v, .ctx = rp[2], .mask = start, .nmask = nmask, .all = false, .tail = true });
+    }
 }
 
 fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
@@ -6582,6 +6616,8 @@ fn publishRenew(f: *Frame, flags: []u8, off: []const u32, total: u32) Error![]co
 /// parameter's value there, for `publishRenew`, and the read of its cells'
 /// contents there, at this time and in this context (`cellReads`).
 fn noteReturnCells(f: *Frame, point: u32) Error!void {
+    // A capture named later is noted here then (`backfillCapture`).
+    if (f.is_lambda) try f.ret_points.append(f.gpa, .{ point, f.timeOf(point), f.cur_ctx });
     if (!f.cells_any) return;
     try f.flushShare();
     for (f.params.items) |root| if (f.roots.items[root].tracked) {
@@ -6622,7 +6658,9 @@ fn cellReads(f: *Frame) Error!void {
 /// The latest versions of the tracked roots, to be joined after a part of
 /// the walk that may not run (`joinCells`).
 fn saveCells(f: *Frame) Error!?[]const [2]u32 {
-    if (!f.cells_any) return null;
+    // A lambda's capture is followed from where the body first names it,
+    // which can be inside the part that may not run (`capture`).
+    if (!f.cells_any and !f.is_lambda) return null;
     try f.flushShare();
     var out: std.ArrayList([2]u32) = .empty;
     for (f.cell_roots.items) |o| if (f.roots.items[o].latest != none) try out.append(f.gpa, .{ o, f.roots.items[o].latest });
@@ -6700,6 +6738,7 @@ fn switchAt(f: *const Frame, inst: u32) bool {
 fn switchPoint(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract) Error!void {
     if (!f.switchAt(inst)) return;
     f.switched = true;
+    if (f.markup_reads != null) f.markup_switched = true;
     if (!f.cells_any) return;
     try f.flushShare();
     // A call in a hole of markup can run where the markup renders, after
