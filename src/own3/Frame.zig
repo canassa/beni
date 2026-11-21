@@ -7231,12 +7231,12 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
         if (!inner[e] or lc.flags[lc.off[j] + e] & flag_w == 0) continue;
         const wa: u32 = @intCast(f.atoms.items.len);
         const dup = try f.argLeaves(capv, sig, @intCast(e), &.{}, false, &f.atoms);
-        try f.storedAtoms(code, j, @intCast(e));
+        const stored_twice = try f.storedAtoms(code, j, @intCast(e));
         try f.demand(wa, .{
             .point = inst,
             .loc = ses[e].loc,
             .others = others.items,
-            .dup = dup and !ses[e].single,
+            .dup = (dup or stored_twice) and !ses[e].single,
             .list_only = ses[e].kind == .list,
             .kind = .callsite,
         });
@@ -10394,7 +10394,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
             // (another location of the cell's own contents among them), outside
             // the frame's (outside, or a value the callee handed, which no rule
             // names here), and not a cell the function made in its run.
-            try f.storedAtoms(code, j, @intCast(e));
+            const stored_twice = try f.storedAtoms(code, j, @intCast(e));
             try f.demand(w, .{
                 .point = site.inst,
                 .callee_inst = site.callee,
@@ -10402,7 +10402,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                 .others = others.items,
                 .arg = first + k,
                 .se = @intCast(e),
-                .dup = dup and !ses[e].single,
+                .dup = (dup or stored_twice) and !ses[e].single,
                 .list_only = ses[e].kind == .list,
                 .kind = .callsite,
             });
@@ -10448,16 +10448,21 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
 /// at its entry `e`, which a later run of the code writes where it writes
 /// `e` (kernel §13 item 11): a capture's cells (another location of the
 /// cell's own contents among them), `outside` for outside the frame or a
-/// value the callee handed, and not a cell the code made in its run.
-fn storedAtoms(f: *Frame, code: Code, j: u32, e: u32) Error!void {
+/// value the callee handed, and not a cell the code made in its run. True
+/// where the renewal holds one cell at two places there (`twice`): a later
+/// run writes a cell that the location holds twice.
+fn storedAtoms(f: *Frame, code: Code, j: u32, e: u32) Error!bool {
     const lc = code.contract;
+    var twice = false;
     if (lc.renewAt(lc.off[j] + e)) |srcs| for (srcs) |s| switch (s.kind) {
-        .fresh, .twice => {},
+        .fresh => {},
+        .twice => twice = true,
         .outside, .answer => try f.atoms.append(f.gpa, outside_atom),
         .param => if (s.a == j and s.e == e) {} else if (s.a >= code.own_params and s.a < lc.arity) {
             _ = try f.argLeaves(try f.capVal(code, s.a - code.own_params), lc.layouts[s.a], s.e, &.{}, false, &f.atoms);
         } else try f.atoms.append(f.gpa, outside_atom),
     };
+    return twice;
 }
 
 /// Whether the contract `lc` lets the contents of capture parameter `j`
@@ -11368,11 +11373,22 @@ fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u3
         .param => {
             if (ls.a >= code.own_params) {
                 // A captured value in the answer: each run answers the
-                // same cell, so two runs can answer one cell. The answer holds it.
-                st.twice = true;
+                // same cell, so two runs can answer one cell. The answer
+                // holds it. A holder that runs the function once in the call
+                // (`Fn.once`) answers a cell this frame made in its run once:
+                // another run of this frame makes another (kernel §13 item 2).
                 if (ls.a - code.own_params < code.ncaps) {
+                    const at = f.atoms.items.len;
                     _ = try f.argLeaves(try f.capVal(code, ls.a - code.own_params), lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
-                } else try f.lostAnswer(use, st);
+                    const own_run = fnc.once and for (f.atoms.items[at..]) |a| {
+                        const rk = f.roots.items[a.root].kind;
+                        if (rk != .local and rk != .fresh) break false;
+                    } else true;
+                    if (!own_run) st.twice = true;
+                } else {
+                    st.twice = true;
+                    try f.lostAnswer(use, st);
+                }
                 continue;
             }
             // What the holder hands that parameter.

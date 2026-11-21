@@ -3186,6 +3186,7 @@ pub const Mod = struct {
             // result goes where no word says: it escapes (kernel §6.10; research
             // report 148). No row of `core/` or a platform has one.
             .ans_escapes = unplaced or (ans.len != 0 and !has(w, .returned) and !has(w, .stored) and !has(w, .aliased)),
+            .once = has(w, .cellupdate) or has(w, .cellmodify),
         };
         return fnc;
     }

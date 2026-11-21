@@ -6,7 +6,10 @@
 -- own name after a push, a `Dict` read after a helper removes from it, a
 -- cache's old `Dict` read after a closure inserts, and a second cell that
 -- holds the first one's contents read after the first one's elements are
--- written. Each read sees the old value, so each write is refused.
+-- written; and a closure run twice whose first run pushes a second copy of
+-- an element, by one arm, and whose second run writes the element in place,
+-- by the other arm, and the same where each run pushes one captured list.
+-- Each read sees the old value, so each write is refused.
 import Dict exposing (Dict)
 import Io
 import List
@@ -105,6 +108,48 @@ shared ⊤ =
     showN (Ref.get r2)
 
 
+twiceF : (Int → ⊤) → ⊤
+twiceF fn =
+    fn 0
+    fn 1
+
+
+twiceArms : ⊤ → String
+twiceArms ⊤ =
+    cl = Ref.make [ [ 1 ] ]
+    twiceF λi →
+        if i == 0 then
+            Ref.update cl λv → List.push v (Maybe.withDefault (List.head v) [])
+        else
+            Ref.update cl λv → List.update v 0 λl → List.push l 9
+    showN (Ref.get cl)
+
+
+twiceArmsDict : ⊤ → String
+twiceArmsDict ⊤ =
+    cd = Ref.make (Dict.fromList [ ( 0, [ 1 ] ) ])
+    _ = List.map [ 0, 1 ] λi →
+        if i == 0 then
+            Ref.update cd λd → Dict.insert d 1 (Maybe.withDefault (Dict.get d 0) [])
+        else
+            Ref.update cd λd → Dict.update d 0 λm → Maybe.map m λl → List.push l 9
+    String.join
+        (List.map (Dict.toList (Ref.get cd)) λ( k, v ) → "${String.fromInt k}=${ints v}")
+        " "
+
+
+twiceCaptured : ⊤ → String
+twiceCaptured ⊤ =
+    snap = [ 0 ]
+    hist = Ref.make [ [ 5 ] ]
+    _ = List.map [ 0, 1, 2 ] λi →
+        if i < 2 then
+            Ref.update hist λh → List.push h snap
+        else
+            Ref.update hist λh → List.update h 1 λl → List.push l 9
+    showN (Ref.get hist)
+
+
 main : Program
 main = Io.run λ⊤ →
     Node.printLines
@@ -115,4 +160,7 @@ main = Io.run λ⊤ →
         , dictLoan ⊤
         , cacheLoan ⊤
         , shared ⊤
+        , twiceArms ⊤
+        , twiceArmsDict ⊤
+        , twiceCaptured ⊤
         ]

@@ -2342,7 +2342,11 @@ contents of a cell are locations, and that a call can change what a location of 
    1 (`Ref.set`), and beside `cellcomplete` lets it escape, as before (`Deferred.complete`).
    `cellupdate` and `cellmodify` hand the function the contents `free` (`flag_s`): the row reads them no
    more, and keeps what the function answers in their place, or its answer's second part (`modify`,
-   whose result is the first part). The function's answer does not escape.
+   whose result is the first part). The function's answer does not escape. *Amended 2026-11-21:* the
+   row runs the function once in each call (`Fn.once`), so a cell the function captured and answers,
+   which the holder's frame made in its run, is answered once there and is no cell at two places of
+   the contents (`answerSrcs`); one that came from outside the run (a capture of the holder, a
+   parameter) is, since the holder's own caller can run it again.
 3. **Renewal** (`Contract.renew`). A contract says, per parameter location, what the call leaves there:
    null where it leaves the location as it was, or the sources the location holds from the call on. A
    store renews every location of the cell's contents. A walked body publishes, for each parameter
@@ -2468,7 +2472,12 @@ contents of a cell are locations, and that a call can change what a location of 
       stored in the cell: the write is of each value the renewal names at the written location too (a
       capture's cells, another location of the cell's own contents, and `outside` for outside the
       frame or a value the callee handed; not a cell the closure made in its run,
-      `run/CellClosureRunsTwiceLive`);
+      `run/CellClosureRunsTwiceLive`); and where that renewal holds one cell at two places of the
+      written location (`twice`: a run that pushed a second copy of an element), the later run's
+      write is of a cell at two places, refused (`storedAtoms`' answer, also in a writer's run, item
+      12). *Amended 2026-11-21:* before §3.4's amendment the renewal named the cell's every part at
+      its outer place and the call was refused `disjoint` for that; with each part at its place the
+      two runs are told apart only by `twice` (`run/CellContentsAtTheirPlaceLive`'s `twiceArms`);
     - **any other holder** (the default, a lost use, a function parameter of the frame, a list, a
       spawned fiber): the closure runs at times the frame does not see. Each handle it captured is
       shared (item 8), and a write of a captured cell's contents is refused (`call`).
