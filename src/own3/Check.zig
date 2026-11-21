@@ -1873,7 +1873,10 @@ pub const Mod = struct {
             for (rn) |*r| r.deinit(gpa);
             gpa.free(rn);
         };
-        if (try m.cellRow(sig, c, pw, rw, res, &renew)) described = true;
+        if (try m.cellRow(sig, c, pw, rw, res, &renew)) {
+            described = true;
+            c.cell_row = true;
+        }
         // `copyof` of a record (`Record.copy`, kernel §11): a new object
         // whose fields hold parameter 0's values. The result's locations
         // are one row here, which cannot say which of them are the new

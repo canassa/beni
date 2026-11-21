@@ -191,6 +191,11 @@ pub const Contract = struct {
     /// identities only): a call answers its argument as it is, whatever type
     /// the body read it at (`Frame.identityCall`; research report 151).
     exact: bool = false,
+    /// A row of a cell's words (`Check.cellRow`: `Ref`, `Deferred`,
+    /// `Task`): what it answers, stores and hands at a type variable is the
+    /// value there as it is, so each part of it is at its own place below
+    /// the variable (kernel §3.4, `Frame.paired_exact`).
+    cell_row: bool = false,
     /// The body makes a call where another fiber can run (kernel §13 item
     /// 12): one whose callee may be impure or may suspend. A worded row's is
     /// true: its words say nothing of it.
@@ -270,7 +275,7 @@ fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
 }
 
 pub fn eql(a: *const Contract, b: *const Contract) bool {
-    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy or a.casts != b.casts or a.exact != b.exact or a.switches != b.switches) return false;
+    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy or a.casts != b.casts or a.exact != b.exact or a.switches != b.switches or a.cell_row != b.cell_row) return false;
     if (!std.mem.eql(u32, a.layouts, b.layouts) or !std.mem.eql(u8, a.flags, b.flags)) return false;
     if (a.res.len != b.res.len) return false;
     for (a.res, b.res) |s, t| if (!srcsEql(s, t)) return false;
@@ -340,7 +345,7 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
         renew = rn;
     }
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .renew = renew };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .cell_row = a.cell_row and b.cell_row, .renew = renew };
     return out;
 }
 
@@ -402,7 +407,7 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     const renew = try a.alloc(?[]const Src, c.renew.len);
     for (renew, c.renew) |*r, x| r.* = if (x) |xs| try a.dupe(Src, xs) else null;
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .renew = renew };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .cell_row = c.cell_row, .renew = renew };
     return out;
 }
 

@@ -445,9 +445,9 @@ paired_exact: bool = false,
 /// parameter the answer names at the same place: the handed cell at that
 /// place, read as `paired_exact` reads it.
 resolve_exact: bool = false,
-/// Set by `expandSrcs` around `pairedLeaves`: the callee, or a function
-/// handed to it, casts, and no read is `paired_exact`.
-pair_casts: bool = false,
+/// Set by `expandSrcs` around `pairedLeaves`: the callee is a cell's row
+/// and nothing on the way casts, so a read is `paired_exact`.
+pair_exact_ok: bool = false,
 /// Set by `argEntries` when a wide entry of the argument read at a summary
 /// location below it gave an entry (`Loc.holes`): no single place.
 coarse_hit: bool = false,
@@ -9268,11 +9268,14 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
                     // not at entry `e` (kernel §3.4, *A value of no location
                     // in a typed answer*).
                     if (st.typed and args[s.a] == v_outside and ai != none and try f.layoutLen(try f.m.placeOfInst(ai)) == 0) continue;
-                    // A callee that casts, or a function handed to it that
-                    // does, can answer another part of the argument at a
-                    // place: no part is read at the place alone there.
-                    f.pair_casts = c.casts or try f.argsCast(c, args);
-                    defer f.pair_casts = false;
+                    // Only a cell's row answers a value at a type variable as
+                    // it is, each part at its place (`Contract.cell_row`):
+                    // another row can build a new value there of the
+                    // argument's parts, a walked body can call one, and a
+                    // callee that casts, or a function handed to it that does,
+                    // can answer another part of the argument at a place.
+                    f.pair_exact_ok = c.cell_row and !c.casts and !try f.argsCast(c, args);
+                    defer f.pair_exact_ok = false;
                     if (try f.pairedLeaves(args[s.a], ai, c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
                     if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
                     // At positions of the argument's list (kernel §6 rule 10, *A position*).
@@ -9463,7 +9466,7 @@ fn pairedLeavesAt(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rla
     const skip = m.loc.loc_depth.items[rentry.loc];
     // A wide entry of the caller's own type stands for each cell below that place.
     f.suffix_fallback = false;
-    f.paired_exact = !f.pair_casts;
+    f.paired_exact = f.pair_exact_ok;
     const dup = try f.argLeaves(v, psig, pe, labels.items[skip..], m.loc.layoutEntries(rlayout)[e].kind.wide(), &f.atoms);
     f.paired_exact = false;
     // The argument has no location at that part (a value that a conversion
@@ -11418,7 +11421,7 @@ fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u3
                 const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, psuffix);
                 // The parameter's entry is at that part, or below it: what is
                 // handed at that place, not every cell below it (kernel §13 item 2).
-                const exact = !wide and slot.fe != none and blk: {
+                const exact = fnc.once and !wide and slot.fe != none and blk: {
                     const floc = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc;
                     const uloc = m.loc.layoutEntries(fnc.layouts[ls.a])[slot.fe].loc;
                     break :blk uloc == floc or m.loc.isPrefix(uloc, floc);

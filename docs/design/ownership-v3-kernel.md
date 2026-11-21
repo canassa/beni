@@ -161,16 +161,22 @@ as a pair: both parts are `x`). Four facts that rest on "apart" are read so:
   are apart (`otherReaches`);
 - **a part a result is read at** (`pairedLeaves`): where the part is no location of the argument's own
   layout and every entry is read, a summary location of the caller is no single place (`dup`).
-  *Amended 2026-11-21 (#2594, #2580).* Where the callee's location is wide and the caller's is the
-  location at that same place (no suffix below it), the part is the argument's cell at that place, and
-  not every cell below it (`paired_exact`): `Ref.make [ [ 1 ] ]` holds the outer list at `r◆` and the
-  inner one at `r◆[*]`, as the row's words say (§13 item 2), where before `r◆` held both, and a
-  helper that writes `r◆` and `r◆[*]` was refused `disjoint` on one cell at its two operands. A
-  parameter of a function the answer names at the same place reads what its holder hands there the
-  same way (`answerSrcs`, `resolve_exact`), so the renewal `Ref.update r λv → List.push v [ 30 ]`
-  publishes is `π1◆ := π1@1`, not `π1@1 π1@2`. Where the argument has no entry at that place, every
-  entry below the wide location is read, as before (`suffix_fallback`). A wide location of the
-  caller's own reading still reads every cell below it.
+  *Amended 2026-11-21 (#2594, #2580).* Where the callee is a cell's row (`Contract.cell_row`: `Ref`,
+  `Deferred`, `Task`, whose JavaScript stores, answers and hands the value at a type variable as it
+  is), its location is wide and the caller's is the location at that same place (no suffix below it),
+  the part is the argument's cell at that place, and not every cell below it (`paired_exact`):
+  `Ref.make [ [ 1 ] ]` holds the outer list at `r◆` and the inner one at `r◆[*]`, as the row's words
+  say (§13 item 2), where before `r◆` held both, and a helper that writes `r◆` and `r◆[*]` was
+  refused `disjoint` on one cell at its two operands. A parameter of a function that a cell's
+  callback answers at the same place reads what the row hands there the same way (`Fn.once`,
+  `answerSrcs`, `resolve_exact`), so the renewal `Ref.update r λv → List.push v [ 30 ]` publishes is
+  `π1◆ := π1@1`, not `π1@1 π1@2`. Any other callee keeps the reading of every cell below: another
+  row can build a new value at the variable of the argument's parts, which no word counts
+  (`elementof a` answering `[ l[i][0], l[i][0] ]` read as a list of records, research report 156),
+  and a walked body can answer such a row's answer; nor where a callee or a function handed to it
+  casts. Where the argument has no entry at that place, every entry below the wide location is read,
+  as before (`suffix_fallback`). A wide location of the caller's own reading still reads every cell
+  below it.
 
 And a contract that holds one cell of its parameter at two places of its answer (`nonlinear`) answers no
 value as it is: it is applied as a call, not as an identity (`isIdentity`).
