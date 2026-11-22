@@ -110,7 +110,7 @@ async function judge(prog) {
       for (let i = 0; i < lines.length; i++) {
         if (/^file:\/\/\S+:\d+$/.test(lines[i])) { i += 2; continue; }
         if (/^\s+at /.test(lines[i]) || lines[i].trim() === '') continue;
-        kept.push(lines[i].replace(/timestamp=\S+ /, '').split(tmp).join('<tmp>'));
+        kept.push(lines[i].replace(/timestamp=\S+ /g, '').split(tmp).join('<tmp>'));
       }
       return kept.join('\n');
     };
@@ -124,7 +124,9 @@ async function judge(prog) {
         return norm(r.out) === norm(oracle.out) ? 'BOTHFAIL' : 'DIFF';
       }
       if (r.code !== 0) return `TRAP ${r.out.split('\n').find((l) => /stale|sanit|identity|Error/.test(l))?.slice(0, 100) ?? ''}`.trim();
-      return r.out === oracle.out ? 'SAME' : 'DIFF';
+      // A log line's time is the clock's, not the program's.
+      const stamp = (text) => text.replace(/timestamp=\S+ /g, '');
+      return stamp(r.out) === stamp(oracle.out) ? 'SAME' : 'DIFF';
     };
     const first = await verdict('s');
     if (mode !== 'both') return first;
