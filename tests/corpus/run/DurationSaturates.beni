@@ -1,0 +1,34 @@
+-- run: `Duration` stays in the range it documents (#1992): 2⁵³ − 1
+-- milliseconds is the longest duration, and a count, a sum or a product
+-- past it is that length, never more. Before the fix `seconds`,
+-- `minutes`, `hours` and `sum` multiplied and added with no test, so a
+-- duration could be 9007199254740991000 ms. Each line is
+-- worked out by hand; the last ones are the edges that still fit.
+import Duration exposing (Duration)
+import Node exposing (Program)
+
+
+ms : Duration → String
+ms d = String.fromInt (Duration.toMillis d)
+
+
+main : Program
+main =
+    longest = 9007199254740991
+    full = Duration.millis longest
+
+    Node.printLines
+        [ ms (Duration.seconds longest)
+        , ms (Duration.minutes longest)
+        , ms (Duration.hours longest)
+        , ms (Duration.sum full full)
+        , ms (Duration.sum full (Duration.millis 1))
+        , ms (Duration.times full 2.0)
+        , ms (Duration.times (Duration.millis 3) 3.1e15)
+        , ms (Duration.seconds 9007199254740)
+        , ms (Duration.seconds 9007199254741)
+        , ms (Duration.hours 2501999792)
+        , ms (Duration.sum (Duration.millis (longest - 1)) (Duration.millis 1))
+        , ms (Duration.times full 1.0)
+        , ms (Duration.times (Duration.millis 100) 1.5)
+        ]

@@ -1,0 +1,26 @@
+-- run: `Int.mod` near 2⁵³ (#1992). The answer takes the modulus's sign,
+-- and the modulus is added only to a remainder of the other sign, so no
+-- sum passes the modulus. Before the fix the body added the modulus to
+-- every remainder, so near 2⁵³ the sum was rounded and the answer was
+-- one off.
+-- Each line is the true remainder, worked out by hand.
+import Node exposing (Program)
+
+
+main : Program
+main =
+    big = 9007199254740991
+
+    Node.printLines
+        [ String.fromInt (Int.mod (big - 1) big)
+        , String.fromInt (Int.mod (negate 1) big)
+        , String.fromInt (Int.mod (big - 1) (negate big))
+        , String.fromInt (Int.mod (negate (big - 1)) (negate big))
+        , String.fromInt (Int.mod (negate (big - 1)) big)
+        , String.fromInt (Int.mod (negate 4) 2)
+        , String.fromInt (Int.mod 4 (negate 2))
+        , String.fromInt (Int.mod 7 3)
+        , String.fromInt (Int.mod (negate 1) 4)
+        , String.fromInt (Int.mod 1 (negate 4))
+        , String.fromInt (Int.mod 7 0)
+        ]

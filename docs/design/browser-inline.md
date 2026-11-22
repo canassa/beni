@@ -98,7 +98,7 @@ declaration, in declaration order.
 ## 4. Commands
 
 A polymorphic command body is checked with the actual synchronous sender and
-its captured values. A known suspension or an unresolved call remains refused.
+its captured values. An unresolved call remains refused; a known suspension runs (see below).
 
 The pass evaluates each key's arm — and `init` — to its `model × Cmd msg` result and reads the
 command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
@@ -107,7 +107,10 @@ command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
 - a `perform` whose body cannot suspend, by the checker's answer at that call, **runs**: after the
   handler's write pass, in the same dispatch, through the guard's queue (`boundary.md` §9.8.4,
   amended 2026-10-17);
-- a body that may suspend is refused (§5, class 2);
+- a body that may suspend **runs** too, as a fiber through `Hosted.job`, and its reply is dispatched when the
+  body sends it (`browser/inline/WrappedSuspendingCommand`, `SuspendingAnyCommand`). *Amended 2026-11-18,
+  the owner:* it was refused (§5, class 2); `browser-inline` keeps running command bodies that may
+  suspend, as `boundary.md` §9.8 amended on 2026-11-10 records;
 - a command the pass cannot read as one of these is refused (§5, class 4). *Amended 2026-10-29
   (§10.4):* the pass reads `init` and each key through the platform's functions, so a command a
   layer makes (`Navigation.pushUrl`) is read as its `perform`.
@@ -149,7 +152,7 @@ by its type — hides nothing: it is written exactly, and accepted.
 1. **Not compiled yet** (a compiler limit) — a construct a later slice of
    `plans/direct-rewrite.md` §5 adds (S1: events and holes beyond the one text binding; S2:
    `For`; S3: a `view`'s `let`s; S4: a set of subscriptions that changes — moved here from class 3
-   on 2026-10-17 — `Show`, branches; S6: the task kernel). The message says *"A limit of the
+   on 2026-10-17 — `Show`, branches). The message says *"A limit of the
    compiler: … does not compile … yet"* and what to write instead; it names no slice and no
    plan, which are this document's and not the user's.
    *Amended 2026-10-25 (S2's design pass, §9; not built):* S2's `For` is a `For` over a `Dict` that
@@ -167,9 +170,10 @@ by its type — hides nothing: it is written exactly, and accepted.
    in a hole (`{part1 model}`), written in place in a context of its own (§8.4); and a **`case`
    in markup** whose arms are each one element or `<></>`, written as eager `when`s, one per
    element arm (§8.2).
-2. **Needs the task kernel** (a compiler limit) — a command whose body may suspend: *"A limit of
-   the compiler: … needs the task kernel, which `browser-inline` does not have yet"*, with the
-   body's position. The kernel returns behind reachability in S6.
+2. **Needs the task kernel** (a compiler limit) — no longer a refusal. *Amended 2026-11-18, the owner:* a
+   command whose body may suspend is accepted and runs as a fiber (§4; `boundary.md` §9.8, amended
+   2026-11-10), so no build ends in this class today; its number stays, and a limit of the same kind
+   that is found later may take it.
 3. **The program's shape** (a language rule) — what the platform's model does not express, with
    what to write instead: a program record or `view` computed when the page runs, a tagger that
    gives no message constructor of the program (*"… tag the value with a constructor of the
@@ -861,7 +865,7 @@ R5 alone must never be treated as authority to retain an arbitrary source captur
 Ownership rejects sharing, payload edits, old whole holders, escapes and unknown origins with
 §31.9's existing record errors and explicit `Record.copy`/restructure fixes. A known valid shape
 whose retention or group projection the compiler cannot represent is §5 class 4; a construct
-reserved for a later slice is class 1 (or a suspending command class 2). The existing language
+reserved for a later slice is class 1 (class 2 no longer refuses a suspending command; *amended 2026-11-18*). The existing language
 rules, including undeclared exact `*` replacement of a multi-field model, remain class 3.
 No rejection selects `browser-tea`, spreads, polling or a broad pass automatically.
 

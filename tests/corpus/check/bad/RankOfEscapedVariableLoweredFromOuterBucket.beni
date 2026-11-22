@@ -1,0 +1,11 @@
+-- `y` escapes `h`'s `let` when `z` is merged with it, so at `h`'s boundary
+-- its root is an escaped variable below the young rank. `[ z ]` meets the
+-- outer `a`, so a walk of `a`'s bucket reaches `y`'s root. That walk must
+-- lower it to `a`'s rank: before, it kept its rank, `g` was generalised
+-- over it while `a` still held it, and `g 1` and `g "x"` both checked, a
+-- program that then crashed in JavaScript (checker-v2.md §39).
+pub f a =
+    g y =
+        h z = ( if True then a else [ z ], if True then y else z )
+        h y
+    ( g 1, g "x", a )

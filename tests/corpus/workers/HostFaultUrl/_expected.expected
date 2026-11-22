@@ -1,0 +1,15 @@
+> GET /redirect
+< 302
+< location: http://127.0.0.1/there
+> GET /redirect-bad-target
+< 500
+| err: beni: invalid response: the redirect target "http://[" does not resolve against the request's URL
+> GET /redirect-fault
+< 500
+< content-length: 200
+< content-type: text/plain;charset=UTF-8
+<
+< RangeError: the fixture's host fault
+> GET /redirect
+< 302
+< location: http://127.0.0.1/there

@@ -1,0 +1,25 @@
+-- load
+<body>
+  <main>
+    <button id="through">"through"</button>
+    <button id="helped">"helped"</button>
+    <p></p>
+  </main>
+</body>
+-- click #through
+<body>
+  <main>
+    <button id="through">"through"</button>
+    <button id="helped">"helped"</button>
+    <p>"t"</p>
+  </main>
+</body>
+-- click #helped
+console.info: before
+<body>
+  <main>
+    <button id="through">"through"</button>
+    <button id="helped">"helped"</button>
+    <p>"th"</p>
+  </main>
+</body>

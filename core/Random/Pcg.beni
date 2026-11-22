@@ -73,17 +73,34 @@ independentSeed = map3 (int 0 4294967295) (int 0 4294967295) (int 0 4294967295) 
 -- ---- Generators -------------------------------------------------------------
 
 --| An integer from `a` to `b`, both included, each as likely. Exact for
---| any two integers between `minInt` and `maxInt`.
+--| any two integers. A range of at most 2³² integers, as from `minInt` to
+--| `maxInt`, takes one 32-bit output per draw; a wider range takes two or
+--| three.
 --|
 --|     Random.int 1 6
 pub int : Int, Int → Generator Int
 int a b =
     lo = min a b
-    range = max a b - lo + 1
+    hi = max a b
 
-    -- 2³² mod range: the outputs below it would favour the low values.
-    threshold = Int.mod (4294967296 - range) range
-    Generator λseed → unbiased seed lo range threshold
+    -- The span as a `Float`: `hi - lo` can be twice the largest `Int`.
+    span = toFloat hi - toFloat lo
+
+    if span < 4294967296.0 then
+        range = hi - lo + 1
+
+        -- 2³² mod range: the outputs below it would favour the low values.
+        threshold = Int.mod (4294967296 - range) range
+        Generator λseed → unbiased seed lo range threshold
+    else if span < 9007199254740991.0 then
+        range = hi - lo + 1
+
+        -- 2⁵³ mod range, without 2⁵³, which is not an `Int`.
+        below = Int.mod maxSafe range + 1
+        threshold = if below == range then 0 else below
+        Generator λseed → unbiased53 seed lo range threshold
+    else
+        Generator λseed → widest seed lo hi
 
 
 unbiased : Seed, Int, Int, Int → Int × Seed
@@ -93,6 +110,50 @@ unbiased seed lo range threshold =
         unbiased (next seed) lo range threshold
     else
         ( lo + Int.mod x range, next seed )
+
+
+-- 2⁵³ − 1, the largest `Int`.
+maxSafe : Int
+maxSafe = 9007199254740991
+
+
+-- 53 bits from two outputs, as `float` takes them: from 0 to `maxSafe`.
+peel53 : Seed → Int × Seed
+peel53 seed0 =
+    seed1 = next seed0
+    high = Js.bitAnd (peel seed0) 134217727
+    low = Js.bitAnd (peel seed1) 67108863
+    ( high * 67108864 + low, next seed1 )
+
+
+-- A range of more than 2³² and less than 2⁵³ integers.
+unbiased53 : Seed, Int, Int, Int → Int × Seed
+unbiased53 seed lo range threshold =
+    ( x, seed1 ) = peel53 seed
+    if x < threshold then
+        unbiased53 seed1 lo range threshold
+    else
+        ( lo + Int.mod x range, seed1 )
+
+
+-- A range of 2⁵³ integers or more, up to 2⁵⁴ − 1. A first output's top bit
+-- picks the half: `lo` to `lo + maxSafe`, or from `lo + maxSafe + 1` up,
+-- where a draw past `hi` is drawn again. Every value is as likely, and no
+-- sum leaves the `Int` range.
+widest : Seed, Int, Int → Int × Seed
+widest seed0 lo hi =
+    upper = peel seed0 ≥ 2147483648
+    ( x, seed1 ) = peel53 (next seed0)
+
+    if not upper then
+        ( lo + x, seed1 )
+    else
+        base = lo + maxSafe
+
+        if x > hi - base - 1 then
+            widest seed1 lo hi
+        else
+            ( base + (x + 1), seed1 )
 
 
 --| The least integer `int` takes.

@@ -1,0 +1,12 @@
+-- The requirement survives the fix to the rank walk (checker-v2.md §39): a
+-- local `g` comparing its list with a mapped copy needs `eq` on the
+-- element, so a list of functions is refused at the use.
+import List
+
+
+f : Int → Int
+f l =
+    g w =
+        v = w == List.map w λx → x
+        v
+    if g [ λn → n ] then 1 else 0

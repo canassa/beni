@@ -1,0 +1,21 @@
+-- A method type that reaches back to its receiver through a STRUCTURE, not
+-- only through the receiver itself: `y.foo x` with `x : Maybe y`, so the
+-- walk comes back to `x`'s type while it is still being walked. Writing the
+-- group's rank only on a variable left this a rank panic (checker-v2.md §39,
+-- I15). The program is refused, as an unknown method on an undetermined
+-- receiver.
+import List
+
+
+f : Int → Int
+f l =
+    g w =
+        v = List.map w λx →
+            case x of
+                Just y →
+                    y.foo x
+
+                Nothing →
+                    0
+        v
+    0

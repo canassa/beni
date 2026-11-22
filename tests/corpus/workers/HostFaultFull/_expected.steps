@@ -1,0 +1,9 @@
+# A put the host takes.
+{"path": "/put"}
+# The host's Error of a full disk is the failure the platform names.
+{"path": "/put-full"}
+# Nothing was written for that key.
+{"path": "/keys"}
+# The same message on a value that is no Error is a defect, not Err Full.
+{"path": "/put-not-an-error"}
+{"path": "/keys"}
