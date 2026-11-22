@@ -386,6 +386,9 @@ const Demand = struct {
     slot: u32 = 0,
     /// `supply`: the answer of the same call, which is not a read of the old value.
     skip: u32 = none,
+    /// The paths of a call that write the location (kernel §13 item 13): it
+    /// is judged on runs through them (`judge_set`). Empty: every run.
+    paths: []const u32 = &.{},
     /// A write of a record's field slot (kernel §11): its diagnostic is a record's.
     record: bool = false,
     /// `supply`: the function is the runtime's `send`: the check has a line.
@@ -441,6 +444,9 @@ skip_answer: u32 = none,
 judge_ctx: u32 = none,
 /// While a write is judged: its time (`isOld`).
 judge_at: u32 = none,
+/// While a write of some paths of a call is judged (kernel §13 item 13):
+/// their contexts. A run through any of them holds the write.
+judge_set: []const u32 = &.{},
 /// While the later reads of a write are judged: an atom found through another
 /// arm of a `case` that holds the write is no holder (`atomLive`).
 ctx_filter: bool = false,
@@ -501,6 +507,8 @@ proj_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
 reroot_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
 /// The meeting of two contexts (`Ctx.both`), made once for each pair.
 both_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+/// The meetings that a call's paths made (kernel §13 item 13, `meetPath`), made once for each pair.
+path_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
 /// Per construction (a `built` value): for each entry of its place's
 /// layout, the parts that hold a location there (`builtIndex`).
 built_index: std.AutoHashMapUnmanaged(Val, BuiltIndex) = .empty,
@@ -600,6 +608,14 @@ ret_reads: std.ArrayList(Read) = .empty,
 /// the body first names it, and gets the entries of `ret_cells` and
 /// `ret_reads` of the return points before (`backfillCapture`).
 ret_points: std.ArrayList([3]u32) = .empty,
+/// The contexts of the arms of the `case` that answers the body, in no arm
+/// of another: the body's paths (kernel §13 item 13). Empty until it is met.
+path_ctxs: std.ArrayList(u32) = .empty,
+/// Whether the body's answering `case` was met (`path_ctxs`).
+path_met: bool = false,
+/// The calls split into paths so far (kernel §13 item 13): each names the
+/// `case` of its arms (`path_case`).
+path_serial: u32 = 0,
 /// A call in a hole of markup was a switch point (kernel §13 item 12): a
 /// capture named after it is marked as the frame's parameters were there.
 markup_switched: bool = false,
@@ -641,6 +657,9 @@ defect_data: enum(u8) { none, lost, held } = .none,
 const Frame = @This();
 pub const Error = Allocator.Error;
 const safety = std.debug.runtime_safety;
+/// The `case` of a call split into paths (kernel §13 item 13): no instruction
+/// of a `case` has this bit, so the arms of no two calls are of one `case`.
+const path_case: u32 = 1 << 30;
 
 const FreshKey = struct { key: u64, holder: u64, k: u32 };
 /// A probe (kernel §13 item 12): the contents `atoms[w..][0..wn]` of the
@@ -853,7 +872,7 @@ fn joinVal(f: *Frame, place: PlaceId, vs: []const Val, ctxs: []const u32) Error!
 /// Whether the join's value `ki` can be the value while the write in judgement runs.
 fn armLive(f: *const Frame, n: Node, ki: usize) bool {
     const ctx = f.lists.items[n.a + 2 * ki + 1];
-    return f.judge_ctx == none or ctx == none or f.compatible(ctx, f.judge_ctx);
+    return f.judge_ctx == none or ctx == none or f.judgeCompat(ctx);
 }
 
 fn newRoot(f: *Frame, kind: RootKind, place: PlaceId, inst: u32) Error!u32 {
@@ -1395,7 +1414,7 @@ fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
 /// which runs no check, counts for building it.
 const Quiet = struct { m: Mod.Quiet, failed: bool, parts: [quiet_parts.len]usize };
 
-const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers", "reader_held", "defect_codes" };
+const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "path_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers", "reader_held", "defect_codes" };
 
 fn quietParts(f: *const Frame) [quiet_parts.len]usize {
     var out: [quiet_parts.len]usize = undefined;
@@ -2436,12 +2455,41 @@ fn atomLive(f: *const Frame, x: Atom) bool {
     return f.ctxLive(x.ctx);
 }
 
+/// Whether a holder's atom `x` and a written atom `y` of one cell can be on
+/// one run (kernel §13 item 13): a cell that a later read finds only
+/// through one arm of a `case` (a path of a call) and that the write finds
+/// only through another is not read after the write on any run. Only the
+/// later-read test asks (`ctx_filter`), as `atomLive` does.
+fn pairLive(f: *const Frame, x: Atom, y: Atom) bool {
+    if (!f.ctx_filter) return true;
+    return f.ctxPair(x.ctx, y.ctx);
+}
+
+/// Whether one run can pass contexts `a` and `b`: no two arms of one
+/// `case`; a meeting of two (`Ctx.both`) is passed where each of them is.
+fn ctxPair(f: *const Frame, a: u32, b: u32) bool {
+    if (a == none or b == none) return true;
+    const ba = f.ctxs.items[a].both;
+    if (ba[0] != none) return f.ctxPair(ba[0], b) and f.ctxPair(ba[1], b);
+    const bb = f.ctxs.items[b].both;
+    if (bb[0] != none) return f.ctxPair(a, bb[0]) and f.ctxPair(a, bb[1]);
+    return f.compatible(a, b);
+}
+
 /// Whether a run through context `c` can hold the write in judgement: for
 /// a meeting of two, only where a run through each can.
 fn ctxLive(f: *const Frame, c: u32) bool {
     const b = f.ctxs.items[c].both;
     if (b[0] != none) return f.ctxLive(b[0]) and f.ctxLive(b[1]);
-    return f.compatible(c, f.judge_ctx);
+    return f.judgeCompat(c);
+}
+
+/// Whether context `c` can be on a run of the write in judgement: compatible
+/// with its context, or with one of the paths that write it (`judge_set`).
+fn judgeCompat(f: *const Frame, c: u32) bool {
+    if (f.judge_set.len == 0) return f.compatible(c, f.judge_ctx);
+    for (f.judge_set) |p| if (f.compatible(c, p)) return true;
+    return false;
 }
 
 /// Whether context `a` is `c` or an arm around it.
@@ -2481,6 +2529,30 @@ fn meet(f: *Frame, had: u32, ctx: u32) Error!u32 {
     return id;
 }
 
+/// The most arms a meeting that a call's paths make names (`meetPath`).
+const path_chain_max = 32;
+
+/// The context of an atom that a version holds on a run through path `p`
+/// of a call only, where it held it in context `had` (kernel §13 item 13):
+/// a meeting that keeps every arm it names (its `depth` counts them), since
+/// a run through two calls' paths is told from another by any of them, and
+/// `meet` keeps two. Only an atom of one path is put in a path's context
+/// (`tagPaths`), so a cell has one such chain at a location, not one for
+/// each way. Past `path_chain_max` arms, `meet`'s two: the pessimistic side.
+fn meetPath(f: *Frame, had: u32, p: u32) Error!u32 {
+    if (had == none) return p;
+    const h = f.ctxs.items[had];
+    const len: u32 = if (h.both[0] != none) @max(h.depth, 2) else 1;
+    if (len >= path_chain_max) return f.meet(had, p);
+    const key: [2]u32 = .{ had, p };
+    if (f.path_memo.get(key)) |hit| return hit;
+    _ = f.charge(1);
+    try f.ctxs.append(f.gpa, .{ .parent = none, .case = none, .arm = 0, .depth = len + 1, .both = key });
+    const id: u32 = @intCast(f.ctxs.items.len - 1);
+    try f.path_memo.put(f.gpa, key, id);
+    return id;
+}
+
 fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
     if (f.wIndexed(w)) return f.atomsReachIndexed(xs);
     for (xs) |x| {
@@ -2492,12 +2564,12 @@ fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
             continue;
         }
         if (f.charge(w.len + 1)) return true;
-        for (w) |y| if (f.overlap(x, y)) return true;
+        for (w) |y| if (f.overlap(x, y) and f.pairLive(x, y)) return true;
         const r = f.roots.items[x.root];
         if (r.kind == .answer and x.root != f.skip_answer) for (f.answers.items[r.ent].base.items) |b| {
             if (f.isOld(b) or !f.atomLive(b)) continue;
             if (f.charge(w.len)) return true;
-            for (w) |y| if (f.overlap(b, y)) return true;
+            for (w) |y| if (f.overlap(b, y) and f.pairLive(b, y)) return true;
         };
     }
     return false;
@@ -2530,7 +2602,7 @@ fn atomsReachIndexed(f: *Frame, xs: []const Atom) bool {
 fn overlapIndexed(f: *Frame, x: Atom, scan: usize) bool {
     const g = f.w_ix.group(x.root, x.e);
     if (f.charge(@min(Loc.lookup_units + g.len, scan))) return true;
-    for (g) |y| if (f.overlap(x, y)) return true;
+    for (g) |y| if (f.overlap(x, y) and f.pairLive(x, y)) return true;
     return false;
 }
 
@@ -3174,6 +3246,9 @@ const DemandIn = struct {
     /// (test 2) in place of the written ones: an exact write through a
     /// cell's row (`ownSupply`) is compared as every cell below the written
     /// place, since the function can store an operand there.
+    /// The paths of the call that write the location (kernel §13 item 13),
+    /// or empty: every run of the call writes it.
+    paths: []const u32 = &.{},
     reach: ?[]const Atom = null,
 };
 
@@ -3391,6 +3466,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         .slot = in.slot,
         .skip = in.skip,
         .send = in.send,
+        .paths = in.paths,
     };
     if (f.chain_root != none and in.op == .call) {
         d.op = .construction;
@@ -3405,7 +3481,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
             i -= 1;
             const d0 = f.demands.items[i];
             if (d0.point != d.point) break;
-            if (d0.op != d.op or d0.kind != d.kind or d0.loc != d.loc or d0.wn != wn or d0.base_inst != d.base_inst or d0.ctx != d.ctx) continue;
+            if (d0.op != d.op or d0.kind != d.kind or d0.loc != d.loc or d0.wn != wn or d0.base_inst != d.base_inst or d0.ctx != d.ctx or d0.paths.len != 0 or d.paths.len != 0) continue;
             const same = for (f.atoms.items[d0.w..][0..wn], f.atoms.items[w..][0..wn]) |x, y| {
                 if (!atomEql(x, y)) break false;
             } else true;
@@ -3450,6 +3526,8 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
     defer f.w_ix.on = false;
     if (d.refused == null) {
         f.judge_ctx = f.cur_ctx;
+        f.judge_set = in.paths;
+        defer f.judge_set = &.{};
         f.judge_at = d.at;
         for (in.others, 0..) |o, k| {
             if (try f.otherReaches(o, in.reach orelse f.atoms.items[w..][0..wn], if (k == in.arg) in.se else none, if (k == in.arg) in.suffix else &.{})) {
@@ -3764,6 +3842,8 @@ fn finishDemands(f: *Frame) Error!void {
         if (d.refused == null) {
             f.skip_answer = d.skip;
             f.judge_ctx = d.ctx;
+            f.judge_set = d.paths;
+            defer f.judge_set = &.{};
             f.judge_at = d.at;
             try f.indexWrite(ws);
             defer f.w_ix.on = false;
@@ -5637,6 +5717,7 @@ fn makeCode(f: *Frame, local: u32) Error!void {
 
 fn caseOf(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     const m = f.m;
+    const top = f.cur_ctx == 0;
     const data = m.datas[inst];
     const scrut = try f.ev(data.lhs);
     const branches = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index);
@@ -5669,6 +5750,12 @@ fn caseOf(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
         f.cur_ctx = saved;
     }
     if (cells0 != null and arm_cells.items.len != 0) try f.joinCells(arm_cells.items, ctxs.items);
+    // The `case` that answers the body, in no arm of another: its arms are
+    // the body's paths (kernel §13 item 13).
+    if (tail and top and !f.path_met) {
+        f.path_met = true;
+        try f.path_ctxs.appendSlice(f.gpa, ctxs.items);
+    }
     return f.joinVal(try m.placeOfInst(inst), outs.items, ctxs.items);
 }
 
@@ -6062,8 +6149,9 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     // What the body leaves in its parameters' cells (kernel §13).
     var renew_shared = false;
     const renew = try f.publishRenew(flags, off, total, &renew_shared);
+    const paths = try f.publishPaths(flags, off, renew);
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .renew = renew, .renew_shared = renew_shared };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .renew = renew, .renew_shared = renew_shared, .paths = paths };
     return c;
 }
 
@@ -6562,7 +6650,7 @@ fn cellResult(f: *Frame, root: u32, roots_before: usize, point: u32) Error!void 
 /// a parameter whose contents the callee renews, the argument's root gets a
 /// new version where the frame follows it, and otherwise what the callee
 /// stores escapes and the handle has another holder.
-fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val, args_apart: bool, casts: bool, inst: u32) Error!void {
+fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val, args_apart: bool, casts: bool, inst: u32, path_ctx: []const u32) Error!void {
     const m = f.m;
     try f.flushShare();
     // The callee's claim that a run leaves each cell of a parameter at one
@@ -6589,9 +6677,52 @@ fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val
                 @memset(done.?, false);
             }
             for (ks.items) |k| done.?[k] = true;
-            try f.renewHandle(base, c, @intCast(j), @intCast(h), ks.items, args[j], casts, false, claim, inst);
+            try f.renewHandle(base, c, @intCast(j), @intCast(h), ks.items, args[j], casts, false, claim, inst, path_ctx);
         }
     }
+}
+
+/// Whether path `k` of `c` writes location `i` of its flags (kernel §13
+/// item 13): the path's own flag, or the union's where no path has it (a
+/// flag a check set after the walk).
+fn pathWrites(c: *const Contract, k: usize, i: usize) bool {
+    if (c.paths[k].writes[i]) return true;
+    if (c.flags[i] & flag_w == 0) return false;
+    for (c.paths) |p| if (p.writes[i]) return false;
+    return true;
+}
+
+/// The atoms of one location of a version, from `start` on, one range of
+/// them for each path of the call (kernel §13 item 13): an atom of every
+/// range is held on every run and is kept once as it is; any other holds
+/// its cell on a run through its path only, so it gets the path's
+/// context (`meet`). Each pair of atoms compared is work (kernel §8).
+fn tagPaths(f: *Frame, start: usize, ranges: []const [2]usize, ctxs: []const u32) Error!void {
+    var out: std.ArrayList(Atom) = .empty;
+    defer out.deinit(f.gpa);
+    // Per atom, the ranges it is in: each range's atoms are unique (`uniqueTail`).
+    var count: std.AutoHashMapUnmanaged(Atom, u32) = .empty;
+    defer count.deinit(f.gpa);
+    const all = f.atoms.items;
+    for (ranges) |rg| for (all[rg[0]..rg[1]]) |a| {
+        _ = f.charge(Loc.lookup_units);
+        const got = try count.getOrPut(f.gpa, a);
+        got.value_ptr.* = if (got.found_existing) got.value_ptr.* + 1 else 1;
+    };
+    for (ranges, ctxs) |rg, ctx| for (all[rg[0]..rg[1]]) |a| {
+        _ = f.charge(Loc.lookup_units);
+        const got = count.getPtr(a).?;
+        // Kept once: as it is where two paths or more have it (one context
+        // cannot name a set of arms; the pessimistic side), with its path's
+        // context where only one has it.
+        if (got.* == 0) continue;
+        var t = a;
+        if (got.* == 1 and t.root != 0) t.ctx = try f.meetPath(t.ctx, ctx);
+        got.* = 0;
+        try out.append(f.gpa, t);
+    };
+    f.atoms.shrinkRetainingCapacity(start);
+    try f.atoms.appendSlice(f.gpa, out.items);
 }
 
 /// `maybe`: the call may leave the contents as they were (a function a
@@ -6599,7 +6730,7 @@ fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val
 /// renewal does not name its own old contents keeps them too.
 /// `claim`: the callee's claim that a run leaves each cell of the
 /// parameter at one location of it holds at this call (`renewCells`).
-fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, maybe: bool, claim: bool, inst: u32) Error!void {
+fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, maybe: bool, claim: bool, inst: u32, path_ctx: []const u32) Error!void {
     const m = f.m;
     const sig = c.layouts[j];
     // A hole of markup can be evaluated where the markup is rendered, after
@@ -6638,6 +6769,37 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
             const cr = cov[k];
             if (cr == none) {
                 try f.atoms.append(f.gpa, outside_atom);
+            } else if (path_ctx.len != 0) {
+                // The callee's paths (kernel §13 item 13): what each leaves
+                // here, held on a run through its arm only.
+                var ranges: std.ArrayList([2]usize) = .empty;
+                defer ranges.deinit(f.gpa);
+                for (c.paths) |p| {
+                    const ps = f.atoms.items.len;
+                    var any = false;
+                    if (cr == Loc.all) {
+                        for (ks) |sk| if (p.renewAt(c.off[j] + sk)) |srcs| {
+                            any = true;
+                            try f.expandSrcs(base, srcs, sig, sk, xl, k, &st);
+                        };
+                    } else if (p.renewAt(c.off[j] + cr)) |srcs| {
+                        any = true;
+                        try f.expandSrcs(base, srcs, sig, cr, xl, k, &st);
+                    }
+                    // A path that leaves the location as it was.
+                    if (!any) _ = try f.leavesAs(v, r.place, k, &f.atoms);
+                    try f.uniqueTail(&f.atoms, ps);
+                    try ranges.append(f.gpa, .{ ps, f.atoms.items.len });
+                }
+                try f.tagPaths(start, ranges.items, path_ctx);
+                // The claim and its answers are the union's.
+                if (cr == Loc.all) {
+                    tested[k] = true;
+                } else if (c.renewAt(c.off[j] + cr)) |srcs| {
+                    tested[k] = if (ans_claim) opaque_at[k] else !by_claim or for (srcs) |s| {
+                        if (s.kind == .answer) break true;
+                    } else false;
+                } else tested[k] = !by_claim;
             } else if (cr == Loc.all) {
                 for (ks) |sk| if (c.renewAt(c.off[j] + sk)) |srcs| try f.expandSrcs(base, srcs, sig, sk, xl, k, &st);
             } else if (c.renewAt(c.off[j] + cr)) |srcs| {
@@ -7044,6 +7206,168 @@ fn publishRenew(f: *Frame, flags: []u8, off: []const u32, total: u32, shared: *b
         };
     }
     return if (any) rn else &.{};
+}
+
+/// Whether a run through the arm of context `p` can pass context `c`: `c`
+/// is no other arm of the `case` around `p`, nor one inside such an arm.
+/// A meeting of two (`Ctx.both`) is passed where each of them is.
+fn ctxOnPath(f: *const Frame, c: u32, p: u32) bool {
+    if (c == none) return true;
+    const b = f.ctxs.items[c].both;
+    if (b[0] != none) return f.ctxOnPath(b[0], p) and f.ctxOnPath(b[1], p);
+    return f.compatible(c, p);
+}
+
+/// Value `v` of a return point as a run through the arm of context `p`
+/// can leave it: each join with only its values whose arm can be on that
+/// run (kernel §13 item 13). A join with none of them is kept whole.
+fn restrictPath(f: *Frame, v: Val, p: u32, depth: u32) Error!Val {
+    if (v == v_none) return v;
+    const n = f.nodes.items[v];
+    if (n.tag != .join or depth >= 8) return v;
+    var vals: std.ArrayList(Val) = .empty;
+    defer vals.deinit(f.gpa);
+    var ctxs: std.ArrayList(u32) = .empty;
+    defer ctxs.deinit(f.gpa);
+    var same = true;
+    // Each value of each join is a step (kernel §8).
+    _ = f.charge(n.b);
+    for (0..n.b) |ki| {
+        const a = f.lists.items[n.a + 2 * ki];
+        const c = f.lists.items[n.a + 2 * ki + 1];
+        if (!f.ctxOnPath(c, p)) {
+            same = false;
+            continue;
+        }
+        const r = try f.restrictPath(a, p, depth + 1);
+        if (r != a) same = false;
+        try vals.append(f.gpa, r);
+        try ctxs.append(f.gpa, c);
+    }
+    if (same or vals.items.len == 0) return v;
+    if (vals.items.len == 1) return vals.items[0];
+    return f.joinVal(n.place, vals.items, ctxs.items);
+}
+
+/// The parameter locations that the atoms `xs` written mark (`markAtoms`,
+/// with no memo of its own: each local entry once in `seen`), set in `out`
+/// by the frame's parameter entries.
+fn pathMark(f: *Frame, xs: []const Atom, seen: *std.DynamicBitSetUnmanaged, out: []bool) Error!void {
+    f.mark_stack.clearRetainingCapacity();
+    try f.mark_stack.appendSlice(f.gpa, xs);
+    while (f.mark_stack.pop()) |x| {
+        const r = f.roots.items[x.root];
+        switch (r.kind) {
+            .param, .capture => out[r.ent + x.e] = true,
+            .local => {
+                const ent = f.rents.items[r.ent + x.e];
+                switch (ent.kind) {
+                    .own, .alias, .derived => continue,
+                    .taken, .version => {},
+                }
+                if (seen.isSet(r.ent + x.e)) continue;
+                seen.set(r.ent + x.e);
+                // Each entry and each atom of its run is a step (kernel §8).
+                if (f.charge(1 + ent.len)) return;
+                try f.mark_stack.appendSlice(f.gpa, f.atoms.items[ent.start..][0..ent.len]);
+            },
+            .answer, .outside, .fresh => {},
+        }
+    }
+}
+
+/// The body's paths (kernel §13 item 13): for each arm of the `case` that
+/// answers it, what a run through that arm writes of the parameters and
+/// leaves in their cells. None where the body has fewer than two, or where
+/// each says what the union says.
+fn publishPaths(f: *Frame, flags: []const u8, off: []const u32, renew: []const ?[]const Src) Error![]const CMod.Path {
+    const m = f.m;
+    if (safety) std.debug.assert(f.ret_cells.items.len == f.ret_reads.items.len);
+    if (f.path_ctxs.items.len < 2 or m.steps_over or f.failed) return &.{};
+    // A body that renews no cell: its paths tell no value of the caller
+    // apart, since a caller tells them apart where a version holds a
+    // path's cells (`tagPaths`).
+    if (renew.len == 0) return &.{};
+    const total = flags.len;
+    const paths = try m.arena.alloc(CMod.Path, f.path_ctxs.items.len);
+    var differs = false;
+    const mark = try f.gpa.alloc(bool, f.pflags.items.len);
+    defer f.gpa.free(mark);
+    var seen = try std.DynamicBitSetUnmanaged.initEmpty(f.gpa, f.rents.items.len);
+    defer seen.deinit(f.gpa);
+    var vals: std.ArrayList(Val) = .empty;
+    defer vals.deinit(f.gpa);
+    var tmp: std.ArrayList(Atom) = .empty;
+    defer tmp.deinit(f.gpa);
+    var srcs: std.ArrayList(Src) = .empty;
+    defer srcs.deinit(f.gpa);
+    // Each demand and each return point placed in each path is a step (kernel §8).
+    _ = f.charge(f.path_ctxs.items.len * (f.demands.items.len + f.ret_cells.items.len + 1));
+    for (paths, f.path_ctxs.items) |*out, p| {
+        // What a run through the path writes: each demand that can be on it.
+        @memset(mark, false);
+        seen.unsetAll();
+        for (f.demands.items) |d| {
+            if (d.op == .supply or !f.ctxOnPath(d.ctx, p)) continue;
+            try f.pathMark(f.atoms.items[d.w..][0..d.wn], &seen, mark);
+        }
+        const writes = try m.arena.alloc(bool, total);
+        @memset(writes, false);
+        for (f.params.items, 0..) |root, k| {
+            const r = f.roots.items[root];
+            const n = m.loc.layouts.items[r.layout].len;
+            for (0..n) |e| writes[off[k] + e] = mark[r.ent + e];
+        }
+        for (writes, flags) |w, x| {
+            if (safety and w and x & flag_w == 0) std.debug.panic("own3: a path writes a location that the union does not (kernel §13 item 13)", .{});
+            if (w != (x & flag_w != 0)) differs = true;
+        }
+        // What a run through the path leaves in the cells.
+        var rn: []?[]const Src = &.{};
+        if (renew.len != 0) for (f.params.items, 0..) |root, j| {
+            const r = f.roots.items[root];
+            if (!r.tracked) continue;
+            vals.clearRetainingCapacity();
+            var renewed = false;
+            for (f.ret_cells.items, f.ret_reads.items) |rc, rd| if (rc[0] == root and f.ctxOnPath(rd.ctx, p)) {
+                const v = try f.restrictPath(rc[1], p, 0);
+                if (!f.onlyRenamed(v, root, 0)) renewed = true;
+                try vals.append(f.gpa, v);
+            };
+            if (!renewed) continue;
+            if (rn.len == 0) {
+                rn = try m.arena.alloc(?[]const Src, total);
+                @memset(rn, null);
+            }
+            const val = if (vals.items.len == 1) vals.items[0] else try f.joinVal(r.place, vals.items, &.{});
+            const inner = try f.innerOf(r.layout);
+            const es = m.loc.layoutEntries(r.layout);
+            for (inner, 0..) |in, k| if (in) {
+                tmp.clearRetainingCapacity();
+                const dup = try f.leavesAs(val, r.place, @intCast(k), &tmp);
+                try f.uniqueTail(&tmp, 0);
+                srcs.clearRetainingCapacity();
+                f.newVisit();
+                for (tmp.items) |a| try f.atomSrcsIn(a, &srcs);
+                if (dup and !es[k].single) try srcs.append(f.gpa, Src.twice);
+                rn[off[j] + k] = try CMod.normal(m.arena, srcs.items);
+            };
+        };
+        out.* = .{ .writes = writes, .renew = rn };
+        for (0..total) |i| {
+            const x = out.renewAt(i);
+            const y: ?[]const Src = if (renew.len == 0) null else renew[i];
+            if ((x == null) != (y == null) or (x != null and !std.mem.eql(u64, try srcKeys(f.gpa, x.?), try srcKeys(f.gpa, y.?)))) differs = true;
+        }
+    }
+    if (!differs) return &.{};
+    return paths;
+}
+
+fn srcKeys(gpa: std.mem.Allocator, xs: []const Src) Error![]const u64 {
+    const out = try gpa.alloc(u64, xs.len);
+    for (out, xs) |*o, x| o.* = x.key();
+    return out;
 }
 
 /// At a return point (a `?`, the end of the walk): each tracked
@@ -7755,7 +8079,7 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
             @memset(done.?, false);
         }
         for (ks.items) |x| done.?[x] = true;
-        try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, inst);
+        try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, inst, &.{});
     }
 }
 
@@ -8844,11 +9168,37 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
             if (try f.parkedHeld(args[j], sig, @intCast(h), rest.items)) try m.addRefusal(f, inst, .escaped, "the callee writes in place a value it stored in the cell before another fiber could run, and the cell has another holder");
         };
     };
-    // What the callee writes.
+    // The callee's paths (kernel §13 item 13): the call is a `case` of its
+    // own, whose arms are the paths, each made once here.
+    const npaths: usize = if (f.cells_any and f.markup_reads == null and c.paths.len >= 2 and !(code.decl[0] != none and m.isWorded(code.decl))) c.paths.len else 0;
+    const path_ctx = try f.gpa.alloc(u32, npaths);
+    defer f.gpa.free(path_ctx);
+    if (npaths != 0) {
+        f.path_serial += 1;
+        for (path_ctx, 0..) |*pc, k| {
+            const saved = try f.enterArm(path_case | f.path_serial, @intCast(k));
+            pc.* = f.cur_ctx;
+            f.cur_ctx = saved;
+        }
+        // Each path read at each location is work (kernel §8).
+        _ = f.charge(npaths * c.flags.len);
+    }
+    // What the callee writes: a location that some paths write and others
+    // do not is judged on runs through those paths (`judge_set`).
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
         const n = c.off[j + 1] - c.off[j];
         for (0..n) |se| if (c.flags[c.off[j] + se] & flag_w != 0) {
+            var on: []const u32 = &.{};
+            if (npaths != 0) {
+                const set = try f.gpa.alloc(u32, npaths);
+                var len: usize = 0;
+                for (path_ctx, 0..) |pc, k| if (pathWrites(c, k, c.off[j] + se)) {
+                    set[len] = pc;
+                    len += 1;
+                };
+                if (len < npaths) on = set[0..len];
+            }
             const w: u32 = @intCast(f.atoms.items.len);
             const dup = try f.argLeaves(args[j], sig, @intCast(se), &.{}, false, &f.atoms);
             // A written argument of no cell asks nothing, and is accepted;
@@ -8869,6 +9219,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
                 .dup = dup and !m.loc.layoutEntries(sig)[se].single,
                 .list_only = m.loc.layoutEntries(sig)[se].kind == .list,
                 .kind = if (code.decl[0] != none and m.isWorded(code.decl)) .writer else .callsite,
+                .paths = on,
             });
         };
     }
@@ -8900,7 +9251,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // are apart, and a summary location fed by two sources, or by an
     // answer, is `twice`; nor is a renewal's claim (§13 item 5).
     const args_apart = if (es.len == 0 and !c.renews()) false else try f.argsApartAt(args, c, arg_insts) and !try f.argsSplit(args, c);
-    if (c.renews()) try f.renewCells(&base, c, args, args_apart, casts, inst);
+    if (c.renews()) try f.renewCells(&base, c, args, args_apart, casts, inst, path_ctx);
     // An answer of a type with no location holds `outside` (`rootVal`).
     if (es.len == 0) return v_outside;
     // A new cell's handle that the answer holds is the answer's alone only
@@ -11148,7 +11499,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                     @memset(done.?, false);
                 }
                 for (ks.items) |x| done.?[x] = true;
-                try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, site.inst);
+                try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, site.inst, &.{});
             }
             continue;
         }

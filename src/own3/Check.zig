@@ -3731,6 +3731,18 @@ pub const Mod = struct {
                 };
             }
         }
+        // The body's paths (kernel §13 item 13): what each writes and renews.
+        for (c.paths, 0..) |p, pk| {
+            w.print(" path{d}", .{pk + 1}) catch return error.OutOfMemory;
+            for (0..c.arity) |j| for (m.loc.layoutEntries(c.layouts[j]), 0..) |e, k| {
+                const i = c.off[j] + k;
+                if (p.writes[i]) w.print(" π{d}{s} W", .{ j + 1, try m.locText(e.loc) }) catch return error.OutOfMemory;
+                if (p.renewAt(i)) |srcs| {
+                    w.print(" π{d}{s} :=", .{ j + 1, try m.locText(e.loc) }) catch return error.OutOfMemory;
+                    try m.srcsText(w, srcs);
+                }
+            };
+        }
         w.writeAll("; res") catch return error.OutOfMemory;
         for (m.loc.layoutEntries(c.layouts[c.arity]), 0..) |e, k| {
             w.print(" [{s}", .{try m.locText(e.loc)}) catch return error.OutOfMemory;

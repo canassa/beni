@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -2511,6 +2511,8 @@ contents of a cell are locations, and that a call can change what a location of 
    are each a union over its arms too, and a caller reads them together, so after `apply r Undo`
    whose `Add` arm writes `present`, a later read of `future` still reads the old `present` as
    written (`later-use`); keeping the arms of a callee apart in its caller is the next step.
+   *Amended 2026-11-22:* item 13 keeps them apart: a body publishes its paths, and its caller reads
+   the call as a `case` of them.
 6. **Control flow.** The arms of a `case` each start from the versions before it, and after it a root
    whose latest differs between arms is the join of the arms' latest, each in its arm's context
    (`joinCells`, §6 rule 7). A later argument of a call that a lowering can short-circuit
@@ -2867,6 +2869,58 @@ contents of a cell are locations, and that a call can change what a location of 
       are hooks above. A fiber that is masked at the throw goes on running its masked code there
       (`halt` latches the interrupt only): that is not covered yet (#2610, below).
     `run/CellFibersInPlace` and its live twin `run/CellFibersInPlaceLive`.
+
+13. **A callee's paths** (`Contract.paths`, `Frame.publishPaths`, `tagPaths`, `pairLive`). *Added
+    2026-11-22 (blind round BN's undo app).* A run of a body whose answer is a `case` (its outermost
+    `case` in tail position, in no arm of another: `path_ctxs`) goes through one arm of it, its
+    **path**. The union of item 3 and the flags of §4 name what every path does at once, and a caller
+    read the writes of one path and the renewal of another as one run: after `apply r Undo`, whose
+    `Add` arm writes `present` and whose `Undo` arm moves the old `present` to `future`, a read of
+    `future` read the written `present` (`later-use`). So a walked body that renews a cell (item 3)
+    and has two paths or more publishes, for each path:
+    - **its writes**: each parameter location that a demand marks (§5) whose context can be on a
+      run through the arm (`ctxOnPath`: the arm, an arm inside it, an arm of another `case`, or none),
+      followed through the runs as `markAtoms` follows them (`pathMark`); a demand in no arm of the
+      `case` is in every path;
+    - **its renewal** (item 3), from each return point whose context can be on a run through the
+      arm, each join read with only its values whose arm can be on it (`restrictPath`). A path whose
+      values are the parameter itself renews nothing.
+
+    Every other fact (what the body reads, lets escape, answers, marks, hands its function
+    parameters, the claim of item 5, and the union itself) is the one contract. Where no path says
+    less than the union, none is published. A location that the union writes and no path does (a
+    flag a check set after the walk) is written in every path (`pathWrites`).
+
+    A caller that applies the contract to its arguments (`applyAt`; not a contract of words) reads
+    the call as a `case` of its own whose arms are the paths, made once at the call (`path_case`,
+    a `case` of no instruction). A location that some paths write and others do not is one demand,
+    judged on runs through the paths that write it (`Demand.paths`, `judge_set`: `atomLive` and
+    `armLive` read a context as live where one of them can be on a run with it). The call makes one
+    version (item 5), as before, with the union's claim; each location holds, from each path, its
+    renewal there, or its old contents where the path renews it not, and a cell that one path alone
+    puts there holds the path's arm as its context (`tagPaths`): it is in the location on a run
+    through that path only. A cell that two paths or more put there keeps the context it had (one
+    context names no set of arms: the pessimistic side), and is kept once. A cell found through the
+    paths of several calls keeps every arm (`meetPath`, a meeting that names them all, up to
+    `path_chain_max`, past which `meet`'s two: the pessimistic side), since a run through two calls'
+    paths is told from another by any of them; `meet` keeps two, and a chain of five calls read the
+    second's arm as dropped. The later-read test (§5 test 4) compares a holder's cell with a written
+    cell only where the two can be on one run (`pairLive`, `ctxPair`: no two arms of one `case`): a
+    cell that a later read finds only through one path and that the write finds only through another
+    is not read after the write on any run. The paths are the callee's runs, whatever the caller
+    holds: no claim of the caller's is read for them. A function that a callee runs within its call,
+    a writer's run (item 12), a call in a hole of markup and a contract of words read the union, as
+    before. A contract read from another module keeps its paths (`dupContract`). Two contracts of a
+    round join path by path, and a contract with none is read as each path being its union; two with
+    other numbers of paths join to none. Each path read at each location, each cell placed in a path,
+    and each demand and return point a callee places in a path is work (§8).
+    What it does not cover: a callee's paths are the arms of its own answering `case`, not those of a
+    function it hands a cell's row (the `Just` and `Nothing` arms of the callback in `Ref.update r λh
+    → case …`), nor those of a callee it calls in an arm; such a callee's renewal is one union in each
+    path, so BN's undo app with `Undo` and `Redo` callbacks that keep `h` on `Nothing` is still
+    refused (`later-use`). And a `case` in the caller whose arms make versions of one cell joins them,
+    and a later call is refused `disjoint` where one arm moved a cell another arm left in place.
+    `run/CellCalleePaths` and its live twin `run/CellCalleePathsLive`.
 
 What it does not cover yet, each a refusal: a reader that the frame joins before the contents leave it
 (`n = Task.join a; ( Ref.get r, n )`): what it read at the return point escapes, although it no longer

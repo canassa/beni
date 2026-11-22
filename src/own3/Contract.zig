@@ -228,6 +228,11 @@ pub const Contract = struct {
     /// and `renew` is their union: two locations of the version a caller makes
     /// are apart. A worded row's is true: its words state no count.
     renew_shared: bool = false,
+    /// The body's paths (kernel §13 item 13): one per arm of the `case`
+    /// that answers it, each with what a run through that arm writes and
+    /// renews. Empty where the body has fewer than two, or where no path
+    /// says less than the union. Every other fact is the union's.
+    paths: []const Path = &.{},
 
     /// The renewal of location `i` of `flags`, or null.
     pub fn renewAt(c: *const Contract, i: usize) ?[]const Src {
@@ -250,6 +255,89 @@ pub const Contract = struct {
         return false;
     }
 };
+
+/// One path of a body (kernel §13 item 13): a run through one arm of the
+/// `case` that answers it.
+pub const Path = struct {
+    /// Per location of `flags`: a run through the path writes it.
+    writes: []const bool,
+    /// As `Contract.renew`, for a run through the path: empty where it
+    /// renews nothing.
+    renew: []const ?[]const Src = &.{},
+
+    pub fn renewAt(p: *const Path, i: usize) ?[]const Src {
+        if (p.renew.len == 0) return null;
+        return p.renew[i];
+    }
+};
+
+fn pathEql(a: Path, b: Path) bool {
+    if (!std.mem.eql(bool, a.writes, b.writes)) return false;
+    for (0..a.writes.len) |i| {
+        const x = a.renewAt(i);
+        const y = b.renewAt(i);
+        if ((x == null) != (y == null)) return false;
+        if (x) |xs| if (!srcsEql(xs, y.?)) return false;
+    }
+    return true;
+}
+
+/// Path `k` of `c` as a path: its own, or the union where `c` has none.
+fn pathOf(c: *const Contract, k: usize) Path {
+    if (c.paths.len != 0) return c.paths[k];
+    return .{ .writes = &.{}, .renew = c.renew };
+}
+
+/// Whether path `p` of `c` writes location `i` (a contract with no paths: the union's flag).
+fn pathWrites(c: *const Contract, p: Path, i: usize) bool {
+    if (p.writes.len == 0) return c.flags[i] & flag_w != 0;
+    return p.writes[i];
+}
+
+/// The renewal of two contracts at one location of parameter `j`: null
+/// where neither renews it, else either's sources, or the location's own
+/// cells where one leaves it as it was (kernel §13).
+fn joinRenew(arena: Allocator, a: *const Contract, x: ?[]const Src, y: ?[]const Src, j: usize, i: usize) Allocator.Error!?[]const Src {
+    if (x == null and y == null) return null;
+    const self = [1]Src{.{ .kind = .param, .a = @intCast(j), .e = @intCast(i - a.off[j]) }};
+    return try normal(arena, try std.mem.concat(arena, Src, &.{ x orelse &self, y orelse &self }));
+}
+
+/// The paths of the join of `a` and `b` (kernel §13 item 13): path by path,
+/// a contract with none read as each path being its union; none where both
+/// have none, or where they have other numbers of them.
+fn joinPaths(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.Error![]const Path {
+    if (a.paths.len == 0 and b.paths.len == 0) return &.{};
+    if (a.paths.len != 0 and b.paths.len != 0 and a.paths.len != b.paths.len) return &.{};
+    const n = @max(a.paths.len, b.paths.len);
+    const out = try arena.alloc(Path, n);
+    for (out, 0..) |*o, k| {
+        const p = pathOf(a, k);
+        const q = pathOf(b, k);
+        const writes = try arena.alloc(bool, a.flags.len);
+        for (writes, 0..) |*w, i| w.* = pathWrites(a, p, i) or pathWrites(b, q, i);
+        var renew: []const ?[]const Src = &.{};
+        if (p.renew.len != 0 or q.renew.len != 0) {
+            const rn = try arena.alloc(?[]const Src, a.flags.len);
+            for (0..a.arity) |j| for (a.off[j]..a.off[j + 1]) |i| {
+                rn[i] = try joinRenew(arena, a, p.renewAt(i), q.renewAt(i), j, i);
+            };
+            renew = rn;
+        }
+        o.* = .{ .writes = writes, .renew = renew };
+    }
+    return out;
+}
+
+fn dupPaths(a: Allocator, ps: []const Path) Allocator.Error![]const Path {
+    const out = try a.alloc(Path, ps.len);
+    for (out, ps) |*o, p| {
+        const renew = try a.alloc(?[]const Src, p.renew.len);
+        for (renew, p.renew) |*r, x| r.* = if (x) |xs| try a.dupe(Src, xs) else null;
+        o.* = .{ .writes = try a.dupe(bool, p.writes), .renew = renew };
+    }
+    return out;
+}
 
 fn srcLess(_: void, x: Src, y: Src) bool {
     return x.key() < y.key();
@@ -305,6 +393,8 @@ pub fn eql(a: *const Contract, b: *const Contract) bool {
         if ((x == null) != (y == null)) return false;
         if (x) |xs| if (!srcsEql(xs, y.?)) return false;
     }
+    if (a.paths.len != b.paths.len) return false;
+    for (a.paths, b.paths) |p, q| if (!pathEql(p, q)) return false;
     return true;
 }
 
@@ -364,7 +454,7 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
         renew = rn;
     }
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b) };
     return out;
 }
 
@@ -426,7 +516,7 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     const renew = try a.alloc(?[]const Src, c.renew.len);
     for (renew, c.renew) |*r, x| r.* = if (x) |xs| try a.dupe(Src, xs) else null;
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths) };
     return out;
 }
 

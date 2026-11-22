@@ -1,0 +1,78 @@
+-- A callee whose answer is a `case` writes the cell's `present` on one arm
+-- and moves `present` to `future` on another (blind round BN's undo app).
+-- A run goes through one arm, so after the call the old `present` is in
+-- `future` only on a run where nothing wrote it: the callee publishes what
+-- each arm writes and leaves in the cell, and the caller reads the call as
+-- a `case` of those paths (ownership-v3-kernel.md §13 item 13). Each write
+-- is accepted and runs in place.
+import List
+import Maybe
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+type alias Hist =
+    present : List Int
+    future : List (List Int)
+
+
+type Cmd
+    = Add Int
+    | Undo
+    | Clear
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showH : Hist → String
+showH h =
+    fut = String.join (List.map h.future ints) "|"
+    "${ints h.present} / ${fut}"
+
+
+apply : Ref Hist, Cmd → ⊤
+apply r c =
+    case c of
+        Add k →
+            Ref.update r λh → { h | present = List.push h.present k }
+        Undo →
+            Ref.update r λh → { present = [ 0 ], future = List.push h.future h.present }
+        Clear →
+            Ref.set r { present = [], future = [] }
+
+
+inRow : Int → String
+inRow seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    apply r (Add 1)
+    apply r Undo
+    apply r (Add 2)
+    apply r Undo
+    apply r (Add 3)
+    showH (Ref.get r)
+
+
+thenUpdate : Int → String
+thenUpdate seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    apply r Undo
+    Ref.update r λh → { h | present = List.push h.present 7 }
+    apply r Clear
+    apply r (Add 8)
+    showH (Ref.get r)
+
+
+takenThenAdded : Int → String
+takenThenAdded seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    apply r Undo
+    x = Maybe.withDefault (List.last (Ref.get r).future) []
+    apply r (Add 1)
+    ints x
+
+
+main : Program
+main = Node.printLines [ inRow 1, inRow 4, thenUpdate 2, takenThenAdded 3 ]
