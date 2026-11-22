@@ -3,7 +3,9 @@
 -- list the frame took out of the cell before and captures in the update;
 -- one list stored at two places by a helper; a value taken out of the cell
 -- before the move and read after the write; the same where the move does
--- not run. Each read sees the old value, so each write is refused.
+-- not run; a callback that answers one list at two places through a function
+-- it calls (reviewer of the change). Each read sees the old value, so each
+-- write is refused.
 import List
 import Maybe
 import Node exposing (Program)
@@ -12,7 +14,9 @@ import String
 
 
 type alias Hist =
-    { past : List (List Int), present : List Int, future : List (List Int) }
+    past : List (List Int)
+    present : List Int
+    future : List (List Int)
 
 
 ints : List Int → String
@@ -20,31 +24,46 @@ ints xs = String.join (List.map xs String.fromInt) ","
 
 
 showH : Hist → String
-showH h = String.join [ String.join (List.map h.past ints) "|", ints h.present, String.join (List.map h.future ints) "|" ] " / "
+showH h =
+    String.join
+        [ String.join (List.map h.past ints) "|"
+        , ints h.present
+        , String.join (List.map h.future ints) "|"
+        ]
+        " / "
 
 
 undoOnce : Ref Hist → ⊤
-undoOnce r =
-    Ref.update r λh →
-        case List.last h.past of
-            Just p →
-                { past = List.take h.past (List.length h.past - 1), present = List.copy p, future = List.push h.future h.present }
-            Nothing →
-                h
+undoOnce r = Ref.update r λh →
+    case List.last h.past of
+        Just p →
+            { past = List.take h.past (List.length h.past - 1)
+            , present = List.copy p
+            , future = List.push h.future h.present
+            }
+        Nothing →
+            h
 
 
 aliasOnce : Ref Hist → ⊤
-aliasOnce r =
-    Ref.update r λh →
-        case List.last h.past of
-            Just _ →
-                { h | future = List.push h.future h.present }
-            Nothing →
-                h
+aliasOnce r = Ref.update r λh →
+    case List.last h.past of
+        Just _ →
+            { h | future = List.push h.future h.present }
+        Nothing →
+            h
 
 
 put : Ref Hist, List Int → ⊤
 put r x = Ref.update r λh → { h | present = x, future = [ x ] }
+
+
+second : List Int × List Int → List Int
+second p = p.1
+
+
+showP : List Int × List Int → String
+showP p = "${ints p.0} / ${ints p.1}"
 
 
 mk : ⊤ → Ref Hist
@@ -99,5 +118,26 @@ loanNoMove ⊤ =
     ints old
 
 
+byFunction : ⊤ → String
+byFunction ⊤ =
+    r = Ref.make ( [ 1 ], [ 3 ] )
+    g = second
+    Ref.update r λv → ( g v, v.1 )
+    Ref.update r λv → ( List.push v.0 5, v.1 )
+    showP (Ref.get r)
+
+
+byCapture : ⊤ → String
+byCapture ⊤ =
+    r = Ref.make ( [ 1 ], [ 3 ] )
+    x = [ 7 ]
+    g = λ⊤ → x
+    Ref.update r λ_ → ( g ⊤, g ⊤ )
+    Ref.update r λv → ( List.push v.0 5, v.1 )
+    showP (Ref.get r)
+
+
 main : Program
-main = Node.printLines [ aliased ⊤, captured ⊤, stored ⊤, loan ⊤, loanNoMove ⊤ ]
+main =
+    Node.printLines
+        [ aliased ⊤, captured ⊤, stored ⊤, loan ⊤, loanNoMove ⊤, byFunction ⊤, byCapture ⊤ ]

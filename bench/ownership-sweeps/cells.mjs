@@ -32,7 +32,12 @@
 //   `cell`, `loan` (`name`, `closure`) and `stored`; the frame's own write in an arm that runs, then a
 //   read after the `if` or `case` (#2594): `armIf`, `armElse`, `armBoth`, `armCase`, `armVal`, `armMod`
 //   and `armHelper`, live where `upd` is, with the readers `none`, `cell`, `loan` (`name`, `closure`,
-//   `list`), `stored`, `mid`, `name2`, `name2cell`, `part0` and `part1`;
+//   `list`), `stored`, `mid`, `name2`, `name2cell`, `part0` and `part1`; a body whose arms leave one cell at
+//   another place each, then the write of the first part (`pair` only; kernel §13 item 5): `moveOn` (a
+//   helper's arm that moves the first part to the second and copies the second in its place: dead),
+//   `moveOff` (its other arm, which leaves the pair: live where `upd` is), `moveDirect` (`moveOn` in the
+//   frame) and `moveAlias` (an arm that puts the first part at both places, the pair read after: live),
+//   with the readers `none`, `cell`, `loan` (`name`, `closure`, `list`), `stored`, `mid`, `part0`, `part1`;
 // - reader: `none` (nothing old is read after the write), `cell` (`Ref.get r` after the write), `loan`
 //   (a value `Ref.get` answered before the write, read after it), `stored` (the value the cell was made
 //   with, read after the write), `mid` (a value `Ref.get` answered between two writes, read after the

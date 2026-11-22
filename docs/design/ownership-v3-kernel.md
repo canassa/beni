@@ -2502,7 +2502,9 @@ contents of a cell are locations, and that a call can change what a location of 
    about its result (`!nonlinear`, §4.4) the same way (`answerClaim`): where every source of the
    renewal is that answer, the function is known code that does not cast, its result's layout is
    the contents' own, entry for entry, with no wide entry, and what it is handed — the cell and
-   its captures — is apart. A cell at two locations in one run (`{ h | future = List.push h.future
+   its captures — is apart; an entry of its result that holds the answer of a function it was handed or
+   captured (`( g ⊤, g ⊤ )`, `( second v, v.1 )` with `g = second`), which its frame saw as an opaque root,
+   is tested by its atoms there too (the lane's adversarial reviewer, eleven programs). A cell at two locations in one run (`{ h | future = List.push h.future
    h.present }`), a value handed or captured that is also in the cell, and a function that casts
    or is unknown keep the test by atoms (`run/CellRenewalArmsApart`, its live twin
    `run/CellRenewalArmsApartLive`). What it does not cover: the writes and the renewal of a body

@@ -14,7 +14,9 @@ import String
 
 
 type alias Hist =
-    { past : List (List Int), present : List Int, future : List (List Int) }
+    past : List (List Int)
+    present : List Int
+    future : List (List Int)
 
 
 ints : List Int → String
@@ -22,13 +24,15 @@ ints xs = String.join (List.map xs String.fromInt) ","
 
 
 undoOnce : Ref Hist → ⊤
-undoOnce r =
-    Ref.update r λh →
-        case List.last h.past of
-            Just p →
-                { past = List.take h.past (List.length h.past - 1), present = List.copy p, future = List.push h.future h.present }
-            Nothing →
-                h
+undoOnce r = Ref.update r λh →
+    case List.last h.past of
+        Just p →
+            { past = List.take h.past (List.length h.past - 1)
+            , present = List.copy p
+            , future = List.push h.future h.present
+            }
+        Nothing →
+            h
 
 
 direct : ⊤ → String
@@ -37,7 +41,10 @@ direct ⊤ =
     Ref.update r λh →
         case List.last h.past of
             Just p →
-                { past = List.take h.past (List.length h.past - 1), present = List.copy p, future = List.push h.future h.present }
+                { past = List.take h.past (List.length h.past - 1)
+                , present = List.copy p
+                , future = List.push h.future h.present
+                }
             Nothing →
                 h
     Ref.update r λh → { h | present = List.push h.present 5 }

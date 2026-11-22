@@ -1,6 +1,8 @@
-# The live twins of CellRenewalArmsApart: an arm that pushes `present` onto `future` and keeps it, so one run leaves one list at two places; a list taken out of the cell and captured by the move; one list a helper stores at two places; a value taken out of the cell before the move, or where the move does not run, read after the write. Each read sees the old value, so each write is refused.
-58:5 list_still_used call
-72:5 list_still_used call
-80:5 list_still_used call
-89:5 list_still_used call
-98:5 list_still_used call
+# The live twins of CellRenewalArmsApart: an arm that pushes `present` onto `future` and keeps it, so one run leaves one list at two places; a list taken out of the cell and captured by the move; one list a helper stores at two places; a value taken out of the cell before the move, or where the move does not run, read after the write; a callback that answers one list at two places through a function it calls, an alias of a top-level function or a closure. Each read sees the old value, so each write is refused.
+77:5 list_still_used call
+91:5 list_still_used call
+99:5 list_still_used call
+108:5 list_still_used call
+117:5 list_still_used call
+126:5 list_still_used call
+136:5 list_still_used call

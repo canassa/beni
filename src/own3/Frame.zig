@@ -6603,7 +6603,10 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
         // (`claimed`), and the wide entry of the callee it shares with
         // another (`split`), as for a call's result (`apply`).
         const by_claim = claim and strong and !maybe;
-        const ans_claim = strong and !maybe and !casts and try f.answerClaim(base, c, j, ks, v, xl, t.hx, xks.items) != none;
+        const opaque_at = try f.gpa.alloc(bool, xes.len);
+        defer f.gpa.free(opaque_at);
+        @memset(opaque_at, true);
+        const ans_claim = strong and !maybe and !casts and try f.answerClaim(base, c, j, ks, v, xl, t.hx, xks.items, opaque_at) != none;
         const tested = try f.gpa.alloc(bool, xes.len);
         defer f.gpa.free(tested);
         @memset(tested, true);
@@ -6622,7 +6625,7 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
                 try f.expandSrcs(base, srcs, sig, cr, xl, k, &st);
                 // The answer of a function parameter, which the callee saw as
                 // an opaque root, is tested by its atoms.
-                tested[k] = if (ans_claim) false else !by_claim or for (srcs) |s| {
+                tested[k] = if (ans_claim) opaque_at[k] else !by_claim or for (srcs) |s| {
                     if (s.kind == .answer) break true;
                 } else false;
             } else {
@@ -6708,7 +6711,6 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
     try f.flushShare();
 }
 
-
 /// A call that renews the contents with the answer of a function it runs
 /// once (`cellupdate`, `Fn.once`): the function parameter whose known code's claim
 /// that its result holds each cell of its parameters once (`!nonlinear`)
@@ -6718,7 +6720,7 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
 /// the contents' own, entry for entry, with no wide entry (so the code's
 /// locations are the version's); and what it is handed, the cell and its
 /// captures, holds no cell at two places (the apart-arguments rule, §4.4).
-fn answerClaim(f: *Frame, base: *const Use, c: *const Contract, j: u32, ks: []const u32, v: Val, xl: u32, hx: u32, xks: []const u32) Error!u32 {
+fn answerClaim(f: *Frame, base: *const Use, c: *const Contract, j: u32, ks: []const u32, v: Val, xl: u32, hx: u32, xks: []const u32, opaque_at: []bool) Error!u32 {
     const m = f.m;
     var jf: u32 = none;
     for (ks) |sk| if (c.renewAt(c.off[j] + sk)) |srcs| for (srcs) |s| {
@@ -6751,6 +6753,13 @@ fn answerClaim(f: *Frame, base: *const Use, c: *const Contract, j: u32, ks: []co
         if (f.charge(Loc.scanUnits(a.items.len + b.items.len))) return none;
         if (a.items.len != skip + b.items.len or !std.mem.eql(u64, a.items[skip..], b.items)) return none;
     }
+    // An entry of the code's result that holds the answer of a function it
+    // was handed or captured, which its frame saw as an opaque root (two
+    // calls of one captured function can answer one cell), is tested by its
+    // atoms, as at a call (§4.4).
+    for (xks, lc.res) |k, srcs| opaque_at[k] = for (srcs) |s| {
+        if (s.kind == .answer) break true;
+    } else false;
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
     try vals.append(f.gpa, v);
