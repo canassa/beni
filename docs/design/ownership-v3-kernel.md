@@ -1794,6 +1794,57 @@ paths:
   second projection makes: it is kept, by the value and the step, for the rest of the frame. A chain of
   `n` `case`s now makes at most a part for each of its values and each step, O(n²) for `n` levels.
 
+  **A join of a cell's versions is read once at each path, and a value read now is no deeper than
+  before** (#2599). After each `case` whose arms renew a cell, the cell's latest version is the join of
+  the arms' latest (§13 item 6), and an arm's latest can be the join of a `case` inside it. Each reading
+  of the cell reads its latest at a path (`reroot`), and two things made the joins grow faster than the
+  work they counted:
+  - `reroot` made the whole join again at each reading, and counted nothing. It is now kept, by the
+    join and the path, for the rest of the frame (`reroot_memo`); the lookup is a lookup, and a join
+    made is a call and its arms.
+  - A value read now (`cellsNow`) whose every arm read as one value was a join of copies of that value.
+    The arms of a join of versions all read as the cell's latest, which is that join itself, so each
+    second reading (`apply` reads its arguments again after `cellsApart`) made a join one level deeper,
+    and the next reading of it made each copy again. Such a join is now the one value (§13 item 6).
+
+  One function that makes its own cell and nests an `if` `d` deep, each arm writing the cell, has `2ᵈ`
+  ways through it. Before, depth 6 (300 lines) made 262 143 joins in `reroot` and 533 360 values in
+  all, and passed its declaration's budget at 0.9 GB; depth 8 made 33.7 million values before it
+  passed its budget, and held 4.4 GB; depth 9 ran out of memory past 9 GB, before any limit.
+  Now depth 9 makes 7 154 values and 8 180 arms and parts, and is judged in 0.5 s at 61 MB
+  (ReleaseSafe, self-hosted); the shape family of `bench/ownership-sweeps/nested-arms.mjs` (depths 1 to
+  10, `if` and `case`, a cell made or handed, arms that write or read, the nesting in a local
+  function or not, a loan before it or in each arm) ends in a verdict or a limit in at most 1 s and
+  110 MB each. The limits it meets are the pairs of a write and a later read (above), which are
+  counted: depth 10 has 2 046 writes, each paired with the reads after it.
+
+  **What a walk holds grows no faster than the work it counts** (`Frame.heldItems`, #2599). Each
+  element of each list and map of the frame (`quiet_parts`: values, the arms and parts of joins and
+  constructions, roots and their entries, atoms, reads, escapes, demands, contexts, memo entries), of
+  the frames it is in and of the frames of the walk that ended, is an **item**. At every 512th call
+  unit of the walk (`Frame.tick`, `held_every`: the test reads each store of each frame of the chain,
+  and at every unit it made a walk of lambdas nested 199 deep ten times slower) the walk holds at most as many items as the units its declaration has counted, and
+  `decl_floor`: an item is at least a unit. Past it the declaration is past its budget, and its limit
+  line says so ("the walk held `N` items …, more than the units of work it counted and 1048576"). A
+  count of lengths, not of bytes, so it is the same on every target and at any `--jobs`. Over the 2 510
+  ownership roots the most a walk holds is 0.21 of what it may (`platforms/browser`'s and
+  `tests/platforms/gpu`'s modules of `Gpu`); depth 8 of the shape above held 100 million items for 11
+  million units. It bounds what a walk holds to within what 512 call units make; a loop that makes items
+  with no call unit between them is bounded only by its own count. A mutation that adds 65 536
+  uncounted items to each join `reroot` makes ends in this limit in 0.4 s at 86 MB. So each builder of a structure that grows
+  with arms, joins, runs or renewals counts what it makes:
+  - `joinCells`: each root and arm it joins, and each root it looks up among the keys;
+  - `joinVal`: its callers count the arms (a `case`'s arms are evaluated, `projectJoin` is a call and
+    its arms, `joinCells` above, the returns of `finish`);
+  - `saveCells`: each tracked root it saves, at each `case` and each operand that may not run;
+  - `reroot` and `cellsNowIn`: each join and construction they visit or make;
+  - `versionOf` and `renewHandle`: each entry of a version is a walk of values (`leavesAs`), and each
+    renewal's sources a call (`expandSrcs`);
+  - `noteReturnCells` and `backfillCapture`: each entry of each tracked root's contents noted at each
+    return point;
+  - `runWriter` (§13 item 12): each other operand and capture it judges a writer's run against, at each
+    switch point; the reads, demands and renewals of the run count as they do anywhere.
+
   **A wide record costs its width, not its square** (research report 145). A literal of 3 000 fields
   and one update that writes all of them took 7.9 s of v3 (ReleaseSafe), with no limit, and the time
   grew with the square of the width. Five loops each cost the width once for each field, and each is
@@ -1937,7 +1988,9 @@ lists in its literals, **a module at most the sum over its declarations and its 
 than 2²⁷, and a build at most the sum over its modules**: linear in the size of the program and of the
 layouts its instructions walk, and at most 2²⁷ for any one module, whatever the shape of its types or the
 number of its declarations, and the same at any `--jobs` (a module's budget and its count depend on its own source
-and the contracts of its imports only). **A unit tracks time** (research report 135): over the 101
+and the contracts of its imports only). **What a walk holds is bounded the same way** (#2599): at
+most the units its declaration counted and 2²⁰ items, so at most 2²⁵ + 2²⁰ items for one walk.
+**A unit tracks time** (research report 135): over the 101
 programs of 307 measured (the shapes of research reports 130, 131, 134 and 135, the corpus programs
 nearest their budgets, and every fault folder of the sweeps) that do more than 5 million units, a unit
 took 4.9 ns at the median and 8.3 ns at the 90th percentile (ReleaseSafe, LLVM), and at most 12 ns where
@@ -2405,6 +2458,15 @@ contents of a cell are locations, and that a call can change what a location of 
    cell's old contents after `f3` wrote them (`run/CellWrittenInOperand`). An arm's join keeps its
    context (§6 rule 7, amended): what a later read takes from the arm that did not write is no holder
    of the other arm's write.
+   *Amended 2026-11-22 (#2599).* A value read now (`cellsNow`) that is a join whose every arm reads
+   now as one value is that value, read alone (`cellsNowIn`). A version of a tracked root reads now as
+   the root's latest, so each arm of a join of versions reads as the latest join itself: before, the
+   value was a join of copies of it, a level deeper at each reading, and the work grew faster than its
+   count (§8). The value alone holds every cell that any copy held; each atom keeps the context of the
+   arm of the latest join it was found through, and one the latest found through no arm has none, so
+   it is live on every way, where a copy put it in the context of an arm of the old join: the reading
+   is as pessimistic or more. The reading of a join of versions at a path is made once in a frame
+   (`reroot_memo`, §8).
 7. **What a call leaves in a renewed parameter's cells is read where the frame answers**
    (`noteReturnCells`, `cellReads`), at every return point, each early return and the end: the caller
    reads it after the call, as it reads the answer. So a body that stores a value in its parameter's

@@ -480,6 +480,10 @@ reach_seen: std.AutoHashMapUnmanaged(Val, void) = .empty,
 /// The part of each join that `project` made, by the join and the step:
 /// kept for the frame, since a value never changes once it is made.
 proj_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
+/// The reading of each join of versions at a path below its root that
+/// `reroot` made, by the join and the path: kept for the frame, as
+/// `proj_memo` is.
+reroot_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
 /// Per construction (a `built` value): for each entry of its place's
 /// layout, the parts that hold a location there (`builtIndex`).
 built_index: std.AutoHashMapUnmanaged(Val, BuiltIndex) = .empty,
@@ -627,6 +631,11 @@ const PairedHit = struct { start: u32, len: u32, dup: bool, hit_all: bool };
 pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32) Error!Frame {
     var f: Frame = .{ .m = m, .gpa = m.walk_arena.allocator(), .parent = parent, .id = m.next_frame, .decl = decl, .d = m.bir.decls[decl], .is_lambda = is_lambda, .code_inst = code_inst };
     m.next_frame += 1;
+    // A walk begins: what its frames hold is in a new arena (`Check.walkDecl`).
+    if (parent == null) {
+        m.held_done = 0;
+        m.held_ticks = 0;
+    }
     f.depth = if (parent) |p| p.depth + 1 else 0;
     try f.nodes.append(f.gpa, .{ .tag = .none });
     try f.nodes.append(f.gpa, .{ .tag = .outside });
@@ -649,6 +658,16 @@ fn tick(f: *Frame) bool {
     if (m.steps_over) return true;
     m.steps += Check.call_units;
     m.module_units +|= Check.call_units;
+    // What the walk holds grows no faster than the work it counts (kernel
+    // §8, #2599): an item held is at least a unit. Past it, the walk is
+    // past its budget, with a limit line of its own (`Check.budgetLine`).
+    // The test reads every store of every frame of the chain, so it runs
+    // at one call unit of each `held_every`, counted from the walk's start.
+    m.held_ticks +%= 1;
+    if (m.held_over == 0 and m.held_ticks % held_every == 0) {
+        const h = f.heldItems();
+        if (h > m.steps + Check.decl_floor) m.held_over = h;
+    }
     if (m.overBudget()) {
         m.steps_over = true;
         f.failed = true;
@@ -667,6 +686,21 @@ fn charge(f: *const Frame, n: u64) bool {
     m.module_units +|= n;
     if (m.overBudget()) m.steps_over = true;
     return m.steps_over;
+}
+
+/// The items the walk holds (kernel §8): each element of each list and
+/// map of `quiet_parts` (values, their arms and parts, atoms, memo
+/// entries), of this frame, of the frames it is in, and of the frames of
+/// the walk that ended (`Check.Mod.held_done`).
+const held_every = 512;
+
+fn heldItems(f: *const Frame) u64 {
+    var n: u64 = f.m.held_done;
+    var at: ?*const Frame = f;
+    while (at) |x| : (at = x.parent) {
+        for (x.quietParts()) |k| n += k;
+    }
+    return n;
 }
 
 fn giveUp(f: *Frame, inst: u32) Error!Val {
@@ -1327,7 +1361,7 @@ fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
 /// which runs no check, counts for building it.
 const Quiet = struct { m: Mod.Quiet, failed: bool, parts: [quiet_parts.len]usize };
 
-const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers" };
+const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers" };
 
 fn quietParts(f: *const Frame) [quiet_parts.len]usize {
     var out: [quiet_parts.len]usize = undefined;
@@ -4206,6 +4240,8 @@ fn backfillCapture(f: *Frame, root: u32) Error!void {
     const v = try f.rootVal(root);
     const inner = try f.innerOf(r.layout);
     for (f.ret_points.items) |rp| {
+        // Each entry noted at each return point is work (kernel §8).
+        _ = f.charge(inner.len);
         try f.ret_cells.append(f.gpa, .{ root, v });
         const start: u32 = @intCast(f.lists.items.len);
         for (inner, 0..) |in, k| if (in) try f.lists.append(f.gpa, @intCast(k));
@@ -5596,6 +5632,10 @@ fn solveCodes(f: *Frame, ms: []const Member) Error![]Val {
                 return vals;
             }
             var child = try Frame.init(m, f, f.decl, true, mb.inst);
+            // What the frame held stays in the walk's arena (`heldItems`).
+            defer for (child.quietParts()) |k| {
+                m.held_done += k;
+            };
             child.own_params = @intCast(mb.params.len);
             if (child.depth > 200) {
                 f.failed = true;
@@ -6136,6 +6176,18 @@ fn cellsNowIn(f: *Frame, v: Val) Error!Val {
                 arms[2 * ki] = nv;
             }
             if (!changed) return v;
+            // Every arm reads now as one value: the join is that value. A
+            // join of versions of one root reads now as the root's latest in
+            // each arm, and the latest is that join itself, or one that
+            // holds it, so a value read now twice (`apply` reads its
+            // arguments again after `cellsApart`) was a join of copies of
+            // itself, each read a level deeper than the last (#2599). The
+            // value read alone is a value of every arm, and its atoms keep
+            // the contexts of its own arms (`leavesSet`).
+            const one = for (1..n.b) |ki| {
+                if (arms[2 * ki] != arms[0]) break false;
+            } else true;
+            if (one) return arms[0];
             const start: u32 = @intCast(f.lists.items.len);
             try f.lists.appendSlice(f.gpa, arms);
             return f.node(.{ .tag = .join, .place = n.place, .a = start, .b = n.b });
@@ -6155,11 +6207,26 @@ fn reroot(f: *Frame, l: Val, path: u32) Error!Val {
     switch (n.tag) {
         .ref => return f.refVal(n.a, path),
         .join => {
+            // The versions of a root are joined after each `case` whose arms
+            // renew it, and an arm's latest can be the join of a `case`
+            // inside it, so the joins are a DAG; each reading of the root
+            // reads its latest. A join read at one path is made once in the
+            // frame and kept (`reroot_memo`), as a projection of a join is
+            // (`proj_memo`, kernel §8): before, each reading made the whole
+            // DAG again, uncounted (#2599). The lookup is work, and so is
+            // each join made, with its arms.
+            const place = f.m.loc.paths.items[path].place;
+            if (f.charge(Loc.lookup_units)) return f.unknownOf(place, &.{l});
+            const key: [2]u32 = .{ l, path };
+            if (f.reroot_memo.get(key)) |hit| return hit;
+            if (f.tick() or f.charge(n.b)) return f.unknownOf(place, &.{l});
             const arms = try f.gpa.dupe(u32, f.lists.items[n.a..][0 .. 2 * n.b]);
             for (0..n.b) |ki| arms[2 * ki] = try f.reroot(arms[2 * ki], path);
             const start: u32 = @intCast(f.lists.items.len);
             try f.lists.appendSlice(f.gpa, arms);
-            return f.node(.{ .tag = .join, .place = f.m.loc.paths.items[path].place, .a = start, .b = n.b });
+            const v = try f.node(.{ .tag = .join, .place = place, .a = start, .b = n.b });
+            try f.reroot_memo.put(f.gpa, key, v);
+            return v;
         },
         .none, .outside, .fnref, .closure, .unknown, .built => return l,
         .later => unreachable, // read through `capVal` only
@@ -6746,6 +6813,8 @@ fn noteReturnCells(f: *Frame, point: u32) Error!void {
         // The contents of its cells, not the rest of it: the caller reads
         // the rest where it reads it.
         const inner = try f.innerOf(f.roots.items[root].layout);
+        // Each entry noted at each return point is work (kernel §8).
+        _ = f.charge(inner.len);
         const start: u32 = @intCast(f.lists.items.len);
         for (inner, 0..) |in, k| if (in) try f.lists.append(f.gpa, @intCast(k));
         const nmask: u32 = @intCast(f.lists.items.len - start);
@@ -6784,6 +6853,8 @@ fn saveCells(f: *Frame) Error!?[]const [2]u32 {
     try f.flushShare();
     var out: std.ArrayList([2]u32) = .empty;
     for (f.cell_roots.items) |o| if (f.roots.items[o].latest != none) try out.append(f.gpa, .{ o, f.roots.items[o].latest });
+    // Each root saved is work (kernel §8): a `case` saves them all.
+    _ = f.charge(f.cell_roots.items.len);
     return out.items;
 }
 
@@ -6820,8 +6891,14 @@ fn savedOf(saved: []const [2]u32, o: u32) ?Val {
 fn joinCells(f: *Frame, arms: []const []const [2]u32, ctxs: []const u32) Error!void {
     var keys: std.ArrayList(u32) = .empty;
     defer keys.deinit(f.gpa);
-    for (arms) |a| for (a) |x| if (std.mem.indexOfScalar(u32, keys.items, x[0]) == null) try keys.append(f.gpa, x[0]);
-    _ = f.charge(keys.items.len * arms.len);
+    // Each root of each arm looked up among the keys, and each root and arm
+    // joined, is work (kernel §8).
+    var scanned: u64 = 0;
+    for (arms) |a| for (a) |x| {
+        scanned += keys.items.len;
+        if (std.mem.indexOfScalar(u32, keys.items, x[0]) == null) try keys.append(f.gpa, x[0]);
+    };
+    _ = f.charge(scanned + keys.items.len * arms.len);
     std.mem.sort(u32, keys.items, {}, std.sort.asc(u32));
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
@@ -7356,6 +7433,9 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
         if (kc == w.k or jc >= lc.arity) continue;
         try others.append(f.gpa, .{ .v = try f.capVal(code, kc), .sig = lc.layouts[jc], .flags = lc.flags[lc.off[jc]..lc.off[jc + 1]] });
     }
+    // Each operand and capture a run is judged against, at each switch
+    // point, is work (kernel §8).
+    _ = f.charge(others.items.len);
     for (0..n) |e| {
         if (!inner[e] or lc.flags[lc.off[j] + e] & flag_w == 0) continue;
         const wa: u32 = @intCast(f.atoms.items.len);

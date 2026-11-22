@@ -7074,3 +7074,104 @@ test "ownership v3: a module past its budget publishes no contract, in any order
     }
     if (bad) return error.TestUnexpectedVerdict;
 }
+
+// #2599 (`bench/ownership-sweeps/nested-arms.mjs`): `go` makes its own cell
+// and nests a two-armed `if` or `case` `depth` deep, the rest of the nesting
+// in each arm; each first arm pushes onto the cell's list in place, each
+// second stores a new list. After each level the cell's latest version is the
+// join of the arms' latest (kernel §13 item 6), so the joins nest. Each
+// reading of the cell made them again, uncounted: depth 8 held 4.4 GB, and
+// depth 9 ran out of memory before any limit. With `live`, a loan taken
+// before the nesting is read after it.
+fn nestedArms(a: std.mem.Allocator, depth: u32, case: bool, live: bool) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a,
+        \\import Io
+        \\import List
+        \\import Log
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\import String
+        \\
+        \\
+        \\ints : List Int → String
+        \\ints xs = String.join (List.map xs String.fromInt) ","
+        \\
+        \\
+        \\flag : Int → Bool
+        \\flag n = Int.mod n 3 == 0
+        \\
+        \\
+        \\pick : Int → Int
+        \\pick n = Int.mod n 3
+        \\
+        \\
+        \\go : ⊤ → String
+        \\go ⊤ =
+        \\    c = Ref.make [ 0 ]
+        \\
+    );
+    if (live) try out.appendSlice(a, "    old = Ref.get c\n");
+    try nestedLevel(a, &out, depth, case, 0, 4);
+    try out.appendSlice(a, if (live) "    ints old ++ \";\" ++ ints (Ref.get c)\n" else "    ints (Ref.get c)\n");
+    try out.appendSlice(a, "\n\nmain : Program\nmain = Io.run λ⊤ → Node.print (go ⊤)\n");
+    return out.items;
+}
+
+fn nestedLevel(a: std.mem.Allocator, out: *std.ArrayList(u8), depth: u32, case: bool, i: u32, ind: usize) !void {
+    if (i == depth) {
+        try out.appendNTimes(a, ' ', ind);
+        try out.appendSlice(a, "Log.info \"end\"\n");
+        return;
+    }
+    const at = if (case) ind + 8 else ind + 4;
+    try out.appendNTimes(a, ' ', ind);
+    if (case) try out.print(a, "case pick {d} of\n", .{i}) else try out.print(a, "if flag {d} then\n", .{i});
+    if (case) {
+        try out.appendNTimes(a, ' ', ind + 4);
+        try out.appendSlice(a, "0 →\n");
+    }
+    try out.appendNTimes(a, ' ', at);
+    try out.print(a, "Ref.update c λl → List.push l {d}\n", .{i});
+    try nestedLevel(a, out, depth, case, i + 1, at);
+    try out.appendNTimes(a, ' ', if (case) ind + 4 else ind);
+    try out.appendSlice(a, if (case) "_ →\n" else "else\n");
+    try out.appendNTimes(a, ' ', at);
+    try out.print(a, "Ref.set c [ {d} ]\n", .{i});
+    try nestedLevel(a, out, depth, case, i + 1, at);
+}
+
+/// The totals of v3's dump of `nestedArms(depth, case, live)`, which must
+/// end in 10 s and hold `want`.
+fn expectNestedArms(depth: u32, case: bool, live: bool, want: []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try nestedArms(w.arena.allocator(), depth, case, live));
+    const r = w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("depth {d}: the dump did not end in 10 s ({s})\n", .{ depth, @errorName(err) });
+        return err;
+    };
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, want) == null) {
+        std.debug.print("depth {d} (case {}, live {}): wanted {s}; exit {d}:\n{s}{s}\n", .{ depth, case, live, want, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+test "ownership v3: nested arms 8 deep that write a cell the frame made are judged, each push accepted" {
+    try expectNestedArms(8, false, false, "total 510: accepted 510 ");
+    try expectNestedArms(8, true, false, "total 510: accepted 510 ");
+}
+
+test "ownership v3: nested arms 9 deep are judged, and a loan read after them refuses each push of its list" {
+    try expectNestedArms(9, false, false, "total 1022: accepted 1022 ");
+    // The pushes on the way through the first arms write the loaned list.
+    try expectNestedArms(9, true, true, "rejected 9\ncause later-use 9\n");
+}
+
+test "ownership v3: nested `if` arms 10 deep end in a limit" {
+    try expectNestedArms(10, false, false, "limits 1\n");
+}
+
+test "ownership v3: nested `case` arms 10 deep end in a limit" {
+    try expectNestedArms(10, true, false, "limits 1\n");
+}

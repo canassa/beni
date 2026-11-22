@@ -250,6 +250,15 @@ pub const Mod = struct {
     /// Lives as long as the module's result.
     arena: Allocator,
     walk_arena: std.heap.ArenaAllocator,
+    /// The items that the frames of the walk held when they ended
+    /// (`Frame.heldItems`, kernel §8).
+    held_done: u64 = 0,
+    /// The items the walk held when they passed the units it counted
+    /// (`Frame.tick`): past it the declaration is past its budget. 0 while
+    /// they never did.
+    held_over: u64 = 0,
+    /// The call units of the walk since it began (`Frame.tick`).
+    held_ticks: u32 = 0,
     /// The set of atoms that `Frame.uniqueTail` keeps while it removes the
     /// repeats of a run: one table for the module, cleared for each run.
     uniq_seen: std.AutoHashMapUnmanaged(Frame.Atom, void) = .empty,
@@ -404,11 +413,11 @@ pub const Mod = struct {
     /// table itself, which the check may read and may not build
     /// (`Loc.Table.no_fill`). So a safe build reaches a release build's
     /// verdicts, its limits and budgets included.
-    pub const Quiet = struct { steps: u64, module_units: u64, loc_units: u64, over: bool };
+    pub const Quiet = struct { steps: u64, module_units: u64, loc_units: u64, over: bool, held_over: u64, held_ticks: u32 };
 
     pub fn quiet(m: *Mod) Quiet {
         m.loc.no_fill += 1;
-        return .{ .steps = m.steps, .module_units = m.module_units, .loc_units = m.loc.units, .over = m.steps_over };
+        return .{ .steps = m.steps, .module_units = m.module_units, .loc_units = m.loc.units, .over = m.steps_over, .held_over = m.held_over, .held_ticks = m.held_ticks };
     }
 
     pub fn loud(m: *Mod, q: Quiet) void {
@@ -416,11 +425,13 @@ pub const Mod = struct {
         m.module_units = q.module_units;
         m.loc.units = q.loc_units;
         m.steps_over = q.over;
+        m.held_over = q.held_over;
+        m.held_ticks = q.held_ticks;
         m.loc.no_fill -= 1;
     }
 
     pub fn overBudget(m: *const Mod) bool {
-        return m.steps > m.decl_limit or m.module_units +| m.loc.units > m.module_budget;
+        return m.held_over != 0 or m.steps > m.decl_limit or m.module_units +| m.loc.units > m.module_budget;
     }
 
     /// A walk of declaration `di` begins: its budget, what it spent before.
@@ -525,6 +536,7 @@ pub const Mod = struct {
     /// or the module's, whichever it passed.
     fn budgetLine(m: *Mod, di: u32, what: []const u8) Allocator.Error![]const u8 {
         const name = m.names.declName(m.in.module, di);
+        if (m.held_over != 0) return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} held {d} items (values, their arms and parts, atoms), more than the units of work it counted and {d}, so the checker judges no write of the module", .{ name, what, m.held_over, decl_floor });
         if (m.module_units +| m.loc.units <= m.module_budget and m.decl_steps[di] > m.decl_budget[di]) {
             if (m.decl_budget[di] == max_walk_steps) return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} steps (a function or a value that it reaches by many paths), so the checker judges no write of the module", .{ name, what, max_walk_steps });
             return std.fmt.allocPrint(m.arena, "limit {s}: the walk{s} took more than {d} units of work (what the declaration earns), so the checker judges no write of the module", .{ name, what, m.decl_budget[di] });
