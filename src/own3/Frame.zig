@@ -4258,6 +4258,10 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .int, .float, .char, .string, .chunk, .unit, .@"error" => return v_none,
         .ctor, .ext_ctor => return f.ctorValue(inst),
         .local => {
+            // A reference to a local function generalised over a `where`
+            // hands it evidence where no call applies it (`List.map xs f`):
+            // judged here, as at a reference to a declaration (kernel §6.11).
+            _ = try f.evidence(inst);
             const l = f.d.locals_start + data.lhs;
             // A code binding of a group whose rounds run (the code itself, or
             // another code of its cycle): the known function, with its
@@ -7585,11 +7589,13 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     var primitive = false;
     // A function of the top level has its contract; any other callee is an
     // expression, evaluated by `evalInner`, whose switch names every tag.
+    // The evidence of a call is at the call, whatever its callee: a local
+    // function generalised over a `where` is handed it here as a
+    // declaration is (kernel §6.11). That of a reference is at the reference.
+    _ = try f.evidence(inst);
     if (m.tags[callee] == .top or m.tags[callee] == .ext_value) {
         f.noteWalked(callee);
-        // The evidence of a call is at the call; that of a reference is at the reference.
         _ = try f.evidence(callee);
-        _ = try f.evidence(inst);
         if (m.calleeOf(callee)) |t| {
             if (try m.declContract(t)) |c| code = .{ .contract = c, .decl = t, .own_params = c.arity };
             if (t[0] < m.in.birs.len and t[1] < m.in.birs[t[0]].decls.len) primitive = m.in.birs[t[0]].decls[t[1]].kind == .vocab_markup;
@@ -7964,6 +7970,8 @@ fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
     const dt = m.in.dispatch orelse return .{};
     if (dt.sites.len == 0) return .{};
     const site = dt.siteOf(@fromBackingInt(inst)) orelse return .{};
+    // In safe builds: the site's evidence is judged (`Check.checkCovered`, kernel §9).
+    if (safety and inst < m.judged.bit_length) m.judged.set(inst);
     var roots: std.ArrayList(Dispatch.TermIndex) = .empty;
     defer roots.deinit(f.gpa);
     // A callee of a declaration is applied with its contract (`call`,

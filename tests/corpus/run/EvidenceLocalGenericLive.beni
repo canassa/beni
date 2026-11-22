@@ -1,0 +1,275 @@
+-- The live twins of `EvidenceLocalGeneric` (`ownership-v3-kernel.md` §6
+-- rule 11, #2601): a method that writes its parameter in place is handed as
+-- evidence through a local function generalised over a `where` (a lambda, a
+-- local definition, a `_` placeholder, two nested locals, a local handed to
+-- `List.map`, a closure kept in a record, a second generic function), through
+-- an operator over a user `eq` or `compare` (`==`, `<`, `List.sort`,
+-- `List.member`, the derived `eq` of a tuple), or by return-type dispatch.
+-- The local's emitted code takes the evidence as a hidden parameter, and the
+-- call or the reference hands it in: each is refused there, as a declaration
+-- handed it is. Before, none was judged, and the write in place changed the
+-- base that each program prints after it.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+yn : Bool → String
+yn b = if b then "t" else "f"
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+renderD : Dict Int Int → String
+renderD d =
+    String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${String.fromInt v}") ","
+
+
+type alias R =
+    n : Int
+    m : Int
+
+
+showR : R → String
+showR r = "${String.fromInt r.n}/${String.fromInt r.m}"
+
+
+type Sink
+    = Sink
+
+
+pub add : Sink, List Int → List Int
+add _ l = List.push l 5
+
+
+pub put : Sink, R → R
+put _ r = { r | n = 5 }
+
+
+pub ins : Sink, Dict Int Int → Dict Int Int
+ins _ d = Dict.insert d 3 30
+
+
+pub grow : Sink, Ref (List Int) → ⊤
+grow _ r = Ref.update r λl → List.push l 5
+
+
+addOnce : a, List Int → List Int
+    where a.add : a, List Int → List Int
+addOnce k l = k.add l
+
+
+viaOnce : a, List Int → List Int
+    where a.add : a, List Int → List Int
+viaOnce k l = addOnce k l
+
+
+putOnce : a, R → R
+    where a.put : a, R → R
+putOnce k r = k.put r
+
+
+insOnce : a, Dict Int Int → Dict Int Int
+    where a.ins : a, Dict Int Int → Dict Int Int
+insOnce k d = k.ins d
+
+
+growOnce : a, Ref (List Int) → ⊤
+    where a.grow : a, Ref (List Int) → ⊤
+growOnce k r = k.grow r
+
+
+type Bag
+    = Bag (List Int)
+
+
+pub compare : Bag, Bag → Order
+compare a b =
+    case ( a, b ) of
+        ( Bag x, Bag y ) →
+            (List.length (List.push x 0)).compare (List.length y)
+
+
+pub eq : Bag, Bag → Bool
+eq a b =
+    case ( a, b ) of
+        ( Bag x, Bag y ) →
+            List.length (List.push x 0) == List.length y
+
+
+type Box
+    = Box (List Int)
+
+
+pub fromInts : List Int → Box
+fromInts l = Box (List.push l 5)
+
+
+build : List Int → a
+    where a.fromInts : List Int → a
+build l = a.fromInts l
+
+
+unbox : Box → List Int
+unbox b =
+    case b of
+        Box l →
+            l
+
+
+lam : ⊤ → String
+lam ⊤ =
+    xs = [ 1, 2 ]
+    f = λk → addOnce k xs
+    ys = f Sink
+    "${ints xs} ${ints ys}"
+
+
+local : ⊤ → String
+local ⊤ =
+    xs = [ 1, 2 ]
+    f k = addOnce k xs
+    ys = f Sink
+    "${ints xs} ${ints ys}"
+
+
+partial : ⊤ → String
+partial ⊤ =
+    xs = [ 1, 2 ]
+    f = addOnce _ xs
+    ys = f Sink
+    "${ints xs} ${ints ys}"
+
+
+nested : ⊤ → String
+nested ⊤ =
+    xs = [ 1, 2 ]
+    h = λk → addOnce k xs
+    f = λk → h k
+    ys = f Sink
+    "${ints xs} ${ints ys}"
+
+
+mapped : ⊤ → String
+mapped ⊤ =
+    xs = [ 1, 2 ]
+    f = λk → addOnce k xs
+    yss = List.map [ Sink ] f
+    "${ints xs} ${String.fromInt (List.length yss)}"
+
+
+kept : ⊤ → String
+kept ⊤ =
+    xs = [ 1, 2 ]
+    f = λk → addOnce k xs
+    c = { run = f }
+    ys = c.run Sink
+    "${ints xs} ${ints ys}"
+
+
+handedOn : ⊤ → String
+handedOn ⊤ =
+    xs = [ 1, 2 ]
+    f = λk → viaOnce k xs
+    ys = f Sink
+    "${ints xs} ${ints ys}"
+
+
+record : ⊤ → String
+record ⊤ =
+    r = { n = 1, m = 2 }
+    f = λk → putOnce k r
+    s = f Sink
+    "${showR r} ${showR s}"
+
+
+dict : ⊤ → String
+dict ⊤ =
+    d = Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]
+    f = λk → insOnce k d
+    d2 = f Sink
+    "${renderD d} ${renderD d2}"
+
+
+cell : ⊤ → String
+cell ⊤ =
+    r = Ref.make [ 1, 2 ]
+    y = Ref.get r
+    f = λk → growOnce k r
+    f Sink
+    "${ints y} ${ints (Ref.get r)}"
+
+
+equal : ⊤ → String
+equal ⊤ =
+    xs = [ 1, 2 ]
+    f = λp q → p == q
+    b = f (Bag xs) (Bag [ 1 ])
+    "${ints xs} ${yn b}"
+
+
+less : ⊤ → String
+less ⊤ =
+    xs = [ 1, 2 ]
+    f = λp q → p < q
+    b = f (Bag xs) (Bag [ 1 ])
+    "${ints xs} ${yn b}"
+
+
+sorted : ⊤ → String
+sorted ⊤ =
+    xs = [ 1, 2 ]
+    f = λl → List.sort l
+    s = f [ Bag xs, Bag [ 1 ] ]
+    "${ints xs} ${String.fromInt (List.length s)}"
+
+
+member : ⊤ → String
+member ⊤ =
+    xs = [ 1, 2 ]
+    f = λl v → List.member l v
+    b = f [ Bag [ 1 ] ] (Bag xs)
+    "${ints xs} ${yn b}"
+
+
+derived : ⊤ → String
+derived ⊤ =
+    xs = [ 1, 2 ]
+    f = λp q → p == q
+    b = f ( Bag xs, 1 ) ( Bag [ 1 ], 1 )
+    "${ints xs} ${yn b}"
+
+
+returned : ⊤ → String
+returned ⊤ =
+    xs = [ 1, 2 ]
+    f = λl → build l
+    b : Box
+    b = f xs
+    "${ints xs} ${ints (unbox b)}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ lam ⊤
+        , local ⊤
+        , partial ⊤
+        , nested ⊤
+        , mapped ⊤
+        , kept ⊤
+        , handedOn ⊤
+        , record ⊤
+        , dict ⊤
+        , cell ⊤
+        , equal ⊤
+        , less ⊤
+        , sorted ⊤
+        , member ⊤
+        , derived ⊤
+        , returned ⊤
+        ]

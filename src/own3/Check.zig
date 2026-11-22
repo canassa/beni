@@ -395,6 +395,9 @@ pub const Mod = struct {
     /// In safe builds, per instruction: a walk evaluated it, or a rule
     /// accounted for it (`Frame.noteWalked`; `checkCovered`).
     walked: std.DynamicBitSetUnmanaged = .{},
+    /// In safe builds, per instruction: a walk judged the evidence of its
+    /// dispatch site (`Frame.evidenceAt`; `checkCovered`).
+    judged: std.DynamicBitSetUnmanaged = .{},
     /// Each refusal line by its instruction, cause and detail: its index in `lines` (`addRefusal`).
     refusals: std.AutoHashMapUnmanaged(RefusalKey, u32) = .empty,
 
@@ -3883,6 +3886,14 @@ fn checkCovered(m: *Mod) void {
             if (!namesCode(m.tags[i]) or m.walked.isSet(i)) continue;
             std.debug.panic("ownership v3: instruction {d} ({t}) of {s} names code that no walk evaluated: a call into the program's code with no rule (kernel §6.14)", .{ i, m.tags[i], m.names.declName(m.in.module, @intCast(di)) });
         }
+        // Every site that hands evidence was judged where a walk met it,
+        // whatever its instruction's form (kernel §6.11, §9): evidence that
+        // no walk judged is a function handed with no rule.
+        const dt = m.in.dispatch orelse continue;
+        for (dt.sitesIn(d.inst_start.int(), d.inst_end.int())) |s| {
+            if (s.evidence.len == 0 or m.judged.isSet(s.inst.int())) continue;
+            std.debug.panic("ownership v3: instruction {d} ({t}) of {s} hands evidence that no walk judged (kernel §6.11)", .{ s.inst.int(), m.tags[s.inst.int()], m.names.declName(m.in.module, @intCast(di)) });
+        }
     }
 }
 
@@ -3989,6 +4000,8 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     @memset(m.incomplete, false);
     if (std.debug.runtime_safety) m.walked = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
     defer if (std.debug.runtime_safety) m.walked.deinit(gpa);
+    if (std.debug.runtime_safety) m.judged = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
+    defer if (std.debug.runtime_safety) m.judged.deinit(gpa);
     if (options.rows) {
         m.js_seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
         m.js_dirty = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
