@@ -2761,8 +2761,38 @@ contents of a cell are locations, and that a call can change what a location of 
       (Task.fromHost …; List.push l x)`.
     - **Revocation** (`revokeWriters`, at the end of the walk): a writer is refused where it went out of
       sight if its cell got another holder at any time (item 8), the frame answers its handle, or a
-      holder of the cell has the mark. A reader is not revoked: what it read at each return point
-      escapes instead (the reader amendments above).
+      holder of the cell has the mark. A reader is not revoked for another holder or an answer of
+      its handle: what it read at each return point escapes instead (the reader amendments above).
+      *Amended 2026-11-22 (#2604):* a reader is revoked where a holder of its cell has the mark. The
+      mark says that a holder keeps a value taken out of the cell across a switch point, and a reader
+      that went where the walk does not follow it can run there even inside a function the frame
+      hands a cell's row (`Ref.update`, `Ref.modify`), which cannot suspend: a synchronous call of
+      code that keeps it runs it, between the function's write in place and the store-back. The
+      frame's walk does not see that switch point (it is in the function); the mark is what reaches
+      it (`applyMarks`). Blind round BP's sink, `Log.setSink λe → … Ref.get r …` beside
+      `Ref.update r λl → (l2 = List.push l 5; Log.info "x"; l2)`, was one; a sink is now refused
+      before, by the defect clause below. It is the pessimistic side: a holder that only reads the
+      value it keeps across the switch point marks the handle too, and a fiber, which no
+      synchronous call runs, is revoked as well (`cells.mjs`' `marked.*`).
+    - **A defect** (#2605). A throw stops the code between an in-place write of a cell's contents
+      and its store-back (`Ref.update`'s function), and plain code would have left the old
+      contents there; code that runs after the throw then reads the cell: `Task.onDefect`'s and a
+      scheduler's hook (`Task.scheduler`, `Task.schedulerWith`; `boundary.md` §9.8.10 (c)), the
+      teardown's drains with `Task.onTurn`'s hook and the cleanups of each fiber it cancels
+      (`Task.bracket`'s release, `Task.onExit`'s and `Task.defer`'s handler, `Task.start`'s
+      report; §9.8.14), and the sink of `Log.setSink`, which any of that code runs where it logs.
+      So such a function runs at every point, not only at a switch point: it is neither a writer
+      nor a reader, and what it reaches of its captures escapes where it is handed (item 8), also
+      where the holder runs it within the call, so no write of their contents in place is
+      accepted after; a closure that is a writer or a reader already, and a function value whose
+      captures the frame cannot name (`defectUse`), are refused there. The contract says it:
+      `Fn.defect` (`defect` in the dump), set on those parameters of those core declarations,
+      named directly as `shortCircuits` names `Basics.and` (`defectHookParams`), and on the
+      frame's own function parameter that meets a use with it (`flowOwn`), so a helper that hands
+      its parameter on has it too; two contracts join it by or. It is the pessimistic side: a sink
+      that reads a cell refuses every later write of the cell in place, defect or not (BP's
+      `sink` family; the lane's reviewer found a hook that logs and so runs a sink reader at the
+      throw) (`cells.mjs`' `defect.*`; `run/CellDefectHookLive`, `run/CellSinkReadsLive`).
     `run/CellFibersInPlace` and its live twin `run/CellFibersInPlaceLive`.
 
 What it does not cover yet, each a refusal: a reader that the frame joins before the contents leave it

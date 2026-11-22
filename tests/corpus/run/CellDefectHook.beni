@@ -1,0 +1,56 @@
+-- A function that a defect runs (`Task.onDefect`'s, directly or through
+-- helpers) reads a cell: it runs at any point, so it shares the handle
+-- (ownership-v3-kernel.md §13 item 12, *A defect*), and the frame writes a
+-- copy of the contents, accepted. No defect happens. Its live twin,
+-- CellDefectHookLive, writes in place, refused (#2605).
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+say : ⊤ → ⊤
+say ⊤ = Log.info "mid"
+
+
+install : (⊤ → ⊤) → ⊤
+install f = Task.onDefect f
+
+
+install2 : (⊤ → ⊤) → ⊤
+install2 f = install f
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make [ 1, 2 ]
+    Task.onDefect λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 5
+    ints (Ref.get r)
+
+
+wrapped : ⊤ → String
+wrapped ⊤ =
+    r = Ref.make [ 1, 2 ]
+    install λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 6
+    ints (Ref.get r)
+
+
+wrapped2 : ⊤ → String
+wrapped2 ⊤ =
+    r = Ref.make [ 1, 2 ]
+    install2 λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 7
+    ints (Ref.get r)
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ direct ⊤, wrapped ⊤, wrapped2 ⊤ ]

@@ -1,0 +1,4 @@
+# The live twins of CellSinkReads: the function `Ref.update` or `Ref.modify` runs writes the contents in place and then logs, so the sink reads the cell before the store-back. Each write is refused (#2604, #2605).
+26:5 list_still_used call
+37:9 list_still_used call
+54:5 list_still_used call

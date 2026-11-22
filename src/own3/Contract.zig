@@ -151,6 +151,11 @@ pub const Fn = struct {
     /// callback, `cellupdate` and `cellmodify`): two runs of it in one call
     /// never answer one captured cell (kernel §13 item 2).
     once: bool = false,
+    /// A defect can run the function (kernel §13 item 12, *A defect*): the
+    /// owner keeps it where a throw at any point of any fiber runs it, not
+    /// only a switch point (`Task.onDefect`, `Task.scheduler`'s hook, and
+    /// a function that hands its parameter to one).
+    defect: bool = false,
 };
 
 pub const Contract = struct {
@@ -275,7 +280,7 @@ fn union2(arena: Allocator, a: []const Src, b: []const Src) Allocator.Error![]co
 fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
     const x = a orelse return b == null;
     const y = b orelse return false;
-    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once) return false;
+    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.defect != y.defect) return false;
     if (!std.mem.eql(u32, x.layouts, y.layouts) or !std.mem.eql(bool, x.free, y.free)) return false;
     for (x.supply, y.supply) |s, t| if (!srcsEql(s, t)) return false;
     return true;
@@ -311,7 +316,7 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
     for (supply, x.supply, y.supply) |*s, p, q| s.* = try union2(arena, p, q);
     for (free, x.free, y.free) |*f, p, q| f.* = p and q;
     const out = try arena.create(Fn);
-    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once };
+    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .defect = x.defect or y.defect };
     return out;
 }
 
@@ -402,7 +407,7 @@ fn dupFn(a: Allocator, f: *const Fn) Allocator.Error!*const Fn {
     const supply = try a.alloc([]const Src, f.supply.len);
     for (supply, f.supply) |*s, x| s.* = try a.dupe(Src, x);
     const out = try a.create(Fn);
-    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once };
+    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .defect = f.defect };
     return out;
 }
 

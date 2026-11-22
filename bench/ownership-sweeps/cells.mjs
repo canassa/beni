@@ -949,6 +949,117 @@ main = Io.run λ⊤ → Node.printLines [ probe ⊤ ]
 `;
 }
 
+// #2604 and #2605: program code that reads a cell between the in-place write of `Ref.update`'s (or
+// `Ref.modify`'s) function and the store-back. `marked.<log>.<at>.<twin>`: a sink `Log.setSink` was
+// handed reads the cell, and the function logs after its write (`log`: `info`, `span`, a `helper` that
+// logs); `at` where the update runs (`frame`, `modify`, a `closure` called directly, a `fold`
+// callback). `defect.<hook>.<at>.<twin>`: the function throws after its write (a stack overflow), and
+// code a defect runs reads the cell (`hook`: `onDefect`, a `wrapper` and a `wrapper2` over it, a
+// `field` of a record handed to it; the teardown's cleanups `bracket`'s release, `onExit`, `defer`, each
+// over a helper that updates and throws, `frame` and `live` only); `at`: `frame`, `modify`, `fiber` (a
+// spawned fiber's update, joined). The twin is `live` where the write is in place, `dead` where the
+// function writes a `List.copy` (its run still throws).
+const MARK_LOGS = {
+  info: 'Log.info "mid"',
+  span: 'Log.span "mid" λ⊤ → ⊤',
+  helper: 'say ⊤',
+};
+const MARK_ATS = ['frame', 'modify', 'closure', 'fold'];
+const DEFECT_HOOKS = ['onDefect', 'wrapper', 'wrapper2', 'field', 'bracket', 'onExit', 'defer'];
+const DEFECT_INSTALLED = ['onDefect', 'wrapper', 'wrapper2', 'field'];
+const DEFECT_ATS = ['frame', 'modify', 'fiber'];
+
+// The update at `at`, whose function writes and then runs `body`, then `last` (its answer, or the
+// answer's second part for `modify`).
+function updateAt(at, body, live, last = '') {
+  const push = live ? 'List.push l 5' : 'List.push (List.copy l) 5';
+  const fn = ['λl →', `    l2 = ${push}`, ind(body, 4), `    ${last || 'l2'}`].join('\n');
+  const fnM = ['λl →', `    l2 = ${push}`, ind(body, 4), `    ( 0, ${last || 'l2'} )`].join('\n');
+  return {
+    frame: `Ref.update r ${fn}`,
+    modify: `_ = Ref.modify r ${fnM}`,
+    closure: `bump = λ⊤ → Ref.update r ${fn}\nbump ⊤`,
+    fold: `_ = List.foldl [ 1 ] ⊤ λk acc → Ref.update r ${fn}`,
+    fiber: `w = Task.spawn λ⊤ → Ref.update r ${fn}\nTask.join w`,
+  }[at];
+}
+
+const MD_HEAD = `import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias Hooks =
+    { h : ⊤ → ⊤ }
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+say : ⊤ → ⊤
+say ⊤ = Log.info "mid"
+
+
+deep : Int → Int
+deep n = if n < 0 then 0 else 1 + deep (n + 1)
+
+
+install : (⊤ → ⊤) → ⊤
+install f = Task.onDefect f
+
+
+install2 : (⊤ → ⊤) → ⊤
+install2 f = install f
+
+
+boom : Ref (List Int) → ⊤
+boom q =
+    Ref.update q λl →
+        l2 = List.push l 5
+        if deep 0 > 0 then l2 else l2
+`;
+
+const mdMain = (name, lines) => `-- ${name}: see bench/ownership-sweeps/cells.mjs.
+${MD_HEAD}
+
+go : ⊤ → String
+go ⊤ =
+${ind(lines.join('\n'), 4)}
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ go ⊤ ]
+`;
+
+function genMarked(log, at, live) {
+  const lines = ['r = Ref.make [ 1, 2 ]', 'Log.setSink λent → Debug.log "sink ${ints (Ref.get r)}" ⊤', updateAt(at, MARK_LOGS[log], live), 'ints (Ref.get r)'];
+  return mdMain(`marked.${log}.${at}`, lines);
+}
+
+function genDefect(hook, at, live) {
+  const read = 'Log.info "hook ${ints (Ref.get r)}"';
+  const install = {
+    onDefect: [`Task.onDefect λ⊤ → ${read}`],
+    wrapper: [`install λ⊤ → ${read}`],
+    wrapper2: [`install2 λ⊤ → ${read}`],
+    field: [`hs = { h = λ⊤ → ${read} }`, 'Task.onDefect hs.h'],
+  }[hook];
+  const cleanup = {
+    bracket: 'Task.bracket (λ⊤ → r) (λq _ → Log.info "cleanup ${ints (Ref.get q)}") λq → boom q',
+    onExit: 'Task.onExit (λ⊤ → boom r) λ_ → Log.info "exit ${ints (Ref.get r)}"',
+    defer: 'Task.scope λsc →\n    Task.defer sc λ_ → Log.info "defer ${ints (Ref.get r)}"\n    boom r',
+  }[hook];
+  const lines = install
+    ? ['r = Ref.make [ 1, 2 ]', ...install, updateAt(at, 'n = deep 0', live, 'if n > 0 then l2 else l2'), 'ints (Ref.get r)']
+    : ['r = Ref.make [ 1, 2 ]', cleanup, 'ints (Ref.get r)'];
+  return mdMain(`defect.${hook}.${at}`, lines);
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -985,6 +1096,13 @@ for (const stored of Object.keys(PARK_STORED)) for (const park of Object.keys(PA
 for (const outKind of READER_OUTS) for (const read of Object.keys(READER_READS)) for (const live of ['cellUpd', 'joined'].includes(outKind) ? [false] : [true, false]) {
   if (outKind === 'second' && read !== 'two') continue;
   emit(`reader.${outKind}.${read}.${live ? 'live' : 'dead'}`, { 'Main.beni': genReader(outKind, read, live) });
+}
+for (const log of Object.keys(MARK_LOGS)) for (const at of MARK_ATS) for (const live of [true, false]) {
+  emit(`marked.${log}.${at}.${live ? 'live' : 'dead'}`, { 'Main.beni': genMarked(log, at, live) });
+}
+for (const hook of DEFECT_HOOKS) for (const at of DEFECT_ATS) for (const live of [true, false]) {
+  if (!DEFECT_INSTALLED.includes(hook) && (at !== 'frame' || !live)) continue;
+  emit(`defect.${hook}.${at}.${live ? 'live' : 'dead'}`, { 'Main.beni': genDefect(hook, at, live) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);

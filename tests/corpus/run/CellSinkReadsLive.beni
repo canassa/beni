@@ -1,0 +1,59 @@
+-- The live twins of CellSinkReads: the function `Ref.update` or
+-- `Ref.modify` runs writes the contents in place and then logs, so the sink
+-- reads the cell before the store-back: the frame, `Ref.modify`, a closure,
+-- a helper that logs. Each write is refused (#2604, #2605).
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+say : ⊤ → ⊤
+say ⊤ = Log.info "mid"
+
+
+go : ⊤ → String
+go ⊤ =
+    r = Ref.make [ 1, 2 ]
+    Log.setSink λent → Debug.log "sink ${ints (Ref.get r)}" ⊤
+    Ref.update r λl →
+        l2 = List.push l 5
+        Log.info "mid"
+        l2
+    ints (Ref.get r)
+
+
+modify : ⊤ → String
+modify ⊤ =
+    r = Ref.make [ 1, 2 ]
+    Log.setSink λent → Debug.log "sink ${ints (Ref.get r)}" ⊤
+    n = Ref.modify r λl →
+        l2 = List.push l 6
+        Log.info "mid"
+        ( List.length l2, l2 )
+    "${String.fromInt n} ${ints (Ref.get r)}"
+
+
+closure : ⊤ → String
+closure ⊤ =
+    r = Ref.make [ 1, 2 ]
+    Log.setSink λent → Debug.log "sink ${ints (Ref.get r)}" ⊤
+    bump =
+        λ⊤ →
+            Ref.update r λl →
+                l2 = List.push l 7
+                say ⊤
+                l2
+    bump ⊤
+    ints (Ref.get r)
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ go ⊤, modify ⊤, closure ⊤ ]

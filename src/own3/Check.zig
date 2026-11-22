@@ -3718,7 +3718,7 @@ pub const Mod = struct {
                 try m.srcsText(w, srcs);
             };
             if (c.fns[j]) |fnc| {
-                w.print(" π{d} fn{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "" }) catch return error.OutOfMemory;
+                w.print(" π{d} fn{s}{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "", if (fnc.defect) " defect" else "" }) catch return error.OutOfMemory;
                 for (0..fnc.arity) |k| for (m.loc.layoutEntries(fnc.layouts[k]), 0..) |e, i| {
                     const slot = fnc.off[k] + i;
                     w.print(" ({d}{s}{s}", .{ k + 1, try m.locText(e.loc), if (fnc.free[slot]) "" else " held" }) catch return error.OutOfMemory;

@@ -1,0 +1,1 @@
+A sink that `Log.setSink` was handed reads a cell; code that logs runs it at any point, so it shares the handle, and the function `Ref.update` or `Ref.modify` runs, which logs before the store-back, writes a copy: accepted (ownership-v3-kernel.md §13 item 12, *A defect*; #2604, #2605). Its live twin is CellSinkReadsLive.

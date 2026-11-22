@@ -249,6 +249,8 @@ const FnDraft = struct {
     lost: bool = false,
     ans_escapes: bool = false,
     rewrites: bool = false,
+    /// A defect can run it (`Fn.defect`).
+    defect: bool = false,
     /// The body does something with the function: it calls it or lets it flow.
     used: bool = false,
 };
@@ -618,6 +620,9 @@ writers: std.ArrayList(Writer) = .empty,
 /// What each reader (`Writer.reader`) reads at each return point: it
 /// escapes where the walk ends (`readersHeld`).
 reader_held: std.ArrayList(Atom) = .empty,
+/// The closures (`Code.inst`, `Code.caps`) that met a use a defect can run:
+/// none of them is a writer or a reader (`defectUse`).
+defect_codes: std.ArrayList([2]u32) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -1376,7 +1381,7 @@ fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
 /// which runs no check, counts for building it.
 const Quiet = struct { m: Mod.Quiet, failed: bool, parts: [quiet_parts.len]usize };
 
-const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers", "reader_held" };
+const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers", "reader_held", "defect_codes" };
 
 fn quietParts(f: *const Frame) [quiet_parts.len]usize {
     var out: [quiet_parts.len]usize = undefined;
@@ -5990,7 +5995,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             flags[off[x.a] + x.e] |= flag_s;
         };
         const fnc = try m.arena.create(CMod.Fn);
-        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites };
+        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0) };
         fns[idx] = fnc;
         // The function itself is used.
         if (dr.used) for (flags[off[idx]..off[idx + 1]]) |*x| {
@@ -7442,6 +7447,8 @@ fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
     const j: u32 = @intCast(code.own_params + k);
     if (j >= lc.arity or code.inst == none) return false;
     if (f.nodes.items[v].tag != .closure) return false;
+    // A defect can run it, at any point (kernel §13 item 12, *A defect*).
+    if (f.defectCode(code)) return false;
     if (m.isDraft(lc) or lc.casts or code.own_params + code.ncaps > lc.arity) return false;
     for (0..code.ncaps) |kc| if (lc.fns[code.own_params + kc] != null) return false;
     if (f.writesOwn(lc, code.own_params)) return false;
@@ -7646,8 +7653,17 @@ fn revokeWriters(f: *Frame) Error!void {
         for (xs) |a| try f.cellOrigins(a, &answered);
     }
     for (f.writers.items) |w| {
-        if (w.reader) continue;
         const key: [2]u32 = .{ w.o, w.e };
+        // A reader reads the cell at a switch point where a holder keeps a
+        // value taken out of it (the mark): a function `Ref.update` runs
+        // that writes it in place and then logs, so that a sink reads the
+        // cell before the store-back (kernel §13 item 12). Another holder
+        // and an answer of the handle do not revoke it: what it read
+        // escapes (`readersHeld`).
+        if (w.reader) {
+            if (f.cell_marked.contains(key)) try f.m.addRefusal(f, w.site, .call, "a function that reads the contents of a cell it captured runs where the checker does not follow it, and a holder of the cell keeps a value taken out of it across a call where another fiber can run");
+            continue;
+        }
         const kept = for (answered.items) |o| {
             if (o[0] == w.o and o[1] == w.e) break true;
         } else false;
@@ -8630,7 +8646,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
             const lcode = f.codes.items[f.nodes.items[args[j]].a];
             var any = false;
             for (0..lcode.ncaps) |k| {
-                if (f.isWriter(lcode, k) or try f.registerWriter(args[j], lcode, @intCast(k), inst)) any = true;
+                if (f.isWriter(lcode, k) or (!c.fns[j].?.defect and try f.registerWriter(args[j], lcode, @intCast(k), inst))) any = true;
             }
             if (any) {
                 const escapes_any = for (0..n) |se| {
@@ -10310,6 +10326,7 @@ fn flow(f: *Frame, v: Val, use: *const Use) Error!void {
 fn judge(f: *Frame, v: Val, use: *const Use) Error!void {
     // The holder lets the function's answer escape: each cell that the answer can hold escapes here.
     if (use.kind != .top and use.fnc.ans_escapes) try f.escapeAnswer(v, use);
+    if (defectAt(use)) try f.defectUse(v, use);
     if (try f.codeOf(v)) |code| return f.flowCode(v, code, use);
     const root = f.ownFnRoot(v);
     if (f.isFnRoot(root)) return f.flowOwn(root, use);
@@ -10320,6 +10337,77 @@ fn judge(f: *Frame, v: Val, use: *const Use) Error!void {
 /// it does with it after (`Fn.lost`).
 fn lostAt(use: *const Use) bool {
     return use.kind != .top and use.fnc.lost;
+}
+
+/// Whether a defect can run the function at `use` (`Fn.defect`).
+fn defectAt(use: *const Use) bool {
+    return use.kind != .top and use.fnc.defect;
+}
+
+/// Kernel §13 item 12, *A defect*: the function `v` (no join) meets a use
+/// that a defect can run. A closure is from then on neither a writer nor a
+/// reader (`defect_codes`); one that is one already ran only at switch
+/// points, and is refused. The frame's own function parameter: the caller
+/// judges it (`flowOwn` puts `defect` on its draft). A top-level function
+/// captures nothing. Any other value is refused: its captures can be a
+/// writer's or a reader's of a use the frame judged before, or of another
+/// frame.
+fn defectUse(f: *Frame, v: Val, use: *const Use) Error!void {
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .fnref, .none => return,
+        .closure => {
+            const code = f.codes.items[n.a];
+            if (code.inst == none) return;
+            try f.defect_codes.append(f.gpa, .{ code.inst, code.caps });
+            for (0..code.ncaps) |k| if (f.isWriter(code, k)) {
+                return f.refuse(use, .call, "a function that a defect can run captured a cell it reads or writes, and it went where another fiber runs it before");
+            };
+            // What it reaches of its captures escapes: it can run at any
+            // later point, also where the holder runs it within a call.
+            const start: u32 = @intCast(f.atoms.items.len);
+            defer f.atoms.shrinkRetainingCapacity(start);
+            for (0..code.ncaps) |k| try f.capHeld(code, k, &f.atoms);
+            try f.noteEscape(start, use.site.inst);
+        },
+        .ref => if (f.isFnRoot(f.ownFnRoot(v))) return else return f.refuse(use, .call, "a function that a defect can run is a value whose captures the checker does not see"),
+        .outside, .built, .join, .unknown => return f.refuse(use, .call, "a function that a defect can run is a value whose captures the checker does not see"),
+        .later => unreachable, // read through `capVal` only
+    }
+}
+
+/// Whether the known function `code` met a use that a defect can run
+/// (`defectUse`).
+fn defectCode(f: *const Frame, code: Code) bool {
+    if (code.inst == none) return false;
+    for (f.defect_codes.items) |x| if (x[0] == code.inst and x[1] == code.caps) return true;
+    return false;
+}
+
+/// Kernel §13 item 12, *A defect*: the parameters (a mask) of one of core's
+/// declarations that keep the function they are handed where code that runs
+/// after a throw can run it: `Task.onDefect`'s hook and a scheduler's
+/// (`Task.scheduler`, `Task.schedulerWith`), which run there
+/// (`boundary.md` §9.8.10 (c)); `Task.onTurn`'s, which the teardown's
+/// drains run, and the cleanups the teardown runs for each fiber it cancels
+/// (`Task.bracket`'s release, `Task.onExit`'s and `Task.defer`'s handler,
+/// `Task.start`'s report; §9.8.14); and `Log.setSink`'s sink, which any of
+/// that code runs where it logs. Named directly, as `shortCircuits` names
+/// `Basics.and`.
+fn defectHookParams(f: *const Frame) u32 {
+    const m = f.m;
+    const mod = m.in.module;
+    if (f.is_lambda or !m.in.isCore(mod) or mod >= m.names.module_names.len) return 0;
+    const module = m.names.module_names[mod];
+    const name = m.names.declName(mod, f.decl);
+    const Hook = struct { []const u8, []const u8, u32 };
+    const hooks = [_]Hook{
+        .{ "Log", "setSink", 1 },        .{ "Task", "onDefect", 1 }, .{ "Task", "scheduler", 1 },
+        .{ "Task", "schedulerWith", 7 }, .{ "Task", "onTurn", 1 },   .{ "Task", "bracket", 2 },
+        .{ "Task", "onExit", 2 },        .{ "Task", "defer", 2 },    .{ "Task", "start", 2 },
+    };
+    for (hooks) |h| if (std.mem.eql(u8, module, h[0]) and std.mem.eql(u8, name, h[1])) return h[2];
+    return 0;
 }
 
 /// What one judgment of `flow` reads of its use, besides what is above it
@@ -10395,7 +10483,10 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // frame's later switch points (kernel §13 item 12).
         const reg = try f.gpa.alloc(bool, code.ncaps);
         defer f.gpa.free(reg);
-        for (reg, 0..) |*x, k| x.* = f.cells_any and (f.isWriter(code, k) or try f.registerWriter(v, code, @intCast(k), inst));
+        // One a defect can run runs at any point, not only a switch point:
+        // it is neither, and shares what it captured (kernel §13 item 12,
+        // *A defect*).
+        for (reg, 0..) |*x, k| x.* = f.cells_any and (f.isWriter(code, k) or (!defectAt(&use) and try f.registerWriter(v, code, @intCast(k), inst)));
         if (try f.writesCapturedBut(code, reg)) try f.refuse(&use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
         // One that writes in place what it stored in a cell it captured,
         // after another fiber could run: another fiber can hold the cell
@@ -10715,7 +10806,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
     // be a writer, which runs at the frame's switch points (kernel §13 item 12).
     const reg = try f.gpa.alloc(bool, code.ncaps);
     defer f.gpa.free(reg);
-    for (reg, 0..) |*x, k| x.* = top == null and f.cells_any and (f.isWriter(code, k) or try f.registerWriter(v, code, @intCast(k), use.site.inst));
+    for (reg, 0..) |*x, k| x.* = top == null and f.cells_any and (f.isWriter(code, k) or (!defectAt(use) and try f.registerWriter(v, code, @intCast(k), use.site.inst)));
     if (top == null and try f.writesCapturedBut(code, reg)) try f.refuse(use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
     try f.flushShare();
     const site = use.site;
@@ -11066,6 +11157,8 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     const di = try f.draftOf(root, null);
     const inst = use.site.inst;
     f.drafts.items[di].used = true;
+    // A function a defect can run, handed on: so is the frame's own.
+    if (defectAt(&use)) f.drafts.items[di].defect = true;
     if (use.kind == .top or lostAt(&use) or f.drafts.items[di].lost or f.drafts.items[di].arity != use.fnc.arity) {
         f.drafts.items[di].lost = true;
         if (use.kind != .top) try f.escapeSupplies(&use);
