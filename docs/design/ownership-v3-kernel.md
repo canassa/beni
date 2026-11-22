@@ -2823,6 +2823,49 @@ contents of a cell are locations, and that a call can change what a location of 
       that reads a cell refuses every later write of the cell in place, defect or not (BP's
       `sink` family; the lane's reviewer found a hook that logs and so runs a sink reader at the
       throw) (`cells.mjs`' `defect.*`; `run/CellDefectHookLive`, `run/CellSinkReadsLive`).
+      *Amended 2026-11-22 (#2609): what code a defect runs reaches runs there too.* Before, the bit
+      stopped at one hop. A helper that wraps its parameter in a closure and hands the closure to a
+      hook (`install f = Task.onDefect λ⊤ → f ⊤`) left the parameter without the bit: the closure's
+      use of its capture is the closure's own contract, which says nothing of a defect. Its caller
+      registered the hook's reader as a reader, and the write in place was accepted. Now a use
+      carries the bit to what it reaches (`Use.defect_above`): each function that a function a
+      defect can run captured meets its use with the bit (`innerUse`), also where the holder loses
+      it (`flowCode`'s default use). So the frame's own parameter gets it (`flowOwn`), and a closure
+      it reaches is neither a writer nor a reader (`defectUse`), at any depth. Three other ways reach
+      such code without a use of the function:
+      (a) A function that hands one of its own function parameters to code a defect runs (its
+      contract has `defect` there: `Task.onDefect`, a helper over it, a partial application of
+      `Task.bracket`) is judged only where it is called, as one with `flag_p` on a parameter is: as
+      a value it is refused (`paramsDefect`). A holder that does not know it (a fold over
+      `[ Task.onDefect ]`, a parameter `hr` called as `hr f`, a record's field, an `if` that joins it
+      with a lambda, a cell, a list pattern; blind round BT found the last four, with `Log.setSink` in
+      a record) would hand it functions that the frame registered as writers or readers. So a function that the walk loses never reaches a hook
+      through a callee that the walk does not know.
+      (b) Code a defect runs that captured a value whose type can hold a function below it: the
+      frame cannot say which of its own function parameters are in there. A field, a list's
+      element, a cell's contents, a `Dict`'s value or a type variable can hold one lost into it
+      or captured by a closure the frame put there (`b = { h = λ⊤ → f ⊤ }`; the lane's reviewer
+      found the second), so each of them that the frame uses gets the bit where the contract is
+      built (`defect_data`); an opaque value (`Js.Value`) can hold only one the frame lost
+      (`Js.from f`), so each of them that it loses does. Either order of the two. What such a
+      capture holds of the frame's closures and cells escapes where it is handed, as before
+      (`capHeld`).
+      (c) Code that core runs at a stop that a defect causes: `Task.onSchedulerIdle`'s and
+      `onSchedulerCount`'s function and `stopScheduler`'s `done`, which run where a fiber ends,
+      in the teardown too; `Task.onShutdown`'s function and `shutdown`'s `done`, since code a
+      defect runs can call `shutdown`; `Task.chainDefect`'s hook; and `Log.withSink`'s sink, which
+      stays in the fiber's slot until the finaliser that `withLogContext` pushed runs, so a cleanup
+      pushed inside its body logs to it in the teardown (`defectHookParams`).
+      It is the pessimistic side: a helper that uses its function parameter and hands a hook a
+      closure over a record of functions marks that parameter even where the record never holds
+      it, a function parameter read out of a tuple or a record parameter is refused where it is
+      handed to a hook (no root names it), and a hook installer is refused as a value even where
+      its holder calls it with a function that is neither a writer nor a reader (`cells.mjs`'
+      `reach.*`; `run/CellDefectReach` and its live twin).
+      A fiber that is ready at the throw and not masked runs no code of its own in the teardown: the
+      drain unwinds it before its next step (`deliverable`), so only its cleanups run, and those
+      are hooks above. A fiber that is masked at the throw goes on running its masked code there
+      (`halt` latches the interrupt only): that is not covered yet (#2610, below).
     `run/CellFibersInPlace` and its live twin `run/CellFibersInPlaceLive`.
 
 What it does not cover yet, each a refusal: a reader that the frame joins before the contents leave it
@@ -2836,3 +2879,10 @@ where the closures go to the runtime); a handle handed to the frame's own functi
 parameter, which shares it (`run/SanitiserCellLoanKeptApart`'s `handed` and `modified`); and a handle at a
 part of a root (a record's field, a tuple's part), which is no tracked root whole and is shared at its
 first renewal.
+
+One gap is not a refusal: a fiber that is masked at a throw (`Task.uninterruptible`,
+`uninterruptibleMask`, `bracket`'s acquire, a `restore` inside a mask up to its first suspension point)
+runs program code in the teardown, after the throwing fiber's write in place and before its store-back,
+and v3 can register its closure as a writer or a reader. Only a platform that survives the throw (a
+page) reaches it. The precise rule is a contract bit beside `switches` for a function that may enter a
+mask, which no writer or reader may have (#2610).

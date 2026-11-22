@@ -1,0 +1,1 @@
+A function that code a defect runs reaches (a helper's closure, record, list, cell or `Dict` over its parameter, or a function applied to it with `_`) reads a cell: it runs at any point, so it shares the handle, and the frame writes a copy of the contents, accepted (ownership-v3-kernel.md §13 item 12, *A defect*, amended, #2609). Its live twin is CellDefectReachLive.

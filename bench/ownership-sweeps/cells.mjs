@@ -1102,6 +1102,42 @@ function genDefect(hook, at, live) {
   return mdMain(`defect.${hook}.${at}`, lines);
 }
 
+// `reach.<shape>.<at>.<twin>` (#2609): code a defect runs reaches the reader by a way other than its
+// own parameter. `shape`: a helper that wraps its parameter in a closure for `Task.onDefect` (`wrapped`),
+// a second helper over it (`wrapped2`), a local closure (`nested`), a record (`record`), a list
+// (`list`), a cell (`cell`, `cellLater`: stored after the hook is installed), a `Dict` (`dict`), a closure over it
+// in a record (`box`), a function applied to it with `_` (`partial`), a record the caller builds (`callerRecord`), and
+// `Task.onDefect` handed on as a value to a parameter (`handed`), in a list (`folded`), in a record
+// (`field`), an `if` with a lambda (`join`), a cell (`cellFn`) or a list pattern (`listPattern`), and
+// `Log.setSink` in a record (`sinkField`; blind round BT); `at` as in
+// `defect`. The function throws after its write; the twin is `live` where the write is in place.
+const REACH = {
+  wrapped: ['inst : (⊤ → ⊤) → ⊤\ninst f = Task.onDefect λ⊤ → f ⊤', (rd) => `inst ${rd}`],
+  wrapped2: ['inst0 : (⊤ → ⊤) → ⊤\ninst0 g = Task.onDefect λ⊤ → g ⊤\n\n\ninst : (⊤ → ⊤) → ⊤\ninst f = inst0 λ⊤ → f ⊤', (rd) => `inst ${rd}`],
+  nested: ['inst : (⊤ → ⊤) → ⊤\ninst f =\n    g = λ⊤ → f ⊤\n    Task.onDefect λ⊤ → g ⊤', (rd) => `inst ${rd}`],
+  record: ['inst : (⊤ → ⊤) → ⊤\ninst f =\n    b = { h = f }\n    Task.onDefect λ⊤ → b.h ⊤', (rd) => `inst ${rd}`],
+  list: ['inst : (⊤ → ⊤) → ⊤\ninst f =\n    fs = [ f ]\n    Task.onDefect λ⊤ → List.foldl fs ⊤ λg _ → g ⊤', (rd) => `inst ${rd}`],
+  cell: ['inst : (⊤ → ⊤) → ⊤\ninst f =\n    c = Ref.make f\n    Task.onDefect λ⊤ → (Ref.get c) ⊤', (rd) => `inst ${rd}`],
+  cellLater: ['inst : (⊤ → ⊤) → ⊤\ninst f =\n    c = Ref.make λ⊤ → ⊤\n    Task.onDefect λ⊤ → (Ref.get c) ⊤\n    Ref.set c f', (rd) => `inst ${rd}`],
+  dict: ['inst : (⊤ → ⊤) → ⊤\ninst f =\n    d = Dict.singleton 1 f\n    Task.onDefect λ⊤ →\n        case Dict.get d 1 of\n            Just g →\n                g ⊤\n            Nothing →\n                ⊤', (rd) => `inst ${rd}`],
+  box: ['inst : (⊤ → ⊤) → ⊤\ninst f =\n    b = { h = λ⊤ → f ⊤ }\n    Task.onDefect λ⊤ → b.h ⊤', (rd) => `inst ${rd}`],
+  partial: ['call : (⊤ → ⊤), ⊤ → ⊤\ncall f x = f x\n\n\ninst : (⊤ → ⊤) → ⊤\ninst f = Task.onDefect (call f _)', (rd) => `inst ${rd}`],
+  callerRecord: ['inst : Hooks → ⊤\ninst b = Task.onDefect λ⊤ → b.h ⊤', (rd) => `inst { h = ${rd} }`],
+  handed: ['reg : ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → ⊤\nreg hr f = hr f', (rd) => `reg Task.onDefect ${rd}`],
+  field: ['type alias Cfg =\n    { install : (⊤ → ⊤) → ⊤ }', (rd) => `cfg : Cfg\ncfg = { install = Task.onDefect }\ncfg.install ${rd}`],
+  join: ['', (rd) => `reg = if List.length (Ref.get r) > 0 then Task.onDefect else λ_ → ⊤\nreg ${rd}`],
+  cellFn: ['', (rd) => `fr = Ref.make Task.onDefect\n(Ref.get fr) ${rd}`],
+  listPattern: ['', (rd) => `case [ Task.onDefect ] of\n    [ g, …_ ] →\n        g ${rd}\n    _ →\n        ⊤`],
+  sinkField: ['type alias Sinks =\n    { sink : (Log.Entry → ⊤) → ⊤ }', () => 'cfg : Sinks\ncfg = { sink = Log.setSink }\ncfg.sink λ_ → Debug.log "sink ${ints (Ref.get r)}" ⊤\nTask.onDefect λ⊤ → Log.info "defect"'],
+  folded: ['inst : (⊤ → ⊤) → ⊤\ninst f = List.foldl [ Task.onDefect ] ⊤ λh _ → h f', (rd) => `inst ${rd}`],
+};
+
+function genReach(shape, at, live) {
+  const [defs, inst] = REACH[shape];
+  const lines = ['r = Ref.make [ 1, 2 ]', inst('λ⊤ → Log.info "hook ${ints (Ref.get r)}"'), updateAt(at, 'n = deep 0', live, 'if n > 0 then l2 else l2'), 'ints (Ref.get r)'];
+  return mdMain(`reach.${shape}.${at}`, lines).replace('import Io\n', 'import Dict\nimport Io\n').replace('\n\ngo : ⊤ → String', `\n\n${defs}\n\n\ngo : ⊤ → String`);
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -1146,6 +1182,9 @@ for (const log of Object.keys(MARK_LOGS)) for (const at of MARK_ATS) for (const 
 for (const hook of DEFECT_HOOKS) for (const at of DEFECT_ATS) for (const live of [true, false]) {
   if (!DEFECT_INSTALLED.includes(hook) && (at !== 'frame' || !live)) continue;
   emit(`defect.${hook}.${at}.${live ? 'live' : 'dead'}`, { 'Main.beni': genDefect(hook, at, live) });
+}
+for (const shape of Object.keys(REACH)) for (const at of DEFECT_ATS) for (const live of [true, false]) {
+  emit(`reach.${shape}.${at}.${live ? 'live' : 'dead'}`, { 'Main.beni': genReach(shape, at, live) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);

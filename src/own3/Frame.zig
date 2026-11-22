@@ -302,6 +302,12 @@ const Use = struct {
     /// cell on (`rewritesOf`): set where the use is made, so a judgment
     /// reads it as a fact of its own use.
     up_rewrites: bool = false,
+    /// Whether a holder above this one is code that a defect can run
+    /// (`defectAt`): what that code reaches runs at a defect too (kernel
+    /// §13 item 12, *A defect*, amended for #2609). Set where the use is
+    /// made: by `innerUse` from its `up`, and by `flowCode` on the default
+    /// use it makes where the holder loses the function.
+    defect_above: bool = false,
     site: *const Site,
     depth: u32 = 0,
     /// The function in the location, once `flow` knows which it is: a known
@@ -623,6 +629,14 @@ reader_held: std.ArrayList(Atom) = .empty,
 /// The closures (`Code.inst`, `Code.caps`) that met a use a defect can run:
 /// none of them is a writer or a reader (`defectUse`).
 defect_codes: std.ArrayList([2]u32) = .empty,
+/// What code that a defect can run captured that can hold a function below
+/// it (kernel §13 item 12, *A defect*, (b); `holdsFunctions`): `.lost`, a
+/// value of a type with a function, a type variable or an opaque value, so
+/// each of the frame's own function parameters that the frame loses can be
+/// there; `.held`, a value of a type with a function or a type variable, so
+/// a closure the frame put there can capture any of them that it uses. Each
+/// gets `Fn.defect`.
+defect_data: enum(u8) { none, lost, held } = .none,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -4250,8 +4264,13 @@ fn mention(f: *Frame, v: Val, inst: u32) Error!void {
 }
 
 fn flowTop(f: *Frame, v: Val, inst: u32) Error!void {
+    return f.flowTopDefect(v, inst, false);
+}
+
+/// `flowTop`, where `defect` says that code a defect can run holds it.
+fn flowTopDefect(f: *Frame, v: Val, inst: u32, defect: bool) Error!void {
     const site: Site = .{ .inst = inst };
-    const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site };
+    const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .defect_above = defect };
     try f.flow(v, &top);
 }
 
@@ -6019,7 +6038,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             flags[off[x.a] + x.e] |= flag_s;
         };
         const fnc = try m.arena.create(CMod.Fn);
-        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0) };
+        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0) };
         fns[idx] = fnc;
         // The function itself is used.
         if (dr.used) for (flags[off[idx]..off[idx + 1]]) |*x| {
@@ -8715,9 +8734,11 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         }
     }
     if (all.items.len != c.arity) {
-        // A partial or an over-application: no rule follows it.
-        for (all.items) |v| {
-            try f.flowTop(v, inst);
+        // A partial or an over-application: no rule follows it. A function
+        // that a defect can run there is run there (#2609).
+        for (all.items, 0..) |v, j| {
+            const fd = j < c.arity and if (c.fns[j]) |x| x.defect else false;
+            try f.flowTopDefect(v, inst, fd);
             try f.escape(v, inst);
         }
         if (c.writes()) try m.addRefusal(f, inst, .call, "a function that writes its parameter is not called with all its arguments");
@@ -10476,9 +10497,10 @@ fn lostAt(use: *const Use) bool {
     return use.kind != .top and use.fnc.lost;
 }
 
-/// Whether a defect can run the function at `use` (`Fn.defect`).
+/// Whether a defect can run the function at `use`: the holder's
+/// `Fn.defect`, or code a defect can run above it (`Use.defect_above`).
 fn defectAt(use: *const Use) bool {
-    return use.kind != .top and use.fnc.defect;
+    return use.defect_above or (use.kind != .top and use.fnc.defect);
 }
 
 /// Kernel §13 item 12, *A defect*: the function `v` (no join) meets a use
@@ -10506,11 +10528,35 @@ fn defectUse(f: *Frame, v: Val, use: *const Use) Error!void {
             defer f.atoms.shrinkRetainingCapacity(start);
             for (0..code.ncaps) |k| try f.capHeld(code, k, &f.atoms);
             try f.noteEscape(start, use.site.inst);
+            // A function in a captured value runs there too: the frame
+            // cannot say which of the functions it lost are in there (#2609).
+            for (0..code.ncaps) |k| f.defect_data = @fromBackingInt(@intCast(@max(@backingInt(f.defect_data), @backingInt(f.holdsFunctions(code, k)))));
         },
         .ref => if (f.isFnRoot(f.ownFnRoot(v))) return else return f.refuse(use, .call, "a function that a defect can run is a value whose captures the checker does not see"),
         .outside, .built, .join, .unknown => return f.refuse(use, .call, "a function that a defect can run is a value whose captures the checker does not see"),
         .later => unreachable, // read through `capVal` only
     }
+}
+
+/// What capture `k` of the known function `code` can hold below it
+/// (`defect_data`): a function (a field, an element, a cell's contents)
+/// or a type variable can hold a closure the frame made, and an opaque
+/// value only a function it lost. A function capture is judged at its own
+/// use (`flowCaptures`), not here.
+fn holdsFunctions(f: *Frame, code: Code, k: usize) @FieldType(Frame, "defect_data") {
+    const lc = code.contract;
+    const j = code.own_params + k;
+    if (j >= lc.arity) return .held;
+    if (lc.fns[j] != null) return .none;
+    const es = f.m.loc.layoutEntries(lc.layouts[j]);
+    _ = f.charge(Loc.scanUnits(es.len));
+    var out: @FieldType(Frame, "defect_data") = .none;
+    for (es) |e| switch (e.kind) {
+        .closure, .@"var" => return .held,
+        .@"opaque" => out = .lost,
+        .list, .cell, .field => {},
+    };
+    return out;
 }
 
 /// Whether the known function `code` met a use that a defect can run
@@ -10528,9 +10574,12 @@ fn defectCode(f: *const Frame, code: Code) bool {
 /// (`boundary.md` §9.8.10 (c)); `Task.onTurn`'s, which the teardown's
 /// drains run, and the cleanups the teardown runs for each fiber it cancels
 /// (`Task.bracket`'s release, `Task.onExit`'s and `Task.defer`'s handler,
-/// `Task.start`'s report; §9.8.14); and `Log.setSink`'s sink, which any of
-/// that code runs where it logs. Named directly, as `shortCircuits` names
-/// `Basics.and`.
+/// `Task.start`'s report; §9.8.14); `Log.setSink`'s sink, which any of
+/// that code runs where it logs; and what runs where a fiber ends or the
+/// runtime stops (`onSchedulerIdle`, `onSchedulerCount`, `stopScheduler`,
+/// `onShutdown`, `shutdown`, `chainDefect`) and `Log.withSink`'s sink,
+/// which a cleanup pushed inside its body logs to (#2609). Named directly,
+/// as `shortCircuits` names `Basics.and`.
 fn defectHookParams(f: *const Frame) u32 {
     const m = f.m;
     const mod = m.in.module;
@@ -10539,9 +10588,15 @@ fn defectHookParams(f: *const Frame) u32 {
     const name = m.names.declName(mod, f.decl);
     const Hook = struct { []const u8, []const u8, u32 };
     const hooks = [_]Hook{
-        .{ "Log", "setSink", 1 },        .{ "Task", "onDefect", 1 }, .{ "Task", "scheduler", 1 },
-        .{ "Task", "schedulerWith", 7 }, .{ "Task", "onTurn", 1 },   .{ "Task", "bracket", 2 },
-        .{ "Task", "onExit", 2 },        .{ "Task", "defer", 2 },    .{ "Task", "start", 2 },
+        .{ "Log", "setSink", 1 },          .{ "Task", "onDefect", 1 },         .{ "Task", "scheduler", 1 },
+        .{ "Task", "schedulerWith", 7 },   .{ "Task", "onTurn", 1 },           .{ "Task", "bracket", 2 },
+        .{ "Task", "onExit", 2 },          .{ "Task", "defer", 2 },            .{ "Task", "start", 2 },
+        // Run where a fiber ends or the runtime stops, in the teardown too,
+        // and the sink a cleanup pushed inside `withSink`'s body logs to
+        // (kernel §13 item 12, *A defect*, (c); #2609).
+        .{ "Task", "onSchedulerIdle", 2 }, .{ "Task", "onSchedulerCount", 2 }, .{ "Task", "stopScheduler", 4 },
+        .{ "Task", "onShutdown", 1 },      .{ "Task", "shutdown", 2 },         .{ "Task", "chainDefect", 1 },
+        .{ "Log", "withSink", 1 },
     };
     for (hooks) |h| if (std.mem.eql(u8, module, h[0]) and std.mem.eql(u8, name, h[1])) return h[2];
     return 0;
@@ -10557,6 +10612,7 @@ const FlowKey = struct {
     own: u32,
     up_top: bool,
     up_rewrites: bool,
+    defect: bool,
     c: usize,
     fnc: usize,
     holder: u64,
@@ -10573,6 +10629,7 @@ fn flowKey(f: *const Frame, v: Val, use: *const Use) FlowKey {
         .own = use.own,
         .up_top = if (use.up) |u| u.kind == .top else false,
         .up_rewrites = use.up_rewrites,
+        .defect = use.defect_above,
         .c = if (known) @intFromPtr(use.c) else 0,
         .fnc = if (known) @intFromPtr(use.fnc) else 0,
         .holder = use.holder,
@@ -10609,6 +10666,10 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     // handed, after another fiber could run, is judged only where it is
     // called (`applyAt`, kernel §13 item 12): as a value, no holder judges it.
     if (paramsParked(code)) try f.refuse(&use, .call, "a function that writes in place a value it stored in a cell it is handed, after another fiber could run, is used as a value");
+    // One that hands a function parameter to code a defect can run, too: a
+    // holder that does not know it hands it functions the frame registered
+    // as writers or readers (kernel §13 item 12, *A defect*, (a); #2609).
+    if (paramsDefect(code)) try f.refuse(&use, .call, "a function that hands its function parameter to code a defect can run is used as a value");
     if (use.kind == .top or lostAt(&use) or code.own_params != use.fnc.arity) {
         // No contract describes the holder: the function must ask nothing
         // (kernel §6.8). It writes no parameter, and the holder hands each of
@@ -10639,7 +10700,8 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
             try f.escapeSupplies(&use);
             try f.escape(v, inst);
         }
-        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code };
+        // Lost by code a defect can run, it is run there too (#2609).
+        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code, .defect_above = defectAt(&use) };
         try f.defaultParams(code, &top);
         try f.flowRenews(code, &top, false);
         return f.flowCaptures(code, &top);
@@ -10691,6 +10753,14 @@ fn paramsParked(code: Code) bool {
     for (0..@min(code.own_params, lc.arity)) |j| {
         for (lc.flags[lc.off[j]..lc.off[j + 1]]) |x| if (x & CMod.flag_p != 0) return true;
     }
+    return false;
+}
+
+/// Whether the contract of `code` has `Fn.defect` on one of its own
+/// parameters (kernel §13 item 12, *A defect*, (a)).
+fn paramsDefect(code: Code) bool {
+    const lc = code.contract;
+    for (0..@min(code.own_params, lc.arity)) |j| if (lc.fns[j]) |x| if (x.defect) return true;
     return false;
 }
 
@@ -11277,7 +11347,7 @@ fn innerUse(f: *Frame, code: Code, j: u32, lf: *const CMod.Fn, up: *const Use) E
     for (0..code.ncaps) |k| if (code.own_params + k < lc.arity) {
         args[code.own_params + k] = try f.capVal(code, k);
     };
-    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .up_rewrites = f.rewritesOf(up), .site = up.site, .depth = up.depth + 1 };
+    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .up_rewrites = f.rewritesOf(up), .defect_above = defectAt(up), .site = up.site, .depth = up.depth + 1 };
 }
 
 /// The frame's own function parameter meets a use: what the use hands it,
