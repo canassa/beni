@@ -615,6 +615,9 @@ parked_atoms: std.ArrayList(Atom) = .empty,
 /// The functions that write the contents of a cell the frame made and run
 /// where the walk does not follow them, a spawned fiber's among them.
 writers: std.ArrayList(Writer) = .empty,
+/// What each reader (`Writer.reader`) reads at each return point: it
+/// escapes where the walk ends (`readersHeld`).
+reader_held: std.ArrayList(Atom) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -1373,7 +1376,7 @@ fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
 /// which runs no check, counts for building it.
 const Quiet = struct { m: Mod.Quiet, failed: bool, parts: [quiet_parts.len]usize };
 
-const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers" };
+const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers", "reader_held" };
 
 fn quietParts(f: *const Frame) [quiet_parts.len]usize {
     var out: [quiet_parts.len]usize = undefined;
@@ -2987,28 +2990,44 @@ fn closureHeld(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
     if (m.isDraft(lc) or lc.casts or code.own_params + code.ncaps > lc.arity) return false;
     for (0..code.ncaps) |k| if (lc.fns[code.own_params + k] != null) return false;
     for (0..code.ncaps) |k| {
-        const j: u32 = @intCast(code.own_params + k);
         // A writer's handle is no holder the frame loses (kernel §13 item 12).
         if (f.isWriter(code, k)) continue;
-        const capv = try f.capVal(code, k);
-        const n = lc.off[j + 1] - lc.off[j];
-        // The scan of the capture's flags and of the answer's sources is work (kernel §8).
-        _ = f.charge(Loc.scanUnits(n));
-        for (0..n) |e| {
-            var touched = lc.flags[lc.off[j] + e] != 0 or handsOn(lc, j, @intCast(e));
-            if (!touched) for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j and s.e == e) {
-                touched = true;
-            };
-            if (!touched) continue;
-            _ = try f.argLeaves(capv, lc.layouts[j], @intCast(e), &.{}, false, out);
-        }
+        try f.capHeld(code, k, out);
     }
     return true;
+}
+
+/// The leaves of capture `k` of the known function `code` at the
+/// locations its contract reaches, appended to `out`.
+fn capHeld(f: *Frame, code: Code, k: usize, out: *std.ArrayList(Atom)) Error!void {
+    const lc = code.contract;
+    const j: u32 = @intCast(code.own_params + k);
+    const capv = try f.capVal(code, k);
+    const n = lc.off[j + 1] - lc.off[j];
+    // The scan of the capture's flags and of the answer's sources is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(n));
+    for (0..n) |e| {
+        var touched = lc.flags[lc.off[j] + e] != 0 or handsOn(lc, j, @intCast(e));
+        if (!touched) for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j and s.e == e) {
+            touched = true;
+        };
+        if (!touched) continue;
+        _ = try f.argLeaves(capv, lc.layouts[j], @intCast(e), &.{}, false, out);
+    }
 }
 
 /// The atoms `f.atoms[start..]` escape at `point`: they are held by something
 /// the walk does not follow, so no later write of them is accepted (`demand`).
 fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
+    try f.escapeOnly(start, point);
+    // An escaped handle has another holder (kernel §13).
+    try f.shareAtoms(start, f.atoms.items.len, point);
+}
+
+/// `noteEscape` without the share of each handle among the atoms: what a
+/// reader holds after the frame ends (`readersHeld`), where no later step
+/// of the walk reads a version.
+fn escapeOnly(f: *Frame, start: u32, point: u32) Error!void {
     try f.uniqueTail(&f.atoms, start);
     const n: u32 = @intCast(f.atoms.items.len - start);
     if (n == 0) return;
@@ -3029,8 +3048,6 @@ fn noteEscape(f: *Frame, start: u32, point: u32) Error!void {
     }
     const len: u32 = @intCast(f.esc_atoms.items.len - at);
     try f.escapes.append(f.gpa, .{ .start = at, .len = len, .point = point, .ctx = f.cur_ctx });
-    // An escaped handle has another holder (kernel §13).
-    try f.shareAtoms(start, start + n, point);
 }
 
 /// Set `flag` on the parameter location that atom `a` is, or was taken
@@ -5867,6 +5884,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     try f.cellReads();
     try f.finishDemands();
     try f.finishProbes();
+    try f.readersHeld();
     f.finished = true;
     // What the body reads of each parameter.
     var tmp: std.ArrayList(Atom) = .empty;
@@ -7585,6 +7603,28 @@ fn writersAtReturn(f: *Frame, point: u32, v: Val) Error!void {
     if (f.writers.items.len == 0) return;
     try f.flushShare();
     for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], point, &.{v}, &.{});
+    // A reader can still be reading after the frame ends, at any later
+    // time: what it reads here is held by it from then on (kernel §13 item
+    // 12, the reader amendment), and escapes where the walk ends
+    // (`readersHeld`).
+    for (f.writers.items) |w| if (w.reader) try f.capHeld(f.codes.items[w.code], w.k, &f.reader_held);
+}
+
+/// At the end of the walk: what each reader held at a return point escapes
+/// (kernel §13 item 12): the caller, or any holder, that writes it in place
+/// after the frame returns writes what a pending reader still reads. It
+/// escapes after every judgment of the walk, so the frame's own writes and
+/// the writers' runs, which a reader's runs judged, are not refused for it,
+/// and no handle is shared (a reader revokes no writer); the contract says
+/// that each of those cells escapes (`freshSrc`, `flag_e`).
+fn readersHeld(f: *Frame) Error!void {
+    if (f.reader_held.items.len == 0) return;
+    // Each atom a reader held is work (kernel §8).
+    _ = f.charge(f.reader_held.items.len);
+    const start: u32 = @intCast(f.atoms.items.len);
+    defer f.atoms.shrinkRetainingCapacity(start);
+    try f.atoms.appendSlice(f.gpa, f.reader_held.items);
+    try f.escapeOnly(start, f.body_root);
 }
 
 /// At the end of the walk: a writer whose cell got another holder after it

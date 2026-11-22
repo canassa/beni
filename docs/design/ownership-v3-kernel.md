@@ -2648,6 +2648,23 @@ contents of a cell are locations, and that a call can change what a location of 
       (the mark), lets none escape and answers none. Before, a fiber that only read the cell shared
       the handle, and every writer fiber of it was revoked (blind round AZ's `p5/w6`;
       `run/CellReaderFiber`).
+      *Amended 2026-11-22 (#2604): what a reader reads after the frame ends.* A reader can still be
+      pending where the frame returns, and reads the cell at any later time: a holder that writes
+      in place after the return what it read there writes what the reader still reads. So what a
+      reader reads at each return point (its capture at each location its contract reaches, the
+      handle among them: `capHeld`, as `closureHeld` reads a closure that goes out of sight) is
+      held by it from then on, and escapes where the walk ends (`readersHeld`), after every
+      judgment of the walk: the frame's own writes and the writers' runs, which the reader's runs
+      judged, are not refused for it, and no handle is shared, so a reader still revokes no
+      writer. The contract says that each of those cells escapes (`freshSrc`'s bit, `flag_e` on a
+      parameter's or a capture's cells): an answered handle has another holder (`cellResult`), so
+      its contents are no cell of the caller's; an answered loan, a loan stored in a parameter's
+      or a captured cell, a handle in a record, a list, a `Just`, a dictionary or another cell, and
+      a parameter's list the cell was made with, are refused at the caller's write in place, with
+      the `List.copy` fix. Before, the reader escaped nothing, and `mk` answering `( r, fiber )`,
+      `( Ref.get r, fiber )` or storing `Ref.get r` in its parameter's cell let the caller push
+      onto the list the pending fiber then read (`run/CellReaderHeldLive`; `cells.mjs`'
+      `reader.*`).
     - **A run of a writer** (`runWriter`) at each switch point after it is made (and at the call that
       made it, where that is one), and at each return point (`?`, the end): as a call that runs it
       within (item 11), it reads what its contract reads of the capture there, its write is a demand at
@@ -2744,10 +2761,13 @@ contents of a cell are locations, and that a call can change what a location of 
       (Task.fromHost …; List.push l x)`.
     - **Revocation** (`revokeWriters`, at the end of the walk): a writer is refused where it went out of
       sight if its cell got another holder at any time (item 8), the frame answers its handle, or a
-      holder of the cell has the mark.
+      holder of the cell has the mark. A reader is not revoked: what it read at each return point
+      escapes instead (the reader amendments above).
     `run/CellFibersInPlace` and its live twin `run/CellFibersInPlaceLive`.
 
-What it does not cover yet, each a refusal: a writer of a cell the frame did not make (a parameter's, a
+What it does not cover yet, each a refusal: a reader that the frame joins before the contents leave it
+(`n = Task.join a; ( Ref.get r, n )`): what it read at the return point escapes, although it no longer
+reads (`cells.mjs`' `reader.joined`); a writer of a cell the frame did not make (a parameter's, a
 capture's: a closure spawned inside `Task.scope`'s body, `cells.mjs`' `param` and `scoped` shapes); a
 writer whose closure goes to `Task.par` or `race`, whose contract's answer names the closures' cells, so
 the handle escapes with what the answer can hold; a closure that only stores into the cell; a closure that writes the contents of a cell it captured

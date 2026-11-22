@@ -729,6 +729,226 @@ main = Io.run λ⊤ → Node.printLines (go ⊤)
 `;
 }
 
+// #2604: a fiber that only reads a cell (a reader, kernel §13 item 12) still reads it after the frame
+// that spawned it returns, and a holder then writes in place what it reads. Programs are
+// `reader.<out>.<read>.<twin>`: `out` how the contents leave the frame `mk` that made the cell and
+// spawned the reader (`answered`, the handle answered; `loan`, a value `Ref.get` answered; `record`,
+// `list`, `maybe`, `dict`, `cell`, the handle in a record, a list, a `Just`, a dictionary, another
+// cell; `loanRecord`, a loan in a record; `loanCell`, a loan as another cell's contents; `stored`, a
+// loan stored in a parameter's cell; `storedCap`, in a cell a closure captured; `deferred`, `queue`, a
+// loan handed through a `Deferred` or a `Queue`; `tryErr`, a loan answered by an early `?`; `nested`, a
+// helper that answers `mk`'s answer; `helperSpawn`, the reader spawned by a helper handed the handle;
+// `scope`, `mk`'s body in `Task.scope`; `race`, `par`, `forEach`, the read inside `Task.race`,
+// `Task.par`, `Task.forEach` in the spawned fiber; `alias`, a writer fiber of a second cell that holds
+// the first cell's contents, spawned after the reader, or before it in `aliasFirst`; `param`, the cell
+// made with a list `mk` is handed, which the caller writes; `second`, the second cell of the `two`
+// reader answered; `cellUpd`, the caller updates the answered handle, which the reader reads through;
+// `loanFirst` and `storedFirst`, `loan` and `stored` with the loan taken before the spawn; `readHelper`, the
+// reader reads through a helper handed the cell, the handle answered; `arm`, the reader spawned in an arm
+// of an `if`, a loan answered; `setLoan`, `mk` stores a new list after the spawn and answers a loan of it;
+// `storedHandle`, the handle stored in a parameter's cell of cells; `getter`, a closure that answers a loan
+// answered beside the fiber; `mapped`, the cell made and the reader spawned in a callback of `List.map`
+// that answers a loan;
+// `joined`, `mk` joins the reader before it answers a loan, which the caller writes in place: these two
+// dead only, the write in place); `read` the reader (`plain`, `park` after `Task.yieldNow`, `sleep` after
+// `Io.sleep`, `two` two cells, the answered one first); the twin is `live` where the caller's write is
+// in place, `dead` where it writes a `List.copy`.
+const READER_OUTS = ['answered', 'loan', 'record', 'list', 'maybe', 'dict', 'cell', 'loanRecord', 'loanCell', 'stored', 'storedCap', 'deferred', 'queue', 'tryErr', 'nested', 'helperSpawn', 'scope', 'race', 'par', 'forEach', 'alias', 'aliasFirst', 'param', 'second', 'loanFirst', 'storedFirst', 'readHelper', 'arm', 'setLoan', 'storedHandle', 'getter', 'mapped', 'cellUpd', 'joined'];
+const READER_READS = {
+  plain: 'List.length (Ref.get r)',
+  park: 'Task.yieldNow ⊤\nList.length (Ref.get r)',
+  sleep: 'Io.sleep 1\nList.length (Ref.get r)',
+  two: 'List.length (Ref.get r) + List.length (Ref.get r2)',
+};
+
+function genReader(outKind, read, live) {
+  const w = (x) => (live ? `List.push ${x} 9` : `List.push (List.copy ${x}) 9`);
+  const rd = READER_READS[read];
+  const body = {
+    race: `Task.race\n    (λ⊤ →\n${ind(rd, 8)}\n    )\n    λ⊤ →\n        Io.sleep 50\n        0`,
+    par: `( x, y ) = Task.par\n    (λ⊤ →\n${ind(rd, 8)}\n    )\n    λ⊤ → 0\nx + y`,
+    forEach: `List.length (Task.forEach [ 1 ] 1 λk →\n${ind(rd, 4)}\n)`,
+  }[outKind] ?? rd;
+  const spawn = outKind === 'helperSpawn'
+    ? 'a = spawnR r r2'
+    : outKind === 'readHelper'
+      ? 'a = Task.spawn λ⊤ → readIt r r2'
+      : outKind === 'arm'
+        ? `a =\n    if List.length (Ref.get r2) > 0 then\n        Task.spawn λ⊤ →\n${ind(body, 12)}\n\n    else\n        Task.spawn λ⊤ → 0`
+        : `a = Task.spawn λ⊤ →\n${ind(body, 4)}`;
+  const make = ['r = Ref.make [ 1 ]', 'r2 = Ref.make [ 5 ]', spawn];
+  let mk;
+  let probe;
+  const tail = (ys) => `"\${String.fromInt (Task.join a)} \${ints ${ys}}"`;
+  switch (outKind) {
+    case 'answered':
+    case 'nested':
+    case 'helperSpawn':
+      mk = `mk : ⊤ → Ref (List Int) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( r, a )'].join('\n'), 4)}`;
+      if (outKind === 'nested') mk += `\n\n\nmk2 : ⊤ → Ref (List Int) × Task.Fiber Int\nmk2 ⊤ =\n    ( r, a ) = mk ⊤\n    ( r, a )`;
+      probe = [`( r, a ) = ${outKind === 'nested' ? 'mk2' : 'mk'} ⊤`, `ys = ${w('(Ref.get r)')}`, tail('ys')];
+      break;
+    case 'loanFirst':
+      mk = `mk : ⊤ → List Int × Task.Fiber Int\nmk ⊤ =\n${ind([...make.slice(0, 2), 'l = Ref.get r', make[2], '( l, a )'].join('\n'), 4)}`;
+      probe = ['( l, a ) = mk ⊤', `ys = ${w('l')}`, tail('ys')];
+      break;
+    case 'storedFirst':
+      mk = `mk : Ref (List Int) → Task.Fiber Int\nmk out =\n${ind([...make.slice(0, 2), 'Ref.set out (Ref.get r)', make[2], 'a'].join('\n'), 4)}`;
+      probe = ['out = Ref.make [ 0 ]', 'a = mk out', `Ref.update out λl → ${w('l')}`, tail('(Ref.get out)')];
+      break;
+    case 'readHelper':
+      mk = `readIt : Ref (List Int), Ref (List Int) → Int\nreadIt r r2 =\n${ind(rd, 4)}\n\n\nmk : ⊤ → Ref (List Int) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( r, a )'].join('\n'), 4)}`;
+      probe = ['( r, a ) = mk ⊤', `ys = ${w('(Ref.get r)')}`, tail('ys')];
+      break;
+    case 'arm':
+      mk = `mk : ⊤ → List Int × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( Ref.get r, a )'].join('\n'), 4)}`;
+      probe = ['( l, a ) = mk ⊤', `ys = ${w('l')}`, tail('ys')];
+      break;
+    case 'setLoan':
+      mk = `mk : ⊤ → List Int × Task.Fiber Int\nmk ⊤ =\n${ind([...make, 'Ref.set r [ 7 ]', '( Ref.get r, a )'].join('\n'), 4)}`;
+      probe = ['( l, a ) = mk ⊤', `ys = ${w('l')}`, tail('ys')];
+      break;
+    case 'storedHandle':
+      mk = `mk : Ref (Ref (List Int)) → Task.Fiber Int\nmk out =\n${ind([...make, 'Ref.set out r', 'a'].join('\n'), 4)}`;
+      probe = ['out = Ref.make (Ref.make [ 0 ])', 'a = mk out', `ys = ${w('(Ref.get (Ref.get out))')}`, tail('ys')];
+      break;
+    case 'getter':
+      mk = `mk : ⊤ → (⊤ → List Int) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( λ⊤ → Ref.get r, a )'].join('\n'), 4)}`;
+      probe = ['( g, a ) = mk ⊤', `ys = ${w('(g ⊤)')}`, tail('ys')];
+      break;
+    case 'mapped':
+      mk = '';
+      probe = [`ps =\n    List.map [ 1 ] λk →\n${ind([...make, '( Ref.get r, a )'].join('\n'), 8)}`, `case ps of\n    [ ( l, a ) ] →\n        ys = ${w('l')}\n        ${tail('ys')}\n\n    _ → ""`];
+      break;
+    case 'second':
+      mk = `mk : ⊤ → Ref (List Int) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( r2, a )'].join('\n'), 4)}`;
+      probe = ['( r, a ) = mk ⊤', `ys = ${w('(Ref.get r)')}`, tail('ys')];
+      break;
+    case 'param':
+      mk = `mk : List Int → Task.Fiber Int\nmk xs =\n${ind(['r = Ref.make xs', ...make.slice(1), 'a'].join('\n'), 4)}`;
+      probe = ['xs = [ 1 ]', 'a = mk xs', `ys = ${w('xs')}`, tail('ys')];
+      break;
+    case 'joined':
+      mk = `mk : ⊤ → List Int × Int\nmk ⊤ =\n${ind([...make, 'n = Task.join a', '( Ref.get r, n )'].join('\n'), 4)}`;
+      probe = ['( l, n ) = mk ⊤', 'ys = List.push l 9', '"${String.fromInt n} ${ints ys}"'];
+      break;
+    case 'cellUpd':
+      mk = `mk : ⊤ → Ref (List Int) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( r, a )'].join('\n'), 4)}`;
+      probe = ['( r, a ) = mk ⊤', `Ref.update r λl → ${w('l')}`, tail('(Ref.get r)')];
+      break;
+    case 'loan':
+      mk = `mk : ⊤ → List Int × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( Ref.get r, a )'].join('\n'), 4)}`;
+      probe = ['( l, a ) = mk ⊤', `ys = ${w('l')}`, tail('ys')];
+      break;
+    case 'record':
+      mk = `mk : ⊤ → H\nmk ⊤ =\n${ind([...make, '{ h = r, f = a }'].join('\n'), 4)}`;
+      probe = ['x = mk ⊤', 'a = x.f', `ys = ${w('(Ref.get x.h)')}`, tail('ys')];
+      break;
+    case 'loanRecord':
+      mk = `mk : ⊤ → L\nmk ⊤ =\n${ind([...make, '{ l = Ref.get r, f = a }'].join('\n'), 4)}`;
+      probe = ['x = mk ⊤', 'a = x.f', `ys = ${w('x.l')}`, tail('ys')];
+      break;
+    case 'list':
+      mk = `mk : ⊤ → List (Ref (List Int)) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( [ r ], a )'].join('\n'), 4)}`;
+      probe = ['( hs, a ) = mk ⊤', `ys =\n    case hs of\n        [ h ] → ${w('(Ref.get h)')}\n        _ → []`, tail('ys')];
+      break;
+    case 'maybe':
+      mk = `mk : ⊤ → Maybe (Ref (List Int)) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( Just r, a )'].join('\n'), 4)}`;
+      probe = ['( m, a ) = mk ⊤', `ys =\n    case m of\n        Just h → ${w('(Ref.get h)')}\n        Nothing → []`, tail('ys')];
+      break;
+    case 'dict':
+      mk = `mk : ⊤ → Dict Int (Ref (List Int)) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( Dict.fromList [ ( 1, r ) ], a )'].join('\n'), 4)}`;
+      probe = ['( d, a ) = mk ⊤', `ys =\n    case Dict.get d 1 of\n        Just h → ${w('(Ref.get h)')}\n        Nothing → []`, tail('ys')];
+      break;
+    case 'cell':
+      mk = `mk : ⊤ → Ref (Ref (List Int)) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( Ref.make r, a )'].join('\n'), 4)}`;
+      probe = ['( c, a ) = mk ⊤', `ys = ${w('(Ref.get (Ref.get c))')}`, tail('ys')];
+      break;
+    case 'loanCell':
+      mk = `mk : ⊤ → Ref (List Int) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( Ref.make (Ref.get r), a )'].join('\n'), 4)}`;
+      probe = ['( c, a ) = mk ⊤', `Ref.update c λl → ${w('l')}`, tail('(Ref.get c)')];
+      break;
+    case 'stored':
+      mk = `mk : Ref (List Int) → Task.Fiber Int\nmk out =\n${ind([...make, 'Ref.set out (Ref.get r)', 'a'].join('\n'), 4)}`;
+      probe = ['out = Ref.make [ 0 ]', 'a = mk out', `Ref.update out λl → ${w('l')}`, tail('(Ref.get out)')];
+      break;
+    case 'storedCap':
+      mk = '';
+      probe = ['out = Ref.make [ 0 ]', `fill = λ⊤ →\n${ind([...make, 'Ref.set out (Ref.get r)', 'a'].join('\n'), 4)}`, 'fa = fill ⊤', `Ref.update out λl → ${w('l')}`, '"${String.fromInt (Task.join fa)} ${ints (Ref.get out)}"'];
+      break;
+    case 'deferred':
+      mk = `mk : Deferred (List Int) → Task.Fiber Int\nmk d =\n${ind([...make, '_ = Deferred.complete d (Ref.get r)', 'a'].join('\n'), 4)}`;
+      probe = ['d = Deferred.make ⊤', 'a = mk d', `ys = ${w('(Deferred.wait d)')}`, tail('ys')];
+      break;
+    case 'queue':
+      mk = `mk : Queue (List Int) → Task.Fiber Int\nmk q =\n${ind([...make, '_ = Queue.offer q (Ref.get r)', 'a'].join('\n'), 4)}`;
+      probe = ['q = Queue.unbounded ⊤', 'a = mk q', `ys =\n    case Queue.take q of\n        Just l → ${w('l')}\n        Nothing → []`, tail('ys')];
+      break;
+    case 'tryErr':
+      mk = `mk : Bool → Result (List Int × Task.Fiber Int) Int\nmk b =\n${ind([...make, '_ = (if b then Err ( Ref.get r, a ) else Ok 0) ?', 'Ok (Task.join a)'].join('\n'), 4)}`;
+      probe = [`case mk True of\n    Err ( l, a ) →\n        ys = ${w('l')}\n        ${tail('ys')}\n\n    Ok _ → ""`];
+      break;
+    case 'scope':
+      mk = `mk : ⊤ → Ref (List Int) × Task.Fiber Int\nmk ⊤ =\n    Task.scope λsc →\n${ind([...make, '( r, a )'].join('\n'), 8)}`;
+      probe = ['( r, a ) = mk ⊤', `ys = ${w('(Ref.get r)')}`, tail('ys')];
+      break;
+    case 'race':
+    case 'par':
+    case 'forEach':
+      mk = `mk : ⊤ → Ref (List Int) × Task.Fiber Int\nmk ⊤ =\n${ind([...make, '( r, a )'].join('\n'), 4)}`;
+      probe = ['( r, a ) = mk ⊤', `ys = ${w('(Ref.get r)')}`, tail('ys')];
+      break;
+    case 'alias':
+    case 'aliasFirst': {
+      const sw = ['s = Ref.make (Ref.get r)', `w = Task.spawn λ⊤ → Ref.update s λl → ${w('l')}`];
+      const lines = outKind === 'alias' ? [...make, ...sw] : [...make.slice(0, 2), ...sw, make[2]];
+      mk = `mk : ⊤ → Task.Fiber Int × Task.Fiber ⊤\nmk ⊤ =\n${ind([...lines, '( a, w )'].join('\n'), 4)}`;
+      probe = ['( a, w ) = mk ⊤', 'Task.join w', '"${String.fromInt (Task.join a)}"'];
+      break;
+    }
+    default:
+      throw new Error(outKind);
+  }
+  return `-- reader.${outKind}.${read}: see bench/ownership-sweeps/cells.mjs.
+import Deferred exposing (Deferred)
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias H =
+    { h : Ref (List Int), f : Task.Fiber Int }
+
+
+type alias L =
+    { l : List Int, f : Task.Fiber Int }
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+spawnR : Ref (List Int), Ref (List Int) → Task.Fiber Int
+spawnR r r2 =
+    Task.spawn λ⊤ →
+${ind(rd, 8)}
+${mk ? `\n\n${mk}\n` : ''}
+
+probe : ⊤ → String
+probe ⊤ =
+${ind(probe.join('\n'), 4)}
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ probe ⊤ ]
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -761,6 +981,10 @@ for (const shape of Object.keys(ESC2)) for (const runner of Object.keys(ESC_RUNN
 }
 for (const stored of Object.keys(PARK_STORED)) for (const park of Object.keys(PARK_POINTS)) for (const runner of ['direct', 'map', 'fold', 'scope']) for (const writer of ['fiber', 'self']) for (const live of [true, false]) {
   emit(`park.${stored}.${park}.${runner}.${writer}.${live ? 'live' : 'dead'}`, { 'Main.beni': genPark(stored, park, runner, writer, live) });
+}
+for (const outKind of READER_OUTS) for (const read of Object.keys(READER_READS)) for (const live of ['cellUpd', 'joined'].includes(outKind) ? [false] : [true, false]) {
+  if (outKind === 'second' && read !== 'two') continue;
+  emit(`reader.${outKind}.${read}.${live ? 'live' : 'dead'}`, { 'Main.beni': genReader(outKind, read, live) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);
