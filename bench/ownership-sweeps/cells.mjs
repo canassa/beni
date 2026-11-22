@@ -38,6 +38,10 @@
 //   `moveOff` (its other arm, which leaves the pair: live where `upd` is), `moveDirect` (`moveOn` in the
 //   frame) and `moveAlias` (an arm that puts the first part at both places, the pair read after: live),
 //   with the readers `none`, `cell`, `loan` (`name`, `closure`, `list`), `stored`, `mid`, `part0`, `part1`;
+//   a helper whose `case` arms are paths its caller tells apart (`pair` only; kernel §13 item 13):
+//   `pathsMove` (its moving arm, then its writing arm, then the frame's write: dead), `pathsChain` (the
+//   two three times: dead) and `pathsAlias` (an arm that puts the first part at both places, then its
+//   writing arm, the pair read after: live), with the same readers;
 // - reader: `none` (nothing old is read after the write), `cell` (`Ref.get r` after the write), `loan`
 //   (a value `Ref.get` answered before the write, read after it), `stored` (the value the cell was made
 //   with, read after the write), `mid` (a value `Ref.get` answered between two writes, read after the
@@ -142,8 +146,17 @@ const WRITERS = {
   moveOff: (c, s = '') => ({ lines: ['moveArm r (off 1)', `Ref.update r λv → ${c.w('v')}`], shown: '"mf"' }),
   moveDirect: (c, s = '') => ({ lines: [`Ref.update r λv →\n    if on 1 then\n        ( List.copy v.1, v.0 )\n\n    else\n        v`, `Ref.update r λv → ${c.w('v')}`], shown: '"md"' }),
   moveAlias: (c, s = '') => ({ lines: ['aliasArm r (on 1)', `Ref.update r λv → ${c.w('v')}`], shown: 'showP (Ref.get r)' }),
+  // Kernel §13 item 13: a helper whose `case` arms are paths its caller tells apart (`pair` only).
+  // `pathArm` writes the first part in place on arm 0, moves it to the second on arm 1 and leaves the
+  // pair on any other. `pathsMove` runs arm 1 then arm 0, then the frame writes the first part: each
+  // write is of a new list, dead; `pathsChain` runs the two three times; `pathsAlias` runs
+  // `aliasPathArm`'s arm that puts the first part at both places, then its writing arm, and reads the
+  // pair after: live.
+  pathsMove: (c, s = '') => ({ lines: ['pathArm r 1', 'pathArm r 0', `Ref.update r λv → ${c.w('v')}`], shown: '"pm"' }),
+  pathsChain: (c, s = '') => ({ lines: ['pathArm r 1', 'pathArm r 0', 'pathArm r 1', 'pathArm r 0', 'pathArm r 1', 'pathArm r 0', `Ref.update r λv → ${c.w('v')}`], shown: '"pc"' }),
+  pathsAlias: (c, s = '') => ({ lines: ['aliasPathArm r 2', 'aliasPathArm r 0', `Ref.update r λv → ${c.w('v')}`], shown: 'showP (Ref.get r)' }),
 };
-const MOVE = new Set(['moveOn', 'moveOff', 'moveDirect', 'moveAlias']);
+const MOVE = new Set(['moveOn', 'moveOff', 'moveDirect', 'moveAlias', 'pathsMove', 'pathsChain', 'pathsAlias']);
 const MOVE_READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'part0', 'part1'];
 const MOVEHELPERS = `moveArm : Ref (List Int × List Int), Bool → ⊤
 moveArm r b =
@@ -163,6 +176,32 @@ aliasArm r b =
 
         else
             v
+
+
+pathArm : Ref (List Int × List Int), Int → ⊤
+pathArm r k =
+    case k of
+        0 →
+            Ref.update r λv → ( List.push v.0 1, v.1 )
+
+        1 →
+            Ref.update r λv → ( [ 0 ], v.0 )
+
+        _ →
+            ⊤
+
+
+aliasPathArm : Ref (List Int × List Int), Int → ⊤
+aliasPathArm r k =
+    case k of
+        0 →
+            Ref.update r λv → ( List.push v.0 1, v.1 )
+
+        2 →
+            Ref.update r λv → ( v.0, v.0 )
+
+        _ →
+            ⊤
 
 
 `;
@@ -237,8 +276,8 @@ function isLive(writer, reader, fibers, holder) {
   // Both arms store a new value: the old contents are never written.
   if (writer === 'condBoth') return false;
   // The moving arm writes a copy that no holder has; the alias reads the pair after the write.
-  if (writer === 'moveAlias') return true;
-  if (writer === 'moveOn' || writer === 'moveDirect') return false;
+  if (writer === 'moveAlias' || writer === 'pathsAlias') return true;
+  if (writer === 'moveOn' || writer === 'moveDirect' || writer === 'pathsMove' || writer === 'pathsChain') return false;
   if (writer === 'moveOff') writer = 'upd';
   // A loan taken while the writer is parked: the stored value, which a store-park-write writer writes.
   // (`closTwiceStore` and `closOther` write a value the reader holds in every shape.)

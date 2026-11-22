@@ -509,6 +509,8 @@ reroot_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
 both_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
 /// The meetings that a call's paths made (kernel §13 item 13, `meetPath`), made once for each pair.
 path_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+/// The meetings of a chain of calls' paths and other arms (`joinParts`), made once for each pair.
+mixed_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
 /// Per construction (a `built` value): for each entry of its place's
 /// layout, the parts that hold a location there (`builtIndex`).
 built_index: std.AutoHashMapUnmanaged(Val, BuiltIndex) = .empty,
@@ -1414,7 +1416,7 @@ fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
 /// which runs no check, counts for building it.
 const Quiet = struct { m: Mod.Quiet, failed: bool, parts: [quiet_parts.len]usize };
 
-const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "path_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers", "reader_held", "defect_codes" };
+const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "path_memo", "mixed_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers", "reader_held", "defect_codes" };
 
 fn quietParts(f: *const Frame) [quiet_parts.len]usize {
     var out: [quiet_parts.len]usize = undefined;
@@ -2511,12 +2513,27 @@ fn ctxAround(f: *const Frame, a: u32, c0: u32) bool {
 /// meeting of every arm on the way told each way to an atom apart, and the
 /// atoms of a chain of `case`s that each answer the one before grew as the
 /// ways did (kernel §8). Dropping an arm is the pessimistic side.
+/// The arms of calls' paths an atom has are kept apart from these (kernel
+/// §13 item 13, `splitCtx`): a `case`'s arm meets the other arms only, as
+/// it did before calls had paths, and the paths' chain stays as it is.
 fn meet(f: *Frame, had: u32, ctx: u32) Error!u32 {
+    const h = f.splitCtx(had);
+    const c = f.splitCtx(ctx);
+    // An arm of a `case` meets the atom's own arms of `case`s; a path's arm
+    // (no join has one today) joins the chain.
+    var p = h[0];
+    if (c[0] != none) p = try f.meetPath(p, c[0]);
+    const r = if (c[1] == none) h[1] else try f.meetArms(h[1], c[1]);
+    return f.joinParts(p, r);
+}
+
+/// `meet` of two contexts of no call's path.
+fn meetArms(f: *Frame, had: u32, ctx: u32) Error!u32 {
     if (had == none) return ctx;
     const hb = f.ctxs.items[had].both;
     if (hb[0] != none) {
         if (f.ctxAround(ctx, hb[1]) or f.ctxAround(ctx, hb[0])) return had;
-        return f.meet(hb[0], ctx);
+        return f.meetArms(hb[0], ctx);
     }
     if (f.ctxAround(had, ctx)) return ctx;
     if (f.ctxAround(ctx, had)) return had;
@@ -2532,25 +2549,62 @@ fn meet(f: *Frame, had: u32, ctx: u32) Error!u32 {
 /// The most arms a meeting that a call's paths make names (`meetPath`).
 const path_chain_max = 32;
 
+/// The `depth` of a meeting of a chain of calls' paths with other arms
+/// (`joinParts`); a chain's `depth` counts its arms, and `meetArms`'s is 0.
+const mixed_depth: u32 = std.math.maxInt(u32) - 1;
+
+/// Context `c` as its two parts (kernel §13 item 13): the arms of calls'
+/// paths (a path's arm, or a chain `meetPath` made) and the other arms (a
+/// `case`'s arm, or a meeting `meetArms` made). Either is `none`.
+fn splitCtx(f: *const Frame, c: u32) [2]u32 {
+    if (c == none) return .{ none, none };
+    const x = f.ctxs.items[c];
+    if (x.both[0] != none) {
+        if (x.depth == mixed_depth) return x.both;
+        if (x.depth >= 2) return .{ c, none };
+        return .{ none, c };
+    }
+    if (x.case != none and x.case & path_case != 0) return .{ c, none };
+    return .{ none, c };
+}
+
+/// The context of the two parts `splitCtx` gives: a run through both.
+fn joinParts(f: *Frame, p: u32, r: u32) Error!u32 {
+    if (p == none) return r;
+    if (r == none) return p;
+    const key: [2]u32 = .{ p, r };
+    if (f.mixed_memo.get(key)) |hit| return hit;
+    _ = f.charge(1);
+    try f.ctxs.append(f.gpa, .{ .parent = none, .case = none, .arm = 0, .depth = mixed_depth, .both = key });
+    const id: u32 = @intCast(f.ctxs.items.len - 1);
+    try f.mixed_memo.put(f.gpa, key, id);
+    return id;
+}
+
 /// The context of an atom that a version holds on a run through path `p`
 /// of a call only, where it held it in context `had` (kernel §13 item 13):
-/// a meeting that keeps every arm it names (its `depth` counts them), since
-/// a run through two calls' paths is told from another by any of them, and
-/// `meet` keeps two. Only an atom of one path is put in a path's context
-/// (`tagPaths`), so a cell has one such chain at a location, not one for
-/// each way. Past `path_chain_max` arms, `meet`'s two: the pessimistic side.
+/// the chain of `had`'s paths with `p` after them, a meeting that keeps
+/// every arm it names (its `depth` counts them), since a run through two
+/// calls' paths is told from another by any of them, and `meet` keeps two.
+/// The other arms of `had` stay as they are. Only an atom of one path is put
+/// in a path's context (`tagPaths`), so a cell has one such chain at a
+/// location, not one for each way. Past `path_chain_max` arms, the chain
+/// keeps what it has and `p` is dropped: the pessimistic side.
 fn meetPath(f: *Frame, had: u32, p: u32) Error!u32 {
-    if (had == none) return p;
-    const h = f.ctxs.items[had];
-    const len: u32 = if (h.both[0] != none) @max(h.depth, 2) else 1;
-    if (len >= path_chain_max) return f.meet(had, p);
-    const key: [2]u32 = .{ had, p };
-    if (f.path_memo.get(key)) |hit| return hit;
-    _ = f.charge(1);
-    try f.ctxs.append(f.gpa, .{ .parent = none, .case = none, .arm = 0, .depth = len + 1, .both = key });
-    const id: u32 = @intCast(f.ctxs.items.len - 1);
-    try f.path_memo.put(f.gpa, key, id);
-    return id;
+    const h = f.splitCtx(had);
+    const chain = h[0];
+    const next = if (chain == none) p else blk: {
+        const len: u32 = if (f.ctxs.items[chain].both[0] != none) f.ctxs.items[chain].depth else 1;
+        if (len >= path_chain_max) break :blk chain;
+        const key: [2]u32 = .{ chain, p };
+        if (f.path_memo.get(key)) |hit| break :blk hit;
+        _ = f.charge(1);
+        try f.ctxs.append(f.gpa, .{ .parent = none, .case = none, .arm = 0, .depth = len + 1, .both = key });
+        const id: u32 = @intCast(f.ctxs.items.len - 1);
+        try f.path_memo.put(f.gpa, key, id);
+        break :blk id;
+    };
+    return f.joinParts(next, h[1]);
 }
 
 fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
@@ -7326,15 +7380,16 @@ fn publishPaths(f: *Frame, flags: []const u8, off: []const u32, renew: []const ?
         var rn: []?[]const Src = &.{};
         if (renew.len != 0) for (f.params.items, 0..) |root, j| {
             const r = f.roots.items[root];
-            if (!r.tracked) continue;
+            // A parameter the union renews has a renewal on every path, its
+            // own cells where the path leaves them: the caller reads them as
+            // the union's own cells are read, a written location's as a new
+            // name (`oldNames`), not as the cells it held before the call.
+            if (!r.tracked or !f.renewedAt(root)) continue;
             vals.clearRetainingCapacity();
-            var renewed = false;
             for (f.ret_cells.items, f.ret_reads.items) |rc, rd| if (rc[0] == root and f.ctxOnPath(rd.ctx, p)) {
-                const v = try f.restrictPath(rc[1], p, 0);
-                if (!f.onlyRenamed(v, root, 0)) renewed = true;
-                try vals.append(f.gpa, v);
+                try vals.append(f.gpa, try f.restrictPath(rc[1], p, 0));
             };
-            if (!renewed) continue;
+            if (vals.items.len == 0) try vals.append(f.gpa, try f.rootVal(root));
             if (rn.len == 0) {
                 rn = try m.arena.alloc(?[]const Src, total);
                 @memset(rn, null);

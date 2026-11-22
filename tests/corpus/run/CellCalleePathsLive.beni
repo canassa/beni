@@ -102,5 +102,17 @@ takenThenBumped seed =
     ints x
 
 
+takenThenChained : Int → String
+takenThenChained seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    step r Move
+    x = Maybe.withDefault (List.last (Ref.get r).future) []
+    step r Move
+    step r Bump
+    ints x
+
+
 main : Program
-main = Node.printLines [ kept 1, loanAfter 2, movedWritten 3, keptInArm 4, takenThenBumped 5 ]
+main =
+    Node.printLines
+        [ kept 1, loanAfter 2, movedWritten 3, keptInArm 4, takenThenBumped 5, takenThenChained 6 ]

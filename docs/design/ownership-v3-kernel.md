@@ -2883,8 +2883,11 @@ contents of a cell are locations, and that a call can change what a location of 
       followed through the runs as `markAtoms` follows them (`pathMark`); a demand in no arm of the
       `case` is in every path;
     - **its renewal** (item 3), from each return point whose context can be on a run through the
-      arm, each join read with only its values whose arm can be on it (`restrictPath`). A path whose
-      values are the parameter itself renews nothing.
+      arm, each join read with only its values whose arm can be on it (`restrictPath`). A parameter
+      that the union renews has a renewal on every path, its own cells where the path leaves them, so
+      the caller reads them as it reads the union's own cells (a written location's as a new name,
+      `oldNames`; read as the cells they were, a write before the call was judged against them, and
+      BN's undo programs with loans were refused).
 
     Every other fact (what the body reads, lets escape, answers, marks, hands its function
     parameters, the claim of item 5, and the union itself) is the one contract. Where no path says
@@ -2902,12 +2905,19 @@ contents of a cell are locations, and that a call can change what a location of 
     through that path only. A cell that two paths or more put there keeps the context it had (one
     context names no set of arms: the pessimistic side), and is kept once. A cell found through the
     paths of several calls keeps every arm (`meetPath`, a meeting that names them all, up to
-    `path_chain_max`, past which `meet`'s two: the pessimistic side), since a run through two calls'
-    paths is told from another by any of them; `meet` keeps two, and a chain of five calls read the
-    second's arm as dropped. The later-read test (§5 test 4) compares a holder's cell with a written
+    `path_chain_max`, past which the newest is dropped: the pessimistic side), since a run through
+    two calls' paths is told from another by any of them; `meet` keeps two, and a chain of five calls
+    read the second's arm as dropped. A context has two parts (`splitCtx`): the chain of calls'
+    paths and the other arms; an arm of a `case` meets the second part only (`meetArms`, `meet`'s two),
+    and the chain the first (`joinParts`), so the arms of the frame's own `case`s are kept as they
+    were before calls had paths: in `meet`'s two places, a path's arm pushed out the arm of an `if`
+    that told a write in one of its arms from a read through the other. The later-read test (§5 test 4) compares a holder's cell with a written
     cell only where the two can be on one run (`pairLive`, `ctxPair`: no two arms of one `case`): a
     cell that a later read finds only through one path and that the write finds only through another
-    is not read after the write on any run. The paths are the callee's runs, whatever the caller
+    is not read after the write on any run. That holds of every context an atom has, the arms of the
+    frame's own `case`s too (§6 rule 7): before, only the holder's context was tested, against the
+    write's. A cell's own name in a version (an entry's own atom) has no context, so it is a holder
+    on every run. The paths are the callee's runs, whatever the caller
     holds: no claim of the caller's is read for them. A function that a callee runs within its call,
     a writer's run (item 12), a call in a hole of markup and a contract of words read the union, as
     before. A contract read from another module keeps its paths (`dupContract`). Two contracts of a
