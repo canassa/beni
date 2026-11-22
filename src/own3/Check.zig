@@ -2019,6 +2019,8 @@ pub const Mod = struct {
             const got = try m.arena.alloc(?[]const Src, c.flags.len);
             for (got, rn) |*g, r| g.* = if (r.items.len == 0) null else try Contract.normal(m.arena, r.items);
             c.renew = got;
+            // The words state no count (kernel §13 item 5).
+            c.renew_shared = true;
         }
         // Words say nothing of where another fiber can run (kernel §13 item 12).
         c.switches = true;
@@ -2826,6 +2828,8 @@ pub const Mod = struct {
             for (cr orelse &self) |s| if (!srcCovered(s, wr orelse &self))
                 return try m.falseText(name, "the body leaves {s} in the contents of parameter {d}{s}, and its words `{s}` do not say so", .{ try m.srcText(s), j + 1, try m.atText(m.loc.layoutEntries(c.layouts[j])[i - c.off[j]].loc), try m.wordsText(pw[j], v3, j) });
         };
+        if (c.renew_shared and !wc.renew_shared)
+            return try m.falseText(name, "the body can leave one cell at two places of a parameter's cells in one run, and its words say that it cannot", .{});
         if (c.nonlinear and !wc.nonlinear and !dupsOnly(c))
             return try m.falseText(name, "the body can answer one cell of a parameter at two places of its result, and its words say that it cannot", .{});
         if (c.casts and !wc.casts)

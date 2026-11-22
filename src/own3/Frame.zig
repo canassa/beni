@@ -5863,6 +5863,30 @@ fn atTwoLocations(f: *Frame, v: Val, place: PlaceId, rn: usize, depth: u32) Erro
     return f.runsTwice(all.items, runs.items);
 }
 
+/// `atTwoLocations` of a tracked parameter's value at a return point: a
+/// version the frame made of it whole, which holds each cell of another root
+/// once (`linear`, derived where it was made, by its atoms or by a callee's
+/// claim) with no `twice` entry, holds no cell at two of its locations.
+fn renewTwice(f: *Frame, v: Val, place: PlaceId, rn: usize, depth: u32) Error!bool {
+    if (v == v_none) return false;
+    const n = f.nodes.items[v];
+    if (n.tag == .join and depth < 8) {
+        for (0..n.b) |ki| if (try f.renewTwice(f.lists.items[n.a + 2 * ki], place, rn, depth + 1)) return true;
+        return false;
+    }
+    if (n.tag == .ref) {
+        const r = f.roots.items[n.a];
+        if (r.kind == .local and n.b == r.path and r.linear == .yes) {
+            const len = f.m.loc.layouts.items[r.layout].len;
+            const twice = for (0..len) |e| {
+                if (f.rents.items[r.ent + e].twice) break true;
+            } else false;
+            if (!twice) return false;
+        }
+    }
+    return f.atTwoLocations(v, place, rn, depth);
+}
+
 /// Whether one cell is in two of `runs` of `all`, the runs of a value's
 /// entries. Only two entries that each hold an atom can share one: each
 /// pair of them costs its comparisons (`dupOverlap`, kernel §8), and past
@@ -6017,9 +6041,10 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     // rule 10): no step, so no limit depends on it.
     try f.judgeJsSites(result);
     // What the body leaves in its parameters' cells (kernel §13).
-    const renew = try f.publishRenew(flags, off, total);
+    var renew_shared = false;
+    const renew = try f.publishRenew(flags, off, total, &renew_shared);
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .renew = renew };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .renew = renew, .renew_shared = renew_shared };
     return c;
 }
 
@@ -6518,9 +6543,14 @@ fn cellResult(f: *Frame, root: u32, roots_before: usize, point: u32) Error!void 
 /// a parameter whose contents the callee renews, the argument's root gets a
 /// new version where the frame follows it, and otherwise what the callee
 /// stores escapes and the handle has another holder.
-fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val, casts: bool, inst: u32) Error!void {
+fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val, args_apart: bool, casts: bool, inst: u32) Error!void {
     const m = f.m;
     try f.flushShare();
+    // The callee's claim that a run leaves each cell of a parameter at one
+    // location of it holds for arguments of which no cell is at two places
+    // (kernel §4.4), as its claim about its result does, and where it does
+    // not cast (§3.4): its places are then where its types say.
+    const claim = !c.renew_shared and !casts and args_apart;
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
         const ses = m.loc.layoutEntries(sig);
@@ -6540,7 +6570,7 @@ fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val
                 @memset(done.?, false);
             }
             for (ks.items) |k| done.?[k] = true;
-            try f.renewHandle(base, c, @intCast(j), @intCast(h), ks.items, args[j], casts, false, inst);
+            try f.renewHandle(base, c, @intCast(j), @intCast(h), ks.items, args[j], casts, false, claim, inst);
         }
     }
 }
@@ -6548,7 +6578,9 @@ fn renewCells(f: *Frame, base: *const Use, c: *const Contract, args: []const Val
 /// `maybe`: the call may leave the contents as they were (a function a
 /// callee runs any number of times, kernel §13 item 11): a location whose
 /// renewal does not name its own old contents keeps them too.
-fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, maybe: bool, inst: u32) Error!void {
+/// `claim`: the callee's claim that a run leaves each cell of the
+/// parameter at one location of it holds at this call (`renewCells`).
+fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, maybe: bool, claim: bool, inst: u32) Error!void {
     const m = f.m;
     const sig = c.layouts[j];
     // A hole of markup can be evaluated where the markup is rendered, after
@@ -6567,6 +6599,17 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
         const strong = xes[t.hx].single;
         const ver = try f.versionOf(t.o, v, inst);
         const ent0 = f.roots.items[ver].ent;
+        // Per entry of the version: the callee's claim does not cover it
+        // (`claimed`), and the wide entry of the callee it shares with
+        // another (`split`), as for a call's result (`apply`).
+        const by_claim = claim and strong and !maybe;
+        const ans_claim = strong and !maybe and !casts and try f.answerClaim(base, c, j, ks, v, xl, t.hx, xks.items) != none;
+        const tested = try f.gpa.alloc(bool, xes.len);
+        defer f.gpa.free(tested);
+        @memset(tested, true);
+        const split = try f.gpa.alloc(u32, xes.len);
+        defer f.gpa.free(split);
+        @memset(split, none);
         for (xks.items) |k| {
             const start: u32 = @intCast(f.atoms.items.len);
             var st: SrcState = .{ .inst = inst, .typed = !casts };
@@ -6577,13 +6620,39 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
                 for (ks) |sk| if (c.renewAt(c.off[j] + sk)) |srcs| try f.expandSrcs(base, srcs, sig, sk, xl, k, &st);
             } else if (c.renewAt(c.off[j] + cr)) |srcs| {
                 try f.expandSrcs(base, srcs, sig, cr, xl, k, &st);
+                // The answer of a function parameter, which the callee saw as
+                // an opaque root, is tested by its atoms.
+                tested[k] = if (ans_claim) false else !by_claim or for (srcs) |s| {
+                    if (s.kind == .answer) break true;
+                } else false;
             } else {
                 // A location of the contents that the callee leaves as it was.
                 _ = try f.leavesAs(v, r.place, k, &f.atoms);
+                tested[k] = !by_claim;
             }
             if (!strong or (maybe and !selfRenew(c, j, cr))) _ = try f.leavesAs(v, r.place, k, &f.atoms);
             try f.uniqueTail(&f.atoms, start);
             f.rents.items[ent0 + k] = .{ .kind = if (st.written) .version else .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = !xes[k].single and (st.twice or !strong or f.curTwice(v, k)) };
+        }
+        // Two entries of the version at one wide location of the callee (a
+        // type variable) are one location to it, which says nothing of
+        // whether one cell is at both (kernel §3.4).
+        if (by_claim and !ans_claim) {
+            const ses = m.loc.layoutEntries(sig);
+            const seen = try f.gpa.alloc(u32, ses.len);
+            defer f.gpa.free(seen);
+            @memset(seen, none);
+            _ = f.charge(xks.items.len + ses.len);
+            for (xks.items) |k| {
+                const cr = cov[k];
+                if (cr >= Loc.all or !ses[cr].kind.wide()) continue;
+                if (seen[cr] == none) {
+                    seen[cr] = k;
+                    continue;
+                }
+                split[k] = cr;
+                split[seen[cr]] = cr;
+            }
         }
         // A captured cell is held by the code's holder too, which reads it at
         // any later time (kernel §13 item 11): what the call stores there
@@ -6617,7 +6686,10 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
         // A handle the call stored in the contents is held there as well as
         // where it was (`shareCopies`).
         try f.shareCopies(ver, xks.items, inst);
-        try f.finishVersion(t.o, ver);
+        if (by_claim or ans_claim) {
+            try f.deriveLinearSplit(ver, true, tested, split);
+            try f.setLatest(t.o, try f.rootVal(ver));
+        } else try f.finishVersion(t.o, ver);
         return f.flushShare();
     };
     // Not followed (kernel §13): what the call stores in the cell escapes,
@@ -6636,6 +6708,56 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
     try f.flushShare();
 }
 
+
+/// A call that renews the contents with the answer of a function it runs
+/// once (`cellupdate`, `Fn.once`): the function parameter whose known code's claim
+/// that its result holds each cell of its parameters once (`!nonlinear`)
+/// covers the version's contents (kernel §13 item 5, *One value of the
+/// renewal at a time*), or `none`. The renewal's every source is that
+/// answer; the code neither casts nor is unknown; its result's layout is
+/// the contents' own, entry for entry, with no wide entry (so the code's
+/// locations are the version's); and what it is handed, the cell and its
+/// captures, holds no cell at two places (the apart-arguments rule, §4.4).
+fn answerClaim(f: *Frame, base: *const Use, c: *const Contract, j: u32, ks: []const u32, v: Val, xl: u32, hx: u32, xks: []const u32) Error!u32 {
+    const m = f.m;
+    var jf: u32 = none;
+    for (ks) |sk| if (c.renewAt(c.off[j] + sk)) |srcs| for (srcs) |s| {
+        if (s.kind != .answer or (jf != none and s.a != jf)) return none;
+        jf = s.a;
+    };
+    if (jf == none or jf >= base.args.len) return none;
+    // The owner runs the function once in the call (`Fn.once`): two runs
+    // can answer one captured cell at two places.
+    const fnc = c.fns[jf] orelse return none;
+    if (!fnc.once) return none;
+    const code = (try f.codeOf(base.args[jf])) orelse return none;
+    const lc = code.contract;
+    if (lc.nonlinear or lc.casts) return none;
+    const res = m.loc.layoutEntries(lc.layouts[lc.arity]);
+    if (res.len != xks.len) return none;
+    const xes = m.loc.layoutEntries(xl);
+    var a: std.ArrayList(u64) = .empty;
+    defer a.deinit(f.gpa);
+    var b: std.ArrayList(u64) = .empty;
+    defer b.deinit(f.gpa);
+    try m.loc.labels(xes[hx].loc, &a, f.gpa);
+    const skip = a.items.len + 1;
+    for (xks, res) |k, re| {
+        if (re.kind.wide() or xes[k].kind != re.kind) return none;
+        a.clearRetainingCapacity();
+        b.clearRetainingCapacity();
+        try m.loc.labels(xes[k].loc, &a, f.gpa);
+        try m.loc.labels(re.loc, &b, f.gpa);
+        if (f.charge(Loc.scanUnits(a.items.len + b.items.len))) return none;
+        if (a.items.len != skip + b.items.len or !std.mem.eql(u64, a.items[skip..], b.items)) return none;
+    }
+    var vals: std.ArrayList(Val) = .empty;
+    defer vals.deinit(f.gpa);
+    try vals.append(f.gpa, v);
+    for (0..code.ncaps) |k| try vals.append(f.gpa, try f.capVal(code, k));
+    if (!try f.argsApart(vals.items)) return none;
+    return jf;
+}
 /// Whether the renewal of parameter `j` at its entry `cr` names that
 /// entry's own old contents: then a call that leaves the contents as they
 /// were leaves cells the renewal names.
@@ -6848,9 +6970,10 @@ const ShareSink = struct {
 /// that a call renewed, at each location of its cells' contents, the
 /// sources of its latest version, joined with its value at each early
 /// return. Empty where no parameter was renewed.
-fn publishRenew(f: *Frame, flags: []u8, off: []const u32, total: u32) Error![]const ?[]const Src {
+fn publishRenew(f: *Frame, flags: []u8, off: []const u32, total: u32, shared: *bool) Error![]const ?[]const Src {
     const m = f.m;
     try f.flushShare();
+    shared.* = false;
     if (f.cell_roots.items.len == 0) return &.{};
     const rn = try m.arena.alloc(?[]const Src, total);
     @memset(rn, null);
@@ -6867,6 +6990,11 @@ fn publishRenew(f: *Frame, flags: []u8, off: []const u32, total: u32) Error![]co
         vals.clearRetainingCapacity();
         for (f.ret_cells.items) |rc| if (rc[0] == root) try vals.append(f.gpa, rc[1]);
         const val = if (vals.items.len == 1) vals.items[0] else try f.joinVal(r.place, vals.items, &.{});
+        // Whether one run can leave one cell at two locations of the
+        // parameter: each value of the join at a time, since a run leaves
+        // one of them (kernel §13 item 5, *One value of the renewal at a
+        // time*; §4.4, *One value of a join at a time*).
+        if (!shared.*) shared.* = try f.renewTwice(val, r.place, m.loc.layouts.items[r.layout].len, 0);
         const inner = try f.innerOf(r.layout);
         const es = m.loc.layoutEntries(r.layout);
         for (inner, 0..) |in, k| if (in) {
@@ -7599,7 +7727,7 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
             @memset(done.?, false);
         }
         for (ks.items) |x| done.?[x] = true;
-        try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, inst);
+        try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, inst);
     }
 }
 
@@ -8736,15 +8864,15 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     if (c.casts and !(code.decl[0] != none and m.isWorded(code.decl))) try f.escapeHandedOff(c, code, args, &site, inst);
     try f.escapeWide(c, args, arg_insts, place, inst);
     // What the call leaves in the cells it is handed (kernel §13).
-    if (c.renews()) try f.renewCells(&base, c, args, casts, inst);
-    // An answer of a type with no location holds `outside` (`rootVal`).
-    if (es.len == 0) return v_outside;
     // The contract is written for arguments of which no cell is at two
     // places (kernel §4.4). Where that does not hold, its claims that two
     // sources are two cells have no ground: no two locations of the result
     // are apart, and a summary location fed by two sources, or by an
-    // answer, is `twice`.
-    const args_apart = try f.argsApartAt(args, c, arg_insts) and !try f.argsSplit(args, c);
+    // answer, is `twice`; nor is a renewal's claim (§13 item 5).
+    const args_apart = if (es.len == 0 and !c.renews()) false else try f.argsApartAt(args, c, arg_insts) and !try f.argsSplit(args, c);
+    if (c.renews()) try f.renewCells(&base, c, args, args_apart, casts, inst);
+    // An answer of a type with no location holds `outside` (`rootVal`).
+    if (es.len == 0) return v_outside;
     // A new cell's handle that the answer holds is the answer's alone only
     // where the answer names it first: not one the call's renewals or flows
     // put in another holder (`cellResult`, kernel §13).
@@ -10941,7 +11069,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                     @memset(done.?, false);
                 }
                 for (ks.items) |x| done.?[x] = true;
-                try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, site.inst);
+                try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, site.inst);
             }
             continue;
         }

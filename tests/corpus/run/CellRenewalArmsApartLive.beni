@@ -1,0 +1,103 @@
+-- The live twins of CellRenewalArmsApart: an arm that keeps `present` and
+-- pushes it onto `future`, so one run leaves one list at two places; a
+-- list the frame took out of the cell before and captures in the update;
+-- one list stored at two places by a helper; a value taken out of the cell
+-- before the move and read after the write; the same where the move does
+-- not run. Each read sees the old value, so each write is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+type alias Hist =
+    { past : List (List Int), present : List Int, future : List (List Int) }
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showH : Hist → String
+showH h = String.join [ String.join (List.map h.past ints) "|", ints h.present, String.join (List.map h.future ints) "|" ] " / "
+
+
+undoOnce : Ref Hist → ⊤
+undoOnce r =
+    Ref.update r λh →
+        case List.last h.past of
+            Just p →
+                { past = List.take h.past (List.length h.past - 1), present = List.copy p, future = List.push h.future h.present }
+            Nothing →
+                h
+
+
+aliasOnce : Ref Hist → ⊤
+aliasOnce r =
+    Ref.update r λh →
+        case List.last h.past of
+            Just _ →
+                { h | future = List.push h.future h.present }
+            Nothing →
+                h
+
+
+put : Ref Hist, List Int → ⊤
+put r x = Ref.update r λh → { h | present = x, future = [ x ] }
+
+
+mk : ⊤ → Ref Hist
+mk ⊤ = Ref.make { past = [ [ 1 ], [ 3 ] ], present = [ 2 ], future = [] }
+
+
+aliased : ⊤ → String
+aliased ⊤ =
+    r = mk ⊤
+    aliasOnce r
+    Ref.update r λh → { h | present = List.push h.present 5 }
+    showH (Ref.get r)
+
+
+captured : ⊤ → String
+captured ⊤ =
+    r = mk ⊤
+    x = (Ref.get r).present
+    Ref.update r λh →
+        case List.last h.past of
+            Just p →
+                { past = h.past, present = List.copy p, future = List.push h.future x }
+            Nothing →
+                h
+    Ref.update r λh → { h | future = List.map h.future λl → List.push l 6 }
+    ints x
+
+
+stored : ⊤ → String
+stored ⊤ =
+    r = mk ⊤
+    put r [ 7 ]
+    Ref.update r λh → { h | present = List.push h.present 5 }
+    showH (Ref.get r)
+
+
+loan : ⊤ → String
+loan ⊤ =
+    r = mk ⊤
+    old = (Ref.get r).present
+    undoOnce r
+    Ref.update r λh → { h | present = List.push h.present 5 }
+    ints old
+
+
+loanNoMove : ⊤ → String
+loanNoMove ⊤ =
+    r = Ref.make { past = [], present = [ 2 ], future = [] }
+    old = (Ref.get r).present
+    undoOnce r
+    Ref.update r λh → { h | present = List.push h.present 5 }
+    ints old
+
+
+main : Program
+main = Node.printLines [ aliased ⊤, captured ⊤, stored ⊤, loan ⊤, loanNoMove ⊤ ]

@@ -127,7 +127,40 @@ const WRITERS = {
   armVal: (c, s = '') => ({ lines: [`k${s} =\n    if on 1 then\n        Ref.update r λv → ${c.w('v')}\n        1\n\n    else\n        2`], shown: `String.fromInt k${s}` }),
   armMod: (c, s = '') => ({ lines: [`k${s} = if on 1 then Ref.modify r λv → ( 7, ${c.w('v')} ) else 3`], shown: `String.fromInt k${s}` }),
   armHelper: (c, s = '') => ({ lines: [`if on 1 then\n    bump r`], shown: '"ah"' }),
+  // Blind round BN (kernel §13 item 5, *One value of the renewal at a time*): a body whose arms leave
+  // one cell at another place each, then the frame's write of the first part (`pair` only). `moveOn`
+  // runs the arm that moves the first part to the second and puts a copy of the second in its place
+  // (a helper, `moveArm`), so the write is of the copy: dead; `moveOff` runs the arm that leaves the
+  // pair as it was: live where `upd` is; `moveDirect` is `moveOn` written in the frame; `moveAlias`
+  // runs an arm that puts the first part at both places, and reads the pair after: live.
+  moveOn: (c, s = '') => ({ lines: ['moveArm r (on 1)', `Ref.update r λv → ${c.w('v')}`], shown: '"mo"' }),
+  moveOff: (c, s = '') => ({ lines: ['moveArm r (off 1)', `Ref.update r λv → ${c.w('v')}`], shown: '"mf"' }),
+  moveDirect: (c, s = '') => ({ lines: [`Ref.update r λv →\n    if on 1 then\n        ( List.copy v.1, v.0 )\n\n    else\n        v`, `Ref.update r λv → ${c.w('v')}`], shown: '"md"' }),
+  moveAlias: (c, s = '') => ({ lines: ['aliasArm r (on 1)', `Ref.update r λv → ${c.w('v')}`], shown: 'showP (Ref.get r)' }),
 };
+const MOVE = new Set(['moveOn', 'moveOff', 'moveDirect', 'moveAlias']);
+const MOVE_READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'part0', 'part1'];
+const MOVEHELPERS = `moveArm : Ref (List Int × List Int), Bool → ⊤
+moveArm r b =
+    Ref.update r λv →
+        if b then
+            ( List.copy v.1, v.0 )
+
+        else
+            v
+
+
+aliasArm : Ref (List Int × List Int), Bool → ⊤
+aliasArm r b =
+    Ref.update r λv →
+        if b then
+            ( v.0, v.0 )
+
+        else
+            v
+
+
+`;
 const ARM = new Set(['armIf', 'armElse', 'armBoth', 'armCase', 'armVal', 'armMod', 'armHelper']);
 const ARM_READERS = ['none', 'cell', 'loan', 'stored', 'mid', 'name2', 'name2cell', 'part0', 'part1'];
 const ARM_HOLDERS = ['name', 'closure', 'list'];
@@ -198,6 +231,10 @@ function isLive(writer, reader, fibers, holder) {
   if (ARM.has(writer)) writer = 'upd';
   // Both arms store a new value: the old contents are never written.
   if (writer === 'condBoth') return false;
+  // The moving arm writes a copy that no holder has; the alias reads the pair after the write.
+  if (writer === 'moveAlias') return true;
+  if (writer === 'moveOn' || writer === 'moveDirect') return false;
+  if (writer === 'moveOff') writer = 'upd';
   // A loan taken while the writer is parked: the stored value, which a store-park-write writer writes.
   // (`closTwiceStore` and `closOther` write a value the reader holds in every shape.)
   if (fibers === 'midPark') return STORE.has(writer) || writer === 'closTwiceStore' || writer === 'closOther' || writer === 'closTwiceStoreDead';
@@ -349,7 +386,7 @@ wrapFn : (Int → Int) → (Int → Int)
 wrapFn f = λx → f x
 
 
-${COND.has(writer) ? CONDHELPERS : ''}${ARM.has(writer) ? ARMHELPERS : ''}${writer === 'storeHelper' ? `storeThenPark : Ref ${refT} → ⊤\nstoreThenPark r =\n    Ref.set r (${c.init})\n    Task.yieldNow ⊤\n    Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${fromQueue}${peek}${peekWith}${holdAt}${writer === 'helper' || writer === 'armHelper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
+${COND.has(writer) ? CONDHELPERS : ''}${ARM.has(writer) || MOVE.has(writer) ? ARMHELPERS : ''}${MOVE.has(writer) ? MOVEHELPERS : ''}${writer === 'storeHelper' ? `storeThenPark : Ref ${refT} → ⊤\nstoreThenPark r =\n    Ref.set r (${c.init})\n    Task.yieldNow ⊤\n    Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${fromQueue}${peek}${peekWith}${holdAt}${writer === 'helper' || writer === 'armHelper' ? `bump : Ref ${refT} → ⊤\nbump r = Ref.update r λv → ${c.w('v')}\n\n\n` : ''}${sig}
 ${ind(lines.join('\n'), 4)}
 
 
@@ -1074,6 +1111,7 @@ for (const cname of Object.keys(CONTENTS)) for (const maker of ['local', 'param'
   if (fibers === 'midPark' && !(reader === 'loan' && holder === 'name')) continue;
   if (STORE.has(writer) && (!STORE_READERS.includes(reader) || (reader === 'loan' && !COND_HOLDERS.includes(holder)) || !STORE_FIBERS.includes(fibers))) continue;
   if (ARM.has(writer) && (!ARM_READERS.includes(reader) || (reader === 'loan' && !ARM_HOLDERS.includes(holder)) || !ARM_FIBERS.includes(fibers))) continue;
+  if (MOVE.has(writer) && (cname !== 'pair' || !MOVE_READERS.includes(reader) || (reader === 'loan' && !ARM_HOLDERS.includes(holder)) || !ARM_FIBERS.includes(fibers))) continue;
   if (COND.has(writer) && (!COND_READERS.includes(reader) || (reader === 'loan' && !COND_HOLDERS.includes(holder)) || !COND_FIBERS.includes(fibers))) continue;
   const twin = isLive(writer, reader, fibers, holder) ? 'live' : 'dead';
   emit(`${cname}.${maker}.${writer}.${reader}.${holder}.${fibers}.${twin}`, { 'Main.beni': gen(cname, maker, writer, reader, holder, fibers) });

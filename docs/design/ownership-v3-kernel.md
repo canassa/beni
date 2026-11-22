@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -2453,9 +2453,10 @@ contents of a cell are locations, and that a call can change what a location of 
    store renews every location of the cell's contents. A walked body publishes, for each parameter
    whose cells a call renewed, the sources of its latest version at each location of its cells'
    contents (`Frame.publishRenew`), joined with its value at each early return (`?`), whatever the
-   value it returns holds (an `Err` of no location returns too). Two contracts of a
+   value it returns holds (an `Err` of no location returns too), with the claim that one run leaves no
+   cell at two locations of them (`renew_shared`, item 5). Two contracts of a
    round join a renewal with the other's, or with the location's own cells where the other leaves it as
-   it was (`Contract.join`); the rounds start from the bottom contract, so a recursive function's
+   it was, and either's `renew_shared` (`Contract.join`); the rounds start from the bottom contract, so a recursive function's
    renewal names its parameter's old cells too (the pessimistic side). The dump writes `π1◆ :=` and
    the sources. A worded body's renewal is below its words' (`Check.falseWord`): every source of the
    walk's, or the location's own cells where the walk leaves it, the words name there too.
@@ -2481,6 +2482,33 @@ contents of a cell are locations, and that a call can change what a location of 
    the old contents: a loan is a snapshot, and a read of it after an update is test 4's later read.
    An argument that is no tracked root whole renews no version: what the call stores escapes, and each
    handle the argument holds there is shared (item 8).
+   *Amended 2026-11-22 (blind round BN).* **One value of the renewal at a time.** A renewal is the
+   union of what the body leaves in the cell at each return point and in each arm (item 3), and a
+   run leaves one of them: an `Undo` arm that moves `present` to `future` and an `Add` arm that
+   writes `present` leave the old `present` at one location each, though the union names it at both,
+   and the version's `linear`, read off its atoms, said that the two locations hold one cell
+   (`disjoint` at the next write of `present`). So a walked body publishes a claim, as it does of its
+   result (§4.4, *One value of a join at a time*): `Contract.renew_shared`, true where one value of a
+   renewed parameter at a return point holds one cell at two of its locations (`Frame.renewTwice`:
+   each value of the join on its own; a version the frame made whole that is `linear` with no
+   `twice` entry holds none at two). A worded row's is true: its words state no count. A caller
+   reads the claim where it makes the version (`renewHandle`), on the same ground as a result's:
+   the call is no run within (`maybe`), the handle is single, neither the callee nor a function it
+   is handed casts, and the arguments are apart (`argsApartAt`, `argsSplit`). Then two locations
+   of the renewed contents are apart unless one holds the answer of a function parameter, which
+   the callee saw as an opaque root, or both are at one wide location of the callee (§3.4); every
+   other pair is tested by its atoms (`deriveLinearSplit`). A call that renews the contents with
+   the answer of a function it runs once (`cellupdate`, `Fn.once`) reads the function's own claim
+   about its result (`!nonlinear`, §4.4) the same way (`answerClaim`): where every source of the
+   renewal is that answer, the function is known code that does not cast, its result's layout is
+   the contents' own, entry for entry, with no wide entry, and what it is handed — the cell and
+   its captures — is apart. A cell at two locations in one run (`{ h | future = List.push h.future
+   h.present }`), a value handed or captured that is also in the cell, and a function that casts
+   or is unknown keep the test by atoms (`run/CellRenewalArmsApart`, its live twin
+   `run/CellRenewalArmsApartLive`). What it does not cover: the writes and the renewal of a body
+   are each a union over its arms too, and a caller reads them together, so after `apply r Undo`
+   whose `Add` arm writes `present`, a later read of `future` still reads the old `present` as
+   written (`later-use`); keeping the arms of a callee apart in its caller is the next step.
 6. **Control flow.** The arms of a `case` each start from the versions before it, and after it a root
    whose latest differs between arms is the join of the arms' latest, each in its arm's context
    (`joinCells`, §6 rule 7). A later argument of a call that a lowering can short-circuit
