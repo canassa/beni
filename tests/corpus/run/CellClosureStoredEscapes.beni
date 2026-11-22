@@ -1,0 +1,64 @@
+-- The dead twin of `CellClosureStoredEscapesLive`
+-- (`ownership-v3-kernel.md` §13 item 11, amended 2026-11-22): a closure
+-- that stores a list it made in the cell it captured and lets the list
+-- escape, but writes no contents in place, run twice by `List.map`; one
+-- that writes the contents and lets the list escape, called once by the
+-- frame itself; and one run twice by `List.map` that writes the contents
+-- and stores a list it lets go nowhere. Each write is accepted and runs in
+-- place, and prints what the copying program prints.
+import Deferred exposing (Deferred)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+storeOnly : ⊤ → String
+storeOnly ⊤ =
+    r = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    g =
+        λu →
+            l = [ 7 ]
+            Ref.set r l
+            _ = Deferred.complete d l
+            u
+    _ = List.map [ ⊤, ⊤ ] g
+    ints (Deferred.wait d)
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    g =
+        λu →
+            Ref.update r λxs → List.push xs 1
+            l = [ 7 ]
+            Ref.set r l
+            _ = Deferred.complete d l
+            u
+    g ⊤
+    ints (Deferred.wait d)
+
+
+keptInCell : ⊤ → String
+keptInCell ⊤ =
+    r = Ref.make [ 0 ]
+    g =
+        λu →
+            Ref.update r λxs → List.push xs 1
+            l = [ 7 ]
+            Ref.set r l
+            u
+    _ = List.map [ ⊤, ⊤ ] g
+    "done"
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ storeOnly ⊤, direct ⊤, keptInCell ⊤ ]

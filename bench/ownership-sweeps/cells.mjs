@@ -452,6 +452,153 @@ main = Io.run λ⊤ → Node.printLines (go ⊤)
 `;
 }
 
+// #2598: a closure that captured the cell writes its contents, then stores a list it makes in the cell
+// and lets the list go on (kernel §13 item 11). A runner that runs it twice writes, in its second run,
+// the list its first run stored, which the holder reads. Programs are
+// `esc.<write>.<escape>.<runner>.<runs>.<twin>`: `write` the closure's write (`upd`, `Ref.update`;
+// `mod`, `Ref.modify`); `escape` where the list goes besides the cell (`none`; `deferred`, a captured
+// `Deferred`; `spawn`, a fiber the closure spawns and answers, which reads it after a sleep; `queue`, a
+// captured `Queue`; `list`, a second cell that holds a list of lists; `record`, the closure's answer in a
+// record; `answer`, the closure's answer; `cell2`, a second cell that the first run alone stores into;
+// `cell2last`, a second cell that each run stores into, read after: it holds the last run's list);
+// `runner` what runs the closure (`map`, `List.map`; `fold`, a `List.foldl` callback that calls it;
+// `helper`, a user helper that calls its parameter; `scope`, a `Task.scope` body that calls it; `fibers`,
+// a spawned fiber for each run, kernel §13 item 12; `direct`, the frame calls it); `runs` `twice` or
+// `once`. A run once and the escapes `none` and `cell2last` are `dead`.
+const ESC_WRITES = {
+  upd: 'Ref.update r λxs → List.push xs 1',
+  mod: '_ = Ref.modify r λxs → ( 1, List.push xs 1 )',
+};
+const ESC = {
+  none: { body: [], ans: '⊤', show: 'ints (Ref.get r)' },
+  deferred: { body: ['_ = Deferred.complete d l'], ans: '⊤', show: 'ints (Deferred.wait d)' },
+  spawn: { body: [], ans: 'Task.spawn λ⊤ →\n    Io.sleep 5\n    ints l', show: 'String.join (List.map outs Task.join) " "' },
+  queue: { body: ['_ = Queue.offer q l'], ans: '⊤', show: 'String.join (List.map (Queue.takeAll q) ints) " "' },
+  list: { body: ['Ref.update acc λls → List.push ls l'], ans: '⊤', show: 'String.join (List.map (Ref.get acc) ints) " "' },
+  record: { body: [], ans: '{ xs = l, n = 1 }', show: 'String.join (List.map outs λo → ints o.xs) " "' },
+  answer: { body: [], ans: 'l', show: 'String.join (List.map outs ints) " "' },
+  cell2: { body: ['k = Ref.get cnt', 'Ref.set cnt (k + 1)', 'if k == 0 then Ref.set r2 l'], ans: '⊤', show: 'ints (Ref.get r2)' },
+  cell2last: { body: ['Ref.set r2 l'], ans: '⊤', show: 'ints (Ref.get r2)' },
+};
+const ESC_RUNNERS = {
+  map: (n) => `outs = List.map ${n === 2 ? '[ ⊤, ⊤ ]' : '[ ⊤ ]'} g`,
+  fold: (n) => `outs = List.foldl ${n === 2 ? '[ ⊤, ⊤ ]' : '[ ⊤ ]'} [] λu os → List.push os (g u)`,
+  helper: (n) => `outs = ${n === 2 ? 'twice' : 'once'} g`,
+  scope: (n) => `outs = Task.scope λs → ${n === 2 ? '[ g ⊤, g ⊤ ]' : '[ g ⊤ ]'}`,
+  fibers: (n) => (n === 2 ? 'fa = Task.spawn λ⊤ → g ⊤\nfb = Task.spawn λ⊤ → g ⊤\nouts = [ Task.join fa, Task.join fb ]' : 'fa = Task.spawn λ⊤ → g ⊤\nouts = [ Task.join fa ]'),
+  direct: (n) => `outs = ${n === 2 ? '[ g ⊤, g ⊤ ]' : '[ g ⊤ ]'}`,
+};
+
+function genEsc(write, escape, runner, n) {
+  const e = ESC[escape];
+  const g = [ESC_WRITES[write], 'l = [ 7 ]', 'Ref.set r l', ...e.body, e.ans].join('\n');
+  const lines = [
+    'r = Ref.make [ 0 ]',
+    'd = Deferred.make ⊤',
+    'q = Queue.unbounded ⊤',
+    'acc = Ref.make []',
+    'r2 = Ref.make [ 0 ]',
+    'cnt = Ref.make 0',
+    `g = λu →\n${ind(g, 4)}`,
+    ESC_RUNNERS[runner](n),
+    `[ ${e.show}, String.fromInt (List.length outs) ]`,
+  ];
+  return `-- esc.${write}.${escape}.${runner}: see bench/ownership-sweeps/cells.mjs.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Ref exposing (Ref)
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+twice : (⊤ → a) → List a
+twice f = [ f ⊤, f ⊤ ]
+
+
+once : (⊤ → a) → List a
+once f = [ f ⊤ ]
+
+
+go : ⊤ → List String
+go ⊤ =
+${ind(lines.join('\n'), 4)}
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (go ⊤)
+`;
+}
+
+// The same closure over a cell of two parts, which stores one list it made at both parts and lets it go
+// nowhere else (`esc2.<shape>.<runner>.<runs>.<twin>`): `pair` (`( l, l )`), `record` (`{ a = l, b = l }`),
+// `callee` (a helper answers `( l, l )`); or puts the first part's old list at the second too (`old`, `( a, a )`;
+// `oldRecord`, `{ o | b = o.a }`), or the second part's at both (`otherOld`, `( b, b )`); in its first run only
+// (a counter cell). Its next run pushes onto the first part, and the frame reads the second.
+const ESC2 = {
+  pair: { t: 'List Int × List Int', init: '( [ 0 ], [ 0 ] )', upd: 'λ( a, b ) → ( List.push a 1, b )', store: '( l, l )', second: (v) => `${v}.1` },
+  record: { t: 'P', init: '{ a = [ 0 ], b = [ 0 ] }', upd: 'λp → { p | a = List.push p.a 1 }', store: '{ a = l, b = l }', second: (v) => `${v}.b` },
+  callee: { t: 'List Int × List Int', init: '( [ 0 ], [ 0 ] )', upd: 'λ( a, b ) → ( List.push a 1, b )', store: 'dup ⊤', second: (v) => `${v}.1` },
+  old: { t: 'List Int × List Int', init: '( [ 0 ], [ 0 ] )', upd: 'λ( a, b ) → ( List.push a 1, b )', line: 'Ref.update r λ( a, b ) → ( a, a )', second: (v) => `${v}.1` },
+  oldRecord: { t: 'P', init: '{ a = [ 0 ], b = [ 0 ] }', upd: 'λp → { p | a = List.push p.a 1 }', line: 'Ref.update r λo → { o | b = o.a }', second: (v) => `${v}.b` },
+  otherOld: { t: 'List Int × List Int', init: '( [ 0 ], [ 0 ] )', upd: 'λ( a, b ) → ( List.push a 1, b )', line: 'Ref.update r λ( a, b ) → ( b, b )', second: (v) => `${v}.1` },
+};
+
+function genEsc2(shape, runner, n) {
+  const s = ESC2[shape];
+  const store = s.line ?? (shape === 'callee' ? `Ref.set r (${s.store})` : `l = [ 7 ]\nRef.set r (${s.store})`);
+  const g = [`Ref.update r ${s.upd}`, 'k = Ref.get cnt', 'Ref.set cnt (k + 1)', `if k == 0 then\n${ind(store, 4)}`, '⊤'].join('\n');
+  const lines = [
+    `r = Ref.make (${s.init})`,
+    'cnt = Ref.make 0',
+    `g = λu →\n${ind(g, 4)}`,
+    ESC_RUNNERS[runner](n),
+    `v = Ref.get r`,
+    `[ ints (${s.second('v')}), String.fromInt (List.length outs) ]`,
+  ];
+  return `-- esc2.${shape}.${runner}: see bench/ownership-sweeps/cells.mjs.
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+type alias P =
+    { a : List Int, b : List Int }
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+dup : ⊤ → List Int × List Int
+dup ⊤ =
+    l = [ 7 ]
+    ( l, l )
+
+
+twice : (⊤ → a) → List a
+twice f = [ f ⊤, f ⊤ ]
+
+
+once : (⊤ → a) → List a
+once f = [ f ⊤ ]
+
+
+go : ⊤ → List String
+go ⊤ =
+${ind(lines.join('\n'), 4)}
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (go ⊤)
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -474,6 +621,13 @@ for (const cname of Object.keys(CONTENTS)) for (const wrap of ['maybe', 'result'
   if (op === 'err' && wrap !== 'result') continue;
   const twin = tryLive(op, use) ? 'live' : 'dead';
   emit(`try.${cname}.${wrap}.${op}.${site}.${use}.${twin}`, { 'Main.beni': genTry(cname, wrap, op, site, use) });
+}
+for (const write of Object.keys(ESC_WRITES)) for (const escape of Object.keys(ESC)) for (const runner of Object.keys(ESC_RUNNERS)) for (const n of [2, 1]) {
+  const twin = n === 2 && escape !== 'none' && escape !== 'cell2last' ? 'live' : 'dead';
+  emit(`esc.${write}.${escape}.${runner}.${n === 2 ? 'twice' : 'once'}.${twin}`, { 'Main.beni': genEsc(write, escape, runner, n) });
+}
+for (const shape of Object.keys(ESC2)) for (const runner of Object.keys(ESC_RUNNERS)) for (const n of [2, 1]) {
+  emit(`esc2.${shape}.${runner}.${n === 2 ? 'twice' : 'once'}.${n === 2 ? 'live' : 'dead'}`, { 'Main.beni': genEsc2(shape, runner, n) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);

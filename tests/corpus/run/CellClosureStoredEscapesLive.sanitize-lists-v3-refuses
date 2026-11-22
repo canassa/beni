@@ -1,0 +1,11 @@
+# A closure a callee can run more than once stores a list it made in the cell it captured and lets the list escape (a Deferred, a spawned fiber, a queue, a callee that keeps it, the cell's contents, a second part of the cell, or puts one part's old contents at two parts); a later run writes it in place: refused (ownership-v3-kernel.md §13 item 11, amended 2026-11-22). Its dead twin is CellClosureStoredEscapes.
+46:9 list_still_used value
+54:5 list_still_used value
+67:9 list_still_used value
+87:10 list_still_used value
+102:9 list_still_used value
+122:9 list_still_used value
+136:9 list_still_used value
+153:9 list_still_used value
+170:9 list_still_used value
+187:11 list_still_used value

@@ -1,0 +1,1 @@
+A closure that stores in a captured cell a list it made and lets escape, with no write of the contents where a callee runs it again: each write is accepted and runs in place (ownership-v3-kernel.md §13 item 11, amended 2026-11-22). Its live twin is CellClosureStoredEscapesLive.

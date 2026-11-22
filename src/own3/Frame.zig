@@ -7360,12 +7360,17 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
         if (!inner[e] or lc.flags[lc.off[j] + e] & flag_w == 0) continue;
         const wa: u32 = @intCast(f.atoms.items.len);
         const dup = try f.argLeaves(capv, sig, @intCast(e), &.{}, false, &f.atoms);
-        const stored_twice = try f.storedAtoms(code, j, @intCast(e));
+        const stored = try f.storedAtoms(code, j, @intCast(e));
+        if (stored.escaped or stored.elsewhere) {
+            f.atoms.shrinkRetainingCapacity(wa);
+            if (stored.escaped) try f.m.addRefusal(f, inst, .escaped, stored_escaped) else try f.m.addRefusal(f, inst, .disjoint, stored_elsewhere);
+            break;
+        }
         try f.demand(wa, .{
             .point = inst,
             .loc = ses[e].loc,
             .others = others.items,
-            .dup = (dup or stored_twice) and !ses[e].single,
+            .dup = (dup or stored.twice) and !ses[e].single,
             .list_only = ses[e].kind == .list,
             .kind = .callsite,
         });
@@ -10337,10 +10342,17 @@ fn holderGivesNone(f: *Frame, code: Code, use: *const Use, k: usize) Error!bool 
             }
         },
         // A cell the function made that no other location of its result
-        // holds: no holder but this place, which no reader names, sees it.
-        .fresh => for (lc.res, 0..) |other, ri| {
-            if (ri == k) continue;
-            for (other) |o| if (o.kind == .fresh and o.a == ls.a) return false;
+        // holds, that it did not let escape, that it left in no cell and
+        // handed no function: no holder but this place, which no reader
+        // names, sees it.
+        .fresh => {
+            if (ls.e != 0) return false;
+            for (lc.res, 0..) |other, ri| {
+                if (ri == k) continue;
+                for (other) |o| if (o.kind == .fresh and o.a == ls.a) return false;
+            }
+            for (lc.renew) |ro| if (ro) |srcs| for (srcs) |o| if (o.kind == .fresh and o.a == ls.a) return false;
+            for (lc.fns) |lfo| if (lfo) |g| for (g.supply) |srcs| for (srcs) |o| if (o.kind == .fresh and o.a == ls.a) return false;
         },
         .outside, .twice => {},
         .answer => return false,
@@ -10581,8 +10593,14 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
             // contents names at the written location too: a capture's cells
             // (another location of the cell's own contents among them), outside
             // the frame's (outside, or a value the callee handed, which no rule
-            // names here), and not a cell the function made in its run.
-            const stored_twice = try f.storedAtoms(code, j, @intCast(e));
+            // names here), and not a cell the function made in its run and
+            // let escape nowhere: one it let escape has another holder.
+            const stored = try f.storedAtoms(code, j, @intCast(e));
+            if (stored.escaped or stored.elsewhere) {
+                f.atoms.shrinkRetainingCapacity(w);
+                if (stored.escaped) try f.refuse(use, .escaped, stored_escaped) else try f.refuse(use, .disjoint, stored_elsewhere);
+                break;
+            }
             try f.demand(w, .{
                 .point = site.inst,
                 .callee_inst = site.callee,
@@ -10590,7 +10608,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                 .others = others.items,
                 .arg = first + k,
                 .se = @intCast(e),
-                .dup = (dup or stored_twice) and !ses[e].single,
+                .dup = (dup or stored.twice) and !ses[e].single,
                 .list_only = ses[e].kind == .list,
                 .kind = .callsite,
             });
@@ -10632,25 +10650,119 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
     }
 }
 
+const stored_escaped = "a function writes the contents of a cell it captured, and it can run again: an earlier run stored there a value it made and let escape, which a later run writes";
+
+/// What `storedAtoms` found besides the atoms it appended.
+const Stored = struct {
+    /// The renewal holds one cell at two places there (`twice`): a later run
+    /// writes a cell that the location holds twice.
+    twice: bool = false,
+    /// The renewal names a cell the code made in its run and let escape
+    /// (its source's escape bit): another holder has it, so a later run's
+    /// write of it is refused (§5 test 3).
+    escaped: bool = false,
+    /// The renewal names a cell the code made in its run that the contract
+    /// names at another location too: another location of the cell's
+    /// contents (`( l, l )`), its answer, a renewal of another cell, a
+    /// function it hands it to. A later run's write of it is of a cell
+    /// another holder reads (§5 test 2).
+    elsewhere: bool = false,
+};
+
+const stored_elsewhere = "a function writes the contents of a cell it captured, and it can run again: an earlier run stored there a value it made that another place holds too, which a later run writes";
+
+/// Whether the contract `lc` names the cell it made at site `a` at a
+/// location other than entry `e` of parameter `j`: another location of a
+/// parameter's renewal, its answer, or a supply of a function parameter.
+/// Another entry of `j`'s own layout counts where it can hold the same
+/// cell (`sameCellAt`): a site can name the new cells of a list and of its
+/// elements, as a row's `fresh` does.
+fn freshElsewhere(f: *Frame, lc: *const Contract, j: u32, e: u32, a: u16) bool {
+    const at = lc.off[j] + e;
+    const es = f.m.loc.layoutEntries(lc.layouts[j]);
+    for (lc.renew, 0..) |ro, i| {
+        if (i == at) continue;
+        const srcs = ro orelse continue;
+        const named = for (srcs) |x| {
+            if (x.kind == .fresh and x.a == a) break true;
+        } else false;
+        if (!named) continue;
+        if (i >= lc.off[j] and i < lc.off[j + 1] and !f.sameCellAt(es, e, @intCast(i - lc.off[j]))) continue;
+        return true;
+    }
+    for (lc.res) |srcs| for (srcs) |x| if (x.kind == .fresh and x.a == a) return true;
+    for (lc.fns) |lfo| if (lfo) |g| for (g.supply) |srcs| for (srcs) |x| if (x.kind == .fresh and x.a == a) return true;
+    return false;
+}
+
 /// Appended to `f.atoms`: what the renewal of capture `j` of `code` names
 /// at its entry `e`, which a later run of the code writes where it writes
 /// `e` (kernel §13 item 11): a capture's cells (another location of the
 /// cell's own contents among them), `outside` for outside the frame or a
-/// value the callee handed, and not a cell the code made in its run. True
-/// where the renewal holds one cell at two places there (`twice`): a later
-/// run writes a cell that the location holds twice.
-fn storedAtoms(f: *Frame, code: Code, j: u32, e: u32) Error!bool {
+/// value the callee handed, and not a cell the code made in its run that no
+/// other holder has. One it let escape (a `Deferred`, a spawned fiber, a
+/// queue, a list the holder reads) is `outside` too, and noted; one the
+/// contract names at another location (`freshElsewhere`) is noted, and so
+/// is an old cell of the capture that the location and another one hold
+/// after the call.
+fn storedAtoms(f: *Frame, code: Code, j: u32, e: u32) Error!Stored {
     const lc = code.contract;
-    var twice = false;
+    var got: Stored = .{};
     if (lc.renewAt(lc.off[j] + e)) |srcs| for (srcs) |s| switch (s.kind) {
-        .fresh => {},
-        .twice => twice = true,
+        .fresh => if (s.e != 0) {
+            got.escaped = true;
+            try f.atoms.append(f.gpa, outside_atom);
+        } else if (freshElsewhere(f, lc, j, e, s.a)) {
+            got.elsewhere = true;
+        },
+        .twice => got.twice = true,
         .outside, .answer => try f.atoms.append(f.gpa, outside_atom),
         .param => if (s.a == j and s.e == e) {} else if (s.a >= code.own_params and s.a < lc.arity) {
             _ = try f.argLeaves(try f.capVal(code, s.a - code.own_params), lc.layouts[s.a], s.e, &.{}, false, &f.atoms);
         } else try f.atoms.append(f.gpa, outside_atom),
     };
-    return twice;
+    // An old cell of the capture that the written location holds after the
+    // call (its renewal names it, or it keeps its own old contents) and that
+    // another location holds too (`( a, a )`, `( b, b )`, `{ o | b = o.a }`;
+    // a location with no renewal keeps its own): a later run's write of it
+    // is of a cell that the other location holds.
+    const at = lc.off[j] + e;
+    const n = lc.off[j + 1] - lc.off[j];
+    const es = f.m.loc.layoutEntries(lc.layouts[j]);
+    if (lc.renew.len != 0) for (0..n) |x| {
+        const named = if (lc.renewAt(at)) |srcs| namesOld(srcs, j, @intCast(x)) else x == e;
+        if (!named or !f.sameCellAt(es, e, @intCast(x))) continue;
+        for (lc.renew, 0..) |ro, i| {
+            if (i == at) continue;
+            const hit = if (ro) |srcs| namesOld(srcs, j, @intCast(x)) else i == lc.off[j] + x;
+            if (!hit) continue;
+            if (i >= lc.off[j] and i < lc.off[j + 1] and !f.sameCellAt(es, @intCast(i - lc.off[j]), @intCast(x))) continue;
+            got.elsewhere = true;
+            return got;
+        }
+    };
+    return got;
+}
+
+/// Whether entries `a` and `b` of one layout `es` can hold the same cell
+/// (kernel §11, `canShare`): not a field slot beside a list, nor two field
+/// slots of two fields, nor a list above or below another where neither is
+/// wide (a list does not hold itself). A renewal that names the old cells
+/// of one at the other names them as a summary does, and no cell is at both.
+fn sameCellAt(f: *Frame, es: []const Loc.Entry, a: u32, b: u32) bool {
+    if (a == b) return true;
+    if (a >= es.len or b >= es.len) return true;
+    const x = es[a];
+    const y = es[b];
+    if (!canShare(f.m, x, y)) return false;
+    const nested = f.m.loc.isPrefix(x.loc, y.loc) or f.m.loc.isPrefix(y.loc, x.loc);
+    return !(nested and !x.kind.wide() and !y.kind.wide());
+}
+
+/// Whether `srcs` names entry `x` of parameter `j` as it was at the call.
+fn namesOld(srcs: []const Src, j: u32, x: u32) bool {
+    for (srcs) |s| if (s.kind == .param and s.a == j and s.e == x) return true;
+    return false;
 }
 
 /// Whether the contract `lc` lets the contents of capture parameter `j`

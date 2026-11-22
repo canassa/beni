@@ -290,7 +290,9 @@ skips: the function's type is wider there) lets what it holds escape where the f
 (`Frame.escapeUnplacedAnswer`; `apply : (a → Int), a → Int` handed `cast : a → b`). A location whose every source names no cell a reader
 could miss is skipped (`holderGivesNone`): a parameter location at whose place the holder's parameter
 type has no location (`List a → List a` held as `List Int → List Int`), a capture of no cell, a cell
-the function made that no other location of its result holds. **A location placed
+the function made that no other location of its result holds, that it did not let escape, that it
+left in no cell (a renewal) and handed no function (*amended 2026-11-22*, #2598: before, only the other
+locations of the result were read, and a cell the function also stored or let go was skipped). **A location placed
 nowhere never holds nothing.**
 
 **A cast hidden behind a type variable.** A location of the contract's result that the reading does
@@ -2486,7 +2488,33 @@ contents of a cell are locations, and that a call can change what a location of 
       write is of a cell at two places, refused (`storedAtoms`' answer, also in a writer's run, item
       12). *Amended 2026-11-21:* before §3.4's amendment the renewal named the cell's every part at
       its outer place and the call was refused `disjoint` for that; with each part at its place the
-      two runs are told apart only by `twice` (`run/CellContentsAtTheirPlaceLive`'s `twiceArms`);
+      two runs are told apart only by `twice` (`run/CellContentsAtTheirPlaceLive`'s `twiceArms`).
+      *Amended 2026-11-22 (#2598):* the cell the closure made in its run is excepted only where it
+      let the cell escape nowhere. One it let escape (its source in the renewal has the escape bit,
+      `fresh!`: a `Deferred` it completed, a fiber it spawned, a queue, a callee that keeps it) has
+      another holder (§5 test 3), which reads it after the later run writes it in place: the write
+      is refused (`escaped`, `Stored.escaped`), at a call that runs the closure within and in a
+      writer's run (item 12). Before, `storedAtoms` dropped every `fresh` source without reading the
+      bit, and `List.map [ ⊤, ⊤ ] g` with `g` storing `l` and completing a `Deferred` with it pushed
+      onto `l` in its second run (`run/CellClosureStoredEscapes` and its live twin). The callee may
+      run the closure once only: no rule counts its runs, so that program is refused too. Nor is a
+      cell the closure made excepted where its contract names it at another location than the
+      written one (`freshElsewhere`): another location of the cell's contents (`Ref.set r ( l, l )`,
+      `{ a = l, b = l }`, a callee's `( l, l )`), its answer, a renewal of another cell, a function
+      it hands it to; another location of the contents counts where it can hold the same cell (not a
+      field slot beside a list, nor a list above or below the written one where neither is wide: a
+      row's `fresh` names the new cells of each with one site, `sameCellAt`). The later run's write of
+      one location is of the cell the other holds, refused
+      (`disjoint`); before, the first run's `( l, l )` and the second run's push onto its first part
+      changed the second (the lane's reviewer, five programs). The same holds of the written
+      location's own old contents: where its renewal keeps them and the renewal of another location
+      names them too (`Ref.update r λ( a, b ) → ( a, a )`, `{ o |      changed the second (the lane's reviewer, five programs). The same holds of an old cell of the
+      capture: where the written location holds it after the call (its renewal names it, or keeps its
+      own) and another location holds it too, its renewal naming it or, with no renewal, keeping its
+      own (`Ref.update r λ( a, b ) → ( a, a )`, `( b, b )`, `{ o \| b = o.a }`, `( a, [ a ] )`), the
+      later run's write of it is of the cell the other location holds, refused (`disjoint`,
+      `namesOld`, with the same `sameCellAt`: a renewal of a dictionary that names its values' old
+      cells names them as a summary does; the reviewer's second and third rounds, eleven programs);
     - **any other holder** (the default, a lost use, a function parameter of the frame, a list, a
       spawned fiber): the closure runs at times the frame does not see. Each handle it captured is
       shared (item 8), and a write of a captured cell's contents is refused (`call`).
@@ -2518,7 +2546,8 @@ contents of a cell are locations, and that a call can change what a location of 
     - **A run of a writer** (`runWriter`) at each switch point after it is made (and at the call that
       made it, where that is one), and at each return point (`?`, the end): as a call that runs it
       within (item 11), it reads what its contract reads of the capture there, its write is a demand at
-      that call on the frame's latest version, of what an earlier run stored too, judged against the
+      that call on the frame's latest version, of what an earlier run stored too (a cell its own
+      run made and let escape among it: refused, item 11's amendment of 2026-11-22), judged against the
       call's operands (but a handle read through itself where the callee's parameter there has a cell's
       layout, so the callee follows it and its probes mark it, `followedOps`: a handle at a type variable
       or handed to code the walk does not know is an operand, `run/CellFibersInPlaceLive`'s `generic` and
