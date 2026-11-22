@@ -875,6 +875,18 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    never that arm's value. So `ys = if c then List.set xs 0 7 else xs` read through `idl ys`, and a
    cell written in one arm and read after the `if` (§13 item 6), are accepted. Two atoms of one cell
    from two arms are two atoms of the run (`atomEql` compares the context), so neither arm's is lost.
+   *Amended 2026-11-22.* An atom found through an arm of a join that an arm of another join holds is
+   held on a run through both arms: where one arm is inside the other it keeps the inner one, and
+   otherwise their **meeting** (`meet`, `Ctx.both`), which is live only where each of the two is
+   (`ctxLive`). Before, it kept the first arm it came through, the inner join's: in two `if`s in a row
+   that write one cell, what the second `if`'s other arm keeps of the first `if`'s value read as held
+   where the second `if`'s write runs, and `Ref.get` after both refused that write (blind round BM,
+   `twoIfsOneCell`; `run/CellWrittenInTwoIfs`). The meeting is as pessimistic or more than each arm
+   alone: a run that holds the atom goes through both. A meeting keeps two arms, the innermost and
+   the outermost of the way the atom was found through: a meeting of every arm on the way tells each
+   way apart, and in a chain of `case`s that each answer the value before, the atoms grew as the ways
+   did (`check_test.zig`'s chains: 26 s and 2.6 GB at 30 levels). Dropping an arm is the pessimistic
+   side, so of three `if`s in a row, a write in the middle one is held by what the others keep.
 8. **Loops** are recursion and the worded loops of `core/`: a function handed to a callee flows to the
    callee's contract for it (`flow`); where the callee hands the function its own answer (a fold), the
    answer must be the function's own (`answerOwn`), because the callee hands it back as a parameter that

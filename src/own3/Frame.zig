@@ -206,7 +206,11 @@ const REntry = struct {
 /// call that writes counts it as another operand (kernel §5, §11).
 const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true, tail: bool = false };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
-const Ctx = struct { parent: u32, case: u32, arm: u32, depth: u32 };
+/// A context is an arm of a `case` (`parent`, `case`, `arm`), or the
+/// meeting of two (`both`: an atom found through an arm of each of two
+/// joins that are not nested, kernel §6 rule 7). Only an atom's context
+/// can be a meeting; no point is in one.
+const Ctx = struct { parent: u32, case: u32, arm: u32, depth: u32, both: [2]u32 = .{ none, none } };
 /// A call or a method call as the walk applied it (`noteJsSite`): the
 /// instructions its edges are at (the callee's reference and the call, or
 /// `none`), what it was handed (`vals`, a run of `js_site_vals`), what it
@@ -484,6 +488,8 @@ proj_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
 /// `reroot` made, by the join and the path: kept for the frame, as
 /// `proj_memo` is.
 reroot_memo: std.AutoHashMapUnmanaged([2]u32, Val) = .empty,
+/// The meeting of two contexts (`Ctx.both`), made once for each pair.
+both_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
 /// Per construction (a `built` value): for each entry of its place's
 /// layout, the parts that hold a location there (`builtIndex`).
 built_index: std.AutoHashMapUnmanaged(Val, BuiltIndex) = .empty,
@@ -1361,7 +1367,7 @@ fn atomsShare(f: *const Frame, x: Atom, y: Atom, comptime charged: bool) bool {
 /// which runs no check, counts for building it.
 const Quiet = struct { m: Mod.Quiet, failed: bool, parts: [quiet_parts.len]usize };
 
-const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers" };
+const quiet_parts = .{ "nodes", "kids", "lists", "roots", "rents", "pflags", "codes", "drafts", "answers", "uses", "escapes", "esc_atoms", "demands", "ctxs", "flow_memo", "flow_args", "leaf_memo", "leaf_buf", "leaf_ks", "proj_memo", "reroot_memo", "both_memo", "built_index", "built_parts", "built_parted", "fresh_esc", "pos_keys", "pos_info", "slot_index", "paired_memo", "paired_buf", "whole_at", "whole_buf", "run_ents", "fresh_roots", "run_facts", "meet_index", "cover_index", "cell_roots", "cell_shared", "cell_inner", "cell_marked", "probes", "parked", "writers" };
 
 fn quietParts(f: *const Frame) [quiet_parts.len]usize {
     var out: [quiet_parts.len]usize = undefined;
@@ -1988,9 +1994,11 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
                 const before = out.items.len;
                 if (try f.leavesSet(f.lists.items[n.a + 2 * ki], n.place, ks, out)) dup = true;
                 // What the arm holds, it holds on a run through the arm (kernel §6 rule 7).
+                // Found through an arm of a join inside this arm, it is on a
+                // run through both, and keeps both (`meet`).
                 const ctx = f.lists.items[n.a + 2 * ki + 1];
                 if (ctx != none) for (out.items[before..]) |*a| {
-                    if (a.ctx == none and a.root != 0) a.ctx = ctx;
+                    if (a.root != 0) a.ctx = try f.meet(a.ctx, ctx);
                 };
             }
             return dup;
@@ -2397,7 +2405,52 @@ fn entriesBelow(f: *Frame, p: Loc.Path, len: usize, below: *std.DynamicBitSetUnm
 /// rule 7, amended). Only the later-read test asks (`ctx_filter`).
 fn atomLive(f: *const Frame, x: Atom) bool {
     if (!f.ctx_filter or x.ctx == none or f.judge_ctx == none) return true;
-    return f.compatible(x.ctx, f.judge_ctx);
+    return f.ctxLive(x.ctx);
+}
+
+/// Whether a run through context `c` can hold the write in judgement: for
+/// a meeting of two, only where a run through each can.
+fn ctxLive(f: *const Frame, c: u32) bool {
+    const b = f.ctxs.items[c].both;
+    if (b[0] != none) return f.ctxLive(b[0]) and f.ctxLive(b[1]);
+    return f.compatible(c, f.judge_ctx);
+}
+
+/// Whether context `a` is `c` or an arm around it.
+fn ctxAround(f: *const Frame, a: u32, c0: u32) bool {
+    const cs = f.ctxs.items;
+    if (cs[a].both[0] != none or cs[c0].both[0] != none) return a == c0;
+    var c = c0;
+    while (cs[c].depth > cs[a].depth) c = cs[c].parent;
+    return c == a;
+}
+
+/// The context of an atom found through an arm of context `ctx` where the
+/// arm's value held it in context `had` (kernel §6 rule 7, amended): the
+/// inner one where one arm is inside the other, else their meeting, since
+/// the atom is held only on a run through both. Before, an atom kept the
+/// context of the first join it was found through, so an atom from the
+/// first of two `if`s in a row kept no fact of the second one's arm.
+/// A meeting keeps two arms, the innermost join's and the outermost's: a
+/// meeting of every arm on the way told each way to an atom apart, and the
+/// atoms of a chain of `case`s that each answer the one before grew as the
+/// ways did (kernel §8). Dropping an arm is the pessimistic side.
+fn meet(f: *Frame, had: u32, ctx: u32) Error!u32 {
+    if (had == none) return ctx;
+    const hb = f.ctxs.items[had].both;
+    if (hb[0] != none) {
+        if (f.ctxAround(ctx, hb[1]) or f.ctxAround(ctx, hb[0])) return had;
+        return f.meet(hb[0], ctx);
+    }
+    if (f.ctxAround(had, ctx)) return ctx;
+    if (f.ctxAround(ctx, had)) return had;
+    const key: [2]u32 = .{ had, ctx };
+    if (f.both_memo.get(key)) |hit| return hit;
+    _ = f.charge(1);
+    try f.ctxs.append(f.gpa, .{ .parent = none, .case = none, .arm = 0, .depth = 0, .both = key });
+    const id: u32 = @intCast(f.ctxs.items.len - 1);
+    try f.both_memo.put(f.gpa, key, id);
+    return id;
 }
 
 fn atomsReach(f: *Frame, xs: []const Atom, w: []const Atom) bool {
