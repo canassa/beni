@@ -1,0 +1,54 @@
+-- The live twins of CellWriterStoresFresh: a loan of an element of the
+-- contents, or of a value of a `Dict` in a cell, taken before a function
+-- that `Ref.update` runs writes that element in place, in a writer fiber or
+-- in the frame, and read after. Each read sees the old value, so each
+-- write is refused.
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showN : List (List Int) → String
+showN ls = String.join (List.map ls ints) "|"
+
+
+showD : Dict Int (List Int) → String
+showD d = String.join (List.map (Dict.toList d) λ( a, b ) → "${String.fromInt a}=${ints b}") " "
+
+
+elementInFiber : ⊤ → String
+elementInFiber ⊤ =
+    c = Ref.make [ [ 0 ] ]
+    el = List.get (Ref.get c) 0
+    a = Task.spawn λ⊤ → Ref.update c λd → List.update d 0 λl → List.push l 9
+    Task.join a
+    "${showN (Ref.get c)} ${ints (Maybe.withDefault el [])}"
+
+
+dictValue : ⊤ → String
+dictValue ⊤ =
+    c = Ref.make (Dict.fromList [ ( 0, [ 0 ] ) ])
+    v = Dict.get (Ref.get c) 0
+    a = Task.spawn λ⊤ → Ref.update c λd → Dict.update d 0 λm → Maybe.map m λl → List.push l 3
+    Task.join a
+    "${showD (Ref.get c)} ${ints (Maybe.withDefault v [])}"
+
+
+elementHere : ⊤ → String
+elementHere ⊤ =
+    c = Ref.make [ [ 0 ] ]
+    el = List.get (Ref.get c) 0
+    Ref.update c λd → List.update d 0 λl → List.push l 9
+    "${showN (Ref.get c)} ${ints (Maybe.withDefault el [])}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ elementInFiber ⊤, dictValue ⊤, elementHere ⊤ ]

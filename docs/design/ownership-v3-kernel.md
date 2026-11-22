@@ -2436,6 +2436,14 @@ contents of a cell are locations, and that a call can change what a location of 
    which the holder's frame made in its run, is answered once there and is no cell at two places of
    the contents (`answerSrcs`); one that came from outside the run (a capture of the holder, a
    parameter) is, since the holder's own caller can run it again.
+   *Amended 2026-11-22:* what the function writes is of what the row hands it at the written place
+   (`ownSupply`, exact as `answerOfParam`'s reading is, for a cell's row alone): a function that
+   pushes onto a list of lists writes the outer storage, not the elements, which its own contract
+   names apart. Before, the row's function parameter, of a type variable, read every location of
+   the contents at each written one, so the contract said that the elements were written too, and
+   a writer that pushed a fresh list onto them was refused at its later runs, the fresh list read
+   as written in place (`run/CellWriterStoresFresh`; blind round AZ's `cacheFiber` and the
+   `Dict` writers of #2594).
 3. **Renewal** (`Contract.renew`). A contract says, per parameter location, what the call leaves there:
    null where it leaves the location as it was, or the sources the location holds from the call on. A
    store renews every location of the cell's contents. A walked body publishes, for each parameter
@@ -2627,7 +2635,15 @@ contents of a cell are locations, and that a call can change what a location of 
       and has no mark there. A writer's capture is not shared where it goes out of sight (item 8), and
       its handle and contents are no part of what escapes with it (`closureHeld`; the escape of a
       callee's lost or kept function parameter, `applyAt`). A closure that only stores into the cell
-      or reads it is no writer: it shares the handle, as before.
+      is no writer: it shares the handle, as before. *Amended 2026-11-22:* a closure that reads the
+      contents and neither writes nor renews them, with every other condition of a writer, is a
+      **reader**: it is registered and runs as a writer does (it reads the contents at each switch
+      point and return point, which a write in place before it is judged against), its capture is
+      not shared where it goes out of sight, and it is never revoked: it writes nothing, so another
+      holder of the cell sees nothing of it, and it holds no loan across a switch point of its own
+      (the mark), lets none escape and answers none. Before, a fiber that only read the cell shared
+      the handle, and every writer fiber of it was revoked (blind round AZ's `p5/w6`;
+      `run/CellReaderFiber`).
     - **A run of a writer** (`runWriter`) at each switch point after it is made (and at the call that
       made it, where that is one), and at each return point (`?`, the end): as a call that runs it
       within (item 11), it reads what its contract reads of the capture there, its write is a demand at

@@ -1,0 +1,91 @@
+-- The live twins of CellReaderFiber: a reader fiber that holds a loan
+-- across a switch point of its own, answers the loan, stores it in another
+-- cell or completes a `Deferred` with it; a reader beside a writer fiber
+-- that holds its loan across a park; and a loan the frame holds across its
+-- own write while a reader runs. Each read sees the old value, so each
+-- write is refused.
+import Deferred
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+loanAcross : ⊤ → String
+loanAcross ⊤ =
+    c = Ref.make [ 1 ]
+    g = Task.spawn λ⊤ →
+        o = Ref.get c
+        Task.yieldNow ⊤
+        ints o
+    Task.yieldNow ⊤
+    Ref.update c λl → List.push l 2
+    t = Task.join g
+    "${t} ${ints (Ref.get c)}"
+
+
+answers : ⊤ → String
+answers ⊤ =
+    c = Ref.make [ 1 ]
+    g = Task.spawn λ⊤ → Ref.get c
+    Task.yieldNow ⊤
+    t = Task.join g
+    Ref.update c λl → List.push l 2
+    "${ints t} ${ints (Ref.get c)}"
+
+
+stores : ⊤ → String
+stores ⊤ =
+    c = Ref.make [ 1 ]
+    k = Ref.make [ 0 ]
+    g = Task.spawn λ⊤ → Ref.set k (Ref.get c)
+    Task.yieldNow ⊤
+    Ref.update c λl → List.push l 2
+    Task.join g
+    "${ints (Ref.get k)} ${ints (Ref.get c)}"
+
+
+completes : ⊤ → String
+completes ⊤ =
+    c = Ref.make [ 1 ]
+    dv = Deferred.make ⊤
+    g = Task.spawn λ⊤ → Deferred.complete dv (Ref.get c)
+    Task.yieldNow ⊤
+    Ref.update c λl → List.push l 2
+    _ = Task.join g
+    "${ints (Deferred.wait dv)} ${ints (Ref.get c)}"
+
+
+beside : ⊤ → String
+beside ⊤ =
+    c = Ref.make [ 1 ]
+    w = Task.spawn λ⊤ → Ref.update c λl → List.push l 2
+    g = Task.spawn λ⊤ →
+        o = Ref.get c
+        Task.yieldNow ⊤
+        ints o
+    Task.yieldNow ⊤
+    Task.join w
+    t = Task.join g
+    "${t} ${ints (Ref.get c)}"
+
+
+frameLoan : ⊤ → String
+frameLoan ⊤ =
+    c = Ref.make [ 1 ]
+    g = Task.spawn λ⊤ → ints (Ref.get c)
+    o = Ref.get c
+    Ref.update c λl → List.push l 2
+    t = Task.join g
+    "${t} ${ints o}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines [ loanAcross ⊤, answers ⊤, stores ⊤, completes ⊤, beside ⊤, frameLoan ⊤ ]

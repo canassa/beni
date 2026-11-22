@@ -1,9 +1,7 @@
 # The live twins of CellContentsAtTheirPlace (#2594, #2580): a loan of a cell's outer list or of an element, the inner or the outer list by its own name, a Dict loan, and a second cell that holds the first one's contents, each read after a helper or a closure writes the part it holds; and a closure run twice whose first run pushes a second copy of an element and whose second run writes the element in place. Each read sees the old value, so each write is refused.
 57:5 list_still_used call
-57:5 list_still_used call
 65:5 list_still_used call
 73:5 list_still_used call
-81:5 list_still_used call
 81:5 list_still_used call
 89:9 list_still_used call
 98:5 list_still_used call

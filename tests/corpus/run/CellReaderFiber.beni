@@ -1,0 +1,66 @@
+-- A fiber that only reads a cell, beside a writer fiber of it or the frame
+-- writing it (blind round AZ, #2594): the reader takes no loan across a
+-- switch point of its own, lets none escape and answers none, so it runs at
+-- the frame's switch points as a writer does and gives the handle no other
+-- holder. Each write is accepted and runs in place (ownership-v3-kernel.md
+-- §13 item 12, amended 2026-11-22).
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias R =
+    items : List Int
+    n : Int
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showR : R → String
+showR r = "${ints r.items}/${String.fromInt r.n}"
+
+
+withWriter : ⊤ → String
+withWriter ⊤ =
+    c = Ref.make [ 1 ]
+    f = Task.spawn λ⊤ →
+        Ref.update c λl → List.push l 2
+        "f"
+    g = Task.spawn λ⊤ → ints (Ref.get c)
+    Task.yieldNow ⊤
+    s = Task.join f
+    t = Task.join g
+    "${s} ${t} ${ints (Ref.get c)}"
+
+
+frameWrites : ⊤ → String
+frameWrites ⊤ =
+    c = Ref.make [ 1 ]
+    g = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        ints (Ref.get c)
+    Ref.update c λl → List.push l 2
+    t = Task.join g
+    "${t} ${ints (Ref.get c)}"
+
+
+record : ⊤ → String
+record ⊤ =
+    c = Ref.make { items = [ 1 ], n = 0 }
+    w = Task.spawn λ⊤ → Ref.update c λr → { r | items = List.push r.items 2 }
+    g = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        showR (Ref.get c)
+    Task.yieldNow ⊤
+    Task.join w
+    t = Task.join g
+    "${t} ${showR (Ref.get c)}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ withWriter ⊤, frameWrites ⊤, record ⊤ ]

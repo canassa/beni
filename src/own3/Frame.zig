@@ -631,7 +631,10 @@ const Parked = struct { start: u32, len: u32, at: u32, ctx: u32, root: u32, h: u
 /// A function that writes the contents of capture `k` of the known code
 /// `code` (an index of `codes`), the handle at entry `e` of root `o` that
 /// the frame made, and goes where the walk does not follow it at `site`.
-const Writer = struct { code: u32, k: u32, o: u32, e: u32, site: u32 };
+/// `reader`: a closure that reads the contents and neither writes nor
+/// stores them (kernel §13 item 12): it runs as a writer does, and is
+/// never revoked, since it writes nothing another holder could see.
+const Writer = struct { code: u32, k: u32, o: u32, e: u32, site: u32, reader: bool = false };
 const PairedHit = struct { start: u32, len: u32, dup: bool, hit_all: bool };
 
 pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32) Error!Frame {
@@ -7420,16 +7423,22 @@ fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
     const inner = try f.innerOf(sig);
     if (inner.len == 0) return false;
     const ses = m.loc.layoutEntries(sig);
-    // Only a function that writes the contents in place: one that only
-    // stores into the cell or reads it gives the handle another holder, as
-    // before, which costs it nothing.
+    // A function that writes the contents in place, or one that only reads
+    // them (a reader): one that stores into the cell gives the handle
+    // another holder, as before. Before, a reader did too, and a writer of
+    // the cell that another fiber ran was revoked (`run/CellReaderFiber`).
     var writes = false;
+    var reads = false;
     for (lc.flags[lc.off[j]..lc.off[j + 1]], 0..) |x, e| {
         if (x & (CMod.flag_m | CMod.flag_p) != 0) return false;
         if ((inner[e] or ses[e].kind == .cell) and x & flag_e != 0) return false;
         if (inner[e] and x & flag_w != 0) writes = true;
+        if (inner[e] and x & flag_r != 0) reads = true;
     }
-    if (!writes) return false;
+    const reader = !writes and reads and for (0..lc.off[j + 1] - lc.off[j]) |e| {
+        if (lc.renewAt(lc.off[j] + e) != null) break false;
+    } else true;
+    if (!writes and !reader) return false;
     if (handsContents(lc, j, inner) or !capturedSrcs(lc, j, code.own_params, inner)) return false;
     // Its answer names nothing of the capture, nor does a renewal of another.
     for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j) return false;
@@ -7455,7 +7464,7 @@ fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
         if (f.cell_shared.contains(.{ o[0], o[1] }) or f.cell_marked.contains(.{ o[0], o[1] })) return false;
     }
     const ci = f.nodes.items[v].a;
-    for (os.items) |o| try f.writers.append(f.gpa, .{ .code = ci, .k = k, .o = o[0], .e = o[1], .site = site });
+    for (os.items) |o| try f.writers.append(f.gpa, .{ .code = ci, .k = k, .o = o[0], .e = o[1], .site = site, .reader = reader });
     return true;
 }
 
@@ -7589,6 +7598,7 @@ fn revokeWriters(f: *Frame) Error!void {
         for (xs) |a| try f.cellOrigins(a, &answered);
     }
     for (f.writers.items) |w| {
+        if (w.reader) continue;
         const key: [2]u32 = .{ w.o, w.e };
         const kept = for (answered.items) |o| {
             if (o[0] == w.o and o[1] == w.e) break true;
@@ -11434,7 +11444,23 @@ fn ownSupply(f: *Frame, level: *const Use, code: Code, k: u32, le: u32, seen: *S
     for (slots.items) |slot| {
         // The part below the holder's entry that the function writes.
         const part = try f.partBelow(lc.layouts[k], le, level.fnc.layouts[k], slot.fe, &.{}, &labels);
-        for (slot.srcs) |src| try f.resolve(level, src, part, wide, &sink, 0);
+        // A cell's row hands the function each part of the contents at its
+        // place (kernel §13 item 2): the write of the function's entry is
+        // of what is handed at that place, not every cell below it, as the
+        // row's answer reads it (`answerOfParam`). Before, a writer that
+        // pushed a list onto a list of lists in a cell wrote its elements
+        // too, and a later run of it wrote the list an earlier run pushed
+        // (`run/CellWriterStoresFresh`).
+        const exact = level.fnc.once and !wide and slot.fe != none and blk: {
+            const floc = f.m.loc.layoutEntries(lc.layouts[k])[le].loc;
+            const uloc = f.m.loc.layoutEntries(level.fnc.layouts[k])[slot.fe].loc;
+            break :blk uloc == floc or f.m.loc.isPrefix(uloc, floc);
+        };
+        for (slot.srcs) |src| {
+            f.resolve_exact = exact;
+            defer f.resolve_exact = false;
+            try f.resolve(level, src, part, wide, &sink, 0);
+        }
     }
 }
 

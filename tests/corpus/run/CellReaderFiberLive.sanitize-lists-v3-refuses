@@ -1,0 +1,12 @@
+# The live twins of CellReaderFiber: a reader fiber that holds a loan across its own switch point, answers it, stores it in another cell or completes a `Deferred` with it; a reader beside a writer fiber whose reader holds its loan across a park; a loan the frame holds across its own write while a reader runs. Each read sees the old value, so each write is refused.
+28:5 list_still_used call
+39:5 list_still_used call
+49:5 list_still_used call
+60:5 list_still_used call
+68:9 list_still_used value
+73:5 list_still_used call
+74:5 list_still_used call
+75:9 list_still_used call
+76:5 list_still_used call
+76:19 list_still_used call
+84:5 list_still_used call
