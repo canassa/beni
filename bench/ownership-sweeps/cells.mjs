@@ -599,6 +599,136 @@ main = Io.run λ⊤ → Node.printLines (go ⊤)
 `;
 }
 
+// #2600: a body leaves in the cell, across a park, a value the caller does not name there, and a writer
+// fiber the caller spawned writes it in place while the body is parked (kernel §13 item 12). Programs are
+// `park.<stored>.<park>.<runner>.<writer>.<twin>`: `stored` what the body leaves in the cell: a value of
+// outside the frame (`topList`, a top-level list; `topRecord`, a top-level record; `topDict`, a top-level
+// dictionary; `topCtor`, a list inside a top-level constructor; `nested`, a new cell holding a top-level
+// list, in a cell of cells; `nestedSet`, a top-level list stored in the inner cell), or the cell's own old contents at another location (`swap`, two parts of a
+// tuple swapped; `swapRec`, two fields of a record swapped; `copy`, the second part copied to the first;
+// `nestedSwap`, two cells in a tuple swapped), then a value of its own again after the park; `park` the
+// switch point (`yield`, `Task.yieldNow`; `sleep`, `Io.sleep`; `deferred`, `Deferred.wait` of a deferred
+// the writer completes; `queue`, `Queue.take` of a queue the writer offers to; `helper`, a function that
+// parks); `runner` what runs the body (`direct`, a helper over the cell; `map`, a closure run by
+// `List.map`; `fold`, by `List.foldl`; `scope`, by `Task.scope`); `writer` `fiber` (a spawned fiber writes
+// the contents in place, joined after) or `self` (the frame writes them after the body); the twin is
+// `live` where the frame reads the outside value or the old part after, `dead` otherwise. `copy` reads
+// the cell after too, so its dead twin can differ as well.
+const PARK_STORED = {
+  topList: { t: 'List Int', init: '[ 0 ]', store: 'Ref.set r big', restore: 'Ref.set r [ 0 ]', w: 'Ref.update r λl → List.push l 1', old: 'ints big', show: 'ints (Ref.get r)' },
+  topRecord: { t: 'R', init: '{ items = [ 0 ], n = 0 }', store: 'Ref.set r topR', restore: 'Ref.set r { items = [ 0 ], n = 0 }', w: 'Ref.update r λv → { v | n = v.n + 1 }', old: 'String.fromInt topR.n', show: 'String.fromInt (Ref.get r).n' },
+  topDict: { t: 'Dict Int (List Int)', init: 'Dict.fromList [ ( 1, [ 1 ] ) ]', store: 'Ref.set r topD', restore: 'Ref.set r (Dict.fromList [ ( 1, [ 1 ] ) ])', w: 'Ref.update r λdd → Dict.insert dd 3 [ 30 ]', old: 'String.fromInt (Dict.size topD)', show: 'String.fromInt (Dict.size (Ref.get r))' },
+  topCtor: { t: 'List Int', init: '[ 0 ]', store: 'Ref.set r (unbox boxed)', restore: 'Ref.set r [ 0 ]', w: 'Ref.update r λl → List.push l 1', old: 'ints (unbox boxed)', show: 'ints (Ref.get r)' },
+  nested: { t: 'Ref (List Int)', init: 'Ref.make [ 0 ]', store: 'Ref.set r (Ref.make big)', restore: 'Ref.set r (Ref.make [ 0 ])', w: 'Ref.update (Ref.get r) λl → List.push l 1', old: 'ints big', show: 'ints (Ref.get (Ref.get r))' },
+  nestedSet: { t: 'Ref (List Int)', init: 'Ref.make [ 0 ]', store: 'Ref.set (Ref.get r) big', restore: 'Ref.set (Ref.get r) [ 0 ]', w: 'Ref.update (Ref.get r) λl → List.push l 1', old: 'ints big', show: 'ints (Ref.get (Ref.get r))' },
+  swap: { t: 'List Int × List Int', init: '( [ 1 ], [ 2 ] )', pre: '( _, bb ) = Ref.get r', store: 'Ref.update r λ( x, y ) → ( y, x )', restore: 'Ref.update r λ( x, y ) → ( y, x )', w: 'Ref.update r λ( x, y ) → ( List.push x 9, y )', old: 'ints bb', show: 'showP (Ref.get r)' },
+  swapRec: { t: 'P', init: '{ a = [ 1 ], b = [ 2 ] }', pre: 'bb = (Ref.get r).b', store: 'Ref.update r λo → { a = o.b, b = o.a }', restore: 'Ref.update r λo → { a = o.b, b = o.a }', w: 'Ref.update r λo → { o | a = List.push o.a 9 }', old: 'ints bb', show: 'showRec (Ref.get r)' },
+  copy: { t: 'List Int × List Int', init: '( [ 1 ], [ 2 ] )', pre: '( _, bb ) = Ref.get r', store: 'Ref.update r λ( x, y ) → ( y, y )', restore: 'Ref.update r λ( x, y ) → ( [ 1 ], y )', w: 'Ref.update r λ( x, y ) → ( List.push x 9, y )', old: 'ints bb', show: 'showP (Ref.get r)' },
+  nestedSwap: { t: 'Ref (List Int) × Ref (List Int)', init: '( Ref.make [ 1 ], Ref.make [ 2 ] )', pre: '( _, ib ) = Ref.get r\nbb = Ref.get ib', store: 'Ref.update r λ( x, y ) → ( y, x )', restore: 'Ref.update r λ( x, y ) → ( y, x )', w: 'Ref.update (Ref.get r).0 λl → List.push l 9', old: 'ints bb', show: 'showRefs (Ref.get r)' },
+};
+const PARK_POINTS = {
+  yield: { line: 'Task.yieldNow ⊤', signal: [], ready: [] },
+  sleep: { line: 'Io.sleep 1', signal: [], ready: [] },
+  deferred: { line: 'Deferred.wait d', signal: ['_ = Deferred.complete d ⊤'], ready: ['_ = Deferred.complete d ⊤'] },
+  queue: { line: '_ = Queue.take q', signal: ['_ = Queue.offer q 1'], ready: ['_ = Queue.offer q 1'] },
+  helper: { line: 'parkHelper ⊤', signal: [], ready: [] },
+};
+
+function genPark(stored, park, runner, writer, live) {
+  const s = PARK_STORED[stored];
+  const p = PARK_POINTS[park];
+  const body = [s.store, p.line, s.restore].join('\n');
+  const helper = runner === 'direct' ? `\n\n\nbody : Ref (${s.t}), Deferred ⊤, Queue Int → ⊤\nbody r d q =\n${ind(body, 4)}` : '';
+  const run = {
+    direct: 'body r d q',
+    map: `_ = List.map [ ⊤ ] λ⊤ →\n${ind(body, 4)}`,
+    fold: `_ = List.foldl [ ⊤ ] ⊤ λu acc →\n${ind(body, 4)}`,
+    scope: `_ = Task.scope λsc →\n${ind(body, 4)}`,
+  }[runner];
+  const lines = [
+    `r = Ref.make (${s.init})`,
+    'd = Deferred.make ⊤',
+    'q = Queue.unbounded ⊤',
+    ...(s.pre ? [s.pre] : []),
+    ...(writer === 'fiber' ? [`a = Task.spawn λ⊤ →\n${ind([s.w, ...p.signal, '⊤'].join('\n'), 4)}`] : p.ready),
+    run,
+    ...(writer === 'fiber' ? ['Task.join a'] : [s.w]),
+    `[ ${live ? `${s.old}, ` : ''}${s.show} ]`,
+  ];
+  return `-- park.${stored}.${park}.${runner}.${writer}: see bench/ownership-sweeps/cells.mjs.
+import Deferred exposing (Deferred)
+import Dict exposing (Dict)
+import Io
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Ref exposing (Ref)
+import Task
+
+
+type alias R =
+    { items : List Int, n : Int }
+
+
+type alias P =
+    { a : List Int, b : List Int }
+
+
+type Box
+    = Box (List Int)
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showP : List Int × List Int → String
+showP ( x, y ) = ints x ++ " " ++ ints y
+
+
+showRec : P → String
+showRec o = ints o.a ++ " " ++ ints o.b
+
+
+showRefs : Ref (List Int) × Ref (List Int) → String
+showRefs ( x, y ) = ints (Ref.get x) ++ " " ++ ints (Ref.get y)
+
+
+unbox : Box → List Int
+unbox b =
+    case b of
+        Box l → l
+
+
+big : List Int
+big = [ 100 ]
+
+
+topR : R
+topR = { items = [ 100 ], n = 0 }
+
+
+topD : Dict Int (List Int)
+topD = Dict.fromList [ ( 1, [ 100 ] ) ]
+
+
+boxed : Box
+boxed = Box [ 100 ]
+
+
+parkHelper : ⊤ → ⊤
+parkHelper ⊤ = Task.yieldNow ⊤${helper}
+
+
+go : ⊤ → List String
+go ⊤ =
+${ind(lines.join('\n'), 4)}
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (go ⊤)
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -628,6 +758,9 @@ for (const write of Object.keys(ESC_WRITES)) for (const escape of Object.keys(ES
 }
 for (const shape of Object.keys(ESC2)) for (const runner of Object.keys(ESC_RUNNERS)) for (const n of [2, 1]) {
   emit(`esc2.${shape}.${runner}.${n === 2 ? 'twice' : 'once'}.${n === 2 ? 'live' : 'dead'}`, { 'Main.beni': genEsc2(shape, runner, n) });
+}
+for (const stored of Object.keys(PARK_STORED)) for (const park of Object.keys(PARK_POINTS)) for (const runner of ['direct', 'map', 'fold', 'scope']) for (const writer of ['fiber', 'self']) for (const live of [true, false]) {
+  emit(`park.${stored}.${park}.${runner}.${writer}.${live ? 'live' : 'dead'}`, { 'Main.beni': genPark(stored, park, runner, writer, live) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);

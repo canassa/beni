@@ -2568,9 +2568,7 @@ contents of a cell are locations, and that a call can change what a location of 
       row's `fresh` names the new cells of each with one site, `sameCellAt`). The later run's write of
       one location is of the cell the other holds, refused
       (`disjoint`); before, the first run's `( l, l )` and the second run's push onto its first part
-      changed the second (the lane's reviewer, five programs). The same holds of the written
-      location's own old contents: where its renewal keeps them and the renewal of another location
-      names them too (`Ref.update r λ( a, b ) → ( a, a )`, `{ o |      changed the second (the lane's reviewer, five programs). The same holds of an old cell of the
+      changed the second (the lane's reviewer, five programs). The same holds of an old cell of the
       capture: where the written location holds it after the call (its renewal names it, or keeps its
       own) and another location holds it too, its renewal naming it or, with no renewal, keeping its
       own (`Ref.update r λ( a, b ) → ( a, a )`, `( b, b )`, `{ o \| b = o.a }`, `( a, [ a ] )`), the
@@ -2619,6 +2617,11 @@ contents of a cell are locations, and that a call can change what a location of 
       captures, and its renewal makes a version that keeps the old contents (`maybe`). So a value taken
       out of the cell and read after a switch point, or handed to it, is refused there, with the
       `List.copy` fix.
+      *Amended 2026-11-22 (#2600):* the caller's runs judge the cell's old contents at their own
+      locations, as they were before the call. That holds only while the body leaves each old cell
+      at its own location, and the body may leave there, across a switch point, a value the caller
+      does not name: the stored values of the bullet *What the body stored*, now with `outside` and
+      the moved old cells.
     - **A probe** (`probeCells`): at each switch point, the contents of each handle of each tracked
       parameter and capture, as they are, against the call's operands (as above) and every escape so
       far, and at the end against every later read (`finishProbes`, with `Atom.ren`, below). A refused
@@ -2630,10 +2633,11 @@ contents of a cell are locations, and that a call can change what a location of 
       before) and none is a renewal (`onlyRenamed`, item 3).
     - **What the body stored escapes at a switch point** (`escapeStored`, from `probeCells` and from a
       call in a hole of markup). At a switch point, the contents of each handle of a tracked parameter
-      or capture that are not the cell's own old contents (a value the body stored there, a cell it
-      made, another root's cells) are in the cell while another fiber runs, which can take a loan of
-      them through another holder of the handle; the caller judges only the old contents (its runs,
-      probes and marks), and learns what the body stored only where the body ends. So they escape
+      or capture that are not the cell's own old contents at their own locations (`storedAt`: a value
+      the body stored there, a cell it made, another root's cells, `outside`, and an old cell of the
+      contents that the body moved to another location that can hold it) are in the cell while
+      another fiber runs, which can take a loan of them through another holder of the handle; the
+      caller judges only the old contents at their own locations (its runs, probes and marks), and learns what the body stored only where the body ends. So they escape
       there, and a later write of them in place is refused: a writer that stores, parks and writes
       what it stored is no unit of one run (`run/CellStoredParkedLive`). It is the pessimistic side:
       a body that stores into a parameter's cell and then makes any call that may be impure lets the
@@ -2667,6 +2671,25 @@ contents of a cell are locations, and that a call can change what a location of 
       handed as a value, are refused (`run/CellStoredParkedLive`, `run/CellStoredThenSwitchLive`;
       the lane's second adversarial reviewer found the last two, 32 programs, and a third one the
       writer fiber that pushes onto a list the helper stored while its caller still holds it, 20).
+      *Amended 2026-11-22 (#2600): what the body stored is read by its location.* Before, the body
+      noted no atom of `outside` and no atom of the cell's own old contents, at any location. So a
+      body that stored a top-level list in the cell and parked (`Ref.set r big; Task.yieldNow ⊤;
+      Ref.set r [ 0 ]`) had no mark, and the caller's writer fiber pushed onto `big` in place during
+      the park; and a body that swapped the two parts of a pair, parked and swapped them back had a
+      renewal that names each part's own old cell and no mark, and the writer fiber pushed onto the
+      first part, which held the second part's old list, a loan the caller read after
+      (`run/CellParkedOutsideLive`, `run/CellParkedMovedLive`). Now each location of the contents is
+      read on its own (`storedAt`): an atom of the cell's own old contents is passed over only at its
+      own location, or at one that cannot hold that cell (`sameCellAt`: a list above or below it, a
+      field slot beside it), and `outside` is noted. Noted, a
+      value marks the handle (`flag_m`), so the holder's writers of the cell are refused, and a
+      later write of it in place puts `flag_p` on the handle, as for any stored value. An
+      `outside` atom does not escape where an operand can read the contents: no write of it in place
+      is accepted in the frame (§5 test 1), so its escape says nothing; its mark does. A summary
+      location holds many old cells at one location, and the caller's runs read all of them there.
+      It is the pessimistic side: a body that parks with a top-level value in its parameter's cell, or
+      with two of its parts swapped, marks the handle even where it puts them back before the caller
+      sees the cell (`cells.mjs`' `park.*` dead twins with a writer fiber).
     - **Marks reach the frame** (`applyMarks`, `markHandles`): a callee's or a closure's mark on a handle
       it is handed or captured marks the holder: a parameter's or a capture's in the frame's contract,
       a root the frame made in `cell_marked`. So does a call whose contract hands a cell's contents to a

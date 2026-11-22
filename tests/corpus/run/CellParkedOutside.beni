@@ -1,0 +1,70 @@
+-- A body stores in its cell a value of outside the frame (a top-level list,
+-- a top-level record), parks, and stores a new value (#2600). Its caller
+-- has no writer fiber of the cell, so the mark the park puts on the handle
+-- refuses nothing: the caller writes the cell's new contents in place
+-- after the call, and the top-level values stay as they were. Its live
+-- twin is CellParkedOutsideLive.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias R =
+    items : List Int
+    n : Int
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+big : List Int
+big = [ 100 ]
+
+
+topR : R
+topR = { items = [ 100 ], n = 0 }
+
+
+storeTop : Ref (List Int) → ⊤
+storeTop r =
+    Ref.set r big
+    Task.yieldNow ⊤
+    Ref.set r [ 0 ]
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    storeTop r
+    Ref.update r λl → List.push l 1
+    ints big ++ " " ++ ints (Ref.get r)
+
+
+mapped : ⊤ → String
+mapped ⊤ =
+    r = Ref.make [ 0 ]
+    _ = List.map [ ⊤ ] λ⊤ →
+        Ref.set r big
+        Task.yieldNow ⊤
+        Ref.set r [ 0 ]
+    Ref.update r λl → List.push l 2
+    ints big ++ " " ++ ints (Ref.get r)
+
+
+record : ⊤ → String
+record ⊤ =
+    r = Ref.make { items = [ 0 ], n = 0 }
+    Task.scope λs →
+        Ref.set r topR
+        Io.sleep 1
+        Ref.set r { items = [ 0 ], n = 0 }
+    Ref.update r λv → { v | items = List.push v.items 3 }
+    ints topR.items ++ " " ++ ints (Ref.get r).items
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ direct ⊤, mapped ⊤, record ⊤ ]

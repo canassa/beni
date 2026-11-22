@@ -6952,12 +6952,16 @@ fn switchPoint(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract) Erro
                 var ks: std.ArrayList(u32) = .empty;
                 defer ks.deinit(f.gpa);
                 try f.contentsAt(r.layout, @intCast(h), &ks);
+                var stored: std.ArrayList(Atom) = .empty;
+                defer stored.deinit(f.gpa);
+                const es = f.m.loc.layoutEntries(r.layout);
                 const w: u32 = @intCast(f.atoms.items.len);
-                for (ks.items) |k| _ = try f.leavesAs(cur, r.place, k, &f.atoms);
-                try f.uniqueTail(&f.atoms, w);
-                const wn: u32 = @intCast(f.atoms.items.len - w);
-                try f.escapeStored(root, w, wn, inst);
-                f.atoms.shrinkRetainingCapacity(w);
+                for (ks.items) |k| {
+                    _ = try f.leavesAs(cur, r.place, k, &f.atoms);
+                    try f.storedAt(root, es, k, f.atoms.items[w..], &stored);
+                    f.atoms.shrinkRetainingCapacity(w);
+                }
+                try f.escapeStored(stored.items, inst);
             };
         };
         for (f.writers.items) |w| try f.cell_marked.put(f.gpa, .{ w.o, w.e }, {});
@@ -7053,8 +7057,14 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
             defer ks.deinit(f.gpa);
             try f.contentsAt(r.layout, @intCast(h), &ks);
             if (ks.items.len == 0) continue;
+            var stored: std.ArrayList(Atom) = .empty;
+            defer stored.deinit(f.gpa);
             const w: u32 = @intCast(f.atoms.items.len);
-            for (ks.items) |k| _ = try f.leavesAs(cur, r.place, k, &f.atoms);
+            for (ks.items) |k| {
+                const k0 = f.atoms.items.len;
+                _ = try f.leavesAs(cur, r.place, k, &f.atoms);
+                try f.storedAt(root, es, k, f.atoms.items[k0..], &stored);
+            }
             try f.uniqueTail(&f.atoms, w);
             const wn: u32 = @intCast(f.atoms.items.len - w);
             probed = true;
@@ -7092,8 +7102,8 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
             // its answer) sees the write: the holder's writers of the cell are
             // refused (the mark).
             if (ops_hit) {
-                try f.escapeStored(root, w, wn, inst);
-            } else if (try f.noteParked(root, @intCast(h), w, wn, at)) {
+                try f.escapeStored(stored.items, inst);
+            } else if (try f.noteParked(root, @intCast(h), stored.items, at)) {
                 f.pflags.items[r.ent + h] |= CMod.flag_m;
             }
         }
@@ -7101,24 +7111,16 @@ fn probeCells(f: *Frame, inst: u32, ops: []const Val, followed: []const bool) Er
     }
 }
 
-/// At a switch point: what the body stored in a cell of tracked parameter or
-/// capture `root` (the atoms `f.atoms[w..][0..wn]` of its contents that are
-/// not the cell's own old contents) is there while another fiber runs, which
-/// can take it through another holder of the handle (kernel §13 item 12): it
-/// escapes. The caller judges the cell's own old contents where it runs the
-/// code (its runs, probes and marks); what the body put there is named to it
-/// only where the body ends, after the body wrote it in place.
-/// Whether the contents `f.atoms[w..][0..wn]` of a cell of tracked
-/// parameter or capture `root` hold a value the body stored there: an atom
-/// that is not the cell's own old contents (kernel §13 item 12, *What the
-/// body stored is marked at a switch point*).
-/// True where it noted a stored value.
-fn noteParked(f: *Frame, root: u32, h: u32, w: u32, wn: u32, at: u32) Error!bool {
+/// At a switch point where no operand reads the contents: note what the
+/// body stored in handle `h` of tracked parameter or capture `root`
+/// (`stored`, from `storedAt`), for `parkedWrite` (kernel §13 item 12,
+/// *What the body stored*). True where it noted a value: the handle has the
+/// mark, since a writer of the cell that runs while the body is parked
+/// writes it in place.
+fn noteParked(f: *Frame, root: u32, h: u32, stored: []const Atom, at: u32) Error!bool {
     const start: u32 = @intCast(f.parked_atoms.items.len);
-    for (f.atoms.items[w..][0..wn]) |a| {
-        if (f.roots.items[a.root].kind == .outside or f.originOf(a.root) == root) continue;
-        try f.parked_atoms.append(f.gpa, a);
-    }
+    _ = f.charge(stored.len);
+    try f.parked_atoms.appendSlice(f.gpa, stored);
     const len: u32 = @intCast(f.parked_atoms.items.len - start);
     if (len != 0) try f.parked.append(f.gpa, .{ .start = start, .len = len, .at = at, .ctx = f.cur_ctx, .root = root, .h = h });
     return len != 0;
@@ -7172,15 +7174,32 @@ fn parkedHeld(f: *Frame, v: Val, sig: u32, h: u32, others: []const Val) Error!bo
     return false;
 }
 
-fn escapeStored(f: *Frame, root: u32, w: u32, wn: u32, inst: u32) Error!void {
+/// At a switch point where an operand can read the contents: what the body
+/// stored there (`stored`, from `storedAt`) escapes (kernel §13 item 12).
+/// An `outside` atom is passed over: no write of it in place is accepted in
+/// the frame (§5 test 1), and the refused probe marks the handle.
+fn escapeStored(f: *Frame, stored: []const Atom, inst: u32) Error!void {
     const es0: u32 = @intCast(f.atoms.items.len);
-    for (w..w + wn) |i| {
-        const a = f.atoms.items[i];
-        if (f.roots.items[a.root].kind == .outside or f.originOf(a.root) == root) continue;
-        try f.atoms.append(f.gpa, a);
-    }
+    for (stored) |a| if (f.roots.items[a.root].kind != .outside) try f.atoms.append(f.gpa, a);
     if (f.atoms.items.len > es0) try f.noteEscape(es0, inst);
     f.atoms.shrinkRetainingCapacity(es0);
+}
+
+/// Appended to `out`: of the atoms `got` that entry `k` of tracked root
+/// `root`'s contents (layout entries `es`) holds now, each that is not
+/// one of the cell's own old cells at its own location (kernel §13 item 12,
+/// *What the body stored*): `outside` (a top-level value, one the body was
+/// handed or a callee answered), another root's cell, a cell the body made,
+/// and an old cell of the contents now at another location that can hold it
+/// (two parts of a tuple swapped, a part copied to another: `sameCellAt`).
+/// The caller judges the old contents at their own locations only.
+fn storedAt(f: *Frame, root: u32, es: []const Loc.Entry, k: u32, got: []const Atom, out: *std.ArrayList(Atom)) Error!void {
+    _ = f.charge(got.len);
+    for (got) |a| {
+        const own = f.roots.items[a.root].kind != .outside and f.originOf(a.root) == root;
+        if (own and (a.e == k or !f.sameCellAt(es, a.e, k))) continue;
+        try out.append(f.gpa, a);
+    }
 }
 
 /// A version of tracked root `root` whose value now is `cur`, the same
