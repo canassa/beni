@@ -13,7 +13,9 @@
 // RIPTRAP or RIPDIFF when every other leg passes (else the line ends with `rip=<verdict>`: PLAINRUNFAIL, a plain
 // release run that fails, is a defect of the release build). Each program gets one verdict: SAME (accepted, same output), REFUSED (with its
 // first code and position), LIMIT, TRAP (the checked build throws: a stale read), DIFF (another output),
-// CRASH (the compiler fails), PLAINFAIL (the generated program does not build), BOTHFAIL. The results
+// CRASH (the compiler fails), PLAINFAIL (the generated program does not build), BOTHFAIL (both runs fail, and
+// what they printed agrees once the stack frames and the output directories are set aside; it differs:
+// DIFF, #2605). The results
 // go to <outdir>.<checker>.txt, one line for each program (<outdir>.<tag>.txt with `--tag`, to keep the
 // results of two compilers apart). A rerun skips the programs that have a line.
 // Last, a tally by verdict and by the program's last name part (`live`, `kept`, `dead`, …): a dead
@@ -99,10 +101,28 @@ async function judge(prog) {
       const where = checked.out.match(/^-- [A-Z ]+ -+ (\S+:\d+:\d+)/m)?.[1] ?? '';
       return `REFUSED ${code} ${where}`.trim();
     }
+    // A run that fails prints where it failed: a location in its own build (which differs between two
+    // builds), the source line there and a caret, then the stack. The output of two failing runs is
+    // compared without them, and without a log line's time.
+    const norm = (text) => {
+      const lines = text.split('\n');
+      const kept = [];
+      for (let i = 0; i < lines.length; i++) {
+        if (/^file:\/\/\S+:\d+$/.test(lines[i])) { i += 2; continue; }
+        if (/^\s+at /.test(lines[i]) || lines[i].trim() === '') continue;
+        kept.push(lines[i].replace(/timestamp=\S+ /, '').split(tmp).join('<tmp>'));
+      }
+      return kept.join('\n');
+    };
     const verdict = async (out, oracle = plainRun) => {
       const r = await exec(out);
       if (r.timedOut) return 'TIMEOUT';
-      if (r.code !== 0 && oracle.code !== 0) return 'BOTHFAIL';
+      // Both fail (a defect): what the program printed before it stopped is still judged (#2605). A
+      // trap of the sanitiser is a trap; else the outputs must agree, BOTHFAIL when they do.
+      if (r.code !== 0 && oracle.code !== 0) {
+        if (r.out.includes('_sanitize.mjs') && !oracle.out.includes('_sanitize.mjs')) return `TRAP ${r.out.split('\n').find((l) => /stale|sanit|identity|Error/.test(l))?.slice(0, 100) ?? ''}`.trim();
+        return norm(r.out) === norm(oracle.out) ? 'BOTHFAIL' : 'DIFF';
+      }
       if (r.code !== 0) return `TRAP ${r.out.split('\n').find((l) => /stale|sanit|identity|Error/.test(l))?.slice(0, 100) ?? ''}`.trim();
       return r.out === oracle.out ? 'SAME' : 'DIFF';
     };
@@ -111,22 +131,26 @@ async function judge(prog) {
     const inPlace = await build([`--ownership=${opt.checker}`, '--ownership-everywhere', '--lists-in-place'], 'i', 120_000);
     if (inPlace.code !== 0) return `CRASH in-place ${inPlace.code}`;
     const second = await verdict('i');
-    if (first === 'SAME' && second !== 'SAME' && second !== 'BOTHFAIL') return `IP${second}`;
-    if (first !== 'SAME' || second !== 'SAME') return `${first} ip=${second.split(' ')[0]}`;
+    // BOTHFAIL is a pass of a leg: both runs stopped the same way, with the same output.
+    const ok = (v) => v === 'SAME' || v === 'BOTHFAIL';
+    if (ok(first) && !ok(second)) return `IP${second}`;
+    if (!ok(first) || !ok(second)) return `${first} ip=${second.split(' ')[0]}`;
+    const pass = first === 'BOTHFAIL' || second === 'BOTHFAIL' ? 'BOTHFAIL' : 'SAME';
     // The release leg: the plain release build is its oracle, the in-place release build is judged against it.
     // `--allow-debug`: a program whose instrument is `Debug.log` is built as the corpus's release pass builds it.
     const rel = ['--release', '--allow-debug'];
     const plainRel = await build(rel, 'pr', 60_000);
-    if (plainRel.code !== 0) return `SAME ip=SAME rip=${plainRel.code === 1 && !plainRel.out.includes('panic:') ? 'PLAINFAIL' : `CRASH-${plainRel.code}`}`;
+    if (plainRel.code !== 0) return `${pass} ip=${second} rip=${plainRel.code === 1 && !plainRel.out.includes('panic:') ? 'PLAINFAIL' : `CRASH-${plainRel.code}`}`;
     const plainRelRun = await exec('pr');
-    if (plainRelRun.timedOut) return 'SAME ip=SAME rip=TIMEOUT-plain';
-    // A plain release run that fails is a defect of the release build, not of the checker: no oracle.
-    if (plainRelRun.code !== 0) return 'SAME ip=SAME rip=PLAINRUNFAIL';
+    if (plainRelRun.timedOut) return `${pass} ip=${second} rip=TIMEOUT-plain`;
+    // A plain release run that fails where the development run passed is a defect of the release build,
+    // not of the checker: no oracle. Where the development run failed too (a defect), it is the oracle.
+    if (plainRelRun.code !== 0 && plainRun.code === 0) return 'SAME ip=SAME rip=PLAINRUNFAIL';
     const inPlaceRel = await build([...rel, `--ownership=${opt.checker}`, '--ownership-everywhere', '--lists-in-place'], 'ir', 120_000);
     if (inPlaceRel.code !== 0) return `CRASH release-in-place ${inPlaceRel.code}`;
     const third = await verdict('ir', plainRelRun);
-    if (third === 'SAME') return 'SAME';
-    if (third === 'TIMEOUT') return 'SAME ip=SAME rip=TIMEOUT';
+    if (ok(third)) return pass === 'SAME' && third === 'SAME' ? 'SAME' : 'BOTHFAIL';
+    if (third === 'TIMEOUT') return `${pass} ip=${second} rip=TIMEOUT`;
     return `RIP${third}`;
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
