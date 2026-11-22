@@ -2443,7 +2443,11 @@ contents of a cell are locations, and that a call can change what a location of 
    the contents at each written one, so the contract said that the elements were written too, and
    a writer that pushed a fresh list onto them was refused at its later runs, the fresh list read
    as written in place (`run/CellWriterStoresFresh`; blind round AZ's `cacheFiber` and the
-   `Dict` writers of #2594).
+   `Dict` writers of #2594). The call's other operands are still compared with every cell below
+   the written place (§5 test 2, `DemandIn.reach`): the function can store there what an operand
+   holds, and `List.push d el` with `el` a loan of an element of `d` puts one list at two places of
+   the contents, which a later write of the element writes for both (the lane's adversarial
+   reviewer, seven programs; `run/CellWriterStoresFreshLive`'s `storedBack`).
 3. **Renewal** (`Contract.renew`). A contract says, per parameter location, what the call leaves there:
    null where it leaves the location as it was, or the sources the location holds from the call on. A
    store renews every location of the cell's contents. A walked body publishes, for each parameter

@@ -1,7 +1,9 @@
 -- The live twins of CellWriterStoresFresh: a loan of an element of the
 -- contents, or of a value of a `Dict` in a cell, taken before a function
 -- that `Ref.update` runs writes that element in place, in a writer fiber or
--- in the frame, and read after. Each read sees the old value, so each
+-- in the frame, and read after; a loan of an element stored back in the
+-- cell beside it, in a list of lists or a `Dict`, and written there in
+-- place (the review of 2026-11-22). Each read sees the old value, so each
 -- write is refused.
 import Dict exposing (Dict)
 import Io
@@ -50,5 +52,25 @@ elementHere ⊤ =
     "${showN (Ref.get c)} ${ints (Maybe.withDefault el [])}"
 
 
+storedBack : ⊤ → String
+storedBack ⊤ =
+    c = Ref.make [ [ 0 ] ]
+    el = Maybe.withDefault (List.get (Ref.get c) 0) []
+    Ref.update c λd → List.push d [ 1 ]
+    Ref.update c λd → List.push d el
+    Ref.update c λd → List.update d 0 λz → List.set z 0 9
+    showN (Ref.get c)
+
+
+dictStoredBack : ⊤ → String
+dictStoredBack ⊤ =
+    c = Ref.make (Dict.fromList [ ( 0, [ 0 ] ) ])
+    el = Maybe.withDefault (Dict.get (Ref.get c) 0) []
+    Ref.update c λd → Dict.insert d 1 el
+    Ref.update c λd → Dict.update d 0 λm → Maybe.map m λv → List.set v 0 9
+    showD (Ref.get c)
+
+
 main : Program
-main = Io.run λ⊤ → Node.printLines [ elementInFiber ⊤, dictValue ⊤, elementHere ⊤ ]
+main = Io.run λ⊤ →
+    Node.printLines [ elementInFiber ⊤, dictValue ⊤, elementHere ⊤, storedBack ⊤, dictStoredBack ⊤ ]

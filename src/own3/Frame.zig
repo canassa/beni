@@ -449,6 +449,9 @@ paired_exact: bool = false,
 /// parameter the answer names at the same place: the handed cell at that
 /// place, read as `paired_exact` reads it.
 resolve_exact: bool = false,
+/// Set around the sink's `atoms` where `resolve` read the handed atoms
+/// exactly (`resolve_exact`).
+handed_exact: bool = false,
 /// Set by `expandSrcs` around `pairedLeaves`: the callee is a cell's row
 /// and nothing on the way casts, so a read is `paired_exact`.
 pair_exact_ok: bool = false,
@@ -3131,6 +3134,11 @@ const DemandIn = struct {
     /// The written location is a list's: a record's field slot among the
     /// atoms (an `unknown` value's, which can be any cell) is no cell of it.
     list_only: bool = false,
+    /// Where set, the atoms that the other operands are compared with
+    /// (test 2) in place of the written ones: an exact write through a
+    /// cell's row (`ownSupply`) is compared as every cell below the written
+    /// place, since the function can store an operand there.
+    reach: ?[]const Atom = null,
 };
 
 /// What the operation reads of operand `o` reaches the targets `ws`; `skip`
@@ -3408,7 +3416,7 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         f.judge_ctx = f.cur_ctx;
         f.judge_at = d.at;
         for (in.others, 0..) |o, k| {
-            if (try f.otherReaches(o, f.atoms.items[w..][0..wn], if (k == in.arg) in.se else none, if (k == in.arg) in.suffix else &.{})) {
+            if (try f.otherReaches(o, in.reach orelse f.atoms.items[w..][0..wn], if (k == in.arg) in.se else none, if (k == in.arg) in.suffix else &.{})) {
                 d.refused = .disjoint;
                 break;
             }
@@ -11234,8 +11242,11 @@ fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool
             const start: u32 = @intCast(f.atoms.items.len);
             f.paired_exact = f.resolve_exact and depth == 0;
             f.resolve_exact = false;
+            const exact = f.paired_exact;
             const dup = try f.argLeaves(use.args[src.a], use.c.layouts[src.a], src.e, suffix, deep, &f.atoms);
             f.paired_exact = false;
+            f.handed_exact = exact;
+            defer f.handed_exact = false;
             try sink.atoms(f, .{ .start = start, .dup = dup, .use = use, .a = src.a, .e = src.e, .suffix = suffix, .captured = use.kind == .inner });
         },
     }
@@ -11337,7 +11348,22 @@ const OwnSink = struct {
             // λl → …` wrote `r` at two places of the list.
             single = !m.loc.loc_summary.items[loc];
         }
+        // An exact write through a cell's row writes the cells at its place,
+        // but the function can store what another operand holds below it
+        // (`List.push d el` with `el` a loan of an element of `d`): the
+        // operands are compared with every cell below, as before, and a cell
+        // at two places below is a duplicate (blind review of 2026-11-22).
+        var deep_ws: ?[]const Atom = null;
+        var deep_dup = false;
+        if (f.handed_exact and h.a != none) {
+            const r0: u32 = @intCast(f.atoms.items.len);
+            deep_dup = try f.argLeaves(h.use.args[h.a], h.use.c.layouts[h.a], h.e, h.suffix, false, &f.atoms);
+            deep_ws = try f.gpa.dupe(Atom, f.atoms.items[r0..]);
+            f.atoms.shrinkRetainingCapacity(r0);
+        }
+        defer if (deep_ws) |r| f.gpa.free(r);
         try f.demand(h.start, .{
+            .reach = deep_ws,
             .point = site.inst,
             .callee_inst = site.callee,
             .base_inst = if (h.a != none and h.a < site.arg_insts.len) site.arg_insts[h.a].int() else none,
@@ -11346,7 +11372,7 @@ const OwnSink = struct {
             .arg = if (h.a == none) std.math.maxInt(usize) else h.a,
             .se = if (h.a == none) none else h.e,
             .suffix = h.suffix,
-            .dup = h.dup and !single,
+            .dup = (h.dup or deep_dup) and !single,
             .kind = .callsite,
         });
     }
