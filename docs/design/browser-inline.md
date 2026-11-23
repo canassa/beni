@@ -204,7 +204,8 @@ the store. So the pass reads `Cmd.batch (List.map xs f)` again when `f` answers 
 (`write-sets.md`, the amendment of that date): the bodies of each alternative of `f`'s command,
 once, whatever the length of `xs`. Each body sends the value the field had when `update` was
 called, at every depth it is read from (`browser/inline/BatchMapOldValue`: one, two and three
-closures deep, a nested field, and the model's own list mapped in the arm that replaces it with a copy it pushes onto).
+closures deep, a nested field, and the model's own list mapped in the arm that replaces it
+with a copy it pushes onto).
 `List.indexedMap`, `concatMap` and a fold that builds the list stay refused, class 4
 (`build/bad/inline/CommandFolded`), and so does a list that a helper's summary lost
 (`CommandHelperList`). Pages: `CommandsOverModelList`, and `SettlesManyFibers`,
