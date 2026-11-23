@@ -1,0 +1,48 @@
+-- A view helper whose body is a `case` whose arm has a `let` its hole reads
+-- and logs (docs/design/browser-inline.md §8.4, amended 2026-11-23, #2498):
+-- the branch is a region, and the `let` is evaluated once per pass that
+-- writes what it reads, in the arm, never twice. Every message here writes
+-- what the arm reads, so its transcript is `browser-tea`'s for the same
+-- source, which logs at every render.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Set String
+    | Clear
+
+
+update : Msg, Maybe String → Maybe String
+update msg _ =
+    case msg of
+        Set s →
+            Just s
+
+        Clear →
+            Nothing
+
+
+shout : Maybe String → Html Msg
+shout name =
+    case name of
+        Just s →
+            loud = Debug.log "loud" (String.toUpper s)
+            <b id="loud">{loud}</b>
+
+        Nothing →
+            <i id="quiet">quiet</i>
+
+
+view : Maybe String → Html Msg
+view name =
+    <main>
+        <button id="ada" onClick={Set "ada"}>ada</button>
+        <button id="bob" onClick={Set "bob"}>bob</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        {shout name}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Just "eve", update = update, view = view }

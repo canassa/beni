@@ -1,0 +1,192 @@
+-- load
+console.log: zero: 0
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"0"</p>
+    <div>
+      <p id="t">"0"</p>
+    </div>
+  </main>
+</body>
+-- click #t
+(the DOM did not change)
+-- click #b
+console.log: zero: 2
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"0"</p>
+    <div>
+      <p id="t">"2"</p>
+    </div>
+  </main>
+</body>
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"2"</p>
+    <div>
+      <p id="t">"2"</p>
+    </div>
+  </main>
+</body>
+-- click #a
+console.log: one: 2
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"2"</p>
+    <div>
+      <p id="t">"one 2"</p>
+    </div>
+  </main>
+</body>
+-- click #t
+(the DOM did not change)
+-- click #b
+console.log: one: 3
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"2"</p>
+    <div>
+      <p id="t">"one 3"</p>
+    </div>
+  </main>
+</body>
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"3"</p>
+    <div>
+      <p id="t">"one 3"</p>
+    </div>
+  </main>
+</body>
+-- click #a
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"3"</p>
+    <div>
+      <p id="t">"2"</p>
+    </div>
+  </main>
+</body>
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"4"</p>
+    <div>
+      <p id="t">"2"</p>
+    </div>
+  </main>
+</body>
+-- click #b
+(the DOM did not change)
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"6"</p>
+    <div>
+      <p id="t">"2"</p>
+    </div>
+  </main>
+</body>
+-- click #a
+console.log: zero: 6
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"6"</p>
+    <div>
+      <p id="t">"6"</p>
+    </div>
+  </main>
+</body>
+-- click #t
+(the DOM did not change)
+-- click #a
+console.log: one: 4
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"6"</p>
+    <div>
+      <p id="t">"one 4"</p>
+    </div>
+  </main>
+</body>
+-- click #b
+console.log: one: 5
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"6"</p>
+    <div>
+      <p id="t">"one 5"</p>
+    </div>
+  </main>
+</body>
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"5"</p>
+    <div>
+      <p id="t">"one 5"</p>
+    </div>
+  </main>
+</body>
+-- click #a
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"5"</p>
+    <div>
+      <p id="t">"2"</p>
+    </div>
+  </main>
+</body>
+-- click #a
+console.log: zero: 8
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"5"</p>
+    <div>
+      <p id="t">"8"</p>
+    </div>
+  </main>
+</body>
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="got">"8"</p>
+    <div>
+      <p id="t">"8"</p>
+    </div>
+  </main>
+</body>

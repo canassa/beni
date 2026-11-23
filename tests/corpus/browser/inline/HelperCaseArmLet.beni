@@ -1,0 +1,63 @@
+-- A view helper whose body is an `else if` chain whose arms have `let`s their
+-- holes and handlers read (docs/design/browser-inline.md §8.4, amended
+-- 2026-11-23, #2498): an arm that binds a `let` is not eager, so the branch is
+-- a region, as the same chain written at the hole is, and each `let` is
+-- evaluated in its arm, once per pass that writes what it reads: a click on
+-- the text, which writes only `got`, logs nothing (the review of this slice:
+-- the arms were eager `when`s and every click logged again). Its transcript
+-- is `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = IncA
+    | IncB
+    | Got Int
+
+
+type alias Model =
+    a : Int
+    b : Int
+    got : Int
+
+
+tier : Int, Int → Html Msg
+tier a b =
+    if a == 0 then
+        x = Debug.log "zero" (b * 2)
+        <p id="t" onClick={Got x}>{x}</p>
+    else if a == 1 then
+        y = Debug.log "one" (a + b)
+        <p id="t" onClick={Got y}>{"one ${String.fromInt y}"}</p>
+    else
+        <p id="t" onClick={Got (a * b)}>{a}</p>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="a" onClick={IncA}>a</button>
+        <button id="b" onClick={IncB}>b</button>
+        <p id="got">{model.got}</p>
+        <div>{tier (Int.mod model.a 3) model.b}</div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { a = 0, b = 0, got = 0 }
+        , update =
+            λmsg m →
+                case msg of
+                    IncA →
+                        { m | a = m.a + 1 }
+
+                    IncB →
+                        { m | b = m.b + 1 }
+
+                    Got k →
+                        { m | got = k }
+        , view = view
+        }

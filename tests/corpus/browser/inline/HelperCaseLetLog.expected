@@ -1,0 +1,49 @@
+-- load
+console.log: loud: "EVE"
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="bob">"bob"</button>
+    <button id="clear">"clear"</button>
+    <b id="loud">"EVE"</b>
+  </main>
+</body>
+-- click #ada
+console.log: loud: "ADA"
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="bob">"bob"</button>
+    <button id="clear">"clear"</button>
+    <b id="loud">"ADA"</b>
+  </main>
+</body>
+-- click #bob
+console.log: loud: "BOB"
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="bob">"bob"</button>
+    <button id="clear">"clear"</button>
+    <b id="loud">"BOB"</b>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="bob">"bob"</button>
+    <button id="clear">"clear"</button>
+    <i id="quiet">"quiet"</i>
+  </main>
+</body>
+-- click #ada
+console.log: loud: "ADA"
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="bob">"bob"</button>
+    <button id="clear">"clear"</button>
+    <b id="loud">"ADA"</b>
+  </main>
+</body>

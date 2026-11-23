@@ -1,0 +1,65 @@
+-- A view helper whose body is a `case` with an arm whose `let` no hole reads:
+-- refused as the same `case` written at the hole is (docs/design/
+-- browser-inline.md §8.4, amended 2026-11-23, #2498; §5, class 1). The
+-- review of this slice: the `let` was dropped, and its `Debug.todo` never ran.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : Maybe String
+    k : Int
+    got : String
+
+
+type Msg
+    = Set String
+    | Clear
+    | Inc
+    | Got String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Set s →
+            { model | name = Just s }
+
+        Clear →
+            { model | name = Nothing }
+
+        Inc →
+            { model | k = model.k + 1 }
+
+        Got s →
+            { model | got = s }
+
+
+shout : Maybe String, Int → Html Msg
+shout name k =
+    case name of
+        Just s →
+            loud = Debug.log "loud" "${String.toUpper s}${String.fromInt k}"
+            unused : Int
+            unused = Debug.todo "boom"
+            <button id="loud" onClick={Got loud}>{loud}</button>
+
+        Nothing →
+            <i id="quiet">{k}</i>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="ada" onClick={Set "ada"}>ada</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="inc" onClick={Inc}>inc</button>
+        <p id="got">{model.got}</p>
+        <div>{shout model.name model.k}</div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { name = Just "eve", k = 0, got = "-" }, update = update, view = view }

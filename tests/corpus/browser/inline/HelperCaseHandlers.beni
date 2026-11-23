@@ -1,0 +1,59 @@
+-- A view helper whose body is an `if` of two elements, each with a handler
+-- whose message reads the helper's parameter (docs/design/browser-inline.md
+-- §8.4, amended 2026-11-23, #2498): the arms are eager `when`s in the call's
+-- context, and each handler sends the message of the pass that last wrote
+-- it, whichever arm shows. Called twice, each call keeps its own handlers.
+-- Its transcript is `browser-tea`'s for the same source but for one
+-- difference: each arm written eagerly that is hidden keeps an empty text
+-- node in its place, where `browser-tea` keeps one comment for the arm that
+-- shows nothing, and none for the others.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Bump
+    | Flip
+    | Got Int
+
+
+type alias Model =
+    n : Int
+    on : Bool
+    got : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | n = model.n + 1 }
+
+        Flip →
+            { model | on = not model.on }
+
+        Got k →
+            { model | got = k }
+
+
+pick : Int, Bool → Html Msg
+pick n on =
+    if on then
+        <button class="a" onClick={Got n}>{n}</button>
+    else
+        <button class="b" onClick={Got (n * 10)}>{"tens ${String.fromInt n}"}</button>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <button id="flip" onClick={Flip}>flip</button>
+        <p id="got">{model.got}</p>
+        <div id="x">{pick model.n model.on}</div>
+        <div id="y">{pick (model.n + 100) (not model.on)}</div>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 1, on = True, got = 0 }, update = update, view = view }

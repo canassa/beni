@@ -94,7 +94,10 @@ const std = @import("std");
 /// Version 1.33 lets the write-set pass read keyed commands
 /// (`Lowering.Effects.keyed`: `Cmd.keyed`, `cancel`, `cancelAll` and
 /// `map`; `browser-inline.md` §4, amended 2026-11-23).
-pub const version: Version = .{ .major = 1, .minor = 33 };
+/// Version 1.34 says of a hole's callee that its body is a branch
+/// (`Program.Callee.Refusal.branch`), which `programBranch` on the hole then
+/// reads (`browser-inline.md` §8.4, amended 2026-11-23, #2498).
+pub const version: Version = .{ .major = 1, .minor = 34 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -577,6 +580,15 @@ pub const Program = struct {
             other_module,
             /// A function whose body computes its markup, or a value.
             not_markup,
+            /// 1.34: a function of this module whose body, past its `let`s,
+            /// is an `if` or a `case`. `programInlineEnter` enters the call
+            /// and binds its parameters with no root; under that call's
+            /// frame `programBranch` on the hole gives the callee's branch,
+            /// and its arms are entered as a branch's at the hole are, with
+            /// no step of their own on the call path (`browser-inline.md`
+            /// §8.4, amended 2026-11-23). A lowering that does not read it
+            /// refuses the call.
+            branch,
             _,
         };
     };
