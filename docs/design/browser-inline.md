@@ -752,7 +752,8 @@ beni over `Js` in `Inline.beni`:
     every render and the region at a pass of its read set; an arm that is any other markup value
     (`Arm.What.value`), more than one node, or has `let`s no hole reads (`Arm.statements`); in an
     arm, what a `For`'s row refuses (§9: a helper's markup, a component, a `Show`, an attribute
-    that is not a property); a branch in a `For`'s row; a region inside an eager arm, a helper's
+    that is not a property); a branch in a `For`'s row (*amended 2026-11-23:* compiled, §9, *A
+    branch in a row*); a region inside an eager arm, a helper's
     markup or another module's markup; a region followed by anything but an element or its
     element's end, or in a control whose value changes; and a region on a page that prerenders.
     `build/bad/inline/Region*/`, `build/bad/prerender/ViewBranch/`; the pages are
@@ -2012,7 +2013,8 @@ the compiler"*, a language rule never says *"yet"*):
 arms of more than one node; an `if` or a `case` whose shown arm reads what the branch binds, or
 whose arm calls a helper or has `let`s a hole reads, is a branch region, and `WhenBinds/` is the
 page `browser/inline/RegionEmptyArm`. What a region refuses is §8.2's list, in
-`RegionInRow/`, `RegionSelectorEffect/`, `RegionBeforeText/`, `RegionInEagerArm/`,
+`RowBranchBeforeText/` (*amended 2026-11-23:* it was `RegionInRow/`, which §9 now compiles),
+`RegionSelectorEffect/`, `RegionBeforeText/`, `RegionInEagerArm/`,
 `RegionArmStatements/` and `build/bad/prerender/ViewBranch/`.
 
 *Amended 2026-11-23 (§8.2, *A class or style list, …*, #2499, #2635):* the row *an attribute
@@ -2172,12 +2174,27 @@ The simple form is S2c's row unit with none of S2d's edits:
   (`ForBeforeText/`); a `For` beside other children of a control whose value changes, whose value
   would be written before its rows (`ForBesideControl/`), or deeper inside such a control, as
   in an `optgroup` (`ForInControl/`); a row function that is not a lambda
-  whose body is one element (`ForRowFunction/`, `ForRowFragment/`); inside a row, a `when`, a
-  `case` or another hole of markup (`RowMarkupHole/`), a component (`RowComponent/`) and a `Show`;
+  whose body is one element (`ForRowFunction/`, `ForRowFragment/`); inside a row, a hole of
+  markup that is not a branch (`RowMarkupHole/`), a component (`RowComponent/`) and a `Show`;
   a `For` in another module's markup (`ForInPiece/`); and a `For` in a prerendered page, which has
   no string form of its rows yet (`ForPrerendered/`). §9.6's other rows — a keyed `List` refused, a `For` over
   anything but a model path, a row that reads a global — are S2d's, whose edits need them, and
   the simple form does not apply them.
+- **A branch in a row** (*amended 2026-11-23, #2625, #966*). An `html` hole of a row whose value
+  is an `if` or a `case` — or a call of a view helper whose body is one (§8.4, amended
+  2026-11-23) — is a branch region of the row, as one in a region's arm is (§8.2, *A branch
+  region*, *A branch in an arm*): each arm a unit of its own, the region's state the row's
+  `g<slot>`, made with the row and gone with it. The row's `set` evaluates the values its own
+  writes read (`cx.rowValuesOf`: not the branch's value, which is markup), then chooses the arm
+  (`programBranchChoose`, inside the helper's call for a helper, its arguments values of the row)
+  and prepares it with the row's values bound, before any of the row is written; then each write,
+  and `armShown` for the region. So the branch is chosen at every `set` — every write of what the
+  `For` reads — and its arm made afresh only when the arm changes. A row whose top is a branch, and
+  every other limit of a region's (an arm of more than one node, a choice that may have an
+  effect, a region followed by text), stay class 1 (`build/bad/inline/Region*/`,
+  `RowBranchBeforeText/`). Pages `browser/inline/RowBranchCase`, and `browser/tea/RowBranch`
+  copied beside it; `browser/tea/TodoMVC` now passes its rows and stops at a text hole beside an
+  element (§8.7).
 - **`Dict`.** A `For` over a `Dict` waits for S2b (§9.9): the checker refuses it today (its `each`
   must be a `List a`), and `core/Dict` is still ordered by key, not by insertion, until #961.
 - **Dependencies.** The simple form edits no list in place and reads none by identity, so S2c's

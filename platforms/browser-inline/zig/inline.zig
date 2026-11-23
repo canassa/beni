@@ -924,7 +924,7 @@ const RowOp = struct {
         /// at its end (§8.2, amended 2026-11-23): `make` keeps its state as
         /// the row's `g<slot>`, and `set` shows the arm its preparation
         /// chose.
-        region: struct { node: m.Node.Index, arms: []const ?RegionUse.Arm, end: ?u32, slot: u32 },
+        region: struct { node: m.Node.Index, arms: []const ?RegionUse.Arm, end: ?u32, slot: u32, helper: bool = false },
     },
 };
 
@@ -1034,7 +1034,7 @@ const RowBuild = struct {
         if (row.kind != .markup) return later(cx, n, "a `For` whose row function is not a lambda whose body is one element written in place");
         const top = tree.root(row.body).node;
         if (tree.kind(top) != .element) return later(cx, top, "a `For` row that is not one element");
-        return unit(pg, top, scope, false);
+        return unit(pg, top, scope, true);
     }
 
     /// The unit whose top element is `top`, in `scope`: a `For`'s row, or
@@ -1194,7 +1194,23 @@ const RowBuild = struct {
         const pg = b.pg;
         const cx = pg.cx;
         const tree = pg.tree;
-        const br = cx.programBranch(n) orelse return later(cx, n, "a hole of markup in a `For` row or an arm of a branch, other than an `if` or a `case`");
+        // A call of a view helper whose body is the branch (§8.4, amended
+        // 2026-11-23): the call entered, its parameters bound, and the
+        // helper's branch a region of the unit.
+        var helper = false;
+        const br = cx.programBranch(n) orelse br: {
+            const callee = cx.programCallee(n) orelse return later(cx, n, "a hole of markup in a `For` row or an arm of a branch, other than an `if`, a `case` or a helper whose body is one");
+            if (callee.root != null or callee.refusal != .branch) return later(cx, n, "a hole of markup in a `For` row or an arm of a branch, other than an `if`, a `case` or a helper whose body is one");
+            if (callee.maps != 0) return later(cx, n, "a function returning markup under `Html.map` in the program's own module");
+            if (callee.statements) return later(cx, n, "a helper whose body has `let`s before its `if` or `case`");
+            try cx.programInlineEnter(null, n, null, false);
+            helper = true;
+            break :br cx.programBranch(n) orelse {
+                cx.programInlineLeave();
+                return later(cx, n, not_when);
+            };
+        };
+        defer if (helper) cx.programInlineLeave();
         if (b.under_control != 0) return later(cx, n, "a branch inside a control whose value changes");
         if (br.selector_effect) return later(cx, n, "a branch whose choice of arm may have an effect, which `browser-tea` evaluates at every render,");
         const end: ?u32 = if (ci + 1 == children.len)
@@ -1227,7 +1243,7 @@ const RowBuild = struct {
             b.stateful = b.stateful or unit_plan.stateful;
         }
         if (!any) return later(cx, n, not_when);
-        try b.ops.append(pg.a(), .{ .target = target, .what = .{ .region = .{ .node = n, .arms = arms, .end = end, .slot = b.regions } } });
+        try b.ops.append(pg.a(), .{ .target = target, .what = .{ .region = .{ .node = n, .arms = arms, .end = end, .slot = b.regions, .helper = helper } } });
         b.regions += 1;
     }
 
@@ -1630,8 +1646,20 @@ const Page = struct {
         const r = try cx.fresh("row");
         const value_item = try cx.fresh("item");
         const position = try cx.fresh("position");
-        _ = try cx.rowValues(st, f.row, value_item, if (row.arity == 2) position else null, captures);
-        try pg.setRow(st, r, p, try pg.noPicks(p));
+        const has_region = for (p.ops) |op| {
+            if (op.what == .region) break true;
+        } else false;
+        if (has_region) {
+            // A row with a branch region evaluates the values its writes
+            // read, and not the branch's own value, which is markup: the
+            // region's preparation chooses its arm (§9, amended 2026-11-23).
+            var values: std.ArrayList(m.Value.Index) = .empty;
+            try pg.unitValues(p, &values);
+            try cx.rowValuesOf(st, f.row, value_item, if (row.arity == 2) position else null, values.items);
+        } else _ = try cx.rowValues(st, f.row, value_item, if (row.arity == 2) position else null, captures);
+        // A branch region of the row: its value chosen and its arm
+        // prepared with the row's values, before any of the row is written.
+        try pg.setRow(st, r, p, try pg.prepareRegions(st, p));
         try js.expression(blk, try js.call(try js.name(try cx.runtime("forRows")), &.{
             parent,
             end,
@@ -1792,8 +1820,11 @@ const Page = struct {
             .event => |x| try out.append(pg.a(), x.item.value.dynamic.?),
             .entry => |x| try out.append(pg.a(), x.value),
             .rows => |x| try pg.forValues(x.node, out),
-            // A branch region's value is evaluated by its preparation.
-            .region => {},
+            // A branch region's value is evaluated by its preparation; the
+            // arguments of a helper whose body is the branch are values here.
+            .region => |x| if (x.helper) if (pg.tree.hole(x.node).call) |call| {
+                for (0..call.args.len) |i| try out.append(pg.a(), call.args.at(@intCast(i)));
+            },
         };
     }
 
@@ -1896,7 +1927,7 @@ const Page = struct {
     fn prepareRegions(pg: *Page, blk: m.Block, p: *const RowPlan) m.Error![]const ?m.Name {
         const picks = try pg.a().alloc(?m.Name, p.ops.len);
         for (p.ops, picks) |op, *pick| pick.* = switch (op.what) {
-            .region => |x| try pg.prepareRegion(blk, x.node, x.arms),
+            .region => |x| try pg.prepareRegion(blk, x.node, x.arms, x.helper),
             else => null,
         };
         return picks;
@@ -1912,10 +1943,14 @@ const Page = struct {
     /// A branch region of a unit (§8.2, amended 2026-11-23): its value
     /// evaluated once into `blk`, the arm it takes prepared, and
     /// `[k, make, set]` named for its unit's `set` to show.
-    fn prepareRegion(pg: *Page, blk: m.Block, node: m.Node.Index, arms: []const ?RegionUse.Arm) m.Error!m.Name {
+    fn prepareRegion(pg: *Page, blk: m.Block, node: m.Node.Index, arms: []const ?RegionUse.Arm, called: bool) m.Error!m.Name {
         const cx = pg.cx;
         const js = cx.js;
         const choice = try cx.fresh("branch");
+        // A helper whose body is the branch: its call entered, its
+        // parameters bound to the arguments the unit evaluated.
+        if (called) try cx.programInlineEnter(blk, node, try cx.programInlineArgs(blk, node), false);
+        defer if (called) cx.programInlineLeave();
         try js.constant(blk, choice, try cx.programBranchChoose(blk, node));
         const taken = try js.index(try js.name(choice), try pg.num(0));
         const pick = try cx.fresh("pick");
