@@ -2160,7 +2160,8 @@ const Page = struct {
             .refused => |why| return pg.regionLater(n, why),
             .at => |x| x,
         };
-        if (pg.piece) return pg.regionLater(n, "a branch whose arms read what it binds, in another module's markup");
+        // Another module's markup is a piece of one element (§8.4).
+        if (pg.piece) return pg.regionLater(n, not_when);
         if (ctx != 0) return pg.regionLater(n, "a branch whose arms read what it binds, inside an `if` or a `case` written eagerly or a helper's markup");
         if (cx.build.prerender != .none) return pg.regionLater(n, "a branch whose arms read what it binds, or a `view` whose body is an `if` or a `case`, on a page that prerenders");
         if (br.selector_effect) return pg.regionLater(n, "a branch whose choice of arm may have an effect, which `browser-tea` evaluates at every render,");
