@@ -1,0 +1,651 @@
+-- load
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"-"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row1" title="1">
+        <input id="in1" .value="">
+        "m"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="">
+        "m"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "1"
+      </li>
+      <li>
+        <input .value="">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "3"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>
+-- input #in1 "1"
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"-"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row1" title="1">
+        <input id="in1" .value="1">
+        "m"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="">
+        "m"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "1"
+      </li>
+      <li>
+        <input .value="">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "3"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>
+-- input #in2 "2"
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"-"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row1" title="1">
+        <input id="in1" .value="1">
+        "m"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="2">
+        "m"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "1"
+      </li>
+      <li>
+        <input .value="">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "3"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>
+-- input #position>li:nth-child(2)>input "p2"
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"-"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row1" title="1">
+        <input id="in1" .value="1">
+        "m"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="2">
+        "m"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "1"
+      </li>
+      <li>
+        <input .value="p2">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "3"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>
+-- focus #in2
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"-"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row1" title="1">
+        <input id="in1" .value="1">
+        "m"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="2" :focus>
+        "m"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "1"
+      </li>
+      <li>
+        <input .value="p2">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "3"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>
+-- click #mark
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"-"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row1" title="1">
+        <input id="in1" .value="1">
+        "m*"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="2" :focus>
+        "m*"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m*"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "1"
+      </li>
+      <li>
+        <input .value="p2">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "3"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>
+-- click #row3>button
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"- m*3"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row1" title="1">
+        <input id="in1" .value="1">
+        "m*"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="2" :focus>
+        "m*"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m*"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "1"
+      </li>
+      <li>
+        <input .value="p2">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "3"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"- m*3"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m*"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="2" :focus>
+        "m*"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row1" title="1">
+        <input id="in1" .value="1">
+        "m*"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "3"
+      </li>
+      <li>
+        <input .value="p2">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "1"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="mark">"mark"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="add">"add"</button>
+    <p id="log">"- m*3"</p>
+    <ul id="keyed">
+      <li>"first"</li>
+      <li id="row3" title="3">
+        <input id="in3" .value="">
+        "m*"
+        " row "
+        "3"
+        <button>"pick"</button>
+        <ol>
+          <li>"t2"</li>
+          <li>"b"</li>
+          <li>"c"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row2" title="2">
+        <input id="in2" .value="2" :focus>
+        "m*"
+        " row "
+        "2"
+        <button>"pick"</button>
+        <ol>
+          <li>"t0"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li id="row1" title="1">
+        <input id="in1" .value="1">
+        "m*"
+        " row "
+        "1"
+        <button>"pick"</button>
+        <ol>
+          <li>"t1"</li>
+          <li>"a"</li>
+          <li>"end"</li>
+        </ol>
+      </li>
+      <li>"last"</li>
+    </ul>
+    <ol id="position">
+      <li>
+        <input .value="">
+        "0"
+        ": "
+        "3"
+      </li>
+      <li>
+        <input .value="p2">
+        "1"
+        ": "
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "1"
+      </li>
+      <li>"after"</li>
+    </ol>
+    <ul id="values">
+      <li>"before"</li>
+      <li>"x"</li>
+      <li>"y"</li>
+    </ul>
+  </main>
+</body>

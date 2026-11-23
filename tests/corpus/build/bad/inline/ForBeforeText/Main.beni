@@ -1,0 +1,14 @@
+-- A `For` followed by text in its element: its rows stand before the
+-- element after them, and text is no element (browser-inline.md §9,
+-- amended 2026-11-23), class 1 (§5), refused at the `For`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : List String → Html ⊤
+view items = <p><For each={items}>{λs → <b>{s}</b>}</For> and more</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ "a" ], update = λ_ m → m, view = view }

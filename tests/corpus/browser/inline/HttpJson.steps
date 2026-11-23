@@ -1,0 +1,8 @@
+click #good
+respond 1 200 "{\"note-title\":\"first\",\"stars\":3}" Content-Type: "application/json"
+click #garbled
+respond 2 200 "{not json"
+click #partial
+respond 3 200 "{\"note-title\":\"half\"}"
+click #broken
+respond 4 500 "{\"error\":\"boom\"}"

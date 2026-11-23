@@ -1,0 +1,111 @@
+-- A keyed `For` on `browser-inline`, the simple form (browser-inline.md §9,
+-- amended 2026-11-23): every write of the list makes the rows agree with it
+-- by key. The inputs are not controlled, so typed text shows which node is
+-- where: a row keeps its node for the life of its key, wherever it moves.
+-- An insert at the front and in the middle makes new rows there; a swap
+-- and a reverse move rows with their nodes; a removal takes one row's node
+-- away; a clear takes all, and a refill makes new rows with nothing typed.
+-- A row's own button sends its key, and its input sends its key and the
+-- text typed: the handler has the row's key in scope.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Front
+    | Middle
+    | Swap
+    | Reverse
+    | Clear
+    | Refill
+    | Remove Int
+    | Typed Int String
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    next : Int
+    log : String
+
+
+row : Model, String → Row
+row model name = { id = model.next, label = "${name}${String.fromInt model.next}" }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Front →
+            { model | rows = [ row model "f", …model.rows ], next = model.next + 1 }
+
+        Middle →
+            { model
+                | rows = List.insertAt model.rows 1 (row model "m")
+                , next = model.next + 1
+            }
+
+        Swap →
+            { model | rows = List.swap model.rows 0 (List.length model.rows - 1) }
+
+        Reverse →
+            { model | rows = List.reverse model.rows }
+
+        Clear →
+            { model | rows = [] }
+
+        Refill →
+            { model | rows = [ row model "r" ], next = model.next + 1 }
+
+        Remove id →
+            { model
+                | rows = List.filter model.rows λr → r.id ≠ id
+                , log = "${model.log} -${String.fromInt id}"
+            }
+
+        Typed id text →
+            { model | log = "${model.log} ${String.fromInt id}:${text}" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="front" onClick={Front}>front</button>
+        <button id="middle" onClick={Middle}>middle</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="refill" onClick={Refill}>refill</button>
+        <p id="log">{model.log}</p>
+        <ul>
+            <For each={model.rows} keyed={.id}>
+                {λr →
+                    <li>
+                        <input onInput={Typed r.id _} />
+                        <span>{r.label}</span>
+                        <button onClick={Remove r.id}>x</button>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { rows =
+                    [ { id = 1, label = "a" }, { id = 2, label = "b" }, { id = 3, label = "c" } ]
+                , next = 4
+                , log = "-"
+                }
+        , update = update
+        , view = view
+        }

@@ -1,0 +1,23 @@
+url "/blog/42"
+title
+click #home
+title
+location
+click #blog
+title
+click #comment
+title
+location
+click #search
+title
+click #lost
+title
+location
+back
+title
+location
+back
+title
+forward
+title
+location

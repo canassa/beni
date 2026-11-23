@@ -1601,6 +1601,59 @@ goldens cannot show: the target output, priced; which facts the lowering takes; 
 built 2026-10-23). Its four questions (§9.10) were decided by the owner on 2026-10-25, each as recommended: `For` over
 a `Dict`, `Dict.keyAt`, the index from key to entry pair, and how the bar is read.*
 
+*Amended 2026-11-23 (the owner, #298): **the simple form lands first.*** `For` is built on
+`browser-inline` now, before ownership v3 is enforced, so that `browser-tea` can retire (#966).
+The simple form is S2c's row unit with none of S2d's edits:
+
+- **What it compiles.** A `For` over a `List`, keyed by a key function, by position
+  (`keyed={False}`) or by reference, whose row function is a lambda whose body is one element
+  written in place (after any `let`s). The `For` is the only child of its parent element, or the
+  children after it are plain elements, the first of which its rows stand before; text or
+  elements may come before it. Its `each` may be any expression: a model path or a list `view`
+  derives (`List.filter …`), since the rows are made to agree with whatever the list is. A `For`
+  may stand in a row: its rows are synced by its own row's `set`. In a row, an element may mix
+  elements and text holes — each text a node of its own, made with the row, as `browser-tea` keeps
+  them — and an attribute of a `String` or a number that is no DOM property (`id`, `title`) is
+  written with `setAttribute` when it differs; outside rows both stay §8.7's limits.
+- **What it does.** The `For` is one binding of its root, whose read set is everything the `For`
+  reads — its list, its key function, and what its rows read, the selector included
+  (`programHole` of the `For`, the write-set pass's edge). The first pass builds a row per item
+  from the row's template; after any key whose writes reach that read set, `forRows` (`Inline.beni`)
+  makes the rows agree with the list: each item takes the row of its key, rows that share a key
+  matched by rank (`language.md` §11.9), new keys get new rows, rows of keys that left are
+  removed, and only the rows outside a longest increasing subsequence of their old places move.
+  **Every row's `set` runs**, kept or new, in list order: no row is skipped because its item is the
+  same object (§9.4, *Identity*; rule 8 of `CLAUDE.md`), and `text` and `prop` write only what
+  differs. The rows are put in place from the last to the first, each before the row after it, so
+  the first render inserts its rows in reverse order rather than appending them in order: the same
+  page, and never `browser-tea`'s move order (`plans/direct-rewrite.md` §8). When the page's
+  focus is in a kept row, the old places that cannot stay in order beside it are left out of the
+  subsequence, so that row is not moved and keeps its focus, which a move takes (`language.md`
+  §11.9: a row keeps its focus wherever it moved). A `For`'s rows are synced before its parent's
+  own attributes are written, so a `select`'s `value` chooses among the options its rows make.
+- **Row events.** A row's event goes through the program's dispatcher (§8.3, amended
+  2026-11-05): the row's `set` evaluates the event's handler value with the row's values, as a
+  binding evaluates any value (§8.2, #466), and the listener hands the dispatcher that message —
+  applied to the payload its extractor reads, for an event with one. So a row's handler has the
+  row's key and item in scope as the view wrote them. A control in a row is written back by every
+  key (§8.3, *Controlled inputs*).
+- **What it refuses**, each class 1 (§5), in `build/bad/inline/` and `build/bad/prerender/`: a
+  `fallback` (`ForFallback/`); a `For` followed by text, a hole or another `For`
+  (`ForBeforeText/`); a `For` beside other children of a control whose value changes, whose value
+  would be written before its rows (`ForBesideControl/`); a row function that is not a lambda
+  whose body is one element (`ForRowFunction/`, `ForRowFragment/`); inside a row, a `when`, a
+  `case` or another hole of markup (`RowMarkupHole/`), a component (`RowComponent/`) and a `Show`;
+  a `For` in another module's markup (`ForInPiece/`); and a `For` in a prerendered page, which has
+  no string form of its rows yet (`ForPrerendered/`). §9.6's other rows — a keyed `List` refused, a `For` over
+  anything but a model path, a row that reads a global — are S2d's, whose edits need them, and
+  the simple form does not apply them.
+- **`Dict`.** A `For` over a `Dict` waits for S2b (§9.9): the checker refuses it today (its `each`
+  must be a `List a`), and `core/Dict` is still ordered by key, not by insertion, until #961.
+- **Dependencies.** The simple form edits no list in place and reads none by identity, so S2c's
+  dependency on O5 (§9.9) is lifted for it. S2d's edits from the tag and at the write, and S2e's
+  measurement, come after enforcement, as §9.9 says. The simple form makes no claim of parity with
+  Solid: every write of what a `For` reads runs every row's `set`.
+
 ### 9.1 What S2 compiles
 
 A `For` whose `each` is a **model path of type `Dict k v`** that a root holds (§8.4's `held`,

@@ -1,0 +1,4 @@
+click #ok
+respond 1 200 "fine" Content-Type: "text/plain" X-Tag: "a" X-Tag: "b" X-Empty: ""
+click #missing
+respond 2 404 "not here" Content-Type: "text/plain"

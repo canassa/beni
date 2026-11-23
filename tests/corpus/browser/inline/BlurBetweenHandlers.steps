@@ -1,0 +1,4 @@
+# Row 2's input focused, then its button clicked: the row goes with its
+# focus, the button's handler and the row's run, and Chrome blurs.
+focus #in2
+click #x2

@@ -55,6 +55,8 @@ module Inline
   value escapeAttribute : V → V  -- impure
   value escapePre : V → V  -- impure
   value first : ⊤ → ⊤  -- impure
+  value forRows : V, V, V, V, V, V → ⊤  -- impure
+  value forTemplate : String → V  -- impure
   value listen : V, V, V → ⊤  -- impure
   value load : V, V, V, V → ⊤  -- impure
   value loadAll : V, V, V → ⊤  -- impure
@@ -83,6 +85,7 @@ module Inline
   value root : V → V  -- impure
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure
+  value rowText : V, V, V → V  -- impure
   value run : V → ⊤  -- impure
   value safeUrl : V → V  -- impure
   value send : V, V, V → ⊤  -- impure

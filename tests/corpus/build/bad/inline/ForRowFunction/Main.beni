@@ -1,0 +1,18 @@
+-- A `For` whose row function is a named function, not a lambda whose body
+-- is one element: the simple form (browser-inline.md §9, amended
+-- 2026-11-23) writes a row in place only, class 1 (§5).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+row : String → Html ⊤
+row s = <li>{s}</li>
+
+
+view : List String → Html ⊤
+view items = <ul><For each={items}>{row}</For></ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ "a" ], update = λ_ m → m, view = view }

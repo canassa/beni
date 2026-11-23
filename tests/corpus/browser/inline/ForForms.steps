@@ -1,0 +1,12 @@
+# A plain list's view, then past 32 rows: a trie.
+click #tail
+click #push 34
+# Rows at the front: a trie with a head; and its view.
+click #front 2
+click #tail
+# The scripts on the trie, each by index.
+click #swap
+click #edit
+click #remove
+click #keyed>li:nth-child(5)
+click #tail

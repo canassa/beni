@@ -690,6 +690,208 @@ allShown arms i =
         False
 
 
+-- ---- Rows: `For` (`browser-inline.md` §9, the simple form) --------------
+
+--| `(html)`: a `For`'s row template: `html` parsed once in a `template`
+--| element, whose content holds any element where it stands, and the node
+--| it makes, which each row of the `For` clones.
+pub forTemplate : String → V
+forTemplate html =
+    t = Js.call (Js.global "document") "createElement" [ Js.from "template" ]
+    Js.set t "innerHTML" (Js.from html)
+    Js.get (Js.get t "content") "firstChild"
+
+
+--| `(parent, end, list, key, make, set)`: the rows of a `For`, children of
+--| `parent` before `end` (null: its last children), made to agree with `list` (`browser-inline.md` §9, amended
+--| 2026-11-23). An item's key is its position when `key` is undefined, the
+--| item itself when it is null, and what `key` gives of it otherwise. Each
+--| item takes the row its key had, or, past the rows of that key, a new
+--| one `make` gives: rows that share a key are matched in order, by rank.
+--| Every row is then `set` with its item and its position, in order, kept
+--| or new: no row is skipped because its item is the same object, which a
+--| write in place keeps (§9.4, *Identity*). The rows of keys that left are
+--| removed, and only the rows outside a longest increasing subsequence of
+--| their old places are moved. A row is an object whose `n` is its node;
+--| the runtime keeps its key as its `k`, and the rows as the `$s` of `end`,
+--| or as the `$r` of `parent` when they are its last children: an element
+--| may be one `For`'s end and another's parent.
+pub forRows : V, V, V, V, V, V → ⊤
+forRows parent end list key make set =
+    items = listItems list
+    holder = if Js.isNull end then parent else end
+    slot = if Js.isNull end then "$r" else "$s"
+    held = Js.get holder slot
+    old = if Js.isUndefined held then Js.array [] else held
+    -- Each key's old places, in order.
+    index = Js.construct (Js.global "Map") []
+    _ =
+        Js.call old "forEach"
+            [ Js.from λrow j →
+                places = Js.call index "get" [ Js.get row "k" ]
+                if Js.isUndefined places then
+                    Js.call index "set" [ Js.get row "k", Js.array [ j ] ]
+                else
+                    Js.call places "push" [ j ]
+            ]
+    count : Int
+    count = Js.to (Js.get items "length")
+    next = Js.construct (Js.global "Array") [ Js.from count ]
+    from = Js.construct (Js.global "Array") [ Js.from count ]
+    claim items key make set old index next from 0 count
+    -- What no item took: the rows of keys that left.
+    _ =
+        Js.call index "forEach"
+            [ Js.from λplaces →
+                Js.each places λj → Js.to (Js.call (Js.get (Js.at old (Js.to j)) "n") "remove" [])
+            ]
+    holdFocus next from count
+    placeRows parent next (longest from count) (count - 1) end
+    Js.set holder slot next
+
+
+--| `(parent, before, text)`: a text node of a row whose element mixes
+--| elements and texts, made with `shown` and put before `before`, or at the
+--| end of `parent` when it is null. Returns it, for the row's `set`.
+pub rowText : V, V, V → V
+rowText parent before shown =
+    made = Js.call (Js.global "document") "createTextNode" [ shown ]
+    _ = Js.call parent "insertBefore" [ made, before ]
+    made
+
+
+-- A list's elements: the array itself, or a view's plain copy (`backend.md`
+-- §4). Read, never written.
+listItems : V → V
+listItems list =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ list ]) then
+        list
+    else
+        Js.call list "$plain" []
+
+
+-- Item `i` on: its row, taken from its key's old places or made, its old
+-- place in `from` (-1 for a new row), and `set` called with it.
+claim : V, V, V, V, V, V, V, V, Int, Int → ⊤
+claim items key make set old index next from i count =
+    if i < count then
+        item = Js.at items i
+        k =
+            if Js.isUndefined key then
+                Js.from i
+            else if Js.isNull key then
+                item
+            else
+                Js.apply key [ item ]
+        places = Js.call index "get" [ k ]
+        j = if Js.isUndefined places then Js.undefined else Js.call places "shift" []
+        row = if Js.isUndefined j then Js.apply make [] else Js.at old (Js.to j)
+        Js.setAt from i (if Js.isUndefined j then Js.from (-1) else j)
+        Js.set row "k" k
+        Js.setAt next i row
+        _ = Js.apply set [ row, item, Js.from i ]
+        claim items key make set old index next from (i + 1) count
+
+
+-- When the page's focus is in a kept row, the old places that cannot stay
+-- in order beside that row's are taken out of the subsequence, which then
+-- holds the row: its node is not moved, and keeps the focus a move would
+-- take (`language.md` §11.9: a row keeps its focus wherever it moved).
+holdFocus : V, V, Int → ⊤
+holdFocus next from count =
+    f = focusedRow next from (Js.get (Js.global "document") "activeElement") 0 count
+    if f >= 0 then
+        dropAround from f (Js.to (Js.at from f)) 0 count
+
+
+-- The kept row whose node holds `active`, or -1.
+focusedRow : V, V, V, Int, Int → Int
+focusedRow next from active i count =
+    if i >= count then
+        -1
+    else if
+        Js.to (Js.at from i) >= 0
+            && Js.to (Js.call (Js.get (Js.at next i) "n") "contains" [ active ])
+    then
+        i
+    else
+        focusedRow next from active (i + 1) count
+
+
+dropAround : V, Int, Int, Int, Int → ⊤
+dropAround from f v i count =
+    if i < count then
+        w : Int
+        w = Js.to (Js.at from i)
+        if (i < f && w > v) || (i > f && w < v) then
+            Js.setAt from i (Js.from (-1))
+        dropAround from f v (i + 1) count
+
+
+-- Rows `i` down to 0 put before the row after them, `anchor` (for the
+-- last, the rows' `end`; null: the parent's end), each but the ones `keep`
+-- marks.
+placeRows : V, V, V, Int, V → ⊤
+placeRows parent next keep i anchor =
+    if i >= 0 then
+        node = Js.get (Js.at next i) "n"
+        if not (Js.to (Js.at keep i)) then
+            _ = Js.call parent "insertBefore" [ node, anchor ]
+            ⊤
+        placeRows parent next keep (i - 1) node
+
+
+-- The places of a longest increasing subsequence of `from`'s old places,
+-- new rows (-1) left out, marked true in an array of `count`.
+longest : V, Int → V
+longest from count =
+    tails = Js.array []
+    prev = Js.construct (Js.global "Array") [ Js.from count ]
+    climb from tails prev 0 count
+    keep = Js.construct (Js.global "Array") [ Js.from count ]
+    _ = Js.call keep "fill" [ Js.from False ]
+    last : Int
+    last = Js.to (Js.get tails "length") - 1
+    if last >= 0 then
+        keptMark keep prev (Js.to (Js.at tails last))
+    keep
+
+
+-- Patience sorting: `tails[l]` is the place whose old place ends the
+-- smallest-ending increasing run of length `l + 1`, `prev` each place's
+-- predecessor in its run.
+climb : V, V, V, Int, Int → ⊤
+climb from tails prev i count =
+    if i < count then
+        v : Int
+        v = Js.to (Js.at from i)
+        if v >= 0 then
+            l = tailAt from tails v 0 (Js.to (Js.get tails "length"))
+            Js.setAt prev i (if l > 0 then Js.at tails (l - 1) else Js.from (-1))
+            Js.setAt tails l (Js.from i)
+        climb from tails prev (i + 1) count
+
+
+-- The first run in `tails` whose last old place is not below `v`.
+tailAt : V, V, Int, Int, Int → Int
+tailAt from tails v lo hi =
+    if lo < hi then
+        mid = Js.shiftRight (lo + hi) 1
+        if Js.to (Js.at from (Js.to (Js.at tails mid))) < v then
+            tailAt from tails v (mid + 1) hi
+        else
+            tailAt from tails v lo mid
+    else
+        lo
+
+
+keptMark : V, V, Int → ⊤
+keptMark keep prev i =
+    if i >= 0 then
+        Js.setAt keep i (Js.from True)
+        keptMark keep prev (Js.to (Js.at prev i))
+
+
 -- ---- Prerendered pages (`prerender.md` §4.3, §11) ----------------------
 
 --| `(s)`: a text as an element's ordinary content holds it in HTML:
