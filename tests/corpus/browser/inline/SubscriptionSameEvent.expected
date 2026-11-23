@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <input id="t" .value="">
+    <p></p>
+  </main>
+</body>
+-- key #t a
+<body>
+  <main>
+    <input id="t" .value="">
+    <p>"open"</p>
+  </main>
+</body>
+-- key #t b
+<body>
+  <main>
+    <input id="t" .value="">
+    <p>"open open heard"</p>
+  </main>
+</body>

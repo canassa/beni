@@ -1,10 +1,11 @@
 -- A value queued behind the dispatch that stops its subscription is
 -- dropped (browser-inline.md §3, amended 2026-11-23). Each subscription's
--- start sends a value at once, while the set is made, so both values wait
--- behind that dispatch, in declaration order: `A`'s first. `A`'s message
--- turns both off, which stops `B` before its value is applied, and `B`'s
--- value is dropped. `C` is not stopped by it, and its value lands. The
--- button turns both on again, and the same happens again.
+-- body sends a value as soon as its fiber runs. The fibers the set starts
+-- run in one turn of the scheduler, so their values wait behind one
+-- another, in declaration order: `A`'s first. `A`'s message turns `A` and
+-- `B` off, which stops `B` before its value is applied, and `B`'s value is
+-- dropped. `C` is not stopped by it, and its value lands. The button turns
+-- both on again, and the same happens again.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub exposing (Sub)
@@ -27,11 +28,9 @@ type alias Model =
     log : List String
 
 
--- Sends `name` at once, when it starts, and removes nothing.
-sendsAtOnce : String, (String → ⊤) → (⊤ → ⊤)
-sendsAtOnce name send =
-    send name
-    λ⊤ → ⊤
+-- Sends `name` once, as soon as it runs.
+sendsAtOnce : String, (String → ⊤) → ⊤
+sendsAtOnce name send = send name
 
 
 update : Msg, Model → Model × Cmd Msg
@@ -48,12 +47,12 @@ subscriptions : Model → Sub Msg
 subscriptions model =
     if model.on then
         Sub.batch
-            [ Sub.on A (sendsAtOnce "a" _) Got
-            , Sub.on B (sendsAtOnce "b" _) Got
-            , Sub.on C (sendsAtOnce "c" _) Got
+            [ Sub.listen A (sendsAtOnce "a" _) Got
+            , Sub.listen B (sendsAtOnce "b" _) Got
+            , Sub.listen C (sendsAtOnce "c" _) Got
             ]
     else
-        Sub.on C (sendsAtOnce "c" _) Got
+        Sub.listen C (sendsAtOnce "c" _) Got
 
 
 view : Model → Html Msg

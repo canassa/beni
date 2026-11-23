@@ -116,21 +116,29 @@ the set reads ρ (`Program.Subscriptions.model`), the lowering compiles `subscri
   that stayed keeps its listener or its fiber, started by the declaration it arrived with, and
   takes the taggers of its current declarations, in declaration order. A key that arrived starts,
   with its first declaration's body or listener; keys arrive in the order of their first
-  declarations (`browser-tea` starts them in key order).
+  declarations (`browser-tea` starts them in key order). A body's fiber is spawned in the diff and
+  first runs at the scheduler's next turn; a listener is added in a microtask the diff queues,
+  inside the dispatch guard, so it never hears the native event whose message made the set (a
+  keydown that turns on a keydown subscription; `browser/inline/SubscriptionSameEvent`), and a
+  key that left before then never adds it. A start that throws is a defect, as in a handler.
 - **A value.** A value a key's body or listener sends is applied in a dispatch of its own, or
-  queued behind the dispatch that runs (§6); when it is applied, each tagger current then makes a
-  message of it, each a dispatch of its own, through the dispatcher. A value of a key that left
-  before it was applied is dropped, also one queued behind the dispatch that stopped the key. No
+  queued behind the dispatch that runs (§6): each tagger of the key's declarations current when
+  it is sent makes a message of it, each a dispatch of its own, through the dispatcher, as
+  `browser-tea`'s relay does. A message of a key that left before it was applied is dropped, also
+  one queued behind the dispatch that stopped the key (`SubscriptionQueuedStop`). No
   handler is chosen when the program is built, so the tagger rules above — a key per tagger, one
   field — do not apply to such a set.
-- **Where `browser-inline` differs from `browser-tea`.** A listener is added in the dispatch that
-  made the set, and each value is sent while its event is dispatched, as for a fixed set; on
-  `browser-tea` both wait for the scheduler (`boundary.md` §9.8.5, points 1 and 2). A program
-  can see the difference only in the order of a value against a fiber's work or an after-render
-  push.
+- **Where `browser-inline` differs from `browser-tea`.** Each value is sent while its event is
+  dispatched, as for a fixed set, where `browser-tea` queues it for the scheduler (`boundary.md`
+  §9.8.5, point 2), and a listener is added in a microtask rather than in the scheduler's queue
+  (point 1). And a key is stopped in the dispatch that wrote the model it left, where
+  `browser-tea` settles once per render: a body that sends several values in a row loses those
+  sent after the message that removed its key, which `browser-tea` delivers when they were sent in
+  the same render. A program sees the first difference only in the order of a value against a
+  fiber's work or an after-render push.
 - **Stop and defect.** The page's `stop` and a defect stop every live key: each is closed and its
-  listener removed — at a defect, before the program's task roots are closed, which cancels the
-  fibers (`boundary.md` §9.8.5 point 5, §9.8.14).
+  listener removed; at a defect the program's task roots are closed too, which cancels the fibers
+  (`boundary.md` §9.8.5 point 5, §9.8.14).
 - **Pay for what you use.** A page whose set does not read the model is compiled as above, byte
   for byte, and ships none of the diff (`emit/release/inline/SubscriptionsFixedSet`). Only
   `Sub.listen` makes a `Hosted.Waits`, so a page whose model-dependent set only listens ships no
