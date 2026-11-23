@@ -1,0 +1,48 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <ol></ol>
+  </main>
+</body>
+-- key body Escape code:Escape
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <ol>
+      <li>"down Escape Escape"</li>
+      <li>"up Escape Escape"</li>
+    </ol>
+  </main>
+</body>
+-- key #toggle a ctrl shift code:KeyA
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <ol>
+      <li>"down Escape Escape"</li>
+      <li>"up Escape Escape"</li>
+      <li>"down a KeyA ctrl shift"</li>
+      <li>"up a KeyA ctrl shift"</li>
+    </ol>
+  </main>
+</body>
+-- event document keypress
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <ol>
+      <li>"down Escape Escape"</li>
+      <li>"up Escape Escape"</li>
+      <li>"down a KeyA ctrl shift"</li>
+      <li>"up a KeyA ctrl shift"</li>
+      <li>"press  "</li>
+    </ol>
+  </main>
+</body>
+-- click #toggle
+(the DOM did not change)
+-- key body Escape code:Escape
+(the DOM did not change)
+-- event document keypress
+(the DOM did not change)

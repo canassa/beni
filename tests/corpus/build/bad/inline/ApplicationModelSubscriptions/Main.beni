@@ -1,0 +1,46 @@
+-- An application whose subscriptions depend on its model is refused, a
+-- limit of the compiler (browser-inline.md §3, amended 2026-11-23; §5,
+-- class 1): its set also holds the navigation subscriptions, which only
+-- the write-set pass adds, to a fixed set.
+import Browser exposing (UrlRequest)
+import Browser.Events
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Resized Browser.Events.Size
+    | Requested UrlRequest
+    | Changed Url
+
+
+type alias Model =
+    on : Bool
+
+
+update : Msg, Model → Model × Cmd Msg
+update _ model = ( { model | on = not model.on }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model = if model.on then Browser.Events.onResize Resized else Sub.none
+
+
+view : Model → Tea.Document Msg
+view _ = { title = "app", body = <p>app</p> }
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = λ_ _ → ( { on = True }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        , onUrlRequest = Requested
+        , onUrlChange = Changed
+        }

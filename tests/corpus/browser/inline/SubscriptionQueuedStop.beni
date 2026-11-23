@@ -1,0 +1,74 @@
+-- A value queued behind the dispatch that stops its subscription is
+-- dropped (browser-inline.md §3, amended 2026-11-23). Each subscription's
+-- start sends a value at once, while the set is made, so both values wait
+-- behind that dispatch, in declaration order: `A`'s first. `A`'s message
+-- turns both off, which stops `B` before its value is applied, and `B`'s
+-- value is dropped. `C` is not stopped by it, and its value lands. The
+-- button turns both on again, and the same happens again.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Key
+    = A
+    | B
+    | C
+
+
+type Msg
+    = Got String
+    | Again
+
+
+type alias Model =
+    on : Bool
+    log : List String
+
+
+-- Sends `name` at once, when it starts, and removes nothing.
+sendsAtOnce : String, (String → ⊤) → (⊤ → ⊤)
+sendsAtOnce name send =
+    send name
+    λ⊤ → ⊤
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Got name →
+            ( { model | on = False, log = [ …model.log, name ] }, Cmd.none )
+
+        Again →
+            ( { model | on = True }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    if model.on then
+        Sub.batch
+            [ Sub.on A (sendsAtOnce "a" _) Got
+            , Sub.on B (sendsAtOnce "b" _) Got
+            , Sub.on C (sendsAtOnce "c" _) Got
+            ]
+    else
+        Sub.on C (sendsAtOnce "c" _) Got
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="again" onClick={Again}>again</button>
+        <p>{String.join model.log " "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { on = True, log = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

@@ -96,6 +96,51 @@ send's value — `own(start(v => send(handler, v)))`. `send` gives `undefined`, 
 no start reads what its send gives; a key two declarations share keeps one statement per
 declaration, in declaration order.
 
+*Amended 2026-11-23 (#2632, part of #966): a set that depends on the model is compiled.* The
+first rule above, *the set must not depend on the model*, is withdrawn. When the pass answers that
+the set reads ρ (`Program.Subscriptions.model`), the lowering compiles `subscriptions` as code
+(`programField`) and the runtime diffs the set with `browser-tea`'s meaning (`boundary.md`
+§9.8.5; `Tea.settle` is the reference):
+
+- **When the set is made.** At the mount, after the first pass, and in a key's handler only when
+  the key's writes conflict with what `subscriptions` reads — the anchored reads of its result,
+  the taggers' captures included (`write-sets.md`, amended 2026-10-14; `programSettles`) — after
+  the write pass and before the key's command. Never from an identity check of the model or of
+  the set (`CLAUDE.md` rule 8): a write the program makes in place changes no reference. A read
+  the pass cannot anchor reads ρ, so every key makes the set again. `browser-tea` makes it once
+  per render; here every dispatch renders, so that is once per dispatch that writes what it reads.
+- **The diff.** A declaration's identity is its key — the key's type and that type's `compare`
+  (`Hosted.compare`, `boundary.md` §9.8.3) — and two declarations of one key are one resource,
+  as for a fixed set. A key that left is stopped at once: what it sends from then on is dropped,
+  its listener is removed, and its fiber is cancelled from a fiber of the program's scope. A key
+  that stayed keeps its listener or its fiber, started by the declaration it arrived with, and
+  takes the taggers of its current declarations, in declaration order. A key that arrived starts,
+  with its first declaration's body or listener; keys arrive in the order of their first
+  declarations (`browser-tea` starts them in key order).
+- **A value.** A value a key's body or listener sends is applied in a dispatch of its own, or
+  queued behind the dispatch that runs (§6); when it is applied, each tagger current then makes a
+  message of it, each a dispatch of its own, through the dispatcher. A value of a key that left
+  before it was applied is dropped, also one queued behind the dispatch that stopped the key. No
+  handler is chosen when the program is built, so the tagger rules above — a key per tagger, one
+  field — do not apply to such a set.
+- **Where `browser-inline` differs from `browser-tea`.** A listener is added in the dispatch that
+  made the set, and each value is sent while its event is dispatched, as for a fixed set; on
+  `browser-tea` both wait for the scheduler (`boundary.md` §9.8.5, points 1 and 2). A program
+  can see the difference only in the order of a value against a fiber's work or an after-render
+  push.
+- **Stop and defect.** The page's `stop` and a defect stop every live key: each is closed and its
+  listener removed — at a defect, before the program's task roots are closed, which cancels the
+  fibers (`boundary.md` §9.8.5 point 5, §9.8.14).
+- **Pay for what you use.** A page whose set does not read the model is compiled as above, byte
+  for byte, and ships none of the diff (`emit/release/inline/SubscriptionsFixedSet`). Only
+  `Sub.listen` makes a `Hosted.Waits`, so a page whose model-dependent set only listens ships no
+  fiber code for it: every step that spawns or cancels a fiber is in a `Waits` arm.
+- **What stays refused.** A set the pass cannot read and that does not read the model, and a
+  fixed set's tagger that gives no constructor or splits on its payload, keep the refusals of §5.
+  A `Tea.application` whose set depends on the model is refused, class 1: its set also holds the
+  navigation subscriptions `onUrlRequest` and `onUrlChange` (§10.3), which only the pass adds to a
+  fixed set, and `Browser.Navigation` imports the runtime, so the runtime cannot add them.
+
 ## 4. Commands
 
 A polymorphic command body is checked with the actual synchronous sender and

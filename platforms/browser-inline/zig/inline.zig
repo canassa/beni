@@ -50,6 +50,12 @@ pub const lowering: m.Lowering = .{
         // Install a subscription with the renderer's captured event entry.
         .{ .name = "subscribe", .arity = 1 },
         .{ .name = "startWork", .arity = 2 },
+        // `(dispatch)`: a program's live subscriptions, none yet, and
+        // `(live, dispatch, sub)`: them made the set `sub` declares, for a
+        // set that depends on the model (`browser-inline.md` §3, amended
+        // 2026-11-23).
+        .{ .name = "liveSet", .arity = 1 },
+        .{ .name = "settle", .arity = 3 },
         .{ .name = "update", .arity = 1 },
         // `(id)`: the element a program mounts at.
         .{ .name = "root", .arity = 1 },
@@ -1374,6 +1380,11 @@ const Page = struct {
     /// Per key, the buckets of the stateful controls its events are on.
     controls: []std.ArrayList(m.Program.BucketRef) = &.{},
     dispatch: ?m.Name = null,
+    /// A set of subscriptions that depends on the model (§3, amended
+    /// 2026-11-23): the name of the program's live subscriptions, which the
+    /// mount makes and each handler whose writes conflict with what
+    /// `subscriptions` reads hands the set again. Null: a fixed set.
+    live: ?m.Name = null,
     /// A document's function that writes its title (§10).
     retitle: ?m.Name = null,
     /// The page is another module's root, written as pieces (`piece`).
@@ -2416,13 +2427,18 @@ const Page = struct {
         if (element_) {
             switch (cx.programSubscriptions()) {
                 .set => |s| subs = s,
-                .model => return cx.programReport(.call, .not_implemented,
-                    \\A limit of the compiler: this program's subscriptions depend on its model, and
-                    \\`browser-inline` compiles a set of subscriptions that is the same for the page's life;
-                    \\a set that changes it does not compile yet (`docs/design/browser-inline.md` §3; §5,
-                    \\class 1). Write `subscriptions` so that it does not read the model, and let `update`
-                    \\ignore what it does not need.
-                ),
+                // A set that depends on the model is made at run time and
+                // diffed (§3, amended 2026-11-23): its messages go through
+                // the dispatcher. An application's set holds its navigation
+                // subscriptions too, which only the pass adds.
+                .model => if (pg.p.constructor == 3) return cx.programReport(.call, .not_implemented,
+                    \\A limit of the compiler: this application's subscriptions depend on its model, and
+                    \\`browser-inline` does not compile such a set for `Tea.application` yet, whose set
+                    \\also holds the page's navigation subscriptions (`docs/design/browser-inline.md` §3;
+                    \\§5, class 1). The program is valid: it builds with `--platform=browser-tea`.
+                ) else {
+                    pg.live = try cx.fresh("live");
+                },
                 .no_key => |where| return cx.programReport(.call, .program_shape, try std.fmt.allocPrint(cx.arena,
                     \\The subscription at {s} hands its values to a tagger that does not give one of the
                     \\program's message constructors, and `browser-inline` calls the handler of that
@@ -2470,7 +2486,7 @@ const Page = struct {
         }
         // A command that runs sends messages of any key: every key is then
         // reached, through the dispatcher.
-        var runs = (element_ and try pg.command(null)) or messages;
+        var runs = (element_ and try pg.command(null)) or messages or pg.live != null;
         // A row's event hands its message to the dispatcher (§9, amended
         // 2026-11-23), whose name the rows' listeners are written with
         // before any handler is.
@@ -3031,6 +3047,12 @@ const Page = struct {
                 break :blk try js.call(try js.name(try cx.runtime("subscribe")), &.{try js.arrow(&.{}, install)});
             } else start;
             try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{registered}));
+        }
+        // A set that depends on the model: the program's live
+        // subscriptions, made the mount's set (§3, amended 2026-11-23).
+        if (pg.live) |live| {
+            try js.constant(body, live, try js.call(try js.name(try cx.runtime("liveSet")), &.{try js.name(pg.dispatch.?)}));
+            try pg.settle(body);
         }
         // A hydrating application's own address, once `onUrlChange` listens:
         // sent when it is not the route `init` was handed (`prerender.md`
@@ -4530,6 +4552,22 @@ const Page = struct {
         try pg.cx.js.expression(blk, try pg.cx.js.call(try pg.cx.js.name(r), &.{}));
     }
 
+    /// The program's live subscriptions made the set `subscriptions` gives
+    /// of the model now (§3, amended 2026-11-23).
+    fn settle(pg: *Page, blk: m.Block) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        const sub = try cx.programField(blk, .subscriptions, try pg.modelRef());
+        try js.expression(blk, try js.call(try js.name(try cx.runtime("settle")), &.{ try js.name(pg.live.?), try js.name(pg.dispatch.?), sub }));
+    }
+
+    /// The set made again after key `k`'s write pass, when the key's writes
+    /// conflict with what `subscriptions` reads (§3, amended 2026-11-23).
+    fn settleAfter(pg: *Page, blk: m.Block, k: u32) m.Error!void {
+        if (pg.live == null or !pg.cx.programSettles(k)) return;
+        try pg.settle(blk);
+    }
+
     /// Key `k`'s handler body into `blk`, its fields `params`: the arm
     /// writes the model, then the write pass runs the buckets the key's
     /// writes reach — and those of a control the key's events show — each
@@ -4562,6 +4600,7 @@ const Page = struct {
             if (next != before) try js.expression(blk, next);
             try pg.writePass(blk, pass);
             try pg.retitleAfter(blk, k);
+            try pg.settleAfter(blk, k);
             return;
         }
         var result = next;
@@ -4580,6 +4619,7 @@ const Page = struct {
         if (!kept and (element_ or next != before)) try js.assign(blk, try pg.modelRef(), if (element_) try js.member(result, "a") else result);
         try pg.writePass(blk, pass);
         try pg.retitleAfter(blk, k);
+        try pg.settleAfter(blk, k);
         if (element_) switch (cx.programCommand(k)) {
             .runs, .suspends => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},

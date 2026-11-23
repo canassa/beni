@@ -6376,7 +6376,13 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         // `Navigation.onUrlRequest onUrlRequest` and
         // `Navigation.onUrlChange onUrlChange`, as `browser-tea`'s
         // `Tea.application` batches them (`browser-inline.md` §10.3).
-        if (kind == .application and a.in.effects != null and result != none) result = a.applicationSubscriptions(&frame, fs, result) catch |err| switch (err) {
+        // A set that reads the model is answered as one (`browser-inline.md`
+        // §3, amended 2026-11-23), which the lowering refuses for an
+        // application, rather than as a set the pass could not read.
+        const own_reads_model = result != none and for (a.deps_t.get(try a.deps(result))) |p| {
+            if (a.rootOf(p) == rho_path) break true;
+        } else false;
+        if (kind == .application and a.in.effects != null and result != none and !own_reads_model) result = a.applicationSubscriptions(&frame, fs, result) catch |err| switch (err) {
             error.WorkCap => none,
             else => |e| return e,
         };

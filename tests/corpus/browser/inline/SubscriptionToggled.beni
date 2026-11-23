@@ -1,0 +1,67 @@
+-- A set of subscriptions the model turns on, off and on again
+-- (browser-inline.md §3, amended 2026-11-23). While `on`, the set is a
+-- resize listener and a 100 ms clock. The button that turns it off
+-- removes the listener and cancels the clock's fiber at once, in its own
+-- dispatch: no resize and no tick arrives however far the clock moves.
+-- Turned on again at 1 250 ms, both start again: one listener, not two,
+-- and the clock's next tick is at 1 350 ms. A resize writes only
+-- `resizes`, which `subscriptions` does not read, so it leaves the set as
+-- it is (`emit/release/inline/SubscriptionsModelSet` shows the handler).
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Resized Browser.Events.Size
+    | Tick Time.Posix
+    | Toggle
+
+
+type alias Model =
+    on : Bool
+    resizes : Int
+    last : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Resized _ →
+            ( { model | resizes = model.resizes + 1 }, Cmd.none )
+
+        Tick t →
+            ( { model | last = Time.toMillis t }, Cmd.none )
+
+        Toggle →
+            ( { model | on = not model.on }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    if model.on then
+        Sub.batch [ Browser.Events.onResize Resized, Time.every (Time.millis 100) Tick ]
+    else
+        Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <p id="resizes">{model.resizes}</p>
+        <p id="last">{model.last}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { on = True, resizes = 0, last = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }
