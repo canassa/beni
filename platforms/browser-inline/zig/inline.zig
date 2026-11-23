@@ -3924,7 +3924,14 @@ const Page = struct {
     /// 2026-11-23). A `let` a memo node's value reads is read by that node
     /// too, so the set grows until no `let` outside it has two readers.
     fn memos(pg: *Page) m.Error!void {
-        if (pg.piece or pg.rootless) return;
+        if (pg.piece) return;
+        // A `view` whose body is a branch has no root whose `let`s could be
+        // memo nodes (`programViewEnter` binds them), only its statements
+        // (§8.2, amended 2026-11-23).
+        if (pg.rootless) {
+            if (pg.statements) |groups| try pg.functions.insert(pg.a(), 0, .{ .groups = try sorted(pg.a(), groups), .kind = .statements });
+            return;
+        }
         const cx = pg.cx;
         const js = cx.js;
         const r = pg.index;
