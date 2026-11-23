@@ -1138,6 +1138,100 @@ function genReach(shape, at, live) {
   return mdMain(`reach.${shape}.${at}`, lines).replace('import Io\n', 'import Dict\nimport Io\n').replace('\n\ngo : ⊤ → String', `\n\n${defs}\n\n\ngo : ⊤ → String`);
 }
 
+// `runon.<other>.<writer>.<twin>` (#2613): pages, on a copy of `browser-inline` with no `"lists"` key
+// (written to `<out>/_platform`, so the plain build is the oracle), where code that runs on after a
+// throw reads the cell an update stopped in the middle of. `other`: a fiber that sleeps inside
+// `Task.uninterruptible` and then reads (`maskRead`) or writes and reads (`maskWrite`), inside
+// `uninterruptibleMask` (`maskMaskRead`) or through a helper over `uninterruptible` (`maskHelperRead`),
+// with the update that throws in the frame (`frame`), a closure (`closure`), a helper (`helper`) or under
+// `Task.withScheduler` (`sched`); or the frame, which reads after a spawned fiber's update throws under
+// `Task.withScheduler`, which stops only that scheduler (`frameRead`, with `spawnSched`, `spawnSchedHelper`).
+// Open (#2613): v3 accepts the live twins today, and they trap.
+// The twin is `live` where the write is in place.
+const RUNON_OTHERS = {
+  maskRead: ['_ = Task.spawn λ⊤ →', '    Task.uninterruptible λ⊤ →', '        Task.sleep (Duration.millis 5)', '        Log.info (ints (Ref.get r))'],
+  maskWrite: ['_ = Task.spawn λ⊤ →', '    Task.uninterruptible λ⊤ →', '        Task.sleep (Duration.millis 5)', '        Ref.update r λl → List.push l 7', '        Log.info (ints (Ref.get r))'],
+  maskMaskRead: ['_ = Task.spawn λ⊤ →', '    Task.uninterruptibleMask λ_ →', '        Task.sleep (Duration.millis 5)', '        Log.info (ints (Ref.get r))'],
+  maskHelperRead: ['_ = Task.spawn λ⊤ →', '    masked λ⊤ →', '        Task.sleep (Duration.millis 5)', '        Log.info (ints (Ref.get r))'],
+};
+const RUNON_WRITERS = {
+  frame: (push) => ['Task.sleep (Duration.millis 1)', 'Ref.update r λl →', `    l2 = ${push}`, '    n = deep 0', '    if n > 0 then l2 else l2'],
+  closure: (push) => ['Task.sleep (Duration.millis 1)', 'bumpIt = λ⊤ →', '    Ref.update r λl →', `        l2 = ${push}`, '        n = deep 0', '        if n > 0 then l2 else l2', 'bumpIt ⊤'],
+  helper: () => ['Task.sleep (Duration.millis 1)', 'bump r'],
+  sched: (push) => ['Task.withScheduler sc λ⊤ →', '    Task.sleep (Duration.millis 1)', '    Ref.update r λl →', `        l2 = ${push}`, '        n = deep 0', '        if n > 0 then l2 else l2'],
+  spawnSched: () => ['_ = Task.spawn λ⊤ → Task.withScheduler sc λ⊤ →', '    Task.sleep (Duration.millis 1)', '    bump r', 'Task.sleep (Duration.millis 5)', 'Log.info (ints (Ref.get r))'],
+  spawnSchedHelper: () => ['_ = Task.spawn λ⊤ → under sc λ⊤ →', '    Task.sleep (Duration.millis 1)', '    bump r', 'Task.sleep (Duration.millis 5)', 'Log.info (ints (Ref.get r))'],
+};
+
+function genRunOn(other, writer, live) {
+  const push = live ? 'List.push l 5' : 'List.push (List.copy l) 5';
+  const body = ['r = Ref.make [ 1, 2 ]', 'sc = Task.scheduler λ⊤ → ⊤', ...(RUNON_OTHERS[other] ?? []), ...RUNON_WRITERS[writer](push), 'send Done'];
+  return `-- runon.${other}.${writer}: see bench/ownership-sweeps/cells.mjs.
+import Cmd exposing (Cmd)
+import Duration
+import Html exposing (Html)
+import List
+import Log
+import Ref exposing (Ref)
+import String
+import Sub
+import Task exposing (Scheduler)
+import Tea
+
+
+type Msg
+    = Done
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+deep : Int → Int
+deep n = if n < 0 then 0 else 1 + deep (n + 1)
+
+
+masked : (⊤ → ⊤) → ⊤
+masked f = Task.uninterruptible f
+
+
+under : Scheduler, (⊤ → ⊤) → ⊤
+under s f = Task.withScheduler s f
+
+
+bump : Ref (List Int) → ⊤
+bump h =
+    Ref.update h λl →
+        l2 = ${push}
+        n = deep 0
+        if n > 0 then l2 else l2
+
+
+work : (Msg → ⊤) → ⊤
+work send =
+${ind(body.join('\n'), 4)}
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ = ( 0, Cmd.perform work )
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg model =
+    case msg of
+        Done →
+            ( model + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view model = <p>{model}</p>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -1185,6 +1279,22 @@ for (const hook of DEFECT_HOOKS) for (const at of DEFECT_ATS) for (const live of
 }
 for (const shape of Object.keys(REACH)) for (const at of DEFECT_ATS) for (const live of [true, false]) {
   emit(`reach.${shape}.${at}.${live ? 'live' : 'dead'}`, { 'Main.beni': genReach(shape, at, live) });
+}
+const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../..');
+const runon = [];
+for (const other of Object.keys(RUNON_OTHERS)) for (const writer of ['frame', 'closure', 'helper', 'sched']) runon.push([other, writer]);
+for (const writer of ['spawnSched', 'spawnSchedHelper']) runon.push(['frameRead', writer]);
+if (runon.some(([o, w]) => `runon.${o}.${w}`.includes(filter))) {
+  // The platform copy: `browser-inline` with no `"lists"` key, over the repository's `browser-base`.
+  const plat = path.resolve(out, '_platform');
+  fs.cpSync(path.join(root, 'platforms/browser-inline'), plat, { recursive: true });
+  const man = JSON.parse(fs.readFileSync(path.join(plat, 'beni.json'), 'utf8'));
+  delete man.lists;
+  man.platforms = [path.relative(plat, path.join(root, 'platforms/browser-base'))];
+  fs.writeFileSync(path.join(plat, 'beni.json'), JSON.stringify(man, null, 2) + '\n');
+  for (const [other, writer] of runon) for (const live of [true, false]) {
+    emit(`runon.${other}.${writer}.${live ? 'live' : 'dead'}`, { 'Main.beni': genRunOn(other, writer, live), PLATFORM: path.relative(root, plat) + '\n', steps: 'throws advance 2\nadvance 10\nadvance 100\n' });
+  }
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);
