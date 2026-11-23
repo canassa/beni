@@ -9298,3 +9298,4 @@ tests/corpus/browser/inline/ReconcileMoves.beni ReconcileMoves 79:5 #0 :: entry 
 tests/corpus/browser/inline/RemoveFocusedRow.beni RemoveFocusedRow 66:8 #0 :: entry RemoveFocusedRow.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/RowBlur.beni RowBlur 57:8 #0 :: entry RowBlur.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/ForEdits.beni ForEdits 101:5 #0 :: entry ForEdits.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ForSelectValue.beni ForSelectValue 49:5 #0 :: entry ForSelectValue.update model.opts :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

@@ -1,0 +1,49 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="sel">"b"</p>
+    <select id="s" .value="b">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+    </select>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="sel">"o1"</p>
+    <select id="s" .value="o1">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="o1">"o1"</option>
+    </select>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="sel">"o2"</p>
+    <select id="s" .value="o2">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="o1">"o1"</option>
+      <option value="o2">"o2"</option>
+    </select>
+  </main>
+</body>
+-- input #s "a"
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="sel">"a"</p>
+    <select id="s" .value="a">
+      <option value="a">"a"</option>
+      <option value="b">"b"</option>
+      <option value="o1">"o1"</option>
+      <option value="o2">"o2"</option>
+    </select>
+  </main>
+</body>

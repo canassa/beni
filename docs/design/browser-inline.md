@@ -1630,7 +1630,12 @@ The simple form is S2c's row unit with none of S2d's edits:
   focus is in a kept row, the old places that cannot stay in order beside it are left out of the
   subsequence, so that row is not moved and keeps its focus, which a move takes (`language.md`
   §11.9: a row keeps its focus wherever it moved). A `For`'s rows are synced before its parent's
-  own attributes are written, so a `select`'s `value` chooses among the options its rows make.
+  own attributes are written, and a control whose value changes (a `select`) and the `For` that is
+  its only child are one binding of both their read sets, the rows first, so its `value` chooses
+  among the options its rows make whichever write reaches either (`browser/inline/ForSelectValue`).
+  Keyed by reference, an item an arm wrote in place is the same object, so its row is kept: the
+  table of `language.md` §11.9 (*the very same item value is in both lists*), where `browser-tea`
+  made a new row.
 - **Row events.** A row's event goes through the program's dispatcher (§8.3, amended
   2026-11-05): the row's `set` evaluates the event's handler value with the row's values, as a
   binding evaluates any value (§8.2, #466), and the listener hands the dispatcher that message —
@@ -1640,7 +1645,8 @@ The simple form is S2c's row unit with none of S2d's edits:
 - **What it refuses**, each class 1 (§5), in `build/bad/inline/` and `build/bad/prerender/`: a
   `fallback` (`ForFallback/`); a `For` followed by text, a hole or another `For`
   (`ForBeforeText/`); a `For` beside other children of a control whose value changes, whose value
-  would be written before its rows (`ForBesideControl/`); a row function that is not a lambda
+  would be written before its rows (`ForBesideControl/`), or deeper inside such a control, as
+  in an `optgroup` (`ForInControl/`); a row function that is not a lambda
   whose body is one element (`ForRowFunction/`, `ForRowFragment/`); inside a row, a `when`, a
   `case` or another hole of markup (`RowMarkupHole/`), a component (`RowComponent/`) and a `Show`;
   a `For` in another module's markup (`ForInPiece/`); and a `For` in a prerendered page, which has
