@@ -18929,6 +18929,20 @@ pub const Lowerer = struct {
         switch (l.bir.instTag(arg)) {
             .markup => {
                 const root = st.built.rootAt(arg.int()) orelse return null;
+                // The caller's `let`s are bound where the caller's own
+                // values are, not where the callee's hole enters this root:
+                // a root that reads one, or evaluates one of its own, is
+                // refused as a markup value.
+                const r = st.built.tree.root(root);
+                if (r.lets.len != 0) return null;
+                const decl = for (l.bir.decls) |d| {
+                    if (arg.int() >= d.inst_start.int() and arg.int() < d.inst_end.int()) break d;
+                } else return null;
+                const locals = l.bir.declLocals(decl);
+                for (0..r.inputs.len) |j| {
+                    const local = st.built.values[r.inputs.start + j].capture;
+                    if (local >= locals.len or locals[local].kind == .let) return null;
+                }
                 return .{ .root = root, .nested = true };
             },
             .top => {

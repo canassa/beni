@@ -579,21 +579,25 @@ beni over `Js` in `Inline.beni`:
     they were walked on — where the `let` is bound, or where the call's arguments are evaluated —
     so the hole adds no step. An argument's root reads its values in the caller's context. The
     argument itself is bound to `undefined`, which no code reads: a read of such a parameter
-    other than by a hole is refused (`markupParamRead`). A constant is also a branch region's
-    arm, a call of no argument (`Arm.What.call`).
+    that code evaluates is refused (`markupParamRead`), and one no code evaluates — a `let` of
+    the helper nothing reads — is left out, as any such `let` is. A constant is also a branch
+    region's arm, a call of no argument (`Arm.What.call`).
   - **When it is written.** Only by the writes of its holes and attributes, in the read sets the
     write-set pass gives each of them: a pass that writes what a copy's hole reads writes that
     hole, in place, and nothing else. Nothing is rebuilt, and nothing is skipped because a value
     is `===` the last one (rule 8 of `CLAUDE.md`): the name has no value to compare. A `let` its
     root takes (`Root.lets`) is evaluated by each copy's binding, as each call of a helper
     evaluates its own; `browser-tea` evaluates it once per copy too (`browser/inline/MarkupValueLetTwice`).
-  - **What stays refused** (class 1, at the read): any other read of the name — a `let` of markup
-    passed to a helper, put in a list, a record or a `Maybe`, or read by code that is not a
-    hole; a parameter read other than by a hole; a constant under `Html.map`; a `let` of markup
-    in a branch's arm or a `For`'s row; and markup a helper returns through an `if`, a `case` or
-    a call (#2498). Markup held in the model stays §8.7's `MarkupValue/` rule (class 3).
-    `browser/inline/MarkupValue*`, `LetOneOwner`, `LetMarkupHandler`;
-    `build/bad/inline/MarkupLetArgument/`, `MarkupLetRead/`.
+  - **What stays refused** (class 1, at the hole, the read, the call or the constant): any
+    other read of the name — a `let` of markup passed to a helper, put in a list, a record or a
+    `Maybe`, or read by code that is not a hole; a parameter read by code; an argument whose
+    markup reads a `let` of the caller or has `let`s of its own, since the caller's `let`s are
+    bound where the caller's values are and not where the helper's hole enters the root (*the
+    review of this slice*: it built, and the page threw); a constant under `Html.map`; a `let`
+    of markup in a branch's arm or a `For`'s row; and markup a helper returns through an `if`, a
+    `case` or a call (#2498). Markup held in the model stays §8.7's `MarkupValue/` rule (class
+    3). `browser/inline/MarkupValue*`, `LetOneOwner`, `LetMarkupHandler`;
+    `build/bad/inline/MarkupLetArgument/`, `MarkupLetRead/`, `MarkupArgumentReadsLet/`.
 - **Evaluation order** (*added 2026-10-19, the review of #398*). A binding function evaluates, per
   context: first the `let`s it reads; then every value that may throw — a hole's or an attribute's
   value, or a `when`'s branch value, holding any call that is not a basic operator
