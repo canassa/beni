@@ -2490,8 +2490,16 @@ fn ctxLive(f: *const Frame, c: u32) bool {
 /// with its context, or with one of the paths that write it (`judge_set`).
 fn judgeCompat(f: *const Frame, c: u32) bool {
     if (f.judge_set.len == 0) return f.compatible(c, f.judge_ctx);
-    for (f.judge_set) |p| if (f.compatible(c, p)) return true;
-    return false;
+    // The paths of one call are arms of one `case`, made in one context
+    // (`applyAt`): an arm of that `case` is on a run with the paths it is,
+    // and any other context is on a run with each of them where it is with
+    // one (kernel §8: one climb, not one for each path).
+    const cs = f.ctxs.items;
+    const p0 = f.judge_set[0];
+    if (cs[c].both[0] == none and cs[c].case == cs[p0].case and cs[c].parent == cs[p0].parent) {
+        return std.mem.indexOfScalar(u32, f.judge_set, c) != null;
+    }
+    return f.compatible(c, p0);
 }
 
 /// Whether context `a` is `c` or an arm around it.
@@ -2519,12 +2527,31 @@ fn ctxAround(f: *const Frame, a: u32, c0: u32) bool {
 fn meet(f: *Frame, had: u32, ctx: u32) Error!u32 {
     const h = f.splitCtx(had);
     const c = f.splitCtx(ctx);
+    // An arm of a `case` around a path of the chain (the call is in that
+    // arm) adds nothing: a run through the path is a run through the arm,
+    // as `meetArms` keeps the inner of two nested arms.
+    if (c[0] == none and c[1] != none and h[0] != none and f.chainInside(h[0], c[1])) return had;
     // An arm of a `case` meets the atom's own arms of `case`s; a path's arm
     // (no join has one today) joins the chain.
     var p = h[0];
     if (c[0] != none) p = try f.meetPath(p, c[0]);
     const r = if (c[1] == none) h[1] else try f.meetArms(h[1], c[1]);
     return f.joinParts(p, r);
+}
+
+/// Whether a path of chain `p` (a path's arm, or a chain `meetPath` made)
+/// is arm `arm` or inside it. Each arm of the chain looked at is work
+/// (kernel §8).
+fn chainInside(f: *const Frame, p: u32, arm: u32) bool {
+    var c = p;
+    while (c != none) {
+        const x = f.ctxs.items[c];
+        if (x.both[0] == none) return f.ctxAround(arm, c);
+        _ = f.charge(1);
+        if (f.ctxAround(arm, x.both[1])) return true;
+        c = x.both[0];
+    }
+    return false;
 }
 
 /// `meet` of two contexts of no call's path.
@@ -6746,6 +6773,25 @@ fn pathWrites(c: *const Contract, k: usize, i: usize) bool {
     return true;
 }
 
+/// Whether paths `p` and `q` of `c` leave the same sources at the location
+/// `cr` of parameter `j`'s contents (each of `ks` where `cr` is `Loc.all`),
+/// or leave it as it was both.
+fn samePathRenewal(c: *const Contract, p: CMod.Path, q: CMod.Path, j: u32, cr: u32, ks: []const u32) bool {
+    if (cr == Loc.all) {
+        for (ks) |sk| if (!sameSrcs(p.renewAt(c.off[j] + sk), q.renewAt(c.off[j] + sk))) return false;
+        return true;
+    }
+    return sameSrcs(p.renewAt(c.off[j] + cr), q.renewAt(c.off[j] + cr));
+}
+
+fn sameSrcs(x: ?[]const Src, y: ?[]const Src) bool {
+    const a = x orelse return y == null;
+    const b = y orelse return false;
+    if (a.len != b.len) return false;
+    for (a, b) |s, t| if (!s.eql(t)) return false;
+    return true;
+}
+
 /// The atoms of one location of a version, from `start` on, one range of
 /// them for each path of the call (kernel §13 item 13): an atom of every
 /// range is held on every run and is kept once as it is; one of one range
@@ -6836,8 +6882,23 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
                 // here, held on a run through its arm only.
                 var ranges: std.ArrayList([2]usize) = .empty;
                 defer ranges.deinit(f.gpa);
-                for (c.paths) |p| {
+                for (c.paths, 0..) |p, pk| {
                     const ps = f.atoms.items.len;
+                    // A path that leaves here what an earlier one does: its
+                    // atoms, copied, not expanded again (each expansion is
+                    // work, kernel §8).
+                    const same = for (c.paths[0..pk], 0..) |q, qk| {
+                        if (samePathRenewal(c, p, q, j, cr, ks)) break qk;
+                    } else none;
+                    if (same != none) {
+                        const from = ranges.items[same];
+                        _ = f.charge(1 + from[1] - from[0]);
+                        // The slice is taken after the room is made: `atoms` can move.
+                        try f.atoms.ensureUnusedCapacity(f.gpa, from[1] - from[0]);
+                        f.atoms.appendSliceAssumeCapacity(f.atoms.items[from[0]..from[1]]);
+                        try ranges.append(f.gpa, .{ ps, f.atoms.items.len });
+                        continue;
+                    }
                     var any = false;
                     if (cr == Loc.all) {
                         for (ks) |sk| if (p.renewAt(c.off[j] + sk)) |srcs| {
@@ -6848,8 +6909,21 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
                         any = true;
                         try f.expandSrcs(base, srcs, sig, cr, xl, k, &st);
                     }
-                    // A path that leaves the location as it was.
-                    if (!any) _ = try f.leavesAs(v, r.place, k, &f.atoms);
+                    // A path that leaves the location as it was: its old cells,
+                    // read as the union reads its own (a source `param` of the
+                    // location itself), a written location's as a new name
+                    // (`oldNames`): read as the cells they were, an earlier
+                    // write was judged against them (blind round BN's undo
+                    // programs with loans). No source is expanded for it: one
+                    // expansion for each path cost a chain of calls its budget.
+                    if (!any) {
+                        const ls = f.atoms.items.len;
+                        _ = try f.leavesAs(v, r.place, k, &f.atoms);
+                        const written = if (cr == Loc.all) for (ks) |sk| {
+                            if (c.flags[c.off[j] + sk] & (flag_w | flag_s) != 0) break true;
+                        } else false else c.flags[c.off[j] + cr] & (flag_w | flag_s) != 0;
+                        if (written) f.oldNames(ls, &st);
+                    }
                     try f.uniqueTail(&f.atoms, ps);
                     try ranges.append(f.gpa, .{ ps, f.atoms.items.len });
                 }
@@ -7388,16 +7462,18 @@ fn publishPaths(f: *Frame, flags: []const u8, off: []const u32, renew: []const ?
         var rn: []?[]const Src = &.{};
         if (renew.len != 0) for (f.params.items, 0..) |root, j| {
             const r = f.roots.items[root];
-            // A parameter the union renews has a renewal on every path, its
-            // own cells where the path leaves them: the caller reads them as
-            // the union's own cells are read, a written location's as a new
-            // name (`oldNames`), not as the cells it held before the call.
-            if (!r.tracked or !f.renewedAt(root)) continue;
+            // A path that leaves the parameter's cells as they were renews
+            // nothing: its caller reads the cells there as the union's own
+            // (`renewHandle`, `oldNames`).
+            if (!r.tracked) continue;
             vals.clearRetainingCapacity();
+            var renewed = false;
             for (f.ret_cells.items, f.ret_reads.items) |rc, rd| if (rc[0] == root and f.ctxOnPath(rd.ctx, p)) {
-                try vals.append(f.gpa, try f.restrictPath(rc[1], p, 0));
+                const v = try f.restrictPath(rc[1], p, 0);
+                if (!f.onlyRenamed(v, root, 0)) renewed = true;
+                try vals.append(f.gpa, v);
             };
-            if (vals.items.len == 0) try vals.append(f.gpa, try f.rootVal(root));
+            if (!renewed) continue;
             if (rn.len == 0) {
                 rn = try m.arena.alloc(?[]const Src, total);
                 @memset(rn, null);

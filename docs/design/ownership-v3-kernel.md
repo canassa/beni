@@ -2883,11 +2883,11 @@ contents of a cell are locations, and that a call can change what a location of 
       followed through the runs as `markAtoms` follows them (`pathMark`); a demand in no arm of the
       `case` is in every path;
     - **its renewal** (item 3), from each return point whose context can be on a run through the
-      arm, each join read with only its values whose arm can be on it (`restrictPath`). A parameter
-      that the union renews has a renewal on every path, its own cells where the path leaves them, so
-      the caller reads them as it reads the union's own cells (a written location's as a new name,
-      `oldNames`; read as the cells they were, a write before the call was judged against them, and
-      BN's undo programs with loans were refused).
+      arm, each join read with only its values whose arm can be on it (`restrictPath`). A path whose
+      values are the parameter itself renews nothing, and its caller reads the cells there as it reads
+      the union's own cells: a written location's as a new name (`oldNames`, in `renewHandle`; read
+      as the cells they were, a write before the call was judged against them, and BN's undo programs
+      with loans were refused).
 
     Every other fact (what the body reads, lets escape, answers, marks, hands its function
     parameters, the claim of item 5, and the union itself) is the one contract. Where no path says
@@ -2914,7 +2914,9 @@ contents of a cell are locations, and that a call can change what a location of 
     paths and the other arms; an arm of a `case` meets the second part only (`meetArms`, `meet`'s two),
     and the chain the first (`joinParts`), so the arms of the frame's own `case`s are kept as they
     were before calls had paths: in `meet`'s two places, a path's arm pushed out the arm of an `if`
-    that told a write in one of its arms from a read through the other. The later-read test (§5 test 4) compares a holder's cell with a written
+    that told a write in one of its arms from a read through the other. An arm around a path of the
+    chain (the call is in that arm) adds nothing (`chainInside`), as `meet` keeps the inner of two
+    nested arms. The later-read test (§5 test 4) compares a holder's cell with a written
     cell only where the two can be on one run (`pairLive`, `ctxPair`: no two arms of one `case`): a
     cell that a later read finds only through one path and that the write finds only through another
     is not read after the write on any run. That holds of every context an atom has, the arms of the
@@ -2925,8 +2927,14 @@ contents of a cell are locations, and that a call can change what a location of 
     a writer's run (item 12), a call in a hole of markup and a contract of words read the union, as
     before. A contract read from another module keeps its paths (`dupContract`). Two contracts of a
     round join path by path, and a contract with none is read as each path being its union; two with
-    other numbers of paths join to none. Each path read at each location, each cell placed in a path,
-    and each demand and return point a callee places in a path is work (§8).
+    other numbers of paths join to none. A path that leaves a location what an earlier path leaves
+    there copies its cells, not their sources again, and a write judged on some paths of one call
+    climbs the contexts once (`judgeCompat`): the paths of a call are arms of one `case`. Each path
+    read at each location, each cell placed in a path, and each demand and return point a callee
+    places in a path is work (§8). The paths cost work where they accept: a write judged on fewer
+    runs is compared with more holders before it is accepted, so BN's undo app with thirteen calls in
+    one function (`dup3`, a copy of `apply`'s call), which the base accepts near its budget, now
+    passes it (`limit`).
     What it does not cover: a callee's paths are the arms of its own answering `case`, not those of a
     function it hands a cell's row (the `Just` and `Nothing` arms of the callback in `Ref.update r λh
     → case …`), nor those of a callee it calls in an arm; such a callee's renewal is one union in each
