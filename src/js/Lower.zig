@@ -15278,25 +15278,31 @@ pub const Lowerer = struct {
         return null;
     }
 
-    /// The first `let` of `view`'s body that its root does not take, its
-    /// markup reads, and may have an effect (version 1.10), or null.
+    /// The first `let` of `view`'s body that its root does not take, that
+    /// is no statement, and whose value may have an effect or throw, or null.
     fn effectfulViewLet(l: *Lowerer, pc: *const ProgramCall) Allocator.Error!?Inst.Index {
-        const st = l.mk orelse return null;
         const function = l.fieldFunction(pc, pc.view) orelse return null;
-        _, const root_index = l.programShape(pc.view);
-        const root = st.built.tree.root(root_index orelse return null);
         const saved = try l.enterDecl(function.decl);
         defer l.leaveDecl(saved);
+        // `browser-inline.md` §8.2, amended 2026-11-23: every binding function
+        // that enters the `view` evaluates such a `let` (`programViewEnter`),
+        // so only one whose value is pure and total is accepted — evaluated
+        // once or n times, it cannot be told apart. A `let` the root takes
+        // and a statement are the lowering's to place.
         var at = function.body;
         while (l.bir.instTag(at) == .let) : (at = @fromBackingInt(@intCast(l.bir.instData(at).rhs))) {
             for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(at).lhs))), Inst.Index)) |def| {
-                if (l.bir.instTag(def) != .let_def or l.markupMovedLet(def)) continue;
                 const rhs: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(def).rhs));
-                if (!l.mayHaveEffect(rhs)) continue;
-                const local = l.bir.extraData(@fromBackingInt(@intCast(l.bir.instData(def).lhs)), Bir.LetDef).local;
-                for (0..root.inputs.len) |j| {
-                    if (st.built.values[root.inputs.start + j].capture == local) return def;
+                switch (l.bir.instTag(def)) {
+                    .let_def => {
+                        if (l.markupMovedLet(def)) continue;
+                        const payload = l.bir.extraData(@fromBackingInt(@intCast(l.bir.instData(def).lhs)), Bir.LetDef);
+                        if (payload.params_end != payload.params_start or l.bir.instTag(rhs) == .lambda) continue;
+                    },
+                    .let_pattern => if (l.bir.instTag(@fromBackingInt(@intCast(l.bir.instData(def).lhs))) == .pat_wild) continue,
+                    else => continue,
                 }
+                if (!l.instSafeMode(rhs, true)) return def;
             }
         }
         return null;
@@ -15345,7 +15351,7 @@ pub const Lowerer = struct {
         // wherever the root's values are, so as many times as the lowering
         // evaluates them; refused rather than drawn again by each.
         if (program.view_lets) if (try l.effectfulViewLet(pc)) |def| {
-            try l.report(.not_implemented, def, "This `let` of `view` may have an effect, and its markup reads it: `{s}` evaluates such a `let` wherever the markup's values are evaluated, which is not once per message (`docs/design/browser-direct.md` §5.4, §8.4). Write the call where the markup reads it, or build this program with `--platform=browser-tea`.", .{st.lowering.name});
+            try l.report(.not_implemented, def, "A limit of the compiler: this `let` of `view` is a pattern, or a binding that something besides the markup's holes reads — a statement, a `For`'s row, another such `let` — and its value may have an effect or throw: `{s}` evaluates such a `let` in every binding function that enters the `view`, which is not once per pass (`docs/design/browser-inline.md` §8.2; §5, class 1). Bind the value with a plain `let` the markup reads, or write the call where the markup reads it, or build this program with `--platform=browser-tea`.", .{st.lowering.name});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         };
         // Each lowering of the call evaluates `init` once: a declaration
@@ -19356,6 +19362,27 @@ pub const Lowerer = struct {
         return unknown;
     }
 
+    /// `cx.programViewStatementGroups` (1.30): the group of each statement
+    /// of `view`'s body, by its value's instruction, on the current call
+    /// path; null when one has none (`browser-inline.md` §8.2, amended
+    /// 2026-11-23).
+    fn directViewStatementGroups(l: *Lowerer) ?[]const u32 {
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        const function = l.fieldFunction(pc, pc.view) orelse return null;
+        const lets = l.viewLets(function.body) catch return null;
+        const out = l.scratch.alloc(u32, lets.statements.len) catch return null;
+        const module = l.in.module.int();
+        const path = l.inline_path.items;
+        for (lets.statements, out) |def, *g| {
+            const value: u32 = l.bir.instData(def).rhs;
+            g.* = for (d.lets) |*x| {
+                if (x.module == module and x.inst == value and std.mem.eql(u64, x.path, path)) break x.group;
+            } else return null;
+        }
+        return out;
+    }
+
     fn directViewLeave(l: *Lowerer) void {
         const v = l.program_view orelse return;
         if (v.root) |r| l.markupUnbindInputs(r);
@@ -20976,6 +21003,10 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directLet(r, k);
     }
 
+    fn programViewStatementGroups(impl: *anyopaque) ?[]const u32 {
+        return lowerer(impl).directViewStatementGroups();
+    }
+
     fn programSubscriptions(impl: *anyopaque) M.Program.Subscriptions {
         return lowerer(impl).directSubscriptions();
     }
@@ -21344,6 +21375,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_branch_eager = programBranchEager,
         .program_view_statements = programViewStatements,
         .program_let = programLet,
+        .program_view_statement_groups = programViewStatementGroups,
         .program_subscriptions = programSubscriptions,
         .program_subscription_start = programSubscriptionStart,
         .program_subscription_message = programSubscriptionMessage,

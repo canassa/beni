@@ -2539,8 +2539,14 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
                     .let_pattern => {
                         const v = try a.eval(f, @fromBackingInt(idata.rhs), g);
                         try a.bind(f, @fromBackingInt(idata.lhs), v);
+                        // A `view`'s statement `_ = e` too: its reads, as a
+                        // `let`'s (`browser-inline.md` §8.2, amended 2026-11-23).
+                        try a.recordLet(f, @fromBackingInt(idata.rhs), v);
                     },
-                    .let_stmt => _ = try a.eval(f, @fromBackingInt(idata.rhs), g),
+                    .let_stmt => {
+                        const v = try a.eval(f, @fromBackingInt(idata.rhs), g);
+                        try a.recordLet(f, @fromBackingInt(idata.rhs), v);
+                    },
                     else => {},
                 }
             }
