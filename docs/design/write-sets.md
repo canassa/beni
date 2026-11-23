@@ -2564,3 +2564,22 @@ are read only for whether one may suspend.
   An alternative that is not a command makes the whole unread, as before. A chosen set of
   subscriptions is not read so: §3 of `browser-inline.md` refuses a set that depends on the model.
   This last reading holds for every lowering that reads commands, keyed or not.
+
+### *Amended 2026-11-23 (#2641):* a list of commands that `List.map` makes, read again
+
+The third row the amendment *code that never returns, and `bracket`* withdrew is back, as first
+written: **`List.map xs f` whose callback answers a command** — an effect term of `Cmd`'s, or
+alternatives each of which is one — is a list built afresh (base none, edit `replaced`) holding
+one element at `[*]`, `f`'s answer, and the reads of `xs`. `Cmd.batch` reads it as the bodies of
+that element's command, each alternative's; it is the batch's whole question, which bodies may
+run, not how many. As a model value it is a `value` write, as any built list is. It waited on
+#2617, a lowering defect: a body nested in the callback read a field that the same arm writes in
+place after the store. #2623 fixed it (`ownership-checker.md` §31.6, amended), and
+`browser/inline/BatchMapOldValue` pins the old value at depths one to three.
+
+The two stricter readings stay. The `[*]` element is what tells this list from one that
+substitution lost: a `Lst(none, replaced)` with no element at `[*]` is still unread
+(`build/bad/inline/CommandHelperList`). Other list functions whose callbacks answer commands
+(`indexedMap`, `concatMap`, the folds) are unchanged, and a batch of them stays unread
+(`build/bad/inline/CommandFolded`). Pinned: `browser/inline/CommandsOverModelList`,
+`SettlesManyFibers`, `RespondSettlesEachChunk`.

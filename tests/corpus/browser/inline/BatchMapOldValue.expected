@@ -1,0 +1,72 @@
+-- load
+<body>
+  <main>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="items">"items"</button>
+    <p id="count">"0"</p>
+    <p id="n">"0"</p>
+    <p id="log"></p>
+  </main>
+</body>
+-- click #one
+<body>
+  <main>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="items">"items"</button>
+    <p id="count">"1"</p>
+    <p id="n">"0"</p>
+    <p id="log">"one 1:0 | one 2:0"</p>
+  </main>
+</body>
+-- click #two
+<body>
+  <main>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="items">"items"</button>
+    <p id="count">"1"</p>
+    <p id="n">"10"</p>
+    <p id="log">"one 1:0 | one 2:0 | two 1:0 | two 2:0"</p>
+  </main>
+</body>
+-- click #three
+<body>
+  <main>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="items">"items"</button>
+    <p id="count">"101"</p>
+    <p id="n">"110"</p>
+    <p id="log">"one 1:0 | one 2:0 | two 1:0 | two 2:0 | three 1:1/10"</p>
+  </main>
+</body>
+-- click #items
+<body>
+  <main>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="items">"items"</button>
+    <p id="count">"101"</p>
+    <p id="n">"110"</p>
+    <p id="log">"one 1:0 | one 2:0 | two 1:0 | two 2:0 | three 1:1/10 | item 1:2 | item 2:2"</p>
+  </main>
+</body>
+-- click #one
+<body>
+  <main>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="items">"items"</button>
+    <p id="count">"102"</p>
+    <p id="n">"110"</p>
+    <p id="log">"one 1:0 | one 2:0 | two 1:0 | two 2:0 | three 1:1/10 | item 1:2 | item 2:2 | one 1:101 | one 2:101"</p>
+  </main>
+</body>

@@ -198,6 +198,18 @@ The pass reads it correctly, but the lowering then sends a field that the same a
 with its new value, from a body nested in the callback. It stays refused, class 4, like a batch
 that a fold builds.
 
+*Amended 2026-11-23 (#2641): the third shape is read.* #2623 fixed #2617: a nested closure's
+eager read of a captured field is made where the outermost closure is made, in the arm, before
+the store. So the pass reads `Cmd.batch (List.map xs f)` again when `f` answers a command
+(`write-sets.md`, the amendment of that date): the bodies of each alternative of `f`'s command,
+once, whatever the length of `xs`. Each body sends the value the field had when `update` was
+called, at every depth it is read from (`browser/inline/BatchMapOldValue`: one, two and three
+closures deep, a nested field, and the model's own list mapped in the arm that pushes onto it).
+`List.indexedMap`, `concatMap` and a fold that builds the list stay refused, class 4
+(`build/bad/inline/CommandFolded`), and so does a list that a helper's summary lost
+(`CommandHelperList`). Pages: `CommandsOverModelList`, and `SettlesManyFibers` and
+`RespondSettlesEachChunk`, copied from `browser/tea` with their transcripts.
+
 The fourth shape is `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cmd.map` (#2615). A keyed
 command needs a table of the bodies that run under each key, with `Restart`'s cancel-and-wait,
 `Queue`'s wait and `Ignore`'s skip, and the runtime does not have one. Until it has, a program that
