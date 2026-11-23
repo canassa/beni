@@ -6,8 +6,8 @@ per `For`, whose read set is the write-set pass's edge of the `For`, calls `Inli
 rows matched by key and rank, every row's `set` run, LIS moves, and the focused row held in
 place. Row events go through the dispatcher with the message kept at `set`. A `For` may also
 stand before sibling elements, nest in a row, and rows may mix text holes and elements. Spec:
-`browser-inline.md` §9's dated note. 46 `browser/tea` pages copied to `browser/inline`
-(30 with the same transcript, 16 with one listed difference in a header comment), four new
+`browser-inline.md` §9's dated note. 44 `browser/tea` pages copied to `browser/inline`
+(28 with the same transcript, 16 with one listed difference in a header comment), four new
 pages, nine refusals, one release golden. The inline sweep of the 357 tea/dom pages went from
 60 (64 counting project sources found by `find`) to 108. Runtime: `forRows` 396 B brotli in a page.
 
