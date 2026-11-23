@@ -2945,6 +2945,17 @@ fn effectParts(a: *const Writes, t: u32, which: Marker) ?[]const u32 {
     return a.terms.words.items[start .. start + a.termLen(t) - 2];
 }
 
+/// Whether `t` is an effect term of kind `which`, or alternatives each of
+/// which is one; ⊥ is not.
+fn allEffect(a: *const Writes, t: u32, which: Marker) bool {
+    if (a.effectParts(t, which) != null) return true;
+    if (a.termTag(t) != .alt or a.altLen(t) == 0) return false;
+    for (0..a.altLen(t)) |i| {
+        if (!a.allEffect(a.altItem(t, @intCast(i)).term, which)) return false;
+    }
+    return true;
+}
+
 /// A list of effect terms of kind `which` joined into one, or null when
 /// the list is not a literal of them.
 fn effectConcat(a: *Writes, list: u32, which: Marker) Error!?u32 {
@@ -2952,6 +2963,26 @@ fn effectConcat(a: *Writes, list: u32, which: Marker) Error!?u32 {
     // with no elements, is unknown (browser-inline.md §4, amended 2026-11-23).
     if (a.termTag(list) == .lst and a.lstElems(list) == 0 and a.termWord(list, 1) == none and
         @as(Edit, @fromBackingInt(a.termWord(list, 2))) == .clear) return try a.effectTerm(which, &.{});
+    // `List.map`'s list of commands (`applyRow`): every element's command,
+    // its alternatives' bodies joined, and the reads of the list it walked
+    // skipped. It has an element at `*`, the callback's command, so a list
+    // that summary substitution lost, `replaced` with none, stays unread
+    // (browser-inline.md §4, amended 2026-11-23, #2641).
+    if (which == .cmd and a.termTag(list) == .lst and a.termWord(list, 1) == none and
+        @as(Edit, @fromBackingInt(a.termWord(list, 2))) == .replaced)
+    {
+        var parts: std.ArrayList(u32) = .empty;
+        var mapped = false;
+        for (0..a.lstElems(list)) |i| {
+            const e = a.lstElem(list, @intCast(i));
+            if (e.eps == none and a.termTag(e.term) == .fresh) continue;
+            if (e.index != sym_star or !a.allEffect(e.term, .cmd)) return null;
+            if (!try a.commandParts(e.term, &parts)) return null;
+            mapped = true;
+        }
+        if (!mapped) return null;
+        return try a.effectTerm(which, parts.items);
+    }
     if (a.termTag(list) != .lst_lit) return null;
     var parts: std.ArrayList(u32) = .empty;
     var i: u32 = 1;
@@ -4517,6 +4548,19 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
             const fun = args[args.len - 1];
             const eps = try a.mintEps(xs);
             const r = try a.apply(fun, &.{try a.mkSame(eps)}, g);
+            // A list of commands, one for each element (`Cmd.batch (List.map
+            // xs λx → Cmd.perform …)`): a list built afresh whose every
+            // element is the callback's command, which is all `Cmd.batch`
+            // needs, and which reads what `xs` reads, as `readsOf` keeps it
+            // (browser-inline.md §4, amended 2026-11-23, #2641).
+            if (row == .map and a.allEffect(r, .cmd)) {
+                // As `freshCall` notes it: the list a key reads of its message.
+                if (a.ctx.mode == .key) try a.noteMu(xs);
+                var elems: std.ArrayList(Elem) = .empty;
+                try elems.append(a.arena(), .{ .index = sym_star, .eps = eps, .term = r });
+                try elems.appendSlice(a.arena(), try a.readsOf(xs, &.{xs}));
+                return a.mkLst(none, .replaced, none, none, elems.items);
+            }
             const p = a.listBase(xs) orelse return a.freshCall(args);
             if (a.isIdentity(r, eps)) return xs;
             const index = if (row == .map) sym_star else try a.argSym(m, site, 1, args[1]);
