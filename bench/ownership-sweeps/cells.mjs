@@ -1212,6 +1212,11 @@ const RUNON_WRITERS = {
 const RUNON_WRITER_FIBER = ['_ = Task.spawn λ⊤ →', '    Task.sleep (Duration.millis 1)', '    bump r'];
 const RUNON_READ_LATER = ['    Task.sleep (Duration.millis 5)', '    Log.info (ints (Ref.get r))'];
 const RUNON_THROWS = (push) => ['Ref.update r λl →', `    l2 = ${push}`, '    n = deep 0', '    if n > 0 then l2 else l2'];
+// A shape in a fiber of its own, with a cell `q` of its own: `work` is handed to `Cmd.perform`,
+// which runs it where no rule follows it, so `work` itself may host no reader or writer.
+const held = (lines) => ['_ = Task.spawn λ⊤ →', '    q = Ref.make [ 1, 2 ]', ...lines.map((x) => '    ' + x.replace(/\br\b/g, 'q'))];
+const RUNON_READER = ['rd = λ⊤ →', ...RUNON_READ_LATER.map((x) => x.trim()).map((x) => '    ' + x)];
+const RUNON_WRITER = ['rd = λ⊤ →', '    Task.sleep (Duration.millis 5)', '    Ref.update r λl → List.push l 7', '    Log.info (ints (Ref.get r))'];
 const RUNON_FRAMES = {
   selfMask: () => [...RUNON_WRITER_FIBER, 'Task.uninterruptible λ⊤ →', ...RUNON_READ_LATER],
   afterMask: () => [...RUNON_WRITER_FIBER, 'Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 5)', 'Log.info (ints (Ref.get r))'],
@@ -1232,7 +1237,83 @@ const RUNON_FRAMES = {
   afterLend: (push) => ['Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)', '_ = Task.spawnDetached λ⊤ →', ...RUNON_READ_LATER, ...RUNON_THROWS(push)],
   afterLendBefore: (push) => ['_ = Task.spawnDetached λ⊤ →', ...RUNON_READ_LATER, 'Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)],
   callerPaused: () => ['Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)', 'detachedThenThrow ⊤'],
+  // #2622: a reader or a writer that `Task.spawn` registered goes on to a holder that does not fork
+  // it: a helper that keeps it in a list a masked fiber runs (`stashRead`, `stashWrite`), a list
+  // (`dataRead`), a list run masked (`maskListRead`), a record (`boxRead`), a wrapper a callee answers
+  // (`wrapRead`), the same holder under two chains, one that runs it within and one that keeps it
+  // (`memoRead`); and a function in which a writer fiber runs, answered by a wrapper the frame masks
+  // (`wrapHost`, bound first, `wrapHostLocal`, a wrapper of a wrapper, `wrapHostTwice`, a local
+  // wrapper, `wrapHostLambda`, a mask that is a function value, `wrapHostApplied`).
+  stashRead: (push) => held([...RUNON_READER, '_ = Task.spawn rd', 'stash rd', 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)]),
+  stashWrite: (push) => held([...RUNON_WRITER, '_ = Task.spawn rd', 'stash rd', 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)]),
+  dataRead: (push) => held([...RUNON_READER, '_ = Task.spawn rd', 'fs = [ rd ]', '_ = Task.spawn λ⊤ → Task.uninterruptible λ⊤ → List.foldl fs ⊤ λh _ → h ⊤', 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)]),
+  maskListRead: (push) => held([...RUNON_READER, '_ = Task.spawn rd', '_ = Task.spawn λ⊤ → Task.uninterruptible λ⊤ → List.foldl [ rd ] ⊤ λh _ → h ⊤', 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)]),
+  boxRead: (push) => held([...RUNON_READER, '_ = Task.spawn rd', 'bx = box rd', '_ = Task.spawn λ⊤ → Task.uninterruptible bx.f', 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)]),
+  wrapRead: (push) => held([...RUNON_READER, '_ = Task.spawn rd', 'w = wrap rd', '_ = Task.spawn λ⊤ → Task.uninterruptible w', 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)]),
+  memoRead: (push) => held([...RUNON_READER, 'x = λ⊤ →', '    _ = Task.spawn rd', '    ⊤', 'a = λ⊤ → x ⊤', 'b = λ⊤ → wrap x', 't = λ⊤ →', '    a ⊤', '    b ⊤', 'lt = λ⊤ → t ⊤', 'w = lt ⊤', 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push), 'Task.withScheduler sc w']),
+  wrapHost: () => ['Task.uninterruptible (wrap hosting)'],
+  wrapHostLocal: () => ['w = wrap hosting', 'Task.uninterruptible w'],
+  wrapHostTwice: () => ['Task.uninterruptible (hwrap hosting)'],
+  wrapHostLambda: () => ['lw = λg → λ⊤ → g ⊤', 'Task.uninterruptible (lw hosting)'],
+  wrapHostApplied: () => ['apply2 Task.uninterruptible (wrap hosting)'],
+  // A helper that runs its function parameter after a call that lends the fiber to another scheduler
+  // (`lendThenHost`), or runs two function parameters, the first of which lends it (`twoCallsHost`):
+  // a function in which a reader runs goes on on that scheduler's drain and throws there.
+  lendThenHost: () => ['_ = Task.spawn λ⊤ → lendThen sc detachedThenThrow', 'Task.sleep (Duration.millis 50)'],
+  twoCallsHost: () => ['_ = Task.spawn λ⊤ → twoCalls (λ⊤ → Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)) detachedThenThrow', 'Task.sleep (Duration.millis 50)'],
+  // The same after a list of functions a callback runs (`listThenHost`), and a fiber that runs a
+  // captured function that lends it and then a captured hosting one (`capturedThenHost`): the lane's
+  // reviewer.
+  listThenHost: () => ['_ = Task.spawn λ⊤ → runThenG [ λ⊤ → Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1) ] detachedThenThrow', 'Task.sleep (Duration.millis 50)'],
+  capturedThenHost: () => ['lend = λ⊤ → Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)', 'h = λ⊤ → detachedThenThrow ⊤', '_ = Task.spawn λ⊤ →', '    lend ⊤', '    h ⊤', 'Task.sleep (Duration.millis 50)'],
 };
+const RUNON_HELD_DEFS = `
+
+stash : (⊤ → ⊤) → ⊤
+stash g =
+    fs = [ g ]
+    _ = Task.spawn λ⊤ → Task.uninterruptible λ⊤ → List.foldl fs ⊤ λh _ → h ⊤
+    ⊤
+
+
+wrap : (⊤ → ⊤) → (⊤ → ⊤)
+wrap g = λ⊤ → g ⊤
+
+
+hwrap : (⊤ → ⊤) → (⊤ → ⊤)
+hwrap g = wrap λ⊤ → g ⊤
+
+
+apply2 : ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → ⊤
+apply2 g x = g x
+
+
+type alias Box =
+    { f : ⊤ → ⊤ }
+
+
+box : (⊤ → ⊤) → Box
+box g = { f = g }
+
+
+lendThen : Scheduler, (⊤ → ⊤) → ⊤
+lendThen s g =
+    Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)
+    g ⊤
+
+
+twoCalls : (⊤ → ⊤), (⊤ → ⊤) → ⊤
+twoCalls f g =
+    f ⊤
+    g ⊤
+
+
+runThenG : List (⊤ → ⊤), (⊤ → ⊤) → ⊤
+runThenG fs g =
+    List.foldl fs ⊤ λh _ → h ⊤
+    g ⊤
+`;
+const RUNON_HELD = ['stashRead', 'stashWrite', 'dataRead', 'maskListRead', 'boxRead', 'wrapRead', 'memoRead', 'wrapHost', 'wrapHostLocal', 'wrapHostTwice', 'wrapHostLambda', 'wrapHostApplied', 'lendThenHost', 'twoCallsHost', 'listThenHost', 'capturedThenHost'];
 
 function genRunOn(other, writer, live) {
   const push = live ? 'List.push l 5' : 'List.push (List.copy l) 5';
@@ -1299,7 +1380,7 @@ hosting ⊤ =
         bump r
     Task.sleep (Duration.millis 5)
     Log.info (ints (Ref.get r))
-
+${RUNON_HELD.includes(writer) ? RUNON_HELD_DEFS : ''}
 
 work : (Msg → ⊤) → ⊤
 work send =
