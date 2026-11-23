@@ -496,46 +496,63 @@ beni over `Js` in `Inline.beni`:
   entered once per call, and a memo node per call is not built. A `view` whose body past its
   `let`s is an `if` or a `case` (`Program.view_branch`), a call (`page shown`) or a markup value
   stays class 1 (`browser/tea/RootSelector`, `TemplateRootLets`, `TemplateRootValue`).
-- **A branch region** (*amended 2026-11-23, #966*). A `view` whose body past its `let`s is an `if`
-  or a `case` (`Program.view_branch`), and an `html` hole of the `view`'s own markup whose value is
-  an `if` or a `case` that is not an eager `when` (its arms read what the branch binds, or have
-  `let`s, or are a helper's call), is a **branch region**: what `browser-tea` does for it, a
-  switch tearing the shown arm down and making the other, compiled.
+- **A branch region** (*amended 2026-11-23, #966*). A `view` whose body past its `let`s is an `if`,
+  a `case` or a call of a function whose body is markup (`Program.view_branch`), and an `html` hole
+  of the `view`'s own markup whose value is an `if` or a `case` that is not an eager `when` (its
+  arms read what the branch binds, have `let`s a hole reads, or call a helper), is a **branch
+  region**: what `browser-tea` does for it, a switch tearing the shown arm down and making the
+  other, compiled. At the mount node, a branch whose arms would be eager `when`s is a region too:
+  several eager arms there would be several top-level nodes.
   - **One mount unit per arm.** Each arm whose result is one element written in place, or a call
     of a function of the program's module whose body is one element (`Arm.What.call`), is a
     template of its own, written as a `For`'s row is (§9, amended 2026-11-23): its HTML parsed
     once, a `make` that clones it, finds its elements and wires its events, and a `set` that
-    writes its holes. An arm that is `<></>`, or that no value takes (`Arm.dead`), has no unit.
+    writes its holes. An arm that is `<></>`, that no value takes (`Arm.dead`), or that never
+    returns (`Arm.never`, `Debug.todo`: the choice throws as `browser-tea`'s render does) has no
+    unit.
   - **One binding entry** in the read set of the whole branch value — the scrutinee and every
     arm's values, handlers included (`programHole`'s group of the hole, the root group for a
     `view`'s body) — evaluates the value once (`programBranchChoose`), binds the arm it takes
-    (`programBranchBind`), evaluates every value of that arm, and only then hands the runtime's
-    `armShown` the arm's number, its `make` and its `set`. When the number is not the one shown,
-    `armShown` removes the shown arm's node and puts the new arm's made node where the region
-    stands — before the element after its hole, or at its parent's end, which is why a region
-    must be followed by an element or by nothing — then calls `set`. The region's state, made
-    at the mount by `region`, `own`s the arm shown, which `stop` removes. So a pass that writes the scrutinee and a value of the new arm writes the new
-    arm once, with fresh nodes, from the model the pass holds; a pass that writes only a value of
-    the shown arm writes it in place. No arm is skipped because a value is `===` the last one
-    (rule 8): every write of `set` compares with what the node shows, as a row's does.
+    (`programBranchBind`), evaluates every value of that arm, chooses the arm of each branch
+    inside it the same way, and only then hands the runtime's `armShown` the arm's number, its
+    `make` and its `set`. When the number is not the one shown, `armShown` removes the shown
+    arm's node and puts the new arm's made node where the region stands — before the element
+    after its hole, or at its parent's end, which is why a region must be followed by an element
+    or by nothing — then calls `set`. The region's state is made at the mount by `region`; one
+    at the mount node `own`s the arm shown, which `stop` removes, and one in an element goes with
+    it. So a pass that writes the scrutinee and a value of the new arm writes the new arm once,
+    with fresh nodes, from the model the pass holds; a pass that writes only a value of the shown
+    arm writes it in place. No arm is skipped because a value is `===` the last one (rule 8):
+    every write of `set` compares with what the node shows, as a row's does. The entry is coarser
+    than the holes of an arm: a write any arm reads runs `set` of the arm shown.
   - **The entry is guarded by the arm:** only the arm the value takes is evaluated and written; an
     arm not shown holds no node and evaluates nothing (#459).
+  - **A branch in an arm** is a region of the arm's unit, its state kept on the unit's row, its
+    arm chosen and its values evaluated with the outer arm's, before anything is shown.
   - **Events are wired at each swap**, by `make`, and go through the dispatcher with the message
     `set` last kept (§9's rows): a listener of an arm a dispatch tore down, which the same event
     reaches as it bubbles, sends the message that arm last showed, as Elm and `browser-tea` do
-    (`browser/tea/DetachedArmEvent`).
-  - The region's arm values are the arm's; the `view`'s `let`s are bound as the entry enters the
-    `view` (`programViewEnter`), so a `let` of a `view` whose body is a branch is evaluated once
-    per pass of the region's entry. `Lower` refuses one that may have an effect
-    (`effectfulBranchViewLet`).
-  - **What stays refused** (class 1, at the hole or the `view`): a branch whose value may have an
-    effect (`Branch.effect`), which `browser-tea` evaluates at every render and the region at a
-    pass of its read set; an arm that is a markup value (`Arm.What.value`), more than one node,
-    or has `let`s no hole reads (`Arm.statements`); in an arm, what a `For`'s row refuses (§9:
-    a helper's markup, a component, a `Show`, a hole of markup — a branch in an arm — and an
-    attribute that is not a property); a region inside an eager arm, a helper's markup or another
-    module's markup; a region in an element after which stands anything but an element or the
-    element's end; and a region on a page that prerenders.
+    (`browser/tea/DetachedArmEvent`). A control in an arm is written back by every key, as a
+    row's is (§8.3).
+  - **`let`s.** A `let` of the `view`'s markup root that a region reads — through its value or an
+    arm's — is a memo node, as one an event reads is: computed in a pass that writes what it
+    reads, not in every pass of the region. The `let`s of a `view` whose body is a branch are
+    bound as the entry enters the `view` (`programViewEnter`), once per pass of the entry, and
+    `Lower` refuses one that may have an effect (`effectfulBranchViewLet`); its statements run in
+    their own entry, as a `view` with `let`s' do. An arm's own `let`s are evaluated with its
+    values. On `browser-tea`, which renders the whole `view` per message, a `let` with a
+    `Debug.log` logs at every render; here it logs when what it reads is written, a difference of
+    when, not of what (`browser/inline/ArmLetOnce`, `LetInMarkup`).
+  - **What stays refused** (class 1, at the hole or the `view`): a branch whose choice of arm may
+    have an effect (`Branch.selector_effect`, version 1.31), which `browser-tea` evaluates at
+    every render and the region at a pass of its read set; an arm that is any other markup value
+    (`Arm.What.value`), more than one node, or has `let`s no hole reads (`Arm.statements`); in an
+    arm, what a `For`'s row refuses (§9: a helper's markup, a component, a `Show`, an attribute
+    that is not a property); a branch in a `For`'s row; a region inside an eager arm, a helper's
+    markup or another module's markup; a region followed by anything but an element or its
+    element's end, or in a control whose value changes; and a region on a page that prerenders.
+    `build/bad/inline/Region*/`, `build/bad/prerender/ViewBranch/`; the pages are
+    `browser/inline/Region*` and the `browser/tea` pages copied beside them.
 - **Evaluation order** (*added 2026-10-19, the review of #398*). A binding function evaluates, per
   context: first the `let`s it reads; then every value that may throw — a hole's or an attribute's
   value, or a `when`'s branch value, holding any call that is not a basic operator

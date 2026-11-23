@@ -1,0 +1,21 @@
+-- load
+console.log: view: 0
+<body>
+  <section>
+    <button id="b">"0"</button>
+  </section>
+</body>
+-- click #b
+console.log: view: 1
+<body>
+  <section>
+    <button id="b">"1"</button>
+  </section>
+</body>
+-- click #b
+console.log: view: 2
+<body>
+  <main>
+    <p>"2"</p>
+  </main>
+</body>
