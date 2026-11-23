@@ -1,0 +1,33 @@
+-- A keyed command is not compiled on `browser-inline` yet
+-- (browser-inline.md §4, amended 2026-11-23): its policies need a table
+-- of the bodies running under each key, which the runtime does not have.
+-- The refusal names `Cmd.keyed`, class 4 (§5).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Got Int
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n, Cmd.keyed "go" Cmd.Restart λsend → send (Got 1) )
+
+        Got k →
+            ( n + k, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><button onClick={Go}>go</button><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

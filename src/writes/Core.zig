@@ -81,7 +81,9 @@ pub const Row = enum {
     /// A promise this document made (§5.4 item 3). Pinned:
     /// `run/WriteRowsIdentity` ("Debug.log").
     debug_log,
-    /// `Debug.todo`: never returns.
+    /// `Debug.todo`: never returns, so ⊥ — no value, no write and no
+    /// command (write-sets.md §3.7, amended 2026-11-23). Pinned:
+    /// `browser/inline/DefectInUpdate`.
     debug_todo,
     /// `List.foldl`, `foldr`: `Fresh`, except a fold whose accumulator is
     /// a dictionary its callback edits (write-sets.md, amended 2026-10-25).
@@ -109,6 +111,15 @@ pub const Row = enum {
     /// Pinned: `browser/inline/LogScopeInUpdate`, `CommandInLogScope` and
     /// its Async/Record/Swapped variants (`browser-capability-base.md` §4.2).
     log_scope,
+    /// `Task.bracket acquire release use`: `use (acquire ⊤)` itself; and
+    /// `Task.onExit work cleanup`: `work ⊤` itself. Each answers what its
+    /// use or its work answers, or does not return (`core/Task.beni`,
+    /// `bracket`, `onExit`). The release and the cleanup answer `⊤`: they
+    /// are walked for what they read, and their answer is dropped
+    /// (write-sets.md §3.7, amended 2026-11-23). Pinned:
+    /// `run/WriteRowsBracket`, `browser/inline/UpdateBracketAfterBodyEnds`.
+    task_bracket,
+    task_on_exit,
     /// A value nothing relates to the old model: the scalars and the other
     /// folds of `List`, every other `Dict` and every `Set` function,
     /// `Basics`, `Int`, `Float`, `String`, `Char`, `Cmd`, `Sub`, `Task`, `Js`.
@@ -211,6 +222,10 @@ pub fn row(module: []const u8, name: []const u8) ?Row {
         for ([_][]const u8{ "annotate", "span", "minimum", "withSink" }) |n| if (std.mem.eql(u8, n, name)) return .log_scope;
         return null;
     }
+    if (std.mem.eql(u8, module, "Task")) {
+        if (std.mem.eql(u8, name, "bracket")) return .task_bracket;
+        if (std.mem.eql(u8, name, "onExit")) return .task_on_exit;
+    }
     for (bodied) |b| if (std.mem.eql(u8, b[0], module) and std.mem.eql(u8, b[1], name)) return null;
     for (fresh_modules) |m| if (std.mem.eql(u8, m, module)) return .fresh;
     return null;
@@ -223,6 +238,9 @@ test "rows" {
     try std.testing.expectEqual(Row.debug_log, row("Debug", "log").?);
     try std.testing.expectEqual(Row.log_scope, row("Log", "annotate").?);
     try std.testing.expectEqual(@as(?Row, null), row("Log", "info"));
+    try std.testing.expectEqual(Row.task_bracket, row("Task", "bracket").?);
+    try std.testing.expectEqual(Row.task_on_exit, row("Task", "onExit").?);
+    try std.testing.expectEqual(Row.fresh, row("Task", "spawn").?);
     try std.testing.expectEqual(@as(?Row, null), row("Basics", "identity"));
     try std.testing.expectEqual(@as(?Row, null), row("Maybe", "map"));
     try std.testing.expectEqual(Row.dict_insert, row("Dict", "insert").?);

@@ -2771,8 +2771,11 @@ const Page = struct {
             .runs, .suspends => return true,
             else => return cx.programReport(if (key == null) .init else .update, .not_implemented,
                 \\A limit of the compiler: the write-set pass could not read this command as
-                \\`Cmd.none`, `Cmd.batch` or `Cmd.perform` (`docs/design/browser-inline.md` §4; §5,
-                \\class 4). Write the command where `update` returns it, with those three.
+                \\`Cmd.none`, `Cmd.batch`, `Cmd.perform` or `Cmd.afterRender`, and `browser-inline`
+                \\does not compile `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` or `Cmd.map` yet
+                \\(`docs/design/browser-inline.md` §4; §5, class 4). Write the command where `update`
+                \\returns it, with those four, or build this program with `--platform=browser-tea`,
+                \\which compiles it.
             ),
         }
     }

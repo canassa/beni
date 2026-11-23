@@ -123,6 +123,26 @@ written inside the dispatch, so nothing is left to patch. `Dom.rendered` in a fi
 scheduler's drain that runs it, and with it the dispatch, has returned. A prerendered `init` may
 return it, staged as a `perform` is (§4.2 of the base design).
 
+*Amended 2026-11-23 (#966): three more commands are read; keyed ones are not compiled yet.* The
+`browser/tea` pages whose `update` stops at this refusal were of four shapes. Three are read now
+(`write-sets.md`, amended 2026-11-23):
+
+- **An arm that never returns** — `Debug.todo`, alone or under `Log.annotate` or `Task.bracket` —
+  has no command and writes nothing: ⊥ joins as nothing, so the key's command is its other arms'.
+  Its handler calls the arm, which throws, and the defect stops the page (§6).
+- **An arm inside `Task.bracket` or `Task.onExit`** has the command, and the writes, of its use or
+  its work, which the bracket answers.
+- **A `Cmd.batch` of a `List.map` whose callback makes a command** is the callback's command for
+  every element: its bodies run, one per element, in the list's order, and the class (§4's three)
+  is the callback's, over any list, the model's too. A batch built any other way — a fold,
+  `indexedMap`, `concatMap` — stays refused, class 4.
+
+The fourth is `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cmd.map`. A keyed command needs a
+table of the bodies running under each key, with `Restart`'s cancel-and-wait, `Queue`'s wait and
+`Ignore`'s skip, which the runtime does not have; until it does, a program that makes one is
+refused, class 4, and the message names them, with `--platform=browser-tea` as the build that
+compiles it.
+
 ## 5. What the lowering refuses
 
 *Amended 2026-11-10 (the owner).* A subscription may drop its value with a tagger

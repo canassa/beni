@@ -1,0 +1,34 @@
+-- load
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <p id="ticks">"0"</p>
+    <button id="boom">"boom"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <p id="ticks">"0"</p>
+    <button id="boom">"boom"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- advance 100
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <p id="ticks">"1"</p>
+    <button id="boom">"boom"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- throws click #boom
+(threw: Error: TODO: update threw)
+(the DOM did not change)
+-- click #inc
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

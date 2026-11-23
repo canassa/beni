@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <p id="n">"0"</p>
+    <button id="go">"go"</button>
+    <input id="target" .value="">
+  </main>
+</body>
+-- throws click #go
+console.info: the body, after the focus {"request":"r1"}
+(threw: Error: TODO: Boom's update threw)
+<body>
+  <main>
+    <p id="n">"1"</p>
+    <button id="go">"go"</button>
+    <input id="target" .value="" :focus>
+  </main>
+</body>
