@@ -1,0 +1,18 @@
+click #push
+location
+click #away
+location
+click #replace
+location
+click #bad
+location
+click #none
+location
+click #script
+location
+click #load
+location
+click #reload
+location
+back
+location

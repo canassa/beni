@@ -1,8 +1,9 @@
--- `CounterMsg` wraps `Counter`'s message beside an `Int`. A handler takes
--- the fields of the key's leaf constructor, `Inc`'s, and no message, so
--- the branch that binds the `Int` has nothing to read it from
--- (docs/design/browser-inline.md §8.4): a limit, class 4 (§5), reported at
--- the `case`.
+-- `CounterMsg` wraps `Counter`'s message beside an `Int`. The key
+-- `CounterMsg#1 · Inc` passes `CounterMsg`, a constructor of two fields, so
+-- its handler takes the message whole (docs/design/browser-inline.md §8.4,
+-- §8.7, amended 2026-11-23), and the branch that binds the `Int` reads it
+-- from the message. It was a limit of the compiler before; each button
+-- sends its own `Int`, which the page shows beside the count.
 import Browser
 import Counter
 import Html exposing (Html)
@@ -29,6 +30,7 @@ view : Model → Html Msg
 view model =
     <div data-role="app">
         <output>{model.c.count}</output>
+        <span data-role="by">{model.by}</span>
         <button data-role="inc" onClick={CounterMsg 1 Counter.Inc}>+</button>
         <button data-role="dec" onClick={CounterMsg 2 Counter.Dec}>-</button>
     </div>

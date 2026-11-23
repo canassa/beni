@@ -1019,6 +1019,8 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   ordinary code, with the message built from the key's fields where it is read (D-e), not a
   refusal. Only a message wrapped in a constructor whose other fields the handler is not handed
   is still a limit of the compiler (`ArmWideWrapper/`); `deep_split` is no longer a refusal.
+  *Amended 2026-11-23 (#2640):* no longer a limit; such a key's handler takes the message, and
+  the arm reads its parts from it (§8.7, the amendment of that date).
 - **A cross-module reader** (D-c) — `W2.view` reading `W1.Model` — is a binding piece of `W2`
   whose groups `W1`'s keys reach: the handler of each such key calls it in its write pass, from the
   program site, by name. There is no registration at mount and no rule about which widget is above
@@ -1979,6 +1981,40 @@ event (`PieceEventArgs/`) stays.
 
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.
+
+*Amended 2026-11-23 (#2640, part of #966): a key whose path passes a wide constructor, a record or
+a tuple takes the message.* The fields of a key's leaf constructor make the message again only
+through constructors of one field each: `Progressed#1 · Sending` hands its handler `Sending`'s
+record, and `Progressed`'s first field, the tracker's name, is not among them. So such an arm,
+which reads that field or the message whole, was a limit of the compiler, class 4, at the read
+(13 `browser/tea` pages stopped there: `HttpTrack`, `ListenerOrder`, `SyncCommandOrder`, …). Now
+a key whose path, from the message's root to the place its last step splits, passes a constructor
+of more than one field (or of none), a record field or a tuple component **takes the message
+itself** (`Program.Key.message`, interface 1.35; its `fields` is one), decided when the program
+is built from the key's steps alone (`Emit.keyTakesMessage`):
+
+- **Every sender hands it the message.** The dispatcher hands it the message it reads the tags
+  of (`programDispatch`), and an event whose handler value is constructors applied
+  (`onClick={Got "a" 1 (Ok 10)}`) hands it the value they make (`programMessageFields`), where
+  it would hand the leaf's fields. A subscription's tagger never reaches such a key directly: a
+  key that splits a tagger's payload is §3's class-4 limit, or reaches its key through the
+  dispatcher. An index of a list edit read from the message (`IndexRecipe.message`) is not
+  evaluated for such a key, so the edit visits every row, as for any index the handler cannot
+  read.
+- **The arm reads each part from it.** The arm is still `update`'s body written in place, its
+  `case`s taking the branches the key's steps name (§8.4, *Arms*); a local that holds a part of
+  the message, the leaf's fields, and a part read whole are reads of the message along the key's
+  path (`dispatchSubject`). Nothing is rebuilt, so no field can be lost or swapped.
+- **Pay for what you use.** A key whose path passes only constructors of one field keeps its
+  leaf's fields, so every page that built before builds to the same bytes. A key that takes the
+  message costs its senders the message they make, and its arm one property read per step.
+
+What stays refused: a `update` that splits one message at two places side by side (§8.4), and a
+`*` key (§5): `browser/tea/ConcurrentJobs` and `UrlAddress`, whose `update` is a lambda that
+matches its parameter, stop at the `*` refusal now. Pages: `browser/inline/MessageWhole` (a wide
+constructor, three levels, a record, a tuple, a default step, a command's message and one the
+model holds; its transcript is `browser-tea`'s but for an empty text node) and the eleven `browser/tea` pages it compiles;
+`ArmWideWrapper` builds and moved from `build/bad/inline/` to `browser/inline/`.
 
 ### 8.8 Release
 
