@@ -1,0 +1,17 @@
+# The fallbacks read the model.
+click #bump
+# A user: the bodies, made.
+click #next
+input #by-key "typed"
+# The same id: the body is kept, with its text; its holes are written.
+click #rename
+click #inner
+input #by-value "two"
+# Another number: the body keyed by value is new, empty.
+click #bump
+# Another id: a new body, empty.
+click #next
+input #by-key "again"
+# The fallbacks, then a user again: a new body.
+click #clear
+click #next

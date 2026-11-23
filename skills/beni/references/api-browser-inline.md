@@ -58,6 +58,7 @@ module Inline
   value first : ⊤ → ⊤  -- impure
   value forRows : V, V, V, V, V, V → ⊤  -- impure
   value forTemplate : String → V  -- impure
+  value keyShown : V, V, V, V, V → ⊤  -- impure
   value listen : V, V, V → ⊤  -- impure
   value liveSet : V → V  -- impure
   value load : V, V, V, V → ⊤  -- impure

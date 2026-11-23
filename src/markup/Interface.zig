@@ -101,7 +101,10 @@ const std = @import("std");
 /// message from its root because its path passes a constructor of other
 /// than one field, a record or a tuple (`browser-inline.md` §8.4, amended
 /// 2026-11-23).
-pub const version: Version = .{ .major = 1, .minor = 35 };
+/// Version 1.36 adds `Context.programShowEffect`, `programShowFallbackIsText` and
+/// `programShowFallbackText`: a `Show`'s fallback written as `Html.text e`
+/// (`browser-inline.md` §8.2, amended 2026-11-23, *A `Show`*).
+pub const version: Version = .{ .major = 1, .minor = 36 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1893,6 +1896,28 @@ pub const Context = struct {
         return cx.vtable.program_show_fallback(cx.impl, node);
     }
 
+    /// 1.36: whether a `Show`'s fallback is a call of the markup primitive
+    /// `text` (`Html.text e`, `language.md` §11.13), whose argument
+    /// `programShowFallbackText` evaluates.
+    pub fn programShowFallbackIsText(cx: *Context, node: Node.Index) bool {
+        return cx.vtable.program_show_fallback_is_text(cx.impl, node);
+    }
+
+    /// 1.36: whether evaluating a `Show`'s `when`, or its key function, may
+    /// have an effect: what `Program.Branch.selector_effect` says of a
+    /// branch's choice of arm.
+    pub fn programShowEffect(cx: *Context, node: Node.Index) bool {
+        return cx.vtable.program_show_effect(cx.impl, node);
+    }
+
+    /// 1.36: the argument `e` of a `Show`'s fallback `Html.text e`
+    /// (`programShowFallbackIsText`), evaluated into `block` where the
+    /// `Show`'s root's values may be: the text the fallback shows. The
+    /// fallback's own value is never evaluated, so no markup value is made.
+    pub fn programShowFallbackText(cx: *Context, block: Block, node: Node.Index) Error!Expr {
+        return cx.vtable.program_show_fallback_text(cx.impl, block, node);
+    }
+
     /// 1.10: the inputs of root `r`, markup nested in a value of the root
     /// whose values are being evaluated (`programShowFallback`'s), read
     /// under the names their locals have there. Leave with
@@ -2196,6 +2221,9 @@ pub const VTable = struct {
     program_branch_bind: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32, from: Expr, made: bool) Error!void,
     program_branch_statements: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!void,
     program_show_fallback: *const fn (impl: *anyopaque, node: Node.Index) ?Root.Index,
+    program_show_fallback_is_text: *const fn (impl: *anyopaque, node: Node.Index) bool,
+    program_show_effect: *const fn (impl: *anyopaque, node: Node.Index) bool,
+    program_show_fallback_text: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
     program_nested_enter: *const fn (impl: *anyopaque, r: Root.Index) Error!void,
     program_branch_eager: *const fn (impl: *anyopaque, node: Node.Index, k: u32) Error!void,
     program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,

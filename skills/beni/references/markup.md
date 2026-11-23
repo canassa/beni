@@ -10,8 +10,7 @@ from the `html` platform (`api-html.md` lists all of it); the language knows non
   name (`mismatched_closing_tag` otherwise). `<p></p>` and `<p />` are the same.
 - `name="text"` is a string attribute. `name={expr}` is any typed value. A bare `name` is
   `name={True}`. Character references in text and quoted values are decoded.
-- Markup starts only where an operand starts: after `=`, `→`, `(`, `,`, in a hole, as an argument
-  in parentheses.
+- Markup starts only where an operand starts: after `=`, `→`, `(`, `,`, in a hole, as an argument in parentheses.
 - `value` on `<progress>`, `<meter>` and `<output>` takes a `String`. Use
   `String.fromInt` to show an integer value.
 - A child is text, a hole `{expr}`, or more markup. A hole holds a `String`, `Int`, `Float`,
@@ -244,6 +243,7 @@ and when a value that it reads changes. A pattern `let` must be pure and total.
 The body of `view`, a hole, or a helper body that a hole calls can be an `if` or a `case` of arms
 that are one element, `<></>` or a one-element helper call. Limits: a choice with an effect, an unused
 arm `let`, a `let` before a helper's branch, a branch in a `For` row or an eager arm, and text after it.
+A `Show` among the children of an element compiles: a lambda of one element, and a fallback of one element or `Html.text`.
 
 ## `For` on `browser-inline`
 

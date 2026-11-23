@@ -760,6 +760,41 @@ beni over `Js` in `Inline.beni`:
     *Amended 2026-11-23 (#2498):* a view helper whose body is the branch is not a region inside
     a helper's markup: the helper has no markup around the branch, and the region stands at the
     hole that calls it (§8.4, *A view helper whose body is a branch*).
+- **A `Show`** (*amended 2026-11-23, #2636, #966*; `language.md` §11.18). A `Show` among the
+  children of an element of the `view`'s own markup is a branch region of two arms — the
+  fallback, and the body with `v` bound — that also remounts the body when its key changes.
+  - **The arms.** The body is a `For`'s row with one item (§9, amended 2026-11-23): a lambda
+    whose result, past its `let`s, is one element written in place, planned as a row is (a `For`
+    in it, mixed text, its events and controls); its captures are evaluated where the `Show`
+    stands, and its values with `v` bound (`cx.rowValues`). The fallback is absent (nothing is
+    shown), one element written in place (`programShowFallback`, its values evaluated where the
+    `Show` stands), `<></>`, or `Html.text e` (`programShowFallbackText`, version 1.36): a text
+    node made with the arm, whose text is `e`, written by `text` as a text hole's is. Any other
+    body or fallback is a limit of the compiler (class 1).
+  - **One binding entry** in the `Show`'s read set — its `when`, its key function, its fallback
+    and its body, which the write-set pass records as one edge (`write-sets.md`, *a `Show`'s
+    arms*) — evaluates `when` once; on `Just v`, the key, `f v` or `v` itself, once, then every
+    value of the body; on `Nothing`, the fallback's. Only the arm taken is evaluated (#459), and
+    all of it before anything is shown, as a region's arm (*Evaluation order*). Then the runtime's
+    `keyShown(state, k, key, make, set)`: arm `k` — 0 the fallback, 1 the body — shown as
+    `armShown` shows it, and made afresh, the shown arm's node removed, when `key` is not `===` the
+    key the region last showed (`language.md` §11.18's remount: inputs' text, focus and scroll
+    are thrown away). The key is kept in a field of the region's state apart from the arm's
+    number, so no key value can be taken for an arm number. `set` runs at every pass of the
+    entry, kept or new: nothing is skipped because `v` is the same object (rule 8).
+  - **By identity** (`keyed`, `keyed={True}`), an item an arm wrote in place is the same object,
+    so the body is not remounted where `browser-tea` remounts it: the table of `language.md`
+    §11.18 read with §9's *Identity*, and the same listed difference as a `For` keyed by
+    reference. By key, the two agree.
+  - **What stays refused** (class 1, at the `Show`): a `Show` that is not among an element's
+    children in the `view`'s own markup — at the `view`'s top, in a fragment, in a `For`'s row, in
+    a region's arm, in a helper's or another module's markup; one followed by text, a hole or a
+    `For`, or inside a control whose value changes, as a region; one on a page that prerenders;
+    a `when` or a key function that may have an effect, which `browser-tea` evaluates at every
+    render (`programShowEffect`, version 1.36); a body that is not one element — a branch, a
+    named function — and a fallback that is any
+    other markup value. `build/bad/inline/Show*/`; pages `browser/inline/Show*` and the
+    `browser/tea` pages copied beside them.
 - **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
   markup type, and still compiles markup that a program holds in a name, passes or returns, when
   the compiler can see which root the name stands for. Such a name is a **name for a markup

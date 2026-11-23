@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 35 },
+    .targets = .{ .major = 1, .minor = 36 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -92,6 +92,10 @@ pub const lowering: m.Lowering = .{
         // set.
         .{ .name = "region", .arity = 3 },
         .{ .name = "armShown", .arity = 4 },
+        // `(state, k, key, make, set)`: `armShown` for a keyed `Show`,
+        // which remounts its body when the key changes (§8.2, amended
+        // 2026-11-23, *A `Show`*).
+        .{ .name = "keyShown", .arity = 5 },
         // `on` for a handler inside eager arms, apart so that a page with
         // none ships neither it nor its arm walk (#874).
         .{ .name = "onArm", .arity = 5 },
@@ -868,7 +872,10 @@ const RegionUse = struct {
     /// the body of the function it calls.
     /// `call`: the arm calls a function, whose body is another
     /// declaration; its arguments are the branch value's.
-    const Arm = struct { plan: *const RowPlan, root: m.Root.Index, call: bool = false };
+    /// A `Show`'s (§8.2, amended 2026-11-23, *A `Show`*): `body`, its body,
+    /// a row whose root is `root`; `text`, its fallback `Html.text e`, a
+    /// text node whose `root` is unused.
+    const Arm = struct { plan: *const RowPlan, root: m.Root.Index, call: bool = false, body: bool = false, text: bool = false };
 };
 
 /// A `For`'s row, planned before anything is written (§9, amended
@@ -1170,7 +1177,7 @@ const RowBuild = struct {
                 b.texts += 1;
             },
             .component => return later(cx, child, "a component in a `For` row"),
-            .show => return later(cx, child, "a `Show`"),
+            .show => return later(cx, child, "a `Show` in a `For` row or an arm of a branch"),
             else => return later(cx, child, "this markup in a `For` row"),
         };
         var el = base;
@@ -1796,6 +1803,7 @@ const Page = struct {
     /// branches' included, whose roots read the declaration's `let`s through
     /// their inputs. A call arm's body is another declaration's.
     fn regionReads(pg: *Page, node: m.Node.Index, arms: []const ?RegionUse.Arm, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        if (node != .none and pg.tree.kind(node) == .show) return pg.showReads(node, out);
         if (node != .none) try out.append(pg.a(), pg.tree.hole(node).value);
         for (arms) |x| {
             const arm = x orelse continue;
@@ -1814,6 +1822,7 @@ const Page = struct {
         const js = cx.js;
         const w = pg.writes.items[wi];
         const u = &pg.regions.items[w.what.region];
+        if (u.node != .none and pg.tree.kind(u.node) == .show) return pg.writeShow(blk, w, u);
         var reads: std.ArrayList(m.Value.Index) = .empty;
         try pg.writeReads(w, &reads);
         const entered = try pg.enter(blk, w.ctx, null, reads.items);
@@ -1968,7 +1977,7 @@ const Page = struct {
             },
             .component => return later(pg.cx, n, "a component"),
             .for_ => return later(pg.cx, n, "a `For` that is not the only child of its element"),
-            .show => return later(pg.cx, n, "a `Show`"),
+            .show => return later(pg.cx, n, "a `Show` that is not among the children of an element"),
             else => return later(pg.cx, n, "this markup"),
         }
     }
@@ -2067,6 +2076,20 @@ const Page = struct {
             // element after it, or at its parent's end.
             if (tree.kind(child) == .for_) {
                 try pg.forChild(child, target, ctx, inner, try forEnd(pg, e, children, ci, pg.count));
+                continue;
+            }
+            // A `Show`: a branch region of two arms, where a region would
+            // stand (§8.2, amended 2026-11-23, *A `Show`*).
+            if (tree.kind(child) == .show) {
+                const at: RegionAt = if (pg.under_control != 0)
+                    .{ .refused = "a `Show` inside a control whose value changes" }
+                else if (ci + 1 == children.len)
+                    .{ .at = .{ .parent = target, .at_mount = false, .next = false } }
+                else if (tree.kind(children[ci + 1]) == .element)
+                    .{ .at = .{ .parent = target, .at_mount = false, .next = true } }
+                else
+                    .{ .refused = "a `Show` followed by text, a hole or a `For` in its element" };
+                try pg.show(child, ctx, at, inner);
                 continue;
             }
             if (tree.kind(child) == .hole) {
@@ -2346,6 +2369,148 @@ const Page = struct {
         if (facts.group == std.math.maxInt(u32)) return pg.regionLimit(n, "the write-set pass did not reach this branch on the `view`'s call path, so `browser-inline` cannot say which messages change it");
         try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null });
         try pg.writes.append(pg.a(), .{ .target = place.parent, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .region = @intCast(pg.regions.items.len - 1) } });
+    }
+
+    /// A `Show` (§8.2, amended 2026-11-23, *A `Show`*), standing where `at`
+    /// says, in context `ctx`: a branch region whose arm 0 is its fallback
+    /// and arm 1 its body, a row of one item; one write, in the `Show`'s
+    /// read set, which the write-set pass records as one edge.
+    fn show(pg: *Page, n: m.Node.Index, ctx: u32, at: RegionAt, scope: parser.Scope) m.Error!void {
+        const cx = pg.cx;
+        const tree = pg.tree;
+        const place = switch (at) {
+            .refused => |why| return later(cx, n, why),
+            .at => |x| x,
+        };
+        if (pg.piece) return later(cx, n, "a `Show` in another module's markup");
+        if (!pg.bareChain(ctx)) return later(cx, n, "a `Show` inside an `if` or a `case` written eagerly or a helper's markup");
+        if (cx.build.prerender != .none) return later(cx, n, "a `Show` on a page that prerenders");
+        const s = tree.show(n);
+        const effect = "a `Show` whose `when` or key function may have an effect, which `browser-tea` evaluates at every render,";
+        if (cx.programShowEffect(n)) return later(cx, n, effect);
+        // The body: a lambda whose result is one element, planned as a row.
+        const row = tree.row(s.body);
+        if (row.kind != .markup) return later(cx, n, "a `Show` whose body is not a lambda whose result is one element written in place");
+        const top = tree.root(row.body).node;
+        if (tree.kind(top) != .element) return later(cx, n, "a `Show` whose body is not a lambda whose result is one element written in place");
+        const body_plan = try RowBuild.unit(pg, top, scope, false);
+        // The fallback: none, one element or `<></>` written in place, or
+        // `Html.text e`.
+        const fallback: ?RegionUse.Arm = if (s.fallback == null) null else if (cx.programShowFallback(n)) |r| fb: {
+            const fb_top = tree.root(r).node;
+            if (tree.kind(fb_top) == .fragment and tree.fragment(fb_top).children.len == 0) break :fb null;
+            if (tree.kind(fb_top) != .element) return later(cx, n, "a `Show` whose fallback is markup of more than one element");
+            break :fb .{ .plan = try RowBuild.unit(pg, fb_top, scope, false), .root = r };
+        } else if (cx.programShowFallbackIsText(n)) fb: {
+            if (parser.movesText(scope.parent)) return cx.report(n, "the parser moves text written here out of the table");
+            const p = try pg.a().create(RowPlan);
+            // A text node, its text written by `set` (`text`).
+            p.* = .{ .html = " ", .elements = false, .ops = &.{}, .events = false, .stateful = false };
+            break :fb .{ .plan = p, .root = row.body, .text = true };
+        } else return later(cx, n, "a `Show` whose fallback is markup held in data or chosen at run time");
+        const arms = try pg.a().alloc(?RegionUse.Arm, 2);
+        arms[0] = fallback;
+        arms[1] = .{ .plan = body_plan, .root = row.body, .body = true };
+        for (arms) |x| if (x) |arm| {
+            pg.row_events = pg.row_events or arm.plan.events;
+        };
+        const facts = try pg.known(n, cx.programHole(.{ .node = n }));
+        try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null });
+        try pg.writes.append(pg.a(), .{ .target = place.parent, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .region = @intCast(pg.regions.items.len - 1) } });
+    }
+
+    /// What a `Show` reads of its declaration: its `when`, its key
+    /// function, its fallback and its body's captures. The body's own
+    /// values are its row's, evaluated with `v` bound.
+    fn showReads(pg: *Page, n: m.Node.Index, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        const s = pg.tree.show(n);
+        try out.append(pg.a(), s.when);
+        if (s.mode == .key) if (s.key) |k| try out.append(pg.a(), k);
+        if (s.fallback) |fb| try out.append(pg.a(), fb);
+        const row = pg.tree.row(s.body);
+        for (0..row.captures.len) |k| try out.append(pg.a(), row.captures.at(@intCast(k)));
+    }
+
+    /// A `Show`'s binding function (§8.2, amended 2026-11-23, *A `Show`*):
+    /// the `view` entered, `when` evaluated once, and the arm it takes
+    /// prepared — on `Just v`, the key and every value of the body with
+    /// `v` bound; on `Nothing`, the fallback's — before `keyShown` shows it.
+    fn writeShow(pg: *Page, blk: m.Block, w: Write, u: *const RegionUse) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        const s = pg.tree.show(u.node);
+        const r = pg.ctxs.items[w.ctx].root;
+        var reads: std.ArrayList(m.Value.Index) = .empty;
+        try pg.showReads(u.node, &reads);
+        const entered = try pg.enter(blk, w.ctx, null, reads.items);
+        // `when`, the key function and the body's captures, in source
+        // order, where the `Show` stands; the fallback is evaluated only
+        // when it is shown.
+        var own: std.ArrayList(m.Value.Index) = .empty;
+        try own.append(pg.a(), s.when);
+        if (s.mode == .key) if (s.key) |k| try own.append(pg.a(), k);
+        const row = pg.tree.row(s.body);
+        for (0..row.captures.len) |k| try own.append(pg.a(), row.captures.at(@intCast(k)));
+        try cx.rootValues(blk, r, own.items);
+        const chosen = try cx.fresh("shown");
+        try js.constant(blk, chosen, try cx.value(s.when));
+        const captures = try pg.a().alloc(m.Name, row.captures.len);
+        for (captures, 0..) |*c, k| {
+            c.* = try cx.fresh("capture");
+            try js.constant(blk, c.*, try cx.value(row.captures.at(@intCast(k))));
+        }
+        // On `Just v`: the key once, then the body's values.
+        const then = try js.block();
+        const payload = try cx.fresh("item");
+        try js.constant(then, payload, try cx.maybe(try js.name(chosen)));
+        const key = if (s.mode == .key) try cx.call(try cx.value(s.key.?), &.{try js.name(payload)}) else try js.name(payload);
+        const key_name = try cx.fresh("key");
+        try js.constant(then, key_name, key);
+        const body = u.arms[1].?;
+        _ = try cx.rowValues(then, s.body, payload, null, captures);
+        const body_shown = try pg.showArm(body);
+        try js.expression(then, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(1), try js.name(key_name), body_shown[0], body_shown[1] }));
+        // On `Nothing`: the fallback, or nothing.
+        const otherwise = try js.block();
+        const fb_shown: [2]m.Expr = if (u.arms[0]) |fb| shown: {
+            if (fb.text) {
+                const t = try cx.fresh("text");
+                try js.constant(otherwise, t, try cx.programShowFallbackText(otherwise, u.node));
+                const template = try cx.fresh("template");
+                try js.constant(pg.body, template, try js.call(try js.name(try cx.runtime("forTemplate")), &.{try js.string(fb.plan.html)}));
+                const make = try cx.fresh("make");
+                try js.constant(pg.body, make, try pg.makeRow(fb.plan, template));
+                const st = try js.block();
+                const made = try cx.fresh("row");
+                try js.expression(st, try js.call(try js.name(try cx.runtime("text")), &.{ try js.member(try js.name(made), "n"), try js.name(t) }));
+                break :shown .{ try js.name(make), try js.arrow(&.{made}, st) };
+            }
+            try cx.programNestedEnter(fb.root);
+            defer cx.programInlineLeave();
+            var values: std.ArrayList(m.Value.Index) = .empty;
+            try pg.unitValues(fb.plan, &values);
+            try pg.bindLets(otherwise, fb.root, values.items);
+            try cx.rootValues(otherwise, fb.root, values.items);
+            break :shown try pg.showArm(fb);
+        } else .{ try js.literal(.null), try js.literal(.null) };
+        try js.expression(otherwise, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(0), try js.literal(.undefined), fb_shown[0], fb_shown[1] }));
+        try js.@"if"(blk, try cx.isJust(try js.name(chosen)), then, otherwise);
+        pg.leave(entered);
+    }
+
+    /// A `Show`'s arm `arm`, its values evaluated already: its template,
+    /// parsed once at the mount, its `make` and its `set`.
+    fn showArm(pg: *Page, arm: RegionUse.Arm) m.Error![2]m.Expr {
+        const cx = pg.cx;
+        const js = cx.js;
+        const template = try cx.fresh("template");
+        try js.constant(pg.body, template, try js.call(try js.name(try cx.runtime("forTemplate")), &.{try js.string(arm.plan.html)}));
+        const make = try cx.fresh("make");
+        try js.constant(pg.body, make, try pg.makeRow(arm.plan, template));
+        const st = try js.block();
+        const r = try cx.fresh("row");
+        try pg.setRow(st, r, arm.plan, try pg.noPicks(arm.plan));
+        return .{ try js.name(make), try js.arrow(&.{r}, st) };
     }
 
     /// `later` at a branch region's hole, or at the `view` for one that is

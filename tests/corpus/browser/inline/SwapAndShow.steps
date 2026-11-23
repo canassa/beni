@@ -1,0 +1,8 @@
+# Shown and exchanged in one message: two, one, three — once each.
+click #open
+# Shown: the exchange moves the rows back.
+click #swap
+# Hidden, then exchanged while hidden, then shown and exchanged again.
+click #close
+click #swap
+click #open
