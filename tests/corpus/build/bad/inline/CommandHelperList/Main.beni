@@ -1,0 +1,50 @@
+-- A batch whose list a helper edits is not read (browser-inline.md §4,
+-- amended 2026-11-23): `withPing` pushes onto its argument, and in this
+-- call the pass loses which list that is, so it cannot tell which bodies
+-- run. It is refused, class 4 (§5). Before, the lost list was read as `[]`,
+-- and the build ran no command at all, where `browser-tea` runs both.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    got : String
+
+
+type Msg
+    = Go
+    | Got String
+
+
+withPing : List (Cmd Msg) → List (Cmd Msg)
+withPing cs = List.push cs (Cmd.perform λsend → send (Got "p"))
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Go →
+            ( model, Cmd.batch (withPing [ Cmd.perform λsend → send (Got "q") ]) )
+
+        Got s →
+            ( { model | got = model.got ++ s }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="got">{model.got}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { got = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

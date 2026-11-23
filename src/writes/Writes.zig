@@ -2926,41 +2926,13 @@ fn effectParts(a: *const Writes, t: u32, which: Marker) ?[]const u32 {
     return a.terms.words.items[start .. start + a.termLen(t) - 2];
 }
 
-/// Whether `t` is an effect term of kind `which`, or alternatives each of
-/// which is one; ⊥ is not.
-fn allEffect(a: *const Writes, t: u32, which: Marker) bool {
-    if (a.effectParts(t, which) != null) return true;
-    if (a.termTag(t) != .alt or a.altLen(t) == 0) return false;
-    for (0..a.altLen(t)) |i| {
-        if (!a.allEffect(a.altItem(t, @intCast(i)).term, which)) return false;
-    }
-    return true;
-}
-
-/// The parts of `t`, which `allEffect` accepts, every alternative's.
-fn effectPartsInto(a: *Writes, t: u32, which: Marker, out: *std.ArrayList(u32)) Allocator.Error!void {
-    if (a.effectParts(t, which)) |ps| return out.appendSlice(a.arena(), ps);
-    for (0..a.altLen(t)) |i| try a.effectPartsInto(a.altItem(t, @intCast(i)).term, which, out);
-}
-
 /// A list of effect terms of kind `which` joined into one, or null when
 /// the list is not a literal of them.
 fn effectConcat(a: *Writes, list: u32, which: Marker) Error!?u32 {
-    if (a.termTag(list) == .lst and a.lstElems(list) == 0 and a.termWord(list, 1) == none) return try a.effectTerm(which, &.{});
-    // `List.map`'s list of commands (`applyRow`): every element's command,
-    // its alternatives joined, and the reads of the list it walked skipped.
-    if (which == .cmd and a.termTag(list) == .lst and a.termWord(list, 1) == none and
-        @as(Edit, @fromBackingInt(a.termWord(list, 2))) == .replaced)
-    {
-        var parts: std.ArrayList(u32) = .empty;
-        for (0..a.lstElems(list)) |i| {
-            const e = a.lstElem(list, @intCast(i));
-            if (e.eps == none and a.termTag(e.term) == .fresh) continue;
-            if (e.index != sym_star or !a.allEffect(e.term, which)) return null;
-            try a.effectPartsInto(e.term, which, &parts);
-        }
-        return try a.effectTerm(which, parts.items);
-    }
+    // Only `[]` is empty (`.clear`): a list substitution lost, `replaced`
+    // with no elements, is unknown (browser-inline.md §4, amended 2026-11-23).
+    if (a.termTag(list) == .lst and a.lstElems(list) == 0 and a.termWord(list, 1) == none and
+        @as(Edit, @fromBackingInt(a.termWord(list, 2))) == .clear) return try a.effectTerm(which, &.{});
     if (a.termTag(list) != .lst_lit) return null;
     var parts: std.ArrayList(u32) = .empty;
     var i: u32 = 1;
@@ -3019,8 +2991,12 @@ fn commandAt(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64
         for (0..a.altLen(t)) |i| {
             const c = try a.commandIn(a.altItem(t, @intCast(i)).term, pair, memo);
             switch (c.class) {
-                .suspends => return c,
-                .unknown => out = c,
+                // Any unread alternative makes the command unread, even beside
+                // one that suspends (browser-inline.md §4, amended 2026-11-23).
+                .unknown => return c,
+                .suspends => if (out.class != .suspends) {
+                    out = c;
+                },
                 .runs => if (out.class == .none) {
                     out = c;
                 },
@@ -4483,19 +4459,6 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
             const fun = args[args.len - 1];
             const eps = try a.mintEps(xs);
             const r = try a.apply(fun, &.{try a.mkSame(eps)}, g);
-            // A list of commands, one for each element (`Cmd.batch (List.map
-            // xs λx → Cmd.perform …)`): a list built afresh whose every
-            // element is the callback's command, which is all `Cmd.batch`
-            // needs, and which reads what `xs` reads, as `readsOf` keeps it
-            // (browser-inline.md §4, amended 2026-11-23).
-            if (row == .map and a.allEffect(r, .cmd)) {
-                // As `freshCall` notes it: the list a key reads of its message.
-                if (a.ctx.mode == .key) try a.noteMu(xs);
-                var elems: std.ArrayList(Elem) = .empty;
-                try elems.append(a.arena(), .{ .index = sym_star, .eps = eps, .term = r });
-                try elems.appendSlice(a.arena(), try a.readsOf(xs, &.{xs}));
-                return a.mkLst(none, .replaced, none, none, elems.items);
-            }
             const p = a.listBase(xs) orelse return a.freshCall(args);
             if (a.isIdentity(r, eps)) return xs;
             const index = if (row == .map) sym_star else try a.argSym(m, site, 1, args[1]);

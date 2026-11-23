@@ -123,25 +123,32 @@ written inside the dispatch, so nothing is left to patch. `Dom.rendered` in a fi
 scheduler's drain that runs it, and with it the dispatch, has returned. A prerendered `init` may
 return it, staged as a `perform` is (§4.2 of the base design).
 
-*Amended 2026-11-23 (#966): three more commands are read; keyed ones are not compiled yet.* The
-`browser/tea` pages whose `update` stops at this refusal were of four shapes. Three are read now
-(`write-sets.md`, amended 2026-11-23):
+*Amended 2026-11-23 (#966): two more commands are read; keyed ones are not compiled yet.* The
+`browser/tea` pages whose `update` stops at this refusal had commands of four shapes. Two of them
+are read now (`write-sets.md`, amended 2026-11-23):
 
 - **An arm that never returns** — `Debug.todo`, alone or under `Log.annotate` or `Task.bracket` —
-  has no command and writes nothing: ⊥ joins as nothing, so the key's command is its other arms'.
-  Its handler calls the arm, which throws, and the defect stops the page (§6).
-- **An arm inside `Task.bracket` or `Task.onExit`** has the command, and the writes, of its use or
-  its work, which the bracket answers.
-- **A `Cmd.batch` of a `List.map` whose callback makes a command** is the callback's command for
-  every element: its bodies run, one per element, in the list's order, and the class (§4's three)
-  is the callback's, over any list, the model's too. A batch built any other way — a fold,
-  `indexedMap`, `concatMap` — stays refused, class 4.
+  has no command and writes nothing. ⊥ joins as nothing, so the key's command is the command of its
+  other arms. The handler calls the arm, the arm throws, and the defect stops the page (§6).
+- **An arm inside `Task.bracket` or `Task.onExit`** has the command and the writes of its use or
+  its work, because the bracket answers that value.
 
-The fourth is `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cmd.map`. A keyed command needs a
-table of the bodies running under each key, with `Restart`'s cancel-and-wait, `Queue`'s wait and
-`Ignore`'s skip, which the runtime does not have; until it does, a program that makes one is
-refused, class 4, and the message names them, with `--platform=browser-tea` as the build that
-compiles it.
+Two readings are now stricter, because each one made a build that misruns. An alternative the pass
+cannot read makes the whole command unread, also beside an alternative that suspends. Before, the
+suspending alternative was taken as the whole command, and a keyed alternative failed when it ran.
+And only `[]` is an empty batch. A list that the pass lost while it substituted a helper's summary
+(`List.push cs …` inside a helper) is unread. Before, it was read as `[]`, and no command ran.
+
+The third shape is `Cmd.batch` of a `List.map` whose callback makes a command. It waits on #2617.
+The pass reads it correctly, but the lowering then sends a field that the same arm writes in place
+with its new value, from a body nested in the callback. It stays refused, class 4, like a batch
+that a fold builds.
+
+The fourth shape is `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cmd.map` (#2615). A keyed
+command needs a table of the bodies that run under each key, with `Restart`'s cancel-and-wait,
+`Queue`'s wait and `Ignore`'s skip, and the runtime does not have one. Until it has, a program that
+makes such a command is refused, class 4. The message names these functions, and names
+`--platform=browser-tea` as the build that compiles the program.
 
 ## 5. What the lowering refuses
 

@@ -2874,7 +2874,6 @@ tests/corpus/browser/tea/ReconcileMoves.beni ReconcileMoves 74:5 #0 :: entry Rec
 tests/corpus/browser/tea/RekeyNaN.beni RekeyNaN 52:5 #0 :: entry RekeyNaN.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/RemoveFocusedRow.beni RemoveFocusedRow 61:8 #0 :: entry RemoveFocusedRow.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/RespondSettlesEachChunk.beni RespondSettlesEachChunk 43:17 #0 :: send <Finished …> :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
-tests/corpus/browser/inline/RespondSettlesEachChunk.beni RespondSettlesEachChunk 43:17 #0 :: send <Finished …> :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/Router.beni Router 115:5 #0 :: entry Router.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/Routes.beni Routes 107:5 #0 :: entry Routes.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/RowBlur.beni RowBlur 52:8 #0 :: entry RowBlur.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
