@@ -1,0 +1,43 @@
+-- load
+<body>
+  <main>
+    <button id="queue-restart">"queue, restart"</button>
+    <button id="queue-three">"queue three"</button>
+    <button id="stop">"stop"</button>
+    <button id="parent">"parent"</button>
+    <button id="child">"child"</button>
+    <button id="stop-child">"stop child"</button>
+  </main>
+</body>
+-- click #queue-restart
+console.log: start: "q1"
+console.log: cancelled: "q1"
+console.log: start: "q3"
+(the DOM did not change)
+-- advance 400
+console.log: end: "q3"
+console.log: got: "q3"
+(the DOM did not change)
+-- click #queue-three
+console.log: start: "c1"
+(the DOM did not change)
+-- advance 50
+(the DOM did not change)
+-- click #stop
+console.log: cancelled: "c1"
+(the DOM did not change)
+-- advance 400
+(the DOM did not change)
+-- click #parent
+console.log: start: "parent"
+(the DOM did not change)
+-- click #child
+console.log: start: "child"
+(the DOM did not change)
+-- click #stop-child
+console.log: cancelled: "child"
+(the DOM did not change)
+-- advance 100
+console.log: end: "parent"
+console.log: got: "parent"
+(the DOM did not change)

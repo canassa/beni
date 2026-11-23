@@ -257,8 +257,15 @@ commands cmd dispatch = List.foldl (Cmd.items cmd) ⊤ λitem _ →
 
         Cmd.CancelAll prefix →
             table = keyTable dispatch
-            from = keyAt table prefix 0 (Js.to (Js.get table "length"))
-            gone = Js.call table "splice" [ Js.from from, Js.from (prefixEnd table prefix from - from) ]
+            -- The keys of the component and of those it maps in: the paths
+            -- longer than `prefix` that start with it. A path that is
+            -- `prefix` itself is the key of the component that maps this
+            -- one, equal to its segment, and stays.
+            at = keyAt table prefix 0 (Js.to (Js.get table "length"))
+            from = if entryAt table prefix == at then at + 1 else at
+            gone =
+                Js.call table "splice"
+                    [ Js.from from, Js.from (prefixEnd table prefix from - from) ]
             Js.each gone λrow → cancelRuns dispatch (Js.at row 1)
 
 
@@ -266,10 +273,12 @@ commands cmd dispatch = List.foldl (Cmd.items cmd) ⊤ λitem _ →
 --
 -- `browser-tea`'s command table, kept per program: the bodies running under
 -- each key path, and what a keyed command, `Cmd.cancel` and `Cmd.cancelAll`
--- do to them (`boundary.md` §9.8.2). The table is changed where `commands`
+-- do to them (`boundary.md` §9.8.2). It differs from `browser-tea`'s in two
+-- points (#2627): `Queue` keeps the bodies it waits for under the path, and
+-- `Cmd.cancelAll` leaves the key equal to its prefix. The table is changed where `commands`
 -- reads the item, in the item's order, so a later item of the same command
 -- sees what an earlier one did; a body starts where an unkeyed one does,
--- queued behind the dispatch, so bodies start in the order of their items.
+-- queued behind the dispatch or spawned there, in the order of its item.
 -- Each body sends through an outlet of its own, which a restart or a
 -- cancellation closes at once. Only a `Keyed` item makes an `InFiber`, so a
 -- program whose keyed bodies never wait reaches no code that waits for or
@@ -407,8 +416,12 @@ keyed dispatch path policy job =
                 ⊤
 
             Cmd.Queue →
-                put table path (Js.array [ Js.from (spawned dispatch (λ⊤ → waitRuns old) job) ])
-
+                -- The bodies it waits for stay in the table, so a later
+                -- `Restart` or `Cmd.cancel` reaches every body queued under
+                -- the path (`boundary.md` §9.8.2).
+                before = Js.call old "slice" []
+                _ = Js.call old "push" [ Js.from (spawned dispatch (λ⊤ → waitRuns before) job) ]
+                put table path old
             Cmd.Concurrent →
                 _ = Js.call old "push" [ Js.from (spawned dispatch nothing job) ]
                 put table path old
@@ -432,8 +445,9 @@ keyedNow dispatch path policy job =
                 ⊤
 
             Cmd.Queue →
-                put table path (Js.array [ Js.from (started policy old dispatch job 0) ])
-
+                before = Js.call old "slice" []
+                _ = Js.call old "push" [ Js.from (started policy before dispatch job 0) ]
+                put table path old
             Cmd.Concurrent →
                 _ = Js.call old "push" [ Js.from (queued dispatch job) ]
                 put table path old
@@ -474,10 +488,9 @@ spawned dispatch beforeBody job =
     cell = Js.object [ ( "o", Js.from True ), ( "f", Js.null ) ]
     send
         (Js.from λ_ →
-            fiber =
-                Task.spawnIn (taskScope dispatch) λ⊤ →
-                    beforeBody ⊤
-                    Hosted.runJob job (outlet dispatch cell)
+            fiber = Task.spawnIn (taskScope dispatch) λ⊤ →
+                beforeBody ⊤
+                Hosted.runJob job (outlet dispatch cell)
             Js.set cell "f" (Js.from fiber)
         )
         Js.null
