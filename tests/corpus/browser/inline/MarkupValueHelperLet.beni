@@ -1,0 +1,55 @@
+-- Markup values in helpers (browser-inline.md §8.2, amended 2026-11-23, *A markup value*):
+-- `card` holds its heading in a `let` that a hole reads, and `title` returns the markup its
+-- `let` names. Each is written in place at the call, its holes reading the call's arguments.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Rename
+
+
+type alias Model =
+    n : Int
+    name : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Rename →
+            { model | name = "${model.name}!" }
+
+
+title : String → Html Msg
+title name =
+    heading = <h1 onClick={Rename}>{name}</h1>
+    heading
+
+
+card : String, Int → Html Msg
+card name n =
+    heading = <h2>{name}</h2>
+
+    <section>
+        {heading}
+        <p>{n}</p>
+        <button onClick={Inc}>inc</button>
+    </section>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {title model.name}
+        {card "count" model.n}
+        {card model.name 7}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 0, name = "ada" }, update = update, view = view }

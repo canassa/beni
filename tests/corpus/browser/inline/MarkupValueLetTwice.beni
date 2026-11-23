@@ -1,0 +1,49 @@
+-- A `let` of the `view` whose value is markup, read by two holes (browser-inline.md §8.2,
+-- amended 2026-11-23, *A markup value*). The `let` names its root: each hole enters it in
+-- place, so the page has two buttons, each with its own listener, and both show the model a
+-- pass leaves. `label` is a `let` that root reads: it is computed in a pass that writes the
+-- name, and not at a click of the count. Each copy computes it, as each call of a helper
+-- computes its own `let`s; `browser-tea` computes it once per copy too, so a rename logs
+-- "label" twice on both platforms.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Rename
+
+
+type alias Model =
+    n : Int
+    name : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Rename →
+            { model | name = "${model.name}!" }
+
+
+view : Model → Html Msg
+view model =
+    label = Debug.log "label" (String.toUpper model.name)
+    badge =
+        <button class="badge" onClick={Inc}>
+            <b>{label}</b>
+            <i>{model.n}</i>
+        </button>
+
+    <main>
+        <div id="a">{badge}</div>
+        <div id="b">{badge}</div>
+        <button id="rename" onClick={Rename}>rename</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 0, name = "ada" }, update = update, view = view }

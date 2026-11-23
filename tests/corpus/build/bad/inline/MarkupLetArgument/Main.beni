@@ -1,0 +1,27 @@
+-- A `let` of markup passed to a helper (browser-inline.md §8.2, amended 2026-11-23, *A markup
+-- value*): the `let`'s root was walked where the `let` is bound, not at the call, so the
+-- helper's hole cannot enter it, and the argument is a markup value, refused at its read.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+frame : Html Msg → Html Msg
+frame child = <section>{child}</section>
+
+
+view : Int → Html Msg
+view n =
+    count = <p>{n}</p>
+
+    <main>
+        {frame count}
+        <button onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λInc n → n + 1, view = view }

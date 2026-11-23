@@ -1,0 +1,128 @@
+-- load
+<body>
+  <main>
+    <div id="top">
+      <button class="reset">"reset"</button>
+    </div>
+    <button id="inc">"inc"</button>
+    <section id="inner">
+      <p>"1"</p>
+      <button class="reset">"reset"</button>
+    </section>
+    <div id="bottom">
+      <button class="reset">"reset"</button>
+    </div>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <div id="top">
+      <button class="reset">"reset"</button>
+    </div>
+    <button id="inc">"inc"</button>
+    <section id="inner">
+      <p>"2"</p>
+      <button class="reset">"reset"</button>
+    </section>
+    <div id="bottom">
+      <button class="reset">"reset"</button>
+    </div>
+  </main>
+</body>
+-- click #bottom>button
+<body>
+  <main>
+    <div id="top">
+      <button class="reset">"reset"</button>
+    </div>
+    <button id="inc">"inc"</button>
+    <section id="inner">
+      <p>"0"</p>
+      <button class="reset">"reset"</button>
+    </section>
+    <div id="bottom">
+      <button class="reset">"reset"</button>
+    </div>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <div id="top">
+      <button class="reset">"reset"</button>
+    </div>
+    <button id="inc">"inc"</button>
+    <section id="inner">
+      <p>"1"</p>
+      <button class="reset">"reset"</button>
+    </section>
+    <div id="bottom">
+      <button class="reset">"reset"</button>
+    </div>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <div id="top">
+      <button class="reset">"reset"</button>
+    </div>
+    <button id="inc">"inc"</button>
+    <section id="inner">
+      <p>"2"</p>
+      <button class="reset">"reset"</button>
+    </section>
+    <div id="bottom">
+      <button class="reset">"reset"</button>
+    </div>
+  </main>
+</body>
+-- click #inner>button
+<body>
+  <main>
+    <div id="top">
+      <button class="reset">"reset"</button>
+    </div>
+    <button id="inc">"inc"</button>
+    <section id="inner">
+      <p>"0"</p>
+      <button class="reset">"reset"</button>
+    </section>
+    <div id="bottom">
+      <button class="reset">"reset"</button>
+    </div>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <div id="top">
+      <button class="reset">"reset"</button>
+    </div>
+    <button id="inc">"inc"</button>
+    <section id="inner">
+      <p>"1"</p>
+      <button class="reset">"reset"</button>
+    </section>
+    <div id="bottom">
+      <button class="reset">"reset"</button>
+    </div>
+  </main>
+</body>
+-- click #top>button
+<body>
+  <main>
+    <div id="top">
+      <button class="reset">"reset"</button>
+    </div>
+    <button id="inc">"inc"</button>
+    <section id="inner">
+      <p>"0"</p>
+      <button class="reset">"reset"</button>
+    </section>
+    <div id="bottom">
+      <button class="reset">"reset"</button>
+    </div>
+  </main>
+</body>

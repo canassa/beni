@@ -1,0 +1,4 @@
+# Not the title: not computed.
+click #n
+# The title: computed once.
+click #t

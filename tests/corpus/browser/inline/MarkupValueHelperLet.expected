@@ -1,0 +1,64 @@
+-- load
+<body>
+  <main>
+    <h1>"ada"</h1>
+    <section>
+      <h2>"count"</h2>
+      <p>"0"</p>
+      <button>"inc"</button>
+    </section>
+    <section>
+      <h2>"ada"</h2>
+      <p>"7"</p>
+      <button>"inc"</button>
+    </section>
+  </main>
+</body>
+-- click section>button
+<body>
+  <main>
+    <h1>"ada"</h1>
+    <section>
+      <h2>"count"</h2>
+      <p>"1"</p>
+      <button>"inc"</button>
+    </section>
+    <section>
+      <h2>"ada"</h2>
+      <p>"7"</p>
+      <button>"inc"</button>
+    </section>
+  </main>
+</body>
+-- click h1
+<body>
+  <main>
+    <h1>"ada!"</h1>
+    <section>
+      <h2>"count"</h2>
+      <p>"1"</p>
+      <button>"inc"</button>
+    </section>
+    <section>
+      <h2>"ada!"</h2>
+      <p>"7"</p>
+      <button>"inc"</button>
+    </section>
+  </main>
+</body>
+-- click section>button
+<body>
+  <main>
+    <h1>"ada!"</h1>
+    <section>
+      <h2>"count"</h2>
+      <p>"2"</p>
+      <button>"inc"</button>
+    </section>
+    <section>
+      <h2>"ada!"</h2>
+      <p>"7"</p>
+      <button>"inc"</button>
+    </section>
+  </main>
+</body>

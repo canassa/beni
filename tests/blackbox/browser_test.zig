@@ -890,7 +890,7 @@ test "a public library markup helper receives the markup-value diagnostic" {
         .severity = .@"error",
         .span = .{ .file = "Main.beni", .start = .{ .line = 6, .col = 12 }, .end = .{ .line = 6, .col = 13 } },
         .title = "NOT IMPLEMENTED YET",
-        .message = "A limit of the compiler: `browser-inline` has no markup value yet; it compiles\nmarkup only as a program's `view`, written in place\n(`docs/design/browser-inline.md` §5, class 1). Write markup held, passed or\nreturned by a helper in place in the `view`, or build this program with\n`--platform=browser-tea`.",
+        .message = "A limit of the compiler: `browser-inline` has no run-time markup value yet; it\ncompiles markup written in place, and a `let`, a constant or a helper's argument\nthat names markup where a hole shows it (`docs/design/browser-inline.md` §8.2;\n§5, class 1). Show this markup in a hole of the `view` or of a helper, or build\nthis program with `--platform=browser-tea`.",
     }}), r.diagnostics);
     try testing.expect(!w.exists("out"));
 }

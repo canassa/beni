@@ -1,0 +1,29 @@
+-- load
+console.log: title: "HI"
+<body>
+  <main>
+    <button id="n">"n"</button>
+    <button id="t">"t"</button>
+    <h1>"HI"</h1>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #n
+<body>
+  <main>
+    <button id="n">"n"</button>
+    <button id="t">"t"</button>
+    <h1>"HI"</h1>
+    <p>"1"</p>
+  </main>
+</body>
+-- click #t
+console.log: title: "HI!"
+<body>
+  <main>
+    <button id="n">"n"</button>
+    <button id="t">"t"</button>
+    <h1>"HI!"</h1>
+    <p>"1"</p>
+  </main>
+</body>

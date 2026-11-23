@@ -1,0 +1,25 @@
+-- A `view` whose result is a `let` that names markup (browser-inline.md §8.2, amended
+-- 2026-11-23, *A markup value*): the root is that markup, and the `let`s before it are the
+-- `view`'s, as for markup written in place.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+view : Int → Html Msg
+view n =
+    doubled = n * 2
+    page =
+        <main>
+            <p id="n">{n}</p>
+            <p id="doubled">{doubled}</p>
+            <button id="inc" onClick={Inc}>inc</button>
+        </main>
+    page
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λInc n → n + 1, view = view }

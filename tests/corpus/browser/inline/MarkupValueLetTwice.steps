@@ -1,0 +1,6 @@
+# The first copy's listener.
+click #a>button
+# The second copy's: one handler, two copies written.
+click #b>button
+# The label: computed once, both copies written.
+click #rename

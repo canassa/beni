@@ -2859,6 +2859,7 @@ tests/corpus/browser/tea/LetInMarkup.beni LetInMarkup 57:8 #0 :: entry LetInMark
 tests/corpus/browser/inline/LetInMarkup.beni LetInMarkup 63:8 #0 :: entry LetInMarkup.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/RegionInMarkup.beni RegionInMarkup 73:5 #0 :: entry RegionInMarkup.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/LetMarkupHandler.beni LetMarkupHandler 46:5 #0 :: entry LetMarkupHandler.update model.sent :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/LetMarkupHandler.beni LetMarkupHandler 49:5 #0 :: entry LetMarkupHandler.update model.sent :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/LinkGuard.beni LinkGuard 78:5 #0 :: entry LinkGuard.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/LinkOutsideMount.beni LinkOutsideMount 29:5 #0 :: entry <update> model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/ListValues.beni ListValues 63:8 #0 :: entry ListValues.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
