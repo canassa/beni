@@ -203,6 +203,7 @@ module Rt
   value insertText : V, V, V → V  -- impure
   value last : V → V  -- impure
   value listen : V, String, Int → ⊤  -- impure
+  value loadFailed : ⊤ → ⊤  -- impure
   value map : V, V → V  -- impure
   value parentOf : V → V  -- impure
   value patch : V, V, V → V  -- impure

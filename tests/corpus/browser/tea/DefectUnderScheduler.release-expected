@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <button id="go">"go"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <p id="count">"10"</p>
+    <button id="go">"go"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- throws advance 10
+(threw: Error: TODO: fiber under own scheduler threw)
+(the DOM did not change)
+-- click #inc
+(the DOM did not change)
