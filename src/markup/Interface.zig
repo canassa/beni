@@ -91,7 +91,10 @@ const std = @import("std");
 /// Version 1.32 adds `Context.programRetitles`, whether a key's writes
 /// conflict with what a document's title reads (`browser-inline.md` §10.2,
 /// amended 2026-11-10, #1168).
-pub const version: Version = .{ .major = 1, .minor = 32 };
+/// Version 1.33 lets the write-set pass read keyed commands
+/// (`Lowering.Effects.keyed`: `Cmd.keyed`, `cancel`, `cancelAll` and
+/// `map`; `browser-inline.md` §4, amended 2026-11-23).
+pub const version: Version = .{ .major = 1, .minor = 33 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -211,6 +214,11 @@ pub const Lowering = struct {
         /// write pass that shows its model, so the pass reads it as a body
         /// that cannot suspend. False: an `afterRender` is unread.
         after_render: bool = false,
+        /// 1.33: the runtime keeps a table of the bodies running under
+        /// each key path, so the pass reads `cmd`'s `keyed`, `cancel`,
+        /// `cancelAll` and `map`: a keyed body as the body it runs, a
+        /// cancellation as work with no body. False: each is unread.
+        keyed: bool = false,
         /// 1.28: every function that can write context/finalizer state.
         /// No reachable writer proves updates need no context wrapper.
         /// Null or an unresolved declaration keeps the wrapper.

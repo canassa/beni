@@ -1,0 +1,6 @@
+# The sender starts the first worker.
+click #go
+advance 50
+# Restarting the sender starts a second worker; the first runs on.
+click #go
+advance 100

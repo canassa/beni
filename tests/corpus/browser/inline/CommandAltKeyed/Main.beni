@@ -1,8 +1,9 @@
--- A command chosen between a keyed one and one that suspends is refused
--- (browser-inline.md §4, amended 2026-11-23): an alternative the pass
--- cannot read makes the whole command unread, class 4 (§5). Before, the
--- alternative that suspends was taken for the whole, the page built, and
--- the keyed command failed when it ran.
+-- A command chosen between a keyed one and one that suspends is read as
+-- both (browser-inline.md §4, amended 2026-11-23): each alternative is a
+-- command the pass reads, so the handler runs whichever `update` returns.
+-- It was refused, class 4, while keyed commands were not compiled. `#go`
+-- runs the keyed body (the flag is set); `#flip` clears the flag, and
+-- `#go` then runs the body that sleeps.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub
@@ -19,6 +20,7 @@ type alias Model =
 type Msg
     = Go
     | Got
+    | Flip
 
 
 update : Msg, Model → Model × Cmd Msg
@@ -34,6 +36,9 @@ update msg model =
                     send Got
                 )
 
+        Flip →
+            ( { model | flag = False }, Cmd.none )
+
         Got →
             ( { model | got = model.got + 1 }, Cmd.none )
 
@@ -43,6 +48,7 @@ view model =
     <main>
         <p id="got">{String.fromInt model.got}</p>
         <button id="go" onClick={Go}>go</button>
+        <button id="flip" onClick={Flip}>flip</button>
     </main>
 
 

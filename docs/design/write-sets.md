@@ -2541,3 +2541,26 @@ The command reader is stricter in two places (`browser-inline.md` §4, amended 2
 suspends. And only `[]` (`Lst(none, clear)`) is an empty list of commands. A `Lst(none, replaced)`
 with no elements is the value of a list that substitution lost (§4.2), and it is unread.
 A list of commands that `List.map` makes stays unread, waiting on #2617.
+
+### *Amended 2026-11-23 (`browser-inline`'s keyed commands, #2615):* four more command readers
+
+For a lowering that sets `Lowering.Effects.keyed` (interface 1.33), the command reader of the
+amendment above reads four more of `Cmd`'s values by name (`browser-inline.md` §4, amended
+2026-11-23). No cap moves, and no write changes: a command's bodies run after the write pass and
+are read only for whether one may suspend.
+
+- **`Cmd.keyed k policy body`** is the command of `body`, as `Cmd.perform body` is. The key and the
+  policy are evaluated, as every argument is, and dropped: the runtime's table reads them.
+- **`Cmd.cancel k`** and **`Cmd.cancelAll`** are a command with one part that is not a body, the
+  cancel marker, a literal no program can write. A command of nothing else is `runs`, not `none`:
+  the runtime must read it. A log scope's result holds a body only through a part that is not the
+  marker.
+- **`Cmd.map cmd segment tag`** has `cmd`'s parts. The segment and the tagger act when the command
+  runs.
+- **A chosen command** — an `Alt` of commands, as an element of `Cmd.batch`'s list or as
+  `Cmd.map`'s command — has the parts of every alternative. Before, an `Alt` was read only as the
+  whole command half of the pair, and `Cmd.batch [ if c then x else y ]` was unread. The union is
+  exact for what the reader answers: whether the command has work, and whether a body may suspend.
+  An alternative that is not a command makes the whole unread, as before. A chosen set of
+  subscriptions is not read so: §3 of `browser-inline.md` refuses a set that depends on the model.
+  This last reading holds for every lowering that reads commands, keyed or not.

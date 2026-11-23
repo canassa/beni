@@ -1,0 +1,39 @@
+-- load
+<body>
+  <main>
+    <button id="ignore">"ignore"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="cancel-all">"cancel all"</button>
+    <button id="mapped">"mapped"</button>
+  </main>
+</body>
+-- click #ignore
+console.info: body: i first 0
+console.info: update: i first 0
+(the DOM did not change)
+-- click #ignore
+console.info: body: i first 1
+console.info: update: i first 1
+(the DOM did not change)
+-- click #restart
+console.info: body: r first 2
+console.info: body: r second 2
+console.info: update: r second 2
+(the DOM did not change)
+-- click #queue
+console.info: body: q first 3
+console.info: body: q second 3
+console.info: update: q first 3
+console.info: update: q second 3
+(the DOM did not change)
+-- click #cancel-all
+console.info: body: cancelled x
+console.info: body: cancelled y
+(the DOM did not change)
+-- click #mapped
+console.info: body: m first 5
+console.info: body: outside
+console.info: update: mapped m first 5
+console.info: update: outside
+(the DOM did not change)

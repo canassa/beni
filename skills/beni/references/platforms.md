@@ -286,7 +286,7 @@ and the page ships only what it reaches. Lists are edited in place here, so the 
 errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `routing.md`. Pages: `prerender.md`.
 
 `Time`, `Browser.Events`, `Dom`, `Http`, `Storage`, `WebSocket`, `Random`, `Gpu` and the media modules use the shared base. `Cmd.afterRender` runs after the page is written; `Dom.rendered` waits for it. Stop cancels waiting work. `Cmd.perform` in a log scope is supported: bodies keep creation log context; updates use program context.
-Zero-field taggers (`λ_ → Tick`) are supported. Compiler limits: static, model-independent sets and unkeyed commands (`none`, `batch`, `perform`, `afterRender`); full keyed policies remain unavailable.
+Zero-field taggers (`λ_ → Tick`) are supported. Keyed commands (`Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll`, `Cmd.map`) have the same policies as on `browser-tea`. A body that never waits runs in the dispatch that asked for it, so it has ended when the next message arrives. Compiler limits: a subscription set must be static and not depend on the model, and a command must be built from `Cmd`'s functions where `update` returns it (not by `List.map` or a fold).
 
 ## `html`
 

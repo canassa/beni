@@ -28,7 +28,8 @@ fall back on.
 | `Html` | `html`'s vocabulary, re-exported |
 
 *Amended 2026-10-29 (§10, #1163):* `Tea` adds `Document`, `document` and `application`, `Browser`
-adds `UrlRequest`, and the platform has `Browser.Navigation`.
+adds `UrlRequest`, and the platform has `Browser.Navigation`. *Amended 2026-11-23 (§4):* `Cmd`
+adds `afterRender`, `keyed`, `cancel`, `cancelAll`, `map` and `Policy`.
 
 One program per page: `Browser.mountAt p id` mounts it at the element `id` names, and a program
 not placed mounts at `document.body`. The runtime exports `run` and `stop` (`boundary.md` §9.4.5,
@@ -149,6 +150,56 @@ command needs a table of the bodies that run under each key, with `Restart`'s ca
 `Queue`'s wait and `Ignore`'s skip, and the runtime does not have one. Until it has, a program that
 makes such a command is refused, class 4. The message names these functions, and names
 `--platform=browser-tea` as the build that compiles the program.
+
+*Amended 2026-11-23 (#2615): keyed commands are compiled; interface 1.33.* The paragraph above is
+superseded. A program may use `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cmd.map`, with
+`browser-tea`'s meaning (`boundary.md` §9.8.2–§9.8.4; `Tea.beni`'s command table is the reference).
+
+- **The pass** (`Lowering.Effects.keyed`, `write-sets.md`, amended 2026-11-23) reads `Cmd.keyed k
+  policy body` as `body`, with the body's class, as it reads `Cmd.perform body`: the key and the
+  policy are the runtime's. `Cmd.cancel k` and `Cmd.cancelAll` are work with no body: a command made
+  only of them **runs**, so the handler calls `commands`. `Cmd.map cmd segment tag` has `cmd`'s
+  bodies. A command chosen where it is made — an `if` inside `Cmd.batch` or as `Cmd.map`'s command
+  — has the bodies of all its alternatives; one alternative that is unread still makes the whole
+  command unread.
+- **The table.** `Inline.commands` keeps, per program, the bodies running under each key path,
+  sorted by path with the path's `compare`. An item changes the table where `commands` reads it, in
+  the command's order, so a later item of one command sees what an earlier one did; the body itself
+  starts where an unkeyed body does, queued behind the dispatch (above), so bodies start in the
+  order of their items. Each body sends through an outlet of its own.
+  - `Restart` closes the outlets of the bodies running under the path at once, then starts the new
+    body in a fiber that first cancels them and waits for their cleanup;
+  - `Ignore` drops the new body while one runs;
+  - `Queue` starts it in a fiber that first waits for the running ones to end;
+  - `Concurrent` adds it beside them;
+  - `Cmd.cancel` and `Cmd.cancelAll` take the path's entry, or every entry under the prefix, out
+    of the table, close their outlets at once and cancel their fibers in a fiber spawned behind
+    them;
+  - `Cmd.map` puts its segment in front of each item's path when the command is made (`Cmd.mapItem`),
+    so a child's keys never meet its parent's or another instance's.
+
+  A body that never waits runs in no fiber, as an unkeyed one does: it is *running* from the
+  item that queued it until it has run, in the same dispatch. So two such bodies under one key in
+  one `update` meet as on `browser-tea`, and two in two dispatches do not: the first has run when
+  the second is read. Under `Restart` or `Queue` of a key whose running body is in a fiber, a body
+  that never waits starts in a fiber of its own, since only a fiber can wait. A body cancelled
+  before it first waits runs to that wait, and one that never waits runs to its end; their sends are
+  dropped. Pages: `browser/inline/KeyedBatch`, `KeyedMap`, `Policies`, `SyncKeyedPolicies`,
+  `DebouncedSearch`.
+- **Pay for what you use.** Only a `Keyed` or `KeyedNow` item reaches the table, a `Cancel` or a
+  `CancelAll` the code that empties it, and only a `Keyed` item a run in a fiber; every step that
+  spawns, waits for or cancels a fiber is in that run's `case` arm (`backend.md` §9, *A `case`
+  arm on a constructor nothing builds*). A program that makes no keyed command ships none of the
+  table (`emit/release/inline/CommandMapNoKeys`); one whose keyed bodies never wait ships no fiber
+  runtime (`emit/release/inline/KeyedNowOnly`). Measured 2026-11-23, release, brotli 11: a page of
+  one keyed `Restart` body that never waits, a `cancel` and a `cancelAll` is 1 679 bytes against
+  705 for the same page with `Cmd.perform` and no cancellation; with a body that waits, 3 129
+  against 2 274. `browser-tea` builds them in 4 459 and 5 194.
+- **A defect** stops the page as before (§6): the program's scope is closed, which cancels every
+  keyed fiber; the table is not read again. The teardown's gaps of #2616 (no deadline, no
+  `update` finaliser) are the same for keyed bodies (`browser/inline/DefectReleaseRunning`).
+- A prerendered `init` (`prerender.md`) that returns a keyed command is still refused: the staged
+  command reads `Cmd.none`, `batch`, `perform` and `afterRender` only.
 
 ## 5. What the lowering refuses
 
