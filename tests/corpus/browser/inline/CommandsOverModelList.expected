@@ -1,0 +1,27 @@
+-- load
+<body>
+  <main>
+    <p id="items">"a,b,c"</p>
+    <p id="sent">"0"</p>
+    <p id="got"></p>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <p id="items">"a,b,c"</p>
+    <p id="sent">"3"</p>
+    <p id="got">"abc"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <p id="items">"a,b,c"</p>
+    <p id="sent">"6"</p>
+    <p id="got">"abcabc"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>

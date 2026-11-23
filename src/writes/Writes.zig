@@ -2926,10 +2926,41 @@ fn effectParts(a: *const Writes, t: u32, which: Marker) ?[]const u32 {
     return a.terms.words.items[start .. start + a.termLen(t) - 2];
 }
 
+/// Whether `t` is an effect term of kind `which`, or alternatives each of
+/// which is one; ⊥ is not.
+fn allEffect(a: *const Writes, t: u32, which: Marker) bool {
+    if (a.effectParts(t, which) != null) return true;
+    if (a.termTag(t) != .alt or a.altLen(t) == 0) return false;
+    for (0..a.altLen(t)) |i| {
+        if (!a.allEffect(a.altItem(t, @intCast(i)).term, which)) return false;
+    }
+    return true;
+}
+
+/// The parts of `t`, which `allEffect` accepts, every alternative's.
+fn effectPartsInto(a: *Writes, t: u32, which: Marker, out: *std.ArrayList(u32)) Allocator.Error!void {
+    if (a.effectParts(t, which)) |ps| return out.appendSlice(a.arena(), ps);
+    for (0..a.altLen(t)) |i| try a.effectPartsInto(a.altItem(t, @intCast(i)).term, which, out);
+}
+
 /// A list of effect terms of kind `which` joined into one, or null when
 /// the list is not a literal of them.
 fn effectConcat(a: *Writes, list: u32, which: Marker) Error!?u32 {
     if (a.termTag(list) == .lst and a.lstElems(list) == 0 and a.termWord(list, 1) == none) return try a.effectTerm(which, &.{});
+    // `List.map`'s list of commands (`applyRow`): every element's command,
+    // its alternatives joined, and the reads of the list it walked skipped.
+    if (which == .cmd and a.termTag(list) == .lst and a.termWord(list, 1) == none and
+        @as(Edit, @fromBackingInt(a.termWord(list, 2))) == .replaced)
+    {
+        var parts: std.ArrayList(u32) = .empty;
+        for (0..a.lstElems(list)) |i| {
+            const e = a.lstElem(list, @intCast(i));
+            if (e.eps == none and a.termTag(e.term) == .fresh) continue;
+            if (e.index != sym_star or !a.allEffect(e.term, which)) return null;
+            try a.effectPartsInto(e.term, which, &parts);
+        }
+        return try a.effectTerm(which, parts.items);
+    }
     if (a.termTag(list) != .lst_lit) return null;
     var parts: std.ArrayList(u32) = .empty;
     var i: u32 = 1;
@@ -4419,7 +4450,21 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
         .fold => return a.applyFold(args, g),
         .dict_insert, .dict_remove, .dict_update, .dict_swap, .dict_insert_at, .dict_sort_by, .dict_filter, .dict_map, .dict_get, .dict_empty => return a.applyDictRow(row, m, site, args, g),
         .fresh => return a.freshCall(args),
-        .debug_todo => return a.freshEmpty(),
+        .debug_todo => return a.bottom(),
+        .task_bracket, .task_on_exit => {
+            const n: usize = if (row == .task_bracket) 3 else 2;
+            if (args.len != n) return a.freshCall(args);
+            const unit = try a.mkLit(lit_unit, 0, 0);
+            const resource = if (row == .task_bracket) try a.apply(args[0], &.{unit}, g) else unit;
+            // `bracket`'s use is its last argument, `onExit`'s work its first.
+            const use = if (row == .task_bracket) args[2] else args[0];
+            const r = try a.apply(use, if (row == .task_bracket) &.{resource} else &.{unit}, g);
+            // The release, or the cleanup, answers `⊤`: walked for what it
+            // reads, its answer dropped.
+            const exit = try a.freshEmpty();
+            if (row == .task_bracket) _ = try a.apply(args[1], &.{ resource, exit }, g) else _ = try a.apply(args[1], &.{exit}, g);
+            return r;
+        },
         .log_scope => {
             if (args.len < 2) return a.freshCall(args);
             const r = try a.apply(args[args.len - 1], &.{try a.mkLit(lit_unit, 0, 0)}, g);
@@ -4438,6 +4483,19 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
             const fun = args[args.len - 1];
             const eps = try a.mintEps(xs);
             const r = try a.apply(fun, &.{try a.mkSame(eps)}, g);
+            // A list of commands, one for each element (`Cmd.batch (List.map
+            // xs λx → Cmd.perform …)`): a list built afresh whose every
+            // element is the callback's command, which is all `Cmd.batch`
+            // needs, and which reads what `xs` reads, as `readsOf` keeps it
+            // (browser-inline.md §4, amended 2026-11-23).
+            if (row == .map and a.allEffect(r, .cmd)) {
+                // As `freshCall` notes it: the list a key reads of its message.
+                if (a.ctx.mode == .key) try a.noteMu(xs);
+                var elems: std.ArrayList(Elem) = .empty;
+                try elems.append(a.arena(), .{ .index = sym_star, .eps = eps, .term = r });
+                try elems.appendSlice(a.arena(), try a.readsOf(xs, &.{xs}));
+                return a.mkLst(none, .replaced, none, none, elems.items);
+            }
             const p = a.listBase(xs) orelse return a.freshCall(args);
             if (a.isIdentity(r, eps)) return xs;
             const index = if (row == .map) sym_star else try a.argSym(m, site, 1, args[1]);

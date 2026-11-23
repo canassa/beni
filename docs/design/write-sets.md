@@ -663,8 +663,8 @@ Same(ρ.todos[*]))`, which is `value p[*]` by §3.4's second row.
 | `Maybe.map`, `withDefault`, `andThen`; `Result.map`, `mapError`, `andThen`, `withDefault`, `toMaybe`; `Tuple.first`, `second` | **no row**: beni bodies, summarised by §4 | — |
 | `Basics.*`, `Int.*`, `Float.*`, `String.*`, `Char.*` | `Fresh(deps)` — except `Basics.identity x = x` and `always`, by their bodies | — |
 | `Debug.log tag x` | `Same` of what `x` is: `⟦x⟧` itself | the sibling returns its argument (requirement, §5.4) |
-| `Debug.todo` | `Fresh(∅)` | never returns |
-| `Html.map`, `Cmd.map`, `Cmd.*`, `Sub.*`, `Task.*`, platform primitives | `Fresh(deps)` | not model values; `Cmd` is not analysed |
+| `Debug.todo` | ⊥ (*amended 2026-11-23*; was `Fresh(∅)`) | never returns |
+| `Html.map`, `Cmd.map`, `Cmd.*`, `Sub.*`, `Task.*` (save `bracket` and `onExit`, *amended 2026-11-23*), platform primitives | `Fresh(deps)` | not model values; `Cmd` is not analysed |
 | `Schema.*` (*added 2026-10-17*) | `Fresh(deps)` | a run's answer is a value the engine builds from its input, never a part of the model: `Fresh` is the coarsest write, so the row is sound, and walking the engine's bodies only cost work (the ownership checker keeps rows of its own for `Schema`, `ownership-checker.md` §30.10) |
 
 **How a function gets a row.** A row is an entry in the compiler's table keyed by the function's
@@ -2517,3 +2517,28 @@ set does not change; deps are never used to decide a write (§3.6). No cap moved
 The order of a deps set is a defect of its own, hidden by another: an `Alt` keeps alternatives that
 are equal up to the renaming of their roots, so a recursion whose base case maps its list also
 reaches the cap. Both are #2102.
+
+### *Amended 2026-11-23 (`browser-inline`'s commands, #966):* code that never returns, `bracket`, and a list of commands
+
+Three rows of §3.7 change, each because a command half of an arm could not be read through it
+(`browser-inline.md` §4, amended 2026-11-23). No cap moves.
+
+- **`Debug.todo` is ⊥**, not `Fresh(∅)`. It never returns, so no value comes out of it, and ⊥ —
+  the empty alternative of §4.3, which joins as nothing and instantiates to nothing — is its exact
+  value. An arm that is `Debug.todo`, or that ends in it under `Log.annotate` or `Task.bracket`,
+  writes nothing and has no command; an `Alt` one of whose alternatives is it keeps the others.
+  Before, the `Fresh` made the key a `*` (§3.4), an approximation, and its command unreadable. The
+  answer is sound because evaluation is eager: an argument that is `Debug.todo` throws before the
+  call it is passed to runs. Pinned: `browser/inline/DefectInUpdate`.
+- **`Task.bracket acquire release use` is `use (acquire ⊤)`**, and **`Task.onExit work cleanup`
+  is `work ⊤`**: each answers what its use, or its work, answers, or does not return
+  (`core/Task.beni`; `run/BracketRelease` and `run/OnExitSeesOutcome` pin the value they answer).
+  The release and the cleanup answer `⊤`, so they are walked for what they read and their answer
+  is dropped. `Task`'s other functions stay `Fresh`. Pinned: `browser/inline/BracketInUpdate`.
+- **`List.map xs f` whose callback answers a command** — an effect term of `Cmd`'s, or
+  alternatives each of which is one — is a list built afresh (base none, edit `replaced`) holding
+  one element at `[*]`, `f`'s answer, and the reads of `xs`. It is `Cmd.batch`'s whole question:
+  which bodies may run, not how many. As a model value it is a `value` write, as any built list is.
+  Other list functions whose callbacks answer commands (`indexedMap`, `concatMap`, the folds) are
+  unchanged, and a batch of them stays unread. Pinned: `browser/inline/CommandsOverModelList`,
+  `SettlesManyFibers`; `build/bad/inline/CommandFolded`.

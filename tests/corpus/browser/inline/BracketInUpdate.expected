@@ -1,0 +1,43 @@
+-- load
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <p id="mark">"m"</p>
+    <p id="replies">"0"</p>
+    <button id="up">"up"</button>
+    <button id="add">"mark"</button>
+  </main>
+</body>
+-- click #up
+console.info: released 10
+<body>
+  <main>
+    <p id="count">"10"</p>
+    <p id="mark">"m"</p>
+    <p id="replies">"1"</p>
+    <button id="up">"up"</button>
+    <button id="add">"mark"</button>
+  </main>
+</body>
+-- click #add
+console.info: marked
+<body>
+  <main>
+    <p id="count">"10"</p>
+    <p id="mark">"m!"</p>
+    <p id="replies">"1"</p>
+    <button id="up">"up"</button>
+    <button id="add">"mark"</button>
+  </main>
+</body>
+-- click #up
+console.info: released 20
+<body>
+  <main>
+    <p id="count">"20"</p>
+    <p id="mark">"m!"</p>
+    <p id="replies">"2"</p>
+    <button id="up">"up"</button>
+    <button id="add">"mark"</button>
+  </main>
+</body>

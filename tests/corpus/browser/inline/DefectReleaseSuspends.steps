@@ -1,0 +1,6 @@
+click #start
+throws click #boom
+advance 200
+timers
+advance 800
+timers

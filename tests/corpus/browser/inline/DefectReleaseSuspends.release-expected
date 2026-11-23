@@ -1,0 +1,25 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="boom">"boom"</button>
+  </main>
+</body>
+-- click #start
+(the DOM did not change)
+-- throws click #boom
+console.info: first release starts
+console.info: second inner release starts
+(threw: Error: TODO: update threw)
+(the DOM did not change)
+-- advance 200
+console.info: first release ends
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- advance 800
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)

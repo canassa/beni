@@ -1,0 +1,37 @@
+-- A batch whose list a fold builds is not read (browser-inline.md §4,
+-- amended 2026-11-23): `List.foldl` answers a value the write-set pass
+-- does not see into, so it cannot say whether a body may suspend, and the
+-- command is refused, class 4 (§5), never guessed. A `List.map` of the same
+-- bodies is read.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Got Int
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n
+            , Cmd.batch
+                (List.foldl [ 1, 2 ] [] λk cmds → [ …cmds, Cmd.perform λsend → send (Got k) ])
+            )
+
+        Got k →
+            ( n + k, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><button onClick={Go}>go</button><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
