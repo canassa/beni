@@ -255,6 +255,11 @@ const FnDraft = struct {
     runs_on: bool = false,
     /// A use loses it to a holder that is no fiber's start (`Fn.forks`).
     not_forks: bool = false,
+    /// A use holds it past the call where nothing starts it (`Fn.kept_out`).
+    kept_out: bool = false,
+    /// It runs after a call of another of the frame's own functions opened
+    /// a window (`Fn.after_call`).
+    after_call: bool = false,
     /// The body does something with the function: it calls it or lets it flow.
     used: bool = false,
 };
@@ -316,6 +321,11 @@ const Use = struct {
     /// or lent to a scheduler of its own (`runsOnAt`; kernel §13 item 12,
     /// *A defect*, (d)). Set where the use is made, as `defect_above` is.
     runs_on_above: bool = false,
+    /// Whether the code above runs the function only where it is started in
+    /// a fiber of its own that nothing masks or lends (`startedAt` of the
+    /// use above; on the default use a lost holder makes, whether that
+    /// holder forks or starts it): kernel §13 item 12, *A defect*, (d), *Up*.
+    started_above: bool = false,
     site: *const Site,
     depth: u32 = 0,
     /// The function in the location, once `flow` knows which it is: a known
@@ -682,6 +692,25 @@ runs_on_calls: std.ArrayList(u32) = .empty,
 /// callee there is refused (kernel §13 item 12, *A defect*, (d)). To the
 /// end of the body: the next suspension point is not followed.
 runs_on_window: bool = false,
+/// The window was opened by a call whose own contract, or a function run
+/// within it that the walk knows or does not know (not the frame's own
+/// function parameter), can park this fiber masked or lent
+/// (`runs_on_known_calls`): the frame's own function parameter called
+/// there, or run within a call there, runs there (`Fn.runs_on`; #2622).
+/// A window that only a call of the frame's own function parameter opened
+/// is the caller's to judge: it sees both functions at one call
+/// (`within_runs_on_calls`).
+runs_on_window_known: bool = false,
+/// The calls among `runs_on_calls` noted with `contract`.
+runs_on_known_calls: std.ArrayList(u32) = .empty,
+/// The calls that run within them a function that can park this fiber
+/// masked or lent (`noteRunsOnWithin`), and the calls that run within them
+/// a hosting function (`hostsWithin`): a call in both is refused, since
+/// the callee can run the hosting function after the other, in the window
+/// it opens (kernel §13 item 12, *A defect*, (d), *After such a call*;
+/// #2622).
+within_runs_on_calls: std.ArrayList(u32) = .empty,
+within_hosts_calls: std.ArrayList(u32) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -6235,7 +6264,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             flags[off[x.a] + x.e] |= flag_s;
         };
         const fnc = try m.arena.create(CMod.Fn);
-        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0), .runs_on = dr.runs_on or (idx < 32 and (f.runsOnParams() >> @intCast(idx)) & 1 != 0), .forks = (dr.lost and !dr.not_forks and !dr.called) or (idx < 32 and (f.forksParams() >> @intCast(idx)) & 1 != 0) };
+        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0), .runs_on = dr.runs_on or (idx < 32 and (f.runsOnParams() >> @intCast(idx)) & 1 != 0), .forks = (dr.lost and !dr.not_forks and !dr.called) or (idx < 32 and (f.forksParams() >> @intCast(idx)) & 1 != 0), .starts = idx < 32 and (f.startsParams() >> @intCast(idx)) & 1 != 0, .kept_out = dr.kept_out and !(idx < 32 and ((f.startsParams() | f.forksParams()) >> @intCast(idx)) & 1 != 0), .after_call = dr.after_call };
         fns[idx] = fnc;
         // The function itself is used.
         if (dr.used) for (flags[off[idx]..off[idx + 1]]) |*x| {
@@ -9352,11 +9381,13 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         if (out_of_sight and f.cells_any and args[j] != v_none and f.nodes.items[args[j]].tag == .closure) {
             const lcode = f.codes.items[f.nodes.items[args[j]].a];
             var any = false;
-            for (0..lcode.ncaps) |k| {
-                // Only where the callee starts it in a new fiber, unmasked
-                // (`Fn.forks`; kernel §13 item 12, *A defect*, (d)).
-                if (f.isWriter(lcode, k) or (!c.fns[j].?.defect and c.fns[j].?.forks and !c.fns[j].?.runs_on and try f.registerWriter(args[j], lcode, @intCast(k), inst))) any = true;
-            }
+            // Only where the callee starts it in a new fiber, unmasked
+            // (`Fn.forks`; kernel §13 item 12, *A defect*, (d)), also where
+            // an earlier fork registered it (#2622).
+            const forks = !c.fns[j].?.defect and c.fns[j].?.forks and !c.fns[j].?.runs_on;
+            if (forks) for (0..lcode.ncaps) |k| {
+                if (f.isWriter(lcode, k) or try f.registerWriter(args[j], lcode, @intCast(k), inst)) any = true;
+            };
             if (any) {
                 const escapes_any = for (0..n) |se| {
                     if (c.flags[c.off[j] + se] & flag_e != 0) break true;
@@ -11217,6 +11248,22 @@ fn forksParams(f: *const Frame) u32 {
     return 0;
 }
 
+/// Kernel §13 item 12, *A defect*, (d), *Up*: the parameters (a mask) of
+/// one of core's walked declarations that start the function they are
+/// handed in a new root fiber, unmasked, of the program's scheduler, and
+/// hand it to nothing else (`Fn.starts`): `Task.start`'s work, which
+/// `fork` gives no slots, so its fiber is the program's scheduler's
+/// wherever the caller runs. No `forks`: a stop of the caller's scheduler
+/// does not stop it. Named directly, as `forksParams` names a race's
+/// branches (#2622).
+fn startsParams(f: *const Frame) u32 {
+    const m = f.m;
+    const mod = m.in.module;
+    if (f.is_lambda or !m.in.isCore(mod) or mod >= m.names.module_names.len) return 0;
+    if (!std.mem.eql(u8, m.names.module_names[mod], "Task")) return 0;
+    return if (std.mem.eql(u8, m.names.declName(mod, f.decl), "start")) 1 else 0;
+}
+
 /// Whether `v` is a declaration whose body is JavaScript (a `foreign`
 /// with no words, a markup primitive): it has no contract, and it parks no
 /// fiber in a mask nor lends one to a scheduler, since only `core/Task.beni`
@@ -11244,12 +11291,12 @@ fn jsArgsRunOn(f: *Frame, inst: u32, args: []const Inst.Index, vals: []const Val
         const v = vals[k];
         if (v == v_none or v == v_outside) continue;
         if (try f.codeOf(v)) |c| {
-            if (c.contract.runs_on) try f.noteRunsOn(inst, true);
-            if (c.contract.hosts) try f.hostsCall(inst);
+            if (c.contract.runs_on) try f.noteRunsOnWithin(inst, true);
+            if (c.contract.hosts) try f.hostsWithin(inst);
         } else if (f.isFnRoot(f.ownFnRoot(v))) {
-            try f.noteRunsOn(inst, false);
+            try f.noteRunsOnWithin(inst, false);
         } else if (!(f.nodes.items[v].tag == .fnref and f.jsCode(.{ f.nodes.items[v].a, f.nodes.items[v].b }))) {
-            try f.noteRunsOn(inst, true);
+            try f.noteRunsOnWithin(inst, true);
         }
     }
 }
@@ -11272,6 +11319,79 @@ fn forkedAt(use: *const Use) bool {
     return runsWithin(up) != null;
 }
 
+/// Whether the holder at `use` only starts the function in a new root
+/// fiber, unmasked, of the program's scheduler (`Fn.starts`), and the code
+/// above runs it within a call of the frame. Not `forkedAt`: a writer
+/// cannot go here (kernel §13 item 12, *A defect*, (d), *Up*).
+fn startsAt(use: *const Use) bool {
+    if (use.kind == .top or runsOnAt(use) or !use.fnc.starts) return false;
+    const up = use.up orelse return true;
+    return runsWithin(up) != null;
+}
+
+/// Whether the function at `use`, where no call of the frame runs it
+/// within (`runsWithin` is null), runs only in a fiber of its own that
+/// nothing masks or lends (kernel §13 item 12, *A defect*, (d), *Up*;
+/// #2622): a holder that forks or starts it; a holder that keeps it only
+/// where it starts it (its contract says no `kept_out`, and it answers
+/// it nowhere); a closure that runs it within its own run, where that
+/// closure is so started and enters no mask and no other scheduler
+/// anywhere in its body (its `runs_on`: the fiber stays masked or lent
+/// after such a call, up to its next suspension point). A holder that
+/// answers the function runs it where the frame calls the answer, which
+/// can be inside a mask; a list, a cell, unknown code and the default can
+/// run it anywhere.
+fn startedAt(f: *Frame, use: *const Use) Error!bool {
+    if (use.kind == .top) return use.started_above;
+    if (runsOnAt(use)) return false;
+    if (use.fnc.lost) return forkedAt(use) or startsAt(use);
+    if (answersFn(use) or use.fnc.kept_out) return false;
+    if (use.kind == .inner) {
+        // The closure runs it after a call of another of its function
+        // parameters or captures (`Fn.after_call`): where that one can
+        // park the fiber masked or lend it, this one runs in that window
+        // (#2622).
+        if (use.fnc.after_call and try f.siblingRunsOn(use)) return false;
+        return !use.c.runs_on and use.started_above;
+    }
+    return true;
+}
+
+/// Whether the closure that holds the function at the inner use `use`
+/// runs another of its function parameters or captures that can park the
+/// fiber masked or lend it: one the closure's holder hands it (code the
+/// walk does not know), the frame's own function parameter, a function the
+/// walk does not know, or a known one with `runs_on` (#2622).
+fn siblingRunsOn(f: *Frame, use: *const Use) Error!bool {
+    const c = use.c;
+    for (0..c.arity) |i| {
+        if (i == use.j) continue;
+        const sf = c.fns[i] orelse continue;
+        if (!sf.called) continue;
+        if (i < use.own or i >= use.args.len) return true;
+        const v = use.args[i];
+        if (v == v_none or v == v_outside) continue;
+        if (try f.codeOf(v)) |sc| {
+            if (sc.contract.runs_on) return true;
+            continue;
+        }
+        const n = f.nodes.items[v];
+        if (n.tag == .fnref and f.jsCode(.{ n.a, n.b })) continue;
+        return true;
+    }
+    return false;
+}
+
+/// Whether the holder at `use` answers the function at its location: its
+/// contract has `flag_a` there.
+fn answersFn(use: *const Use) bool {
+    if (use.kind == .top or use.j == none) return false;
+    const c = use.c;
+    if (use.j >= c.arity) return true;
+    for (c.flags[c.off[use.j]..c.off[use.j + 1]]) |x| if (x & flag_a != 0) return true;
+    return false;
+}
+
 /// The call `inst` can park the frame's fiber masked or lent to a
 /// scheduler of its own (kernel §13 item 12, *A defect*, (d)): it revokes
 /// the writers and readers registered by then (`revokeAt`), and, with
@@ -11281,6 +11401,30 @@ fn forkedAt(use: *const Use) bool {
 fn noteRunsOn(f: *Frame, inst: u32, contract: bool) Error!void {
     if (contract) f.runs_on = true;
     if (std.mem.indexOfScalar(u32, f.runs_on_calls.items, inst) == null) try f.runs_on_calls.append(f.gpa, inst);
+    if (contract and std.mem.indexOfScalar(u32, f.runs_on_known_calls.items, inst) == null) try f.runs_on_known_calls.append(f.gpa, inst);
+}
+
+const within_refusal = "a function in which a writer or a reader of a cell it made runs in another fiber is run within a call that also runs a function that can leave this fiber masked or under a scheduler of its own, so code runs on after a throw in it";
+
+/// `noteRunsOn` for a function that the call `inst` runs within it: the
+/// call refuses a hosting function it runs within too (`hostsWithin`;
+/// #2622).
+fn noteRunsOnWithin(f: *Frame, inst: u32, contract: bool) Error!void {
+    try f.noteRunsOn(inst, contract);
+    if (std.mem.indexOfScalar(u32, f.within_runs_on_calls.items, inst) != null) return;
+    try f.within_runs_on_calls.append(f.gpa, inst);
+    if (std.mem.indexOfScalar(u32, f.within_hosts_calls.items, inst) != null) try f.m.addRefusal(f, inst, .call, within_refusal);
+}
+
+/// `hostsCall` for a hosting function that the call `inst` runs within
+/// it: refused where the call also runs within it a function that can
+/// park this fiber masked or lent (`noteRunsOnWithin`), in either order of
+/// the two (#2622).
+fn hostsWithin(f: *Frame, inst: u32) Error!void {
+    try f.hostsCall(inst);
+    if (std.mem.indexOfScalar(u32, f.within_hosts_calls.items, inst) != null) return;
+    try f.within_hosts_calls.append(f.gpa, inst);
+    if (std.mem.indexOfScalar(u32, f.within_runs_on_calls.items, inst) != null) try f.m.addRefusal(f, inst, .call, within_refusal);
 }
 
 /// The call `inst` runs code that hosts a writer or a reader of a cell its
@@ -11307,8 +11451,15 @@ fn revokeAt(f: *Frame, inst: u32, runs: bool, wrote: bool) void {
         _ = f.runs_on_calls.swapRemove(i);
         break :blk true;
     } else false;
+    const known = if (std.mem.indexOfScalar(u32, f.runs_on_known_calls.items, inst)) |i| blk: {
+        _ = f.runs_on_known_calls.swapRemove(i);
+        break :blk true;
+    } else false;
+    if (std.mem.indexOfScalar(u32, f.within_runs_on_calls.items, inst)) |i| _ = f.within_runs_on_calls.swapRemove(i);
+    if (std.mem.indexOfScalar(u32, f.within_hosts_calls.items, inst)) |i| _ = f.within_hosts_calls.swapRemove(i);
     const window = f.runs_on_window;
     if (runs or noted) f.runs_on_window = true;
+    if (runs or known) f.runs_on_window_known = true;
     if (!runs and !noted and !window) return;
     for (f.writers.items) |*w| if (!w.reader or wrote) {
         w.revoked = true;
@@ -11324,7 +11475,12 @@ const FlowKey = struct {
     j: u32,
     own: u32,
     up_top: bool,
+    /// Whether a call of the frame runs the use above within it
+    /// (`runsWithin`): `forkedAt` and `runsWithin` read the chain above the
+    /// use, and so does whether a closure is a writer there (#2622).
+    up_within: bool,
     up_rewrites: bool,
+    started: bool,
     defect: bool,
     runs_on: bool,
     c: usize,
@@ -11342,7 +11498,9 @@ fn flowKey(f: *const Frame, v: Val, use: *const Use) FlowKey {
         .j = use.j,
         .own = use.own,
         .up_top = if (use.up) |u| u.kind == .top else false,
+        .up_within = if (use.up) |u| runsWithin(u) != null else false,
         .up_rewrites = use.up_rewrites,
+        .started = use.started_above,
         .defect = use.defect_above,
         .runs_on = use.runs_on_above,
         .c = if (known) @intFromPtr(use.c) else 0,
@@ -11389,14 +11547,19 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     // this fiber masked or under a scheduler of its own, or host a writer,
     // as a callee can.
     if (runsWithin(&use)) |cu| {
-        if (lc.runs_on) try f.noteRunsOn(cu.site.inst, true);
-        if (lc.hosts) try f.hostsCall(cu.site.inst);
+        if (lc.runs_on) try f.noteRunsOnWithin(cu.site.inst, true);
+        if (lc.hosts) try f.hostsWithin(cu.site.inst);
     }
     // A writer of a cell it made runs at its switch points: where its
     // fiber can be masked or under a scheduler of its own, or where a holder
     // the walk does not follow can run it so, a throw of the writer leaves
-    // its code running on.
-    if (lc.hosts and (runsOnAt(&use) or use.kind == .top or (lostAt(&use) and !forkedAt(&use)))) try f.refuse(&use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
+    // its code running on. That is every holder that no call of the frame
+    // runs it within and that starts it in no fiber of its own
+    // (`startedAt`): the default, one that loses it, one that answers it
+    // (a wrapper it answers runs where the frame calls the wrapper, which
+    // can be inside a mask) or lets it out of sight (`Fn.kept_out`), or one
+    // below any of them (kernel §13 item 12, *A defect*, (d), *Up*; #2622).
+    if (lc.hosts and (runsOnAt(&use) or (runsWithin(&use) == null and !try f.startedAt(&use)))) try f.refuse(&use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
     if (runsOnAt(&use)) for (0..code.ncaps) |k| if (f.isWriter(code, k)) {
         try f.refuse(&use, .call, "a function that reads or writes a cell it captured in another fiber runs where its fiber can be masked or under a scheduler of its own, so it runs on after a throw");
         break;
@@ -11418,7 +11581,10 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // Only a holder that starts it in a new fiber, unmasked, of this
         // fiber's scheduler can (`forkedAt`; kernel §13 item 12, *A
         // defect*, (d)).
-        for (reg, 0..) |*x, k| x.* = f.cells_any and (f.isWriter(code, k) or (!defectAt(&use) and forkedAt(&use) and try f.registerWriter(v, code, @intCast(k), inst)));
+        // A closure registered at an earlier fork is no writer at a holder
+        // that does not fork it: the registration is the fork's (#2622).
+        const forked = f.cells_any and !defectAt(&use) and forkedAt(&use);
+        for (reg, 0..) |*x, k| x.* = forked and (f.isWriter(code, k) or try f.registerWriter(v, code, @intCast(k), inst));
         if (try f.writesCapturedBut(code, reg)) try f.refuse(&use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
         // One that writes in place what it stored in a cell it captured,
         // after another fiber could run: another fiber can hold the cell
@@ -11435,7 +11601,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
             try f.escape(v, inst);
         }
         // Lost by code a defect can run, it is run there too (#2609).
-        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code, .defect_above = defectAt(&use), .runs_on_above = runsOnAt(&use) };
+        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code, .defect_above = defectAt(&use), .runs_on_above = runsOnAt(&use), .started_above = forkedAt(&use) or startsAt(&use) };
         try f.defaultParams(code, &top);
         try f.flowRenews(code, &top, false);
         return f.flowCaptures(code, &top);
@@ -11626,6 +11792,11 @@ fn defaultParams(f: *Frame, code: Code, use: *const Use) Error!void {
         var inner = try f.innerUse(code, @intCast(k), lf, use);
         inner.key = use.key;
         try f.escapeSupplies(&inner);
+        // The function runs what the holder hands it, code the walk does
+        // not know, within the call: the call can park this fiber masked
+        // or lend it, as a function value of no contract run there can
+        // (`flowUnknown`; kernel §13 item 12, *A defect*, (d); #2622).
+        if (lf.called) if (runsWithin(&inner)) |cu| try f.noteRunsOnWithin(cu.site.inst, true);
         if (f.rewritesOf(&inner)) try f.refuse(&inner, .supply, "the function changes a value after it handed it to a function parameter, and the code that runs it hands a function that can keep it");
     }
 }
@@ -11747,7 +11918,10 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
     // be a writer, which runs at the frame's switch points (kernel §13 item 12).
     const reg = try f.gpa.alloc(bool, code.ncaps);
     defer f.gpa.free(reg);
-    for (reg, 0..) |*x, k| x.* = top == null and f.cells_any and (f.isWriter(code, k) or (!defectAt(use) and forkedAt(use) and try f.registerWriter(v, code, @intCast(k), use.site.inst)));
+    // Only at a holder that forks it, also where an earlier fork registered
+    // it (#2622).
+    const forked = top == null and f.cells_any and !defectAt(use) and forkedAt(use);
+    for (reg, 0..) |*x, k| x.* = forked and (f.isWriter(code, k) or try f.registerWriter(v, code, @intCast(k), use.site.inst));
     if (top == null and try f.writesCapturedBut(code, reg)) try f.refuse(use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
     try f.flushShare();
     const site = use.site;
@@ -12081,7 +12255,7 @@ fn innerUse(f: *Frame, code: Code, j: u32, lf: *const CMod.Fn, up: *const Use) E
     for (0..code.ncaps) |k| if (code.own_params + k < lc.arity) {
         args[code.own_params + k] = try f.capVal(code, k);
     };
-    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .up_rewrites = f.rewritesOf(up), .defect_above = defectAt(up), .runs_on_above = runsOnAt(up), .site = up.site, .depth = up.depth + 1 };
+    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .up_rewrites = f.rewritesOf(up), .defect_above = defectAt(up), .runs_on_above = runsOnAt(up), .started_above = try f.startedAt(up), .site = up.site, .depth = up.depth + 1 };
 }
 
 /// The frame's own function parameter meets a use: what the use hands it,
@@ -12104,7 +12278,19 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     // one that a call runs within can be such code itself: the call can
     // park this fiber so (kernel §13 item 12, *A defect*, (d)).
     if (runsOnAt(&use)) f.drafts.items[di].runs_on = true;
-    if (runsWithin(&use)) |cu| try f.noteRunsOn(cu.site.inst, false);
+    // Run within a call after one that can leave this fiber masked or
+    // under a scheduler of its own (`runs_on_window`): it runs there too,
+    // as a function with `hosts` called there would (`hostsCall`; kernel
+    // §13 item 12, *A defect*, (d), *After such a call*; #2622).
+    if (f.runs_on_window_known and runsWithin(&use) != null) f.drafts.items[di].runs_on = true;
+    if (runsWithin(&use)) |cu| try f.noteRunsOnWithin(cu.site.inst, false);
+    // Held past the call where nothing starts it in a fiber of its own:
+    // the caller refuses a hosting function here (kernel §13 item 12, *A
+    // defect*, (d), *Up*; #2622).
+    if (runsWithin(&use) == null and !try f.startedAt(&use)) f.drafts.items[di].kept_out = true;
+    // Run within a call after a call of another of the frame's own
+    // functions opened a window: the caller judges the pair (#2622).
+    if (f.runs_on_window and !f.runs_on_window_known and runsWithin(&use) != null) f.drafts.items[di].after_call = true;
     if (use.kind == .top or lostAt(&use) or f.drafts.items[di].lost or f.drafts.items[di].arity != use.fnc.arity) {
         if (!forkedAt(&use)) f.drafts.items[di].not_forks = true;
         f.drafts.items[di].lost = true;
@@ -12141,7 +12327,7 @@ fn flowUnknown(f: *Frame, v: Val, use: *const Use) Error!void {
     // `withScheduler` (kernel §13 item 12, *A defect*, (d)).
     if (runsWithin(use)) |cu| {
         const n = f.nodes.items[v];
-        if (!(n.tag == .fnref and f.jsCode(.{ n.a, n.b }))) try f.noteRunsOn(cu.site.inst, true);
+        if (!(n.tag == .fnref and f.jsCode(.{ n.a, n.b }))) try f.noteRunsOnWithin(cu.site.inst, true);
     }
     try f.escapeSupplies(use);
     if (lostAt(use)) try f.escape(v, use.site.inst);
@@ -13189,6 +13375,12 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
         return f.unknownResult(inst, vals);
     }
     f.drafts.items[di].called = true;
+    // Called after a call that can leave this fiber masked or under a
+    // scheduler of its own: it runs there (`flowOwn`; #2622).
+    if (f.runs_on_window_known) f.drafts.items[di].runs_on = true;
+    // After a window that only a call of another of the frame's own
+    // functions opened: the caller judges the pair (`startedAt`; #2622).
+    if (f.runs_on_window and !f.runs_on_window_known) f.drafts.items[di].after_call = true;
     // A function the frame does not know can keep a handle, or store into
     // it, at any time (kernel §13).
     for (vals) |v| try f.shareVal(v, inst);

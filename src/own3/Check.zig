@@ -3746,6 +3746,9 @@ pub const Mod = struct {
                 w.print(" π{d} fn{s}{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "", if (fnc.defect) " defect" else "" }) catch return error.OutOfMemory;
                 if (fnc.runs_on) w.writeAll(" runs-on") catch return error.OutOfMemory;
                 if (fnc.forks) w.writeAll(" forks") catch return error.OutOfMemory;
+                if (fnc.starts) w.writeAll(" starts") catch return error.OutOfMemory;
+                if (fnc.kept_out) w.writeAll(" kept-out") catch return error.OutOfMemory;
+                if (fnc.after_call) w.writeAll(" after-call") catch return error.OutOfMemory;
                 for (0..fnc.arity) |k| for (m.loc.layoutEntries(fnc.layouts[k]), 0..) |e, i| {
                     const slot = fnc.off[k] + i;
                     w.print(" ({d}{s}{s}", .{ k + 1, try m.locText(e.loc), if (fnc.free[slot]) "" else " held" }) catch return error.OutOfMemory;

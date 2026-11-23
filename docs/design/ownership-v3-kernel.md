@@ -2920,7 +2920,17 @@ contents of a cell are locations, and that a call can change what a location of 
         another scheduler, the reader or writer it starts belongs to that scheduler, and the body's
         own throw, which the program's drain takes up to the body's first suspension point, does not
         stop it.
-      The rules:
+      - **`Fn.starts`** (*added 2026-11-23, #2622*): the holder starts the function in a new root
+        fiber, unmasked, and hands it to nothing else: `Task.start`'s work (walked, named:
+        `startsParams`). It is no `forks`: `fork` gives that fiber no slots, so it belongs to the
+        program's scheduler wherever the caller runs, and a stop of the caller's scheduler does not
+        stop it; a writer registered there would outlive a throw of a frame lent to another
+        scheduler. Nothing masks or lends it either, so a hosting function may go there (*Up*).
+      - **`Fn.kept_out`** (*added 2026-11-23, #2622*): the holder can hold the function past the
+        call and run it where no call runs it within and nothing starts it (`startedAt` is false,
+        `flowOwn`): the frame's own function parameter that meets such a use. `Io.run`'s `body`
+        has none (a closure that `Task.start` starts calls it); a helper that puts a closure over
+        its parameter in a list, a cell or an answer has it.
       - **Down.** A writer or a reader is registered only at a holder with `Fn.forks`, with no
         holder above it that the frame does not see run it within (`forkedAt`); at any other holder
         (a list, a record, unknown code, a wrapper a callee answers, `Task.par`, `Task.start`) it is no writer and
@@ -2928,6 +2938,18 @@ contents of a cell are locations, and that a call can change what a location of 
         it masked or under another scheduler. Nor is a function whose contract has `runs_on`, or
         that takes a function parameter (which can have it), one (`registerWriter`). A writer or a
         reader that meets a use with `runsOnAt` later is refused there.
+        *Amended 2026-11-23 (#2622): a registration is a fact of its fork, not of the closure.* A
+        closure registered at one fork meets every later holder by the same rule: at a holder that
+        does not fork it, it is no writer there, so a write of a captured cell's contents is refused
+        and a reader shares what it captured (`flowCode`, `captureCells`, `applyAt` ask `forkedAt`
+        before `isWriter`). Before, a closure that was a writer or a reader already stayed one at
+        every later holder: `Task.spawn rd` and then `stash rd`, a helper that puts `rd` in a list
+        that a masked fiber runs, kept `r` unshared, and the frame's write of `r` in place that
+        threw left the masked fiber reading it. Whether a holder forks reads the uses above it
+        (`forkedAt`, `runsWithin`), and so does the judgment of a use; a judgment that `flow`
+        memoises keys those facts (`FlowKey.up_within`: whether a call runs the use above within
+        it; `FlowKey.started`, *Up*), so two uses of one holder under two chains that differ in
+        them are two judgments.
       - **In the frame.** A call that can park the frame's own fiber masked or under another
         scheduler (`runs_on` above, a call of the frame's own function parameter, or one that runs
         it within) revokes every writer the frame has registered by then, and every reader where
@@ -2944,11 +2966,67 @@ contents of a cell are locations, and that a call can change what a location of 
         writers are revoked, and its readers where it writes in place), and a call of a function with
         `hosts` there is refused (`hostsCall`). To the end of the body: the next suspension point is
         not followed. A body that returns there has `runs_on` for its caller.
+        *Amended 2026-11-23 (#2622):* the frame's own function parameter that the body calls there,
+        or that a call there runs within, runs there too: its draft has `Fn.runs_on` (`callParam`,
+        `flowOwn`), so the caller refuses a hosting function and a writer or a reader handed there
+        (*Up*, *Down*). Only where a call the body knows opened the window (its callee, or a
+        function run within it, has the bit, or is code the walk does not know:
+        `runs_on_window_known`); a window that only a call of the frame's own function parameter
+        opened is the caller's to judge, and the caller sees the two functions at one call: a call
+        that runs within it both a function that can park the fiber masked or lent and a hosting
+        function is refused, in either order (`noteRunsOnWithin`, `hostsWithin`), since the callee
+        can run the second in the window the first opens. Before, only a known function with
+        `hosts` was refused there: a helper `lendThen s g = (Task.withScheduler s λ⊤ → …; g ⊤)`
+        handed `detachedThenThrow`, or `twoCalls f g = (f ⊤; g ⊤)` handed a function that lends
+        the fiber to `s` and `detachedThenThrow`, ran it on the other scheduler's drain, whose
+        throw stopped that scheduler alone while the detached reader read on (TRAP under
+        `--sanitize-lists`). It is the pessimistic side: a call that runs within it a hosting
+        function and the frame's own function parameter is refused even where the callee runs the
+        parameter after the other.
+        Two more ways in (the lane's reviewer, each wholly accepted on the base and TRAP): a function
+        run within a call that runs what its holder hands it (`List.foldl fs ⊤ λh _ → h ⊤` over a
+        list of functions: the holder hands a function in the default state, `defaultParams`) runs
+        code the walk does not know there, so the call can park the fiber masked or lend it, as a
+        function value of no contract run there can (`flowUnknown`): it revokes the frame's writers
+        and readers, opens the window, and a helper over it has `Contract.runs_on`. And a closure
+        that runs one of its function parameters or captures after a call of another opened a
+        window it could not judge publishes `Fn.after_call` for the second; where a fork or a start
+        starts the closure, so no call of the frame runs both within it, the holder refuses a hosting
+        second function wherever another one the closure runs can park the fiber masked or lend it
+        (one it is handed, the frame's own function parameter, code the walk does not know, a known
+        one with `runs_on`; `siblingRunsOn`, in `startedAt`): `Task.spawn λ⊤ → (lend ⊤; h ⊤)`.
+        It is the pessimistic side: what a callee hands a function parameter is code the walk does
+        not know for the caller, also a closure the callee made, so `ownParam apply` with `ownParam h
+        = h λ⊤ → …` opens the window in the caller (`run/CellClosureWritesLive`'s `spawned`, called
+        after it in `main`, is refused there); and a fiber that runs a captured function and then a
+        captured hosting one is refused wherever the first can lend, also where the fiber runs the
+        second first.
       - **Up.** A function whose contract has `hosts` is refused where it meets a use with
         `runsOnAt`, the default, or a holder that loses it and does not fork it: any of them can run
         it masked.
+        *Amended 2026-11-23 (#2622):* and wherever no call of the frame runs it within (`runsWithin`
+        is null) and nothing starts it in a fiber of its own that nothing masks or lends
+        (`startedAt`): a holder that forks it (`forkedAt`) or starts it (`Fn.starts`, the same
+        chain condition) starts it so; the default does so only where the holder that lost it
+        forks or starts it (`Use.started_above`); a holder that answers it (`flag_a`: a wrapper
+        `λx → f x` it answers runs `f` where the frame calls the wrapper, which can be inside a
+        mask or under another scheduler) or has `Fn.kept_out` does not; nor does a closure that
+        runs it within its own run unless that closure is so started and has no `runs_on` (it
+        enters no mask and no other scheduler anywhere in its body: the fiber stays there after
+        such a call, up to its next suspension point); any other holder that keeps it (`flag_e`
+        with no `kept_out`) lets it go only where it is started. So the rule covers a holder
+        below one that loses it, keeps it or is the default. Before, the rule read only the
+        holder's own level: `Task.uninterruptible (wrap hosting)` was accepted, since at `wrap`
+        the function was kept and its answer reached the mask as a value of no code
+        (`flowUnknown`), which says nothing of `hosts`; and a helper that put `λ⊤ → g ⊤` in a list
+        a masked fiber ran, or in a cell, published `g` as called and kept, which the caller read
+        as run within (each TRAP under `--sanitize-lists`). A hosting function reaches a value of
+        no code, data, a call's answer or a cell only through such a holder, so the rule at the
+        holder covers them. It is the pessimistic side: `Task.spawn (wrap hosting)` is refused at
+        `wrap`, though the wrapper is only forked after.
       No function is refused as a value for having `Fn.runs_on` on a parameter (unlike (a)): a
-      writer or a hosting function never reaches a holder the walk does not follow, so a mask that
+      writer or a hosting function never reaches a holder the walk does not follow (but the start of
+      a fiber of its own, *Down* and *Up*, as amended for #2622), so a mask that
       code the walk does not know runs reaches none of them, and the call of that code revokes the
       frame's own writers. It is the pessimistic side: a writer or a reader that calls `Task.bracket`,
       `onExit`, `Semaphore.withPermit`, `Random.step` or `Url.Parser.parse` (whose generators
@@ -2956,7 +3034,8 @@ contents of a cell are locations, and that a call can change what a location of 
       the cell inside a mask is refused even where it is the cell's one writer (`cells.mjs`'
       `runon.maskWrite.*.dead`); a frame that registered a writer and then calls such a function or
       its own function parameter is refused, and so is one that calls a hosting function after such a
-      call; a hosting function handed to `Cmd.perform` or kept in a list is refused, and a function
+      call; a hosting function handed to `Cmd.perform`, kept in a list or answered by a wrapper is
+      refused, also where the wrapper is only forked after, and a function
       that starts a reader is one; `Task.spawnIn`'s work is no writer or reader, since its scope can be
       a root that the first fiber started in it listed under another scheduler (the lane's
       reviewer); and a frame's write in place inside `withScheduler`'s work while a reader
