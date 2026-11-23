@@ -1,0 +1,13 @@
+click #two
+click #three
+click #field
+click #both
+click #inlist
+click #later
+click #bump
+advance 5
+click #local
+click #loclater
+click #bump
+advance 5
+click #helper

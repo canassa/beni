@@ -6909,6 +6909,16 @@ pub const Lowerer = struct {
         if (!try l.hoistsReady()) return null;
         const rows = l.hoist_prefix.get(key) orelse return null;
         const t = l.in.ownership;
+        // One source read has one temporary: two groups bound for it are
+        // two placements of one read, and the later one may come after a
+        // store (§31.6, #2617).
+        if (std.debug.runtime_safety) for (rows.items, 0..) |ri, i| for (rows.items[i + 1 ..]) |rj| {
+            const gi = l.hoist_groups[ri];
+            const gj = l.hoist_groups[rj];
+            if (gi != gj and l.hoist_live[gi].gen == l.hoist_gen and l.hoist_live[gj].gen == l.hoist_gen and
+                t.reads[ri].prefix_len == t.reads[rj].prefix_len)
+                std.debug.panic("ownership: a hoisted record read is bound at two placements (read rows {d} and {d})", .{ ri, rj });
+        };
         for (rows.items) |ri| {
             const live = l.hoist_live[l.hoist_groups[ri]];
             if (live.gen != l.hoist_gen) std.debug.panic("ownership: a hoisted record read is lowered before its placement (read row {d})", .{ri});

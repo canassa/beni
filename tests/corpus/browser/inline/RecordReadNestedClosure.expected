@@ -1,0 +1,208 @@
+-- load
+<body>
+  <main>
+    <p id="got"></p>
+    <p id="count">"0"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #two
+<body>
+  <main>
+    <p id="got">" two0"</p>
+    <p id="count">"1"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #three
+<body>
+  <main>
+    <p id="got">" two0 three1"</p>
+    <p id="count">"2"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #field
+<body>
+  <main>
+    <p id="got">" two0 three1 field0"</p>
+    <p id="count">"2"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #both
+<body>
+  <main>
+    <p id="got">" two0 three1 field0 both2l"</p>
+    <p id="count">"3"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #inlist
+<body>
+  <main>
+    <p id="got">" two0 three1 field0 both2l item0"</p>
+    <p id="count">"3"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #later
+(the DOM did not change)
+-- click #bump
+<body>
+  <main>
+    <p id="got">" two0 three1 field0 both2l item0"</p>
+    <p id="count">"13"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- advance 5
+<body>
+  <main>
+    <p id="got">" two0 three1 field0 both2l item0 later3"</p>
+    <p id="count">"13"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #local
+<body>
+  <main>
+    <p id="got">" two0 three1 field0 both2l item0 later3 local13"</p>
+    <p id="count">"14"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #loclater
+(the DOM did not change)
+-- click #bump
+<body>
+  <main>
+    <p id="got">" two0 three1 field0 both2l item0 later3 local13"</p>
+    <p id="count">"24"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- advance 5
+<body>
+  <main>
+    <p id="got">" two0 three1 field0 both2l item0 later3 local13 loclater14"</p>
+    <p id="count">"24"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
+-- click #helper
+<body>
+  <main>
+    <p id="got">" two0 three1 field0 both2l item0 later3 local13 loclater14 helpert24"</p>
+    <p id="count">"25"</p>
+    <button id="two">"two"</button>
+    <button id="three">"three"</button>
+    <button id="field">"field"</button>
+    <button id="both">"both"</button>
+    <button id="inlist">"inlist"</button>
+    <button id="later">"later"</button>
+    <button id="local">"local"</button>
+    <button id="loclater">"loclater"</button>
+    <button id="helper">"helper"</button>
+    <button id="bump">"bump"</button>
+  </main>
+</body>
