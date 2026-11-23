@@ -251,6 +251,10 @@ const FnDraft = struct {
     rewrites: bool = false,
     /// A defect can run it (`Fn.defect`).
     defect: bool = false,
+    /// It can run masked or under a scheduler of its own (`Fn.runs_on`).
+    runs_on: bool = false,
+    /// A use loses it to a holder that is no fiber's start (`Fn.forks`).
+    not_forks: bool = false,
     /// The body does something with the function: it calls it or lets it flow.
     used: bool = false,
 };
@@ -308,6 +312,10 @@ const Use = struct {
     /// made: by `innerUse` from its `up`, and by `flowCode` on the default
     /// use it makes where the holder loses the function.
     defect_above: bool = false,
+    /// Whether a holder above this one can run it while its fiber is masked
+    /// or lent to a scheduler of its own (`runsOnAt`; kernel §13 item 12,
+    /// *A defect*, (d)). Set where the use is made, as `defect_above` is.
+    runs_on_above: bool = false,
     site: *const Site,
     depth: u32 = 0,
     /// The function in the location, once `flow` knows which it is: a known
@@ -655,6 +663,25 @@ defect_codes: std.ArrayList([2]u32) = .empty,
 /// a closure the frame put there can capture any of them that it uses. Each
 /// gets `Fn.defect`.
 defect_data: enum(u8) { none, lost, held } = .none,
+/// Kernel §13 item 12, *A defect*, (d): a run of the body can park its own
+/// fiber masked or lent to a scheduler of its own (`Contract.runs_on`).
+runs_on: bool = false,
+/// A writer of a cell the frame made runs at its switch points, or a callee
+/// or a function run within a call has the bit (`Contract.hosts`).
+hosts: bool = false,
+/// The calls in work that run within them a function that can park this
+/// fiber masked or under a scheduler of its own (`noteRunsOn`): each
+/// revokes the writers and readers registered by then where it ends
+/// (`revokeAt`), which takes it off. A few at a time: the calls nested in
+/// one call's operands.
+runs_on_calls: std.ArrayList(u32) = .empty,
+/// The walk is past a call that can park this fiber masked or under a
+/// scheduler of its own: the fiber can still be there, up to its next
+/// suspension point, on that scheduler's drain or with an interrupt
+/// latched, so every later call is one too (`revokeAt`), and a hosting
+/// callee there is refused (kernel §13 item 12, *A defect*, (d)). To the
+/// end of the body: the next suspension point is not followed.
+runs_on_window: bool = false,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -680,7 +707,9 @@ const Parked = struct { start: u32, len: u32, at: u32, ctx: u32, root: u32, h: u
 /// `reader`: a closure that reads the contents and neither writes nor
 /// stores them (kernel §13 item 12): it runs as a writer does, and is
 /// never revoked, since it writes nothing another holder could see.
-const Writer = struct { code: u32, k: u32, o: u32, e: u32, site: u32, reader: bool = false };
+/// `revoked`: the frame made a call that can park its fiber masked or
+/// under a scheduler of its own after it went out of sight (`revokeAt`).
+const Writer = struct { code: u32, k: u32, o: u32, e: u32, site: u32, reader: bool = false, revoked: bool = false };
 const PairedHit = struct { start: u32, len: u32, dup: bool, hit_all: bool };
 
 pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32) Error!Frame {
@@ -6206,7 +6235,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             flags[off[x.a] + x.e] |= flag_s;
         };
         const fnc = try m.arena.create(CMod.Fn);
-        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0) };
+        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0), .runs_on = dr.runs_on or (idx < 32 and (f.runsOnParams() >> @intCast(idx)) & 1 != 0), .forks = (dr.lost and !dr.not_forks and !dr.called) or (idx < 32 and (f.forksParams() >> @intCast(idx)) & 1 != 0) };
         fns[idx] = fnc;
         // The function itself is used.
         if (dr.used) for (flags[off[idx]..off[idx + 1]]) |*x| {
@@ -6232,7 +6261,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const renew = try f.publishRenew(flags, off, total, &renew_shared);
     const paths = try f.publishPaths(flags, off, renew);
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .renew = renew, .renew_shared = renew_shared, .paths = paths };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .runs_on = f.runs_on or f.runsOnParams() != 0, .hosts = f.hosts, .renew = renew, .renew_shared = renew_shared, .paths = paths };
     return c;
 }
 
@@ -8071,6 +8100,11 @@ fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
     if (m.isDraft(lc) or lc.casts or code.own_params + code.ncaps > lc.arity) return false;
     for (0..code.ncaps) |kc| if (lc.fns[code.own_params + kc] != null) return false;
     if (f.writesOwn(lc, code.own_params)) return false;
+    // One that can park its fiber masked or under a scheduler of its own,
+    // or runs a function it is handed (which can), runs on after another
+    // holder's throw (kernel §13 item 12, *A defect*, (d)).
+    if (lc.runs_on) return false;
+    for (0..@min(code.own_params, lc.arity)) |j0| if (lc.fns[j0] != null) return false;
     const sig = lc.layouts[j];
     const inner = try f.innerOf(sig);
     if (inner.len == 0) return false;
@@ -8117,6 +8151,11 @@ fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
     }
     const ci = f.nodes.items[v].a;
     for (os.items) |o| try f.writers.append(f.gpa, .{ .code = ci, .k = k, .o = o[0], .e = o[1], .site = site, .reader = reader });
+    // A writer's throw while this fiber is parked masked leaves its write
+    // for the frame's code after; a reader, started where the frame runs
+    // lent to another scheduler, outlives the frame's own throw on the
+    // program's drain (kernel §13 item 12, *A defect*, (d)).
+    f.hosts = true;
     return true;
 }
 
@@ -8273,6 +8312,13 @@ fn revokeWriters(f: *Frame) Error!void {
     }
     for (f.writers.items) |w| {
         const key: [2]u32 = .{ w.o, w.e };
+        // The frame made a call that can park its fiber masked or under a
+        // scheduler of its own after it went out of sight (kernel §13 item
+        // 12, *A defect*, (d)).
+        if (w.revoked) {
+            try f.m.addRefusal(f, w.site, .call, if (w.reader) "a function that reads the contents of a cell it captured runs in another fiber, and the frame then makes a call that can run where its fiber is masked or under a scheduler of its own, where code runs on after a throw" else "a function that writes the contents of a cell it captured runs in another fiber, and the frame then makes a call that can run where its fiber is masked or under a scheduler of its own, where code runs on after a throw");
+            continue;
+        }
         // A reader reads the cell at a switch point where a holder keeps a
         // value taken out of it (the mark): a function `Ref.update` runs
         // that writes it in place and then logs, so that a sink reads the
@@ -8333,6 +8379,8 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     // A markup primitive of the vocabulary (`pub markup map`), which each
     // lowering's runtime implements (`boundary.md` §9.4.8).
     var primitive = false;
+    // A declaration whose body is JavaScript (`jsCode`).
+    var js_callee = false;
     // A function of the top level has its contract; any other callee is an
     // expression, evaluated by `evalInner`, whose switch names every tag.
     // The evidence of a call is at the call, whatever its callee: a local
@@ -8345,6 +8393,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         if (m.calleeOf(callee)) |t| {
             if (try m.declContract(t)) |c| code = .{ .contract = c, .decl = t, .own_params = c.arity };
             if (t[0] < m.in.birs.len and t[1] < m.in.birs[t[0]].decls.len) primitive = m.in.birs[t[0]].decls[t[1]].kind == .vocab_markup;
+            js_callee = f.jsCode(t);
         }
     } else {
         callee_val = try f.eval(callee, .callee, false);
@@ -8353,6 +8402,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
             .closure => code = f.codes.items[n.a],
             .fnref => {
                 if (try m.declContract(.{ n.a, n.b })) |c| code = .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
+                js_callee = f.jsCode(.{ n.a, n.b });
             },
             .ref => fn_root = f.ownFnRoot(callee_val),
             .none, .outside, .built, .join, .unknown => {},
@@ -8390,6 +8440,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         try f.switchPoint(inst, vals.items, if (code) |c| c.contract else null);
     }
     const writers_before = f.writers.items.len;
+    const demands_before = f.demands.items.len;
     // A call in a hole of markup can run after the other holes (`markup`).
     f.call_inst = inst;
     f.call_vals = try f.gpa.dupe(Val, vals.items);
@@ -8411,12 +8462,27 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         try vals.append(f.gpa, callee_val);
         break :blk try f.unknownResult(inst, vals.items);
     };
+    // What the call wrote in place, before the runs of the writers it made.
+    const wrote = f.demands.items.len > demands_before;
     // A writer that went out of sight at this call can run within it.
     if (f.writers.items.len > writers_before and f.switchAt(inst)) {
         const followed = try f.followedOps(vals.items.len, if (code) |c| c.contract else null);
         defer f.gpa.free(followed);
         for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items, followed);
     }
+    // A call that can park this fiber masked or under a scheduler of its
+    // own (kernel §13 item 12, *A defect*, (d)): a callee with the bit, the
+    // frame's own function parameter (the caller judges what it hands, so
+    // the contract says nothing of it), or code the walk does not know.
+    if (code) |c| {
+        if (c.contract.runs_on) try f.noteRunsOn(inst, true);
+        if (c.contract.hosts) try f.hostsCall(inst);
+    } else if (fn_root != none) {
+        try f.noteRunsOn(inst, false);
+    } else if (js_callee) {
+        try f.jsArgsRunOn(inst, args, vals.items);
+    } else if (!primitive) try f.noteRunsOn(inst, true);
+    f.revokeAt(inst, false, wrote);
     const named = m.tags[callee] == .top or m.tags[callee] == .ext_value;
     try f.noteJsSite(.{ if (named) callee else none, inst }, vals.items, result, f.casts and !casts_before);
     return result;
@@ -8669,6 +8735,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     // Another fiber can run inside the call (kernel §13 item 12).
     try f.switchPoint(inst, vals.items, if (code) |c| c.contract else null);
     const writers_before = f.writers.items.len;
+    const demands_before = f.demands.items.len;
     const casts_before = f.casts;
     const result: Val = blk: {
         switch (target) {
@@ -8683,11 +8750,19 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         for (vals.items) |v| try f.escape(v, inst);
         break :blk try f.unknownResult(inst, vals.items);
     };
+    const wrote = f.demands.items.len > demands_before;
     if (f.writers.items.len > writers_before and f.switchAt(inst)) {
         const followed = try f.followedOps(vals.items.len, if (code) |c| c.contract else null);
         defer f.gpa.free(followed);
         for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items, followed);
     }
+    // As in `call` (kernel §13 item 12, *A defect*, (d)): code the
+    // compiler derives is a well-known method, which cannot suspend.
+    if (code) |c| {
+        if (c.contract.runs_on) try f.noteRunsOn(inst, true);
+        if (c.contract.hosts) try f.hostsCall(inst);
+    } else if (target != .reads) try f.noteRunsOn(inst, true);
+    f.revokeAt(inst, false, wrote);
     try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
     return result;
 }
@@ -8730,7 +8805,18 @@ fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
     try roots.appendSlice(f.gpa, dt.argsAt(site.evidence));
     const x = (try m.termsInfo(roots.items[0..ncallee])).effect;
     // Each text of an edge of the evidence that can do something, once.
-    const texts = (try m.termsInfo(roots.items[ncallee..])).texts;
+    const ev_info = try m.termsInfo(roots.items[ncallee..]);
+    const texts = ev_info.texts;
+    // Code the site runs that can park this fiber masked or under a
+    // scheduler of its own, or hosts a writer (kernel §13 item 12, *A
+    // defect*, (d)).
+    // Evidence bound at a reference runs where the function is called,
+    // later: the writers registered by now are revoked here too.
+    if (x.runs_on or ev_info.effect.runs_on) {
+        try f.noteRunsOn(inst, true);
+        f.revokeAt(inst, true, true);
+    }
+    if (x.hosts or ev_info.effect.hosts) try f.hostsCall(inst);
     for ([_]u4{ 1, 2, 4, 8 }) |b| if (texts & b != 0) try m.addEvidenceRefusal(f, inst, Check.RowInfo.text(b));
     return x;
 }
@@ -9267,7 +9353,9 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
             const lcode = f.codes.items[f.nodes.items[args[j]].a];
             var any = false;
             for (0..lcode.ncaps) |k| {
-                if (f.isWriter(lcode, k) or (!c.fns[j].?.defect and try f.registerWriter(args[j], lcode, @intCast(k), inst))) any = true;
+                // Only where the callee starts it in a new fiber, unmasked
+                // (`Fn.forks`; kernel §13 item 12, *A defect*, (d)).
+                if (f.isWriter(lcode, k) or (!c.fns[j].?.defect and c.fns[j].?.forks and !c.fns[j].?.runs_on and try f.registerWriter(args[j], lcode, @intCast(k), inst))) any = true;
             }
             if (any) {
                 const escapes_any = for (0..n) |se| {
@@ -11092,6 +11180,141 @@ fn defectHookParams(f: *const Frame) u32 {
     return 0;
 }
 
+/// Kernel §13 item 12, *A defect*, (d): the parameters (a mask) of one of
+/// core's declarations that run the function they are handed while the
+/// fiber is masked (`Task.uninterruptible`, `uninterruptibleMask`) or lent
+/// to a scheduler of its own (`Task.withScheduler`). The three are every
+/// way in: only `core/Task.beni` touches a fiber's masks or its scheduler
+/// slot. `restore` brings back the interruptibility of the code that
+/// entered its mask, so its work is masked only inside another mask, whose
+/// call has the bit already. Named directly, as `defectHookParams` names
+/// the hooks; a declaration with a mask also has `Contract.runs_on`.
+fn runsOnParams(f: *const Frame) u32 {
+    const m = f.m;
+    const mod = m.in.module;
+    if (f.is_lambda or !m.in.isCore(mod) or mod >= m.names.module_names.len) return 0;
+    if (!std.mem.eql(u8, m.names.module_names[mod], "Task")) return 0;
+    const name = m.names.declName(mod, f.decl);
+    const entries = [_]struct { []const u8, u32 }{ .{ "uninterruptible", 1 }, .{ "uninterruptibleMask", 1 }, .{ "withScheduler", 2 } };
+    for (entries) |e| if (std.mem.eql(u8, name, e[0])) return e[1];
+    return 0;
+}
+
+/// Kernel §13 item 12, *A defect*, (d): the parameters (a mask) of one of
+/// core's walked declarations that only start the function they are handed
+/// in a new fiber of the current scheduler, unmasked (`Fn.forks`): a race's
+/// branches (`begin`, which runs each as a fiber of its own). `Task.spawn`,
+/// `spawnIn` and `spawnDetached` are worded (`Check.forksParam`). Named
+/// directly, as `runsOnParams` names the masks.
+fn forksParams(f: *const Frame) u32 {
+    const m = f.m;
+    const mod = m.in.module;
+    if (f.is_lambda or !m.in.isCore(mod) or mod >= m.names.module_names.len) return 0;
+    if (!std.mem.eql(u8, m.names.module_names[mod], "Task")) return 0;
+    const name = m.names.declName(mod, f.decl);
+    const entries = [_]struct { []const u8, u32 }{ .{ "race", 3 }, .{ "raceAll", 1 } };
+    for (entries) |e| if (std.mem.eql(u8, name, e[0])) return e[1];
+    return 0;
+}
+
+/// Whether `v` is a declaration whose body is JavaScript (a `foreign`
+/// with no words, a markup primitive): it has no contract, and it parks no
+/// fiber in a mask nor lends one to a scheduler, since only `core/Task.beni`
+/// does (kernel §13 item 12, *A defect*, (d)); what it is handed is judged
+/// where it is handed.
+fn jsCode(f: *const Frame, t: [2]u32) bool {
+    const m = f.m;
+    if (t[0] >= m.in.birs.len or t[1] >= m.in.birs[t[0]].decls.len) return false;
+    const d = m.in.birs[t[0]].decls[t[1]];
+    if (m.in.birs[t[0]].ownSlotsV2(d).len != 0) return false;
+    return switch (d.kind) {
+        .foreign_value, .vocab_markup => true,
+        .value, .annotation_only, .type, .type_alias, .foreign_type, .schema, .vocab_element, .vocab_attribute, .vocab_event => false,
+    };
+}
+
+/// A call of JavaScript (`jsCode`) at `inst` can run a function it is
+/// handed within it: each function argument that can park this fiber masked
+/// or under a scheduler of its own, as one run within a known call does
+/// (kernel §13 item 12, *A defect*, (d)).
+fn jsArgsRunOn(f: *Frame, inst: u32, args: []const Inst.Index, vals: []const Val) Error!void {
+    const m = f.m;
+    for (args, 0..) |a, k| {
+        if (k >= vals.len or m.fnType(m.typeOfInst(a.int())) == null) continue;
+        const v = vals[k];
+        if (v == v_none or v == v_outside) continue;
+        if (try f.codeOf(v)) |c| {
+            if (c.contract.runs_on) try f.noteRunsOn(inst, true);
+            if (c.contract.hosts) try f.hostsCall(inst);
+        } else if (f.isFnRoot(f.ownFnRoot(v))) {
+            try f.noteRunsOn(inst, false);
+        } else if (!(f.nodes.items[v].tag == .fnref and f.jsCode(.{ f.nodes.items[v].a, f.nodes.items[v].b }))) {
+            try f.noteRunsOn(inst, true);
+        }
+    }
+}
+
+/// Whether the holder at `use` can run the function while its fiber is
+/// masked or lent to a scheduler of its own: its `Fn.runs_on`, or such a
+/// holder above it (`Use.runs_on_above`).
+fn runsOnAt(use: *const Use) bool {
+    return use.runs_on_above or (use.kind != .top and use.fnc.runs_on);
+}
+
+/// Whether the holder at `use` only starts the function in a new fiber,
+/// unmasked, of the scheduler this fiber runs under (`Fn.forks`), and the
+/// code above it runs it within a call of the frame: a writer or a reader
+/// can go here (kernel §13 item 12, *A defect*, (d)). Any other holder the
+/// walk does not follow can run it masked or under another scheduler.
+fn forkedAt(use: *const Use) bool {
+    if (use.kind == .top or runsOnAt(use) or !use.fnc.forks) return false;
+    const up = use.up orelse return true;
+    return runsWithin(up) != null;
+}
+
+/// The call `inst` can park the frame's fiber masked or lent to a
+/// scheduler of its own (kernel §13 item 12, *A defect*, (d)): it revokes
+/// the writers and readers registered by then (`revokeAt`), and, with
+/// `contract`, the frame's own contract says it too. A call of the frame's
+/// own function parameter, or one that runs it within, passes no
+/// `contract`: the caller judges what it hands there.
+fn noteRunsOn(f: *Frame, inst: u32, contract: bool) Error!void {
+    if (contract) f.runs_on = true;
+    if (std.mem.indexOfScalar(u32, f.runs_on_calls.items, inst) == null) try f.runs_on_calls.append(f.gpa, inst);
+}
+
+/// The call `inst` runs code that hosts a writer or a reader of a cell its
+/// frame made (`Contract.hosts`): so does this frame. Past a call that can
+/// park this fiber masked or under another scheduler (`runs_on_window`),
+/// that code runs there, and a throw in it, or in a writer of it, leaves the
+/// write in place for a fiber that runs on (kernel §13 item 12, *A defect*,
+/// (d)): refused.
+fn hostsCall(f: *Frame, inst: u32) Error!void {
+    f.hosts = true;
+    if (f.runs_on_window) try f.m.addRefusal(f, inst, .call, "a function in which a writer or a reader of a cell it made runs in another fiber runs after a call that can leave this fiber masked or under a scheduler of its own, so code runs on after a throw in it");
+}
+
+/// After the call `inst`, where it can park the frame's fiber masked or
+/// under a scheduler of its own (`runs`, or a function run within it,
+/// `noteRunsOn`): every writer registered by then is revoked, and every
+/// reader where the call wrote something in place (`wrote`: a demand was
+/// made in it). A writer's throw while the frame is parked masked leaves
+/// its write in place for the frame's code after the call; the frame's own
+/// throw under the other scheduler, in a write in place, leaves it for a
+/// reader or a writer outside it.
+fn revokeAt(f: *Frame, inst: u32, runs: bool, wrote: bool) void {
+    const noted = if (std.mem.indexOfScalar(u32, f.runs_on_calls.items, inst)) |i| blk: {
+        _ = f.runs_on_calls.swapRemove(i);
+        break :blk true;
+    } else false;
+    const window = f.runs_on_window;
+    if (runs or noted) f.runs_on_window = true;
+    if (!runs and !noted and !window) return;
+    for (f.writers.items) |*w| if (!w.reader or wrote) {
+        w.revoked = true;
+    };
+}
+
 /// What one judgment of `flow` reads of its use, besides what is above it
 /// (`ctx_floor`): the function, the holder's contract and capture, the
 /// values, and whether the use above is the default or rewrites.
@@ -11103,6 +11326,7 @@ const FlowKey = struct {
     up_top: bool,
     up_rewrites: bool,
     defect: bool,
+    runs_on: bool,
     c: usize,
     fnc: usize,
     holder: u64,
@@ -11120,6 +11344,7 @@ fn flowKey(f: *const Frame, v: Val, use: *const Use) FlowKey {
         .up_top = if (use.up) |u| u.kind == .top else false,
         .up_rewrites = use.up_rewrites,
         .defect = use.defect_above,
+        .runs_on = use.runs_on_above,
         .c = if (known) @intFromPtr(use.c) else 0,
         .fnc = if (known) @intFromPtr(use.fnc) else 0,
         .holder = use.holder,
@@ -11160,6 +11385,22 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     // holder that does not know it hands it functions the frame registered
     // as writers or readers (kernel §13 item 12, *A defect*, (a); #2609).
     if (paramsDefect(code)) try f.refuse(&use, .call, "a function that hands its function parameter to code a defect can run is used as a value");
+    // Kernel §13 item 12, *A defect*, (d). Run within a call, it can park
+    // this fiber masked or under a scheduler of its own, or host a writer,
+    // as a callee can.
+    if (runsWithin(&use)) |cu| {
+        if (lc.runs_on) try f.noteRunsOn(cu.site.inst, true);
+        if (lc.hosts) try f.hostsCall(cu.site.inst);
+    }
+    // A writer of a cell it made runs at its switch points: where its
+    // fiber can be masked or under a scheduler of its own, or where a holder
+    // the walk does not follow can run it so, a throw of the writer leaves
+    // its code running on.
+    if (lc.hosts and (runsOnAt(&use) or use.kind == .top or (lostAt(&use) and !forkedAt(&use)))) try f.refuse(&use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
+    if (runsOnAt(&use)) for (0..code.ncaps) |k| if (f.isWriter(code, k)) {
+        try f.refuse(&use, .call, "a function that reads or writes a cell it captured in another fiber runs where its fiber can be masked or under a scheduler of its own, so it runs on after a throw");
+        break;
+    };
     if (use.kind == .top or lostAt(&use) or code.own_params != use.fnc.arity) {
         // No contract describes the holder: the function must ask nothing
         // (kernel §6.8). It writes no parameter, and the holder hands each of
@@ -11174,7 +11415,10 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // One a defect can run runs at any point, not only a switch point:
         // it is neither, and shares what it captured (kernel §13 item 12,
         // *A defect*).
-        for (reg, 0..) |*x, k| x.* = f.cells_any and (f.isWriter(code, k) or (!defectAt(&use) and try f.registerWriter(v, code, @intCast(k), inst)));
+        // Only a holder that starts it in a new fiber, unmasked, of this
+        // fiber's scheduler can (`forkedAt`; kernel §13 item 12, *A
+        // defect*, (d)).
+        for (reg, 0..) |*x, k| x.* = f.cells_any and (f.isWriter(code, k) or (!defectAt(&use) and forkedAt(&use) and try f.registerWriter(v, code, @intCast(k), inst)));
         if (try f.writesCapturedBut(code, reg)) try f.refuse(&use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
         // One that writes in place what it stored in a cell it captured,
         // after another fiber could run: another fiber can hold the cell
@@ -11191,7 +11435,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
             try f.escape(v, inst);
         }
         // Lost by code a defect can run, it is run there too (#2609).
-        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code, .defect_above = defectAt(&use) };
+        const top: Use = .{ .kind = .top, .id = f.useId(), .key = use.key, .site = use.site, .depth = use.depth, .code = code, .defect_above = defectAt(&use), .runs_on_above = runsOnAt(&use) };
         try f.defaultParams(code, &top);
         try f.flowRenews(code, &top, false);
         return f.flowCaptures(code, &top);
@@ -11503,7 +11747,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
     // be a writer, which runs at the frame's switch points (kernel §13 item 12).
     const reg = try f.gpa.alloc(bool, code.ncaps);
     defer f.gpa.free(reg);
-    for (reg, 0..) |*x, k| x.* = top == null and f.cells_any and (f.isWriter(code, k) or (!defectAt(use) and try f.registerWriter(v, code, @intCast(k), use.site.inst)));
+    for (reg, 0..) |*x, k| x.* = top == null and f.cells_any and (f.isWriter(code, k) or (!defectAt(use) and forkedAt(use) and try f.registerWriter(v, code, @intCast(k), use.site.inst)));
     if (top == null and try f.writesCapturedBut(code, reg)) try f.refuse(use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
     try f.flushShare();
     const site = use.site;
@@ -11837,7 +12081,7 @@ fn innerUse(f: *Frame, code: Code, j: u32, lf: *const CMod.Fn, up: *const Use) E
     for (0..code.ncaps) |k| if (code.own_params + k < lc.arity) {
         args[code.own_params + k] = try f.capVal(code, k);
     };
-    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .up_rewrites = f.rewritesOf(up), .defect_above = defectAt(up), .site = up.site, .depth = up.depth + 1 };
+    return .{ .kind = .inner, .id = f.useId(), .key = std.hash.Wyhash.hash(up.key, std.mem.asBytes(&j)), .holder = code.id(), .c = lc, .fnc = lf, .j = j, .args = args, .own = code.own_params, .up = up, .up_rewrites = f.rewritesOf(up), .defect_above = defectAt(up), .runs_on_above = runsOnAt(up), .site = up.site, .depth = up.depth + 1 };
 }
 
 /// The frame's own function parameter meets a use: what the use hands it,
@@ -11856,7 +12100,13 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     f.drafts.items[di].used = true;
     // A function a defect can run, handed on: so is the frame's own.
     if (defectAt(&use)) f.drafts.items[di].defect = true;
+    // One that can run masked or under a scheduler of its own, too; and
+    // one that a call runs within can be such code itself: the call can
+    // park this fiber so (kernel §13 item 12, *A defect*, (d)).
+    if (runsOnAt(&use)) f.drafts.items[di].runs_on = true;
+    if (runsWithin(&use)) |cu| try f.noteRunsOn(cu.site.inst, false);
     if (use.kind == .top or lostAt(&use) or f.drafts.items[di].lost or f.drafts.items[di].arity != use.fnc.arity) {
+        if (!forkedAt(&use)) f.drafts.items[di].not_forks = true;
         f.drafts.items[di].lost = true;
         if (use.kind != .top) try f.escapeSupplies(&use);
         return;
@@ -11887,6 +12137,12 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
 /// A function in the default state meets a use. It asks nothing; it can keep what it is handed.
 fn flowUnknown(f: *Frame, v: Val, use: *const Use) Error!void {
     if (use.kind == .top) return;
+    // Run within a call, it can be `Task.uninterruptible` or
+    // `withScheduler` (kernel §13 item 12, *A defect*, (d)).
+    if (runsWithin(use)) |cu| {
+        const n = f.nodes.items[v];
+        if (!(n.tag == .fnref and f.jsCode(.{ n.a, n.b }))) try f.noteRunsOn(cu.site.inst, true);
+    }
     try f.escapeSupplies(use);
     if (lostAt(use)) try f.escape(v, use.site.inst);
     if (f.rewritesOf(use)) try f.refuse(use, .supply, "the callee changes a value after it handed it to a function that the checker does not know");
@@ -12818,7 +13074,7 @@ fn draftOf(f: *Frame, root: u32, callee_inst: ?u32) Error!u32 {
         layouts[0] = try m.loc.layoutOf(m.var_place);
         const off = try m.arena.alloc(u32, 1);
         off[0] = 0;
-        try f.drafts.append(f.gpa, .{ .root = root, .arity = 0, .places = places, .layouts = layouts, .off = off, .supply = &.{}, .free = &.{}, .lost = true });
+        try f.drafts.append(f.gpa, .{ .root = root, .arity = 0, .places = places, .layouts = layouts, .off = off, .supply = &.{}, .free = &.{}, .lost = true, .not_forks = true });
         return @intCast(f.drafts.items.len - 1);
     };
     const pvars = m.in.store.vars(ft.params);
@@ -12928,6 +13184,7 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
     f.drafts.items[di].used = true;
     if (f.drafts.items[di].arity != vals.len) {
         f.drafts.items[di].lost = true;
+        f.drafts.items[di].not_forks = true;
         for (vals) |v| try f.escape(v, inst);
         return f.unknownResult(inst, vals);
     }

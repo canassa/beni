@@ -1,4 +1,4 @@
-# The live twins of CellDefectReach: a function that code a defect runs reaches reads the cell, which the frame then writes in place; a defect can run it between the write of the function `Ref.update` runs and the store-back, so each write is refused, and so is each hook installer used as a value (#2609).
+# The live twins of CellDefectReach: a function that code a defect runs reaches reads the cell, which the frame then writes in place; a defect can run it between the write of the function `Ref.update` runs and the store-back, so each write is refused, and so is each hook installer used as a value (#2609); a reader handed to code the checker does not know is no reader and shares the cell, so the write after it is refused too (ownership-v3-kernel.md §13 item 12, *A defect*, (d), #2613).
 88:25 list_still_used value
 100:5 list_still_used call
 108:5 list_still_used call
@@ -11,10 +11,15 @@
 164:5 list_still_used call
 171:5 list_still_used value
 172:5 list_still_used call
+180:5 list_still_used call
 188:23 list_still_used value
 188:45 list_still_used value
+190:5 list_still_used call
 197:56 list_still_used value
 198:5 list_still_used value
+199:5 list_still_used call
 206:19 list_still_used value
+208:5 list_still_used call
 216:23 list_still_used value
 216:45 list_still_used value
+218:5 list_still_used call

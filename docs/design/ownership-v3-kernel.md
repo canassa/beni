@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -2658,6 +2658,11 @@ contents of a cell are locations, and that a call can change what a location of 
     cell is alive; #2581). A function that writes the contents of a cell the frame made, and goes where
     the walk does not follow it (a spawned fiber, `Task.par`, a list, unknown code, a wrapper a callee
     answers), runs at the frame's **switch points**: no other fiber runs between them.
+    *Amended 2026-11-23 (#2613):* only where its holder starts it in a new fiber, unmasked, of the
+    scheduler the frame runs under (`Fn.forks`: `Task.spawn`, `spawnDetached`, a race's branches),
+    and
+    where it can never park that fiber masked or lent to another scheduler; at every other holder it
+    shares what it captured (*A defect*, (d)).
     - **A switch point** is a call whose callee may be impure or may suspend (`switchAt`, the effect
       checker's answer, `Dispatch.effectAt`; a module with no effect table: every call). Not only a
       call that suspends: an impure call can run other fibers without one (`Task.fromHost` drains the
@@ -2867,7 +2872,96 @@ contents of a cell are locations, and that a call can change what a location of 
       A fiber that is ready at the throw and not masked runs no code of its own in the teardown: the
       drain unwinds it before its next step (`deliverable`), so only its cleanups run, and those
       are hooks above. A fiber that is masked at the throw goes on running its masked code there
-      (`halt` latches the interrupt only): that is not covered yet (#2610, below).
+      (`halt` latches the interrupt only): (d).
+      (d) *Amended 2026-11-23 (#2613): code that runs on after a throw elsewhere.* A page survives a
+      defect, and the fiber that threw is the only one cut (`recover` sets its masks to 0). Two
+      kinds of other fibers run program code after it. A fiber parked or ready inside a mask
+      (`Task.uninterruptible`, `uninterruptibleMask`) goes on to its first suspension point with no
+      mask: its timer or its wait wakes it, and `loop` delivers nothing while it is masked. And a
+      throw under a scheduler of its own (`Task.withScheduler`) stops that scheduler alone
+      (`stopScheduler`): its fibers and the fibers lent to it are cancelled with their children,
+      and every other one runs on, a fiber `Task.spawnDetached` or `Task.spawnIn` started outside
+      it among them. Either can be the frame's own fiber, or a fiber the frame registered as a
+      writer or a reader: the loan rule holds only where a throw in one holder of a cell stops every
+      other holder that reads the cell after. Blind round BS proved it on a page with a masked fiber
+      and with a write under another scheduler; the lane found the frame itself parked in a mask,
+      a caller that masks a function in which a writer fiber runs, and a detached reader of a write
+      under another scheduler; the lane's reviewer a root scope listed under another scheduler, a
+      reader started by `withScheduler`'s work, and code after `withScheduler` returns (each wholly
+      accepted before, TRAP under `--sanitize-lists`). A
+      contract says three more facts (`runs-on`, `hosts` and `forks` in the dump):
+      - **`Contract.runs_on`**: a run of the body can park its own fiber masked or lent to a
+        scheduler of its own. Set where the body calls `Task.uninterruptible`, `uninterruptibleMask`
+        or `withScheduler` (named: `runsOnParams`), a callee with the bit, or code the walk does not
+        know (a function value of no contract, a method of no contract: it can be one of them), or
+        where a call runs within it (`runsWithin`) a function with the bit or one the walk does not
+        know. JavaScript (a `foreign` with no words, `jsCode`) parks no fiber in a mask and lends
+        none: only the functions it is handed count (`jsArgsRunOn`). A call of the frame's own
+        function parameter, or one that runs it within, sets no bit: the caller judges what it hands
+        there. `restore` is not named: it brings back the interruptibility of the code that entered
+        its mask, so its work is masked only inside another mask, whose call has the bit already. A
+        worded row's is false, unlike `switches`: only `core/Task.beni` touches a fiber's masks or
+        its scheduler slot, it is walked, and every way in is one of the three or a body that calls
+        one; a callee with no contract is code the walk does not know.
+      - **`Fn.runs_on`**: the holder can run the function while its fiber is masked or lent:
+        the work of the three, and the frame's own function parameter that meets a use with it
+        (`flowOwn`, as `defect` is), so `bracket`'s acquire, `masked f = Task.uninterruptible f`,
+        `Semaphore.withPermit` and a platform's handler under `withScheduler` carry it; a use below
+        such a holder carries it too (`Use.runs_on_above`, `runsOnAt`).
+      - **`Fn.forks`**: the holder only starts the function in a new fiber, which begins unmasked
+        in the scheduler of the fiber that starts it, whose stop stops it, and hands it to nothing else:
+        `Task.spawn`'s and `spawnDetached`'s work (worded, named: `Check.forksParam`), a race's branches
+        (`Task.race`'s two and `raceAll`'s first, walked, named: `forksParams`; `begin` runs each as a
+        fiber of its own), and the frame's own function parameter whose every use is such a holder.
+      - **`Contract.hosts`**: a writer or a reader of a cell the body made runs in another fiber, or
+        a callee or a function the body runs within a call has the bit. The writer can throw while
+        the body's own fiber is parked; where the fiber is masked, the body's code after the switch
+        point runs on and reads the cell the writer left half-written. Where the body runs lent to
+        another scheduler, the reader or writer it starts belongs to that scheduler, and the body's
+        own throw, which the program's drain takes up to the body's first suspension point, does not
+        stop it.
+      The rules:
+      - **Down.** A writer or a reader is registered only at a holder with `Fn.forks`, with no
+        holder above it that the frame does not see run it within (`forkedAt`); at any other holder
+        (a list, a record, unknown code, a wrapper a callee answers, `Task.par`, `Task.start`) it is no writer and
+        shares what it captured, as before item 12, since a holder the walk does not follow can run
+        it masked or under another scheduler. Nor is a function whose contract has `runs_on`, or
+        that takes a function parameter (which can have it), one (`registerWriter`). A writer or a
+        reader that meets a use with `runsOnAt` later is refused there.
+      - **In the frame.** A call that can park the frame's own fiber masked or under another
+        scheduler (`runs_on` above, a call of the frame's own function parameter, or one that runs
+        it within) revokes every writer the frame has registered by then, and every reader where
+        the call wrote something in place (a demand was made in it): a writer's throw while the
+        frame is parked masked leaves its write in place for the frame's code after the call, and
+        the frame's own throw under the other scheduler, in a write in place, leaves it for a reader
+        outside (`revokeAt`, `Writer.revoked`, refused in `revokeWriters`). Evidence a call is
+        handed (a `where` method) counts by its contract, as a callee does (`evidenceAt`).
+      - **After such a call** (`runs_on_window`). The fiber does not leave the mask or the other
+        scheduler where the call returns: an interrupt latched in a mask is delivered at the next
+        suspension point after it, and a fiber that parked inside `withScheduler`'s work resumes on
+        that scheduler's drain and goes on there after `putBack` to its next suspension point, where
+        a throw stops that scheduler alone. So every later call of the body is such a call too (its
+        writers are revoked, and its readers where it writes in place), and a call of a function with
+        `hosts` there is refused (`hostsCall`). To the end of the body: the next suspension point is
+        not followed. A body that returns there has `runs_on` for its caller.
+      - **Up.** A function whose contract has `hosts` is refused where it meets a use with
+        `runsOnAt`, the default, or a holder that loses it and does not fork it: any of them can run
+        it masked.
+      No function is refused as a value for having `Fn.runs_on` on a parameter (unlike (a)): a
+      writer or a hosting function never reaches a holder the walk does not follow, so a mask that
+      code the walk does not know runs reaches none of them, and the call of that code revokes the
+      frame's own writers. It is the pessimistic side: a writer or a reader that calls `Task.bracket`,
+      `onExit`, `Semaphore.withPermit`, `Random.step` or `Url.Parser.parse` (whose generators
+      and parsers are functions in data, code the walk does not know) is none; a fiber that writes
+      the cell inside a mask is refused even where it is the cell's one writer (`cells.mjs`'
+      `runon.maskWrite.*.dead`); a frame that registered a writer and then calls such a function or
+      its own function parameter is refused, and so is one that calls a hosting function after such a
+      call; a hosting function handed to `Cmd.perform` or kept in a list is refused, and a function
+      that starts a reader is one; `Task.spawnIn`'s work is no writer or reader, since its scope can be
+      a root that the first fiber started in it listed under another scheduler (the lane's
+      reviewer); and a frame's write in place inside `withScheduler`'s work while a reader
+      is registered is refused even where every reader is a child that the stop cancels
+      (`cells.mjs`' `runon.*`; `run/CellRunsOn` and its live twin).
     `run/CellFibersInPlace` and its live twin `run/CellFibersInPlaceLive`.
 
 13. **A callee's paths** (`Contract.paths`, `Frame.publishPaths`, `tagPaths`, `pairLive`). *Added
@@ -2948,16 +3042,10 @@ What it does not cover yet, each a refusal: a reader that the frame joins before
 reads (`cells.mjs`' `reader.joined`); a writer of a cell the frame did not make (a parameter's, a
 capture's: a closure spawned inside `Task.scope`'s body, `cells.mjs`' `param` and `scoped` shapes); a
 writer whose closure goes to `Task.par` or `race`, whose contract's answer names the closures' cells, so
-the handle escapes with what the answer can hold; a closure that only stores into the cell; a closure that writes the contents of a cell it captured
+the handle escapes with what the answer can hold; a writer or a reader at any holder that does not start it in a new fiber (a
+list, unknown code, a wrapper a callee answers, `Task.spawnIn`: item 12, *A defect*, (d)); a closure that only stores into the cell; a closure that writes the contents of a cell it captured
 and goes where the walk does not follow it and is no writer (items 11 and 12; `browser/tea/BallMachine`,
 where the closures go to the runtime); a handle handed to the frame's own function
 parameter, which shares it (`run/SanitiserCellLoanKeptApart`'s `handed` and `modified`); and a handle at a
 part of a root (a record's field, a tuple's part), which is no tracked root whole and is shared at its
 first renewal.
-
-One gap is not a refusal: a fiber that is masked at a throw (`Task.uninterruptible`,
-`uninterruptibleMask`, `bracket`'s acquire, a `restore` inside a mask up to its first suspension point)
-runs program code in the teardown, after the throwing fiber's write in place and before its store-back,
-and v3 can register its closure as a writer or a reader. Only a platform that survives the throw (a
-page) reaches it. The precise rule is a contract bit beside `switches` for a function that may enter a
-mask, which no writer or reader may have (#2610).

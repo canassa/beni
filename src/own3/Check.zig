@@ -1463,8 +1463,8 @@ pub const Mod = struct {
         const target: [2]u32 = switch (e) {
             .top => |d| .{ m.in.module, d },
             .ext => |x| blk: {
-                if (x.module.int() >= m.in.provenance.len) return .{ .no_contract = true };
-                const d = m.in.provenance[x.module.int()].valueDecl(x.value) orelse return .{ .no_contract = true };
+                if (x.module.int() >= m.in.provenance.len) return .{ .no_contract = true, .runs_on = true };
+                const d = m.in.provenance[x.module.int()].valueDecl(x.value) orelse return .{ .no_contract = true, .runs_on = true };
                 break :blk .{ x.module.int(), d.int() };
             },
             // This module's row: its body is walked with the edges (`through_rows`).
@@ -1486,14 +1486,14 @@ pub const Mod = struct {
         // A function that stores into a cell it is handed (`Contract.renew`,
         // kernel §13) changes what the cell holds where the code that runs it
         // does not follow it: it writes, and keeps what it stores.
-        if (try m.declContract(target)) |c| if (c.arity != 0) return .{ .writes = c.writes() or c.renews(), .keeps = c.escapes() or c.renews(), .rewrites = Contract.rewritesFn(c) };
+        if (try m.declContract(target)) |c| if (c.arity != 0) return .{ .writes = c.writes() or c.renews(), .keeps = c.escapes() or c.renews(), .rewrites = Contract.rewritesFn(c), .runs_on = c.runs_on, .hosts = c.hosts };
         // A constant's contract says what its value holds, not what a call
         // of it does: a method written `pub eq = keeper` has no fact here,
         // nor has a function whose walk gave up. Only a declaration whose
         // own type is no function names no code (research report 129 §6).
-        if (try m.isFunction(target)) return .{ .no_contract = true };
+        if (try m.isFunction(target)) return .{ .no_contract = true, .runs_on = true };
         if (m.valueIsFunction(target)) |is_fn| if (!is_fn) return .{};
-        return .{ .no_contract = true };
+        return .{ .no_contract = true, .runs_on = true };
     }
 
     /// Whether the value of declaration `t` is a function, by its type
@@ -1539,8 +1539,8 @@ pub const Mod = struct {
     /// a declaration of the module that it read changes (`contractChanged`):
     /// `edgeEffect` reads nothing else that changes. The rows that `j` reaches and that are not kept are
     /// solved together, a row at a time from a worklist: a row's answer only
-    /// grows, by at most eight bits, so each row is read again at most
-    /// eight times for each row that names it.
+    /// grows, by at most ten bits, so each row is read again at most
+    /// ten times for each row that names it.
     fn rowInfo(m: *Mod, j: u32) Allocator.Error!RowInfo {
         if (m.row_gen[j] == m.gen) return m.row_info[j];
         // Past the budget no walk goes on (kernel §8): the row is code
@@ -1814,6 +1814,9 @@ pub const Mod = struct {
             if (is_fn) {
                 for (flags[c.off[j]..c.off[j + 1]]) |*x| x.* |= Contract.flag_r;
                 fns[j] = try m.wordedFn(sig, c, @intCast(j), w, res);
+                if (fns[j]) |x| if (m.forksParam(di, @intCast(j))) {
+                    @constCast(x).forks = true;
+                };
                 if (has(w, .returned) or has(w, .stored) or has(w, .aliased)) described = true;
                 if (has(w, .escaped) or has(w, .aliased)) for (flags[c.off[j]..c.off[j + 1]]) |*x| {
                     x.* |= Contract.flag_e;
@@ -3090,6 +3093,24 @@ pub const Mod = struct {
     /// The words of a function parameter: `taken` hands it the elements of
     /// parameter 0, `stored` puts its answer among the result's elements,
     /// `returned` makes its answer the result.
+    /// Whether parameter `j` of worded declaration `di` is the work of one
+    /// of core's rows that start a fiber (`Fn.forks`): it only starts the
+    /// function in a new fiber, unmasked, of the scheduler it runs under,
+    /// whose stop stops it (kernel §13 item 12, *A defect*, (d)). Named
+    /// directly.
+    fn forksParam(m: *Mod, di: u32, j: u32) bool {
+        const mod = m.in.module;
+        if (!m.in.isCore(mod) or mod >= m.names.module_names.len) return false;
+        if (!std.mem.eql(u8, m.names.module_names[mod], "Task")) return false;
+        const name = m.names.declName(mod, di);
+        // Not `spawnIn`: its scope can be a root listed under another
+        // scheduler, by the first fiber started in it, which no stop of
+        // this fiber's scheduler reaches (#2613).
+        const rows = [_]struct { []const u8, u32 }{ .{ "spawn", 0 }, .{ "spawnDetached", 0 } };
+        for (rows) |r| if (std.mem.eql(u8, name, r[0])) return j == r[1];
+        return false;
+    }
+
     fn wordedFn(m: *Mod, sig: Sig, c: *const Contract.Contract, j: u32, w: u32, res: []std.ArrayList(Src)) Allocator.Error!?*const Contract.Fn {
         const ft = m.fnType(sig.vars[j].toOptional()) orelse return null;
         const pvars = m.in.store.vars(ft.params);
@@ -3723,6 +3744,8 @@ pub const Mod = struct {
             };
             if (c.fns[j]) |fnc| {
                 w.print(" π{d} fn{s}{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "", if (fnc.defect) " defect" else "" }) catch return error.OutOfMemory;
+                if (fnc.runs_on) w.writeAll(" runs-on") catch return error.OutOfMemory;
+                if (fnc.forks) w.writeAll(" forks") catch return error.OutOfMemory;
                 for (0..fnc.arity) |k| for (m.loc.layoutEntries(fnc.layouts[k]), 0..) |e, i| {
                     const slot = fnc.off[k] + i;
                     w.print(" ({d}{s}{s}", .{ k + 1, try m.locText(e.loc), if (fnc.free[slot]) "" else " held" }) catch return error.OutOfMemory;
@@ -3743,6 +3766,9 @@ pub const Mod = struct {
                 }
             };
         }
+        // Kernel §13 item 12, *A defect*, (d).
+        if (c.runs_on) w.writeAll(" runs-on") catch return error.OutOfMemory;
+        if (c.hosts) w.writeAll(" hosts") catch return error.OutOfMemory;
         w.writeAll("; res") catch return error.OutOfMemory;
         for (m.loc.layoutEntries(c.layouts[c.arity]), 0..) |e, k| {
             w.print(" [{s}", .{try m.locText(e.loc)}) catch return error.OutOfMemory;

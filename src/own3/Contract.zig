@@ -156,6 +156,17 @@ pub const Fn = struct {
     /// only a switch point (`Task.onDefect`, `Task.scheduler`'s hook, and
     /// a function that hands its parameter to one).
     defect: bool = false,
+    /// The owner can run the function while the fiber that runs it is
+    /// masked or lent to a scheduler of its own (kernel §13 item 12, *A
+    /// defect*, (d)): `Task.uninterruptible`'s and `uninterruptibleMask`'s
+    /// work, `Task.withScheduler`'s, and a function that hands its
+    /// parameter to one. A throw in another fiber does not stop it there.
+    runs_on: bool = false,
+    /// The owner only starts the function in a new fiber of the scheduler
+    /// it runs under, unmasked, and hands it to nothing else (`Task.spawn`,
+    /// `spawnIn`, `spawnDetached`; a function that loses its parameter to
+    /// one only): a writer can go here (kernel §13 item 12, *A defect*, (d)).
+    forks: bool = false,
 };
 
 pub const Contract = struct {
@@ -212,6 +223,15 @@ pub const Contract = struct {
     /// 12): one whose callee may be impure or may suspend. A worded row's is
     /// true: its words say nothing of it.
     switches: bool = false,
+    /// A run of the body can park its own fiber while it is masked or lent
+    /// to a scheduler of its own (kernel §13 item 12, *A defect*, (d)): a
+    /// throw in another fiber does not stop it. A worded row's is false:
+    /// only `core/Task.beni` masks a fiber or lends it, and it is walked.
+    runs_on: bool = false,
+    /// A writer of a cell the body made runs at its switch points, or a
+    /// callee or a function the body runs within a call has the bit
+    /// (kernel §13 item 12, *A defect*, (d)): the body may not run masked.
+    hosts: bool = false,
     /// What a call leaves in a parameter's cells (kernel §13, *Renewal*):
     /// per parameter location, as `flags` is, null where the call leaves
     /// the location as it was, or the sources it holds from the call on. A
@@ -375,14 +395,14 @@ fn union2(arena: Allocator, a: []const Src, b: []const Src) Allocator.Error![]co
 fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
     const x = a orelse return b == null;
     const y = b orelse return false;
-    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.defect != y.defect) return false;
+    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.defect != y.defect or x.runs_on != y.runs_on or x.forks != y.forks) return false;
     if (!std.mem.eql(u32, x.layouts, y.layouts) or !std.mem.eql(bool, x.free, y.free)) return false;
     for (x.supply, y.supply) |s, t| if (!srcsEql(s, t)) return false;
     return true;
 }
 
 pub fn eql(a: *const Contract, b: *const Contract) bool {
-    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy or a.casts != b.casts or a.exact != b.exact or a.switches != b.switches or a.cell_row != b.cell_row or a.renew_shared != b.renew_shared) return false;
+    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy or a.casts != b.casts or a.exact != b.exact or a.switches != b.switches or a.runs_on != b.runs_on or a.hosts != b.hosts or a.cell_row != b.cell_row or a.renew_shared != b.renew_shared) return false;
     if (!std.mem.eql(u32, a.layouts, b.layouts) or !std.mem.eql(u8, a.flags, b.flags)) return false;
     if (a.res.len != b.res.len) return false;
     for (a.res, b.res) |s, t| if (!srcsEql(s, t)) return false;
@@ -406,6 +426,8 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
         const out = try arena.create(Fn);
         out.* = x.*;
         out.lost = true;
+        out.runs_on = x.runs_on or y.runs_on;
+        out.forks = false;
         return out;
     }
     const supply = try arena.alloc([]const Src, x.supply.len);
@@ -413,7 +435,7 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
     for (supply, x.supply, y.supply) |*s, p, q| s.* = try union2(arena, p, q);
     for (free, x.free, y.free) |*f, p, q| f.* = p and q;
     const out = try arena.create(Fn);
-    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .defect = x.defect or y.defect };
+    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .defect = x.defect or y.defect, .runs_on = x.runs_on or y.runs_on, .forks = x.forks and y.forks };
     return out;
 }
 
@@ -454,7 +476,7 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
         renew = rn;
     }
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b) };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .runs_on = a.runs_on or b.runs_on, .hosts = a.hosts or b.hosts, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b) };
     return out;
 }
 
@@ -504,7 +526,7 @@ fn dupFn(a: Allocator, f: *const Fn) Allocator.Error!*const Fn {
     const supply = try a.alloc([]const Src, f.supply.len);
     for (supply, f.supply) |*s, x| s.* = try a.dupe(Src, x);
     const out = try a.create(Fn);
-    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .defect = f.defect };
+    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .defect = f.defect, .runs_on = f.runs_on, .forks = f.forks };
     return out;
 }
 
@@ -516,7 +538,7 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     const renew = try a.alloc(?[]const Src, c.renew.len);
     for (renew, c.renew) |*r, x| r.* = if (x) |xs| try a.dupe(Src, xs) else null;
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths) };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .runs_on = c.runs_on, .hosts = c.hosts, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths) };
     return out;
 }
 
@@ -532,9 +554,15 @@ pub const Effect = struct {
     /// that parameter a function in the default state, which keeps what it
     /// is handed (`ownership-v3-kernel.md` §6.8).
     rewrites: bool = false,
+    /// The code can park its fiber masked or lent to a scheduler of its own,
+    /// or hosts a writer (`Contract.runs_on`, `hosts`; kernel §13 item 12,
+    /// *A defect*, (d)). Code the compiler derives is a well-known method,
+    /// which cannot suspend: neither.
+    runs_on: bool = false,
+    hosts: bool = false,
 
     pub fn join(x: Effect, y: Effect) Effect {
-        return .{ .writes = x.writes or y.writes, .keeps = x.keeps or y.keeps, .no_contract = x.no_contract or y.no_contract, .rewrites = x.rewrites or y.rewrites };
+        return .{ .writes = x.writes or y.writes, .keeps = x.keeps or y.keeps, .no_contract = x.no_contract or y.no_contract, .rewrites = x.rewrites or y.rewrites, .runs_on = x.runs_on or y.runs_on, .hosts = x.hosts or y.hosts };
     }
     pub fn any(x: Effect) bool {
         return x.writes or x.keeps or x.no_contract or x.rewrites;
