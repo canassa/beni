@@ -18304,9 +18304,58 @@ pub const Lowerer = struct {
             // A call's callee may have statements of its own, as one
             // written in place may (version 1.9's `Callee.statements`).
             const callee = what == .call and (l.chainOfExpr(r, &.{}, true) orelse Chain{}).statements;
-            o.* = .{ .what = what, .dead = l.deadArm(b) or l.directArmDead(node, b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
+            o.* = .{ .what = what, .dead = l.deadArm(b) or l.directArmDead(node, b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup), .never = what == .value and l.armNever(r) };
         }
-        return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value) };
+        return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value), .selector_effect = l.selectorEffect(arms.value) };
+    }
+
+    /// Version 1.31: whether arm result `r` never returns — a call of core's
+    /// `Debug.todo` (`Program.Arm.never`).
+    fn armNever(l: *Lowerer, r: Inst.Index) bool {
+        if (l.bir.instTag(r) != .call) return false;
+        const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(r).lhs));
+        if (l.bir.instTag(callee) != .ext_value) return false;
+        const data = l.bir.instData(callee);
+        const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
+        if (module.int() >= l.in.interfaces.len) return false;
+        if (l.in.graph.modulePackage(module) != .core) return false;
+        if (!std.mem.eql(u8, l.text(l.in.graph.moduleName(module)), "Debug")) return false;
+        const iface = &l.in.interfaces[module.int()];
+        if (data.rhs >= iface.values.len) return false;
+        return std.mem.eql(u8, l.interner.slice(iface.symbols[@backingInt(iface.values[data.rhs].name)]), "todo");
+    }
+
+    /// Version 1.31: whether choosing an arm of branch `value` may have an
+    /// effect — its `let`s, a `case`'s scrutinee or an `else if`'s, or the
+    /// arguments of a call that is its one arm (`browser-inline.md` §8.2,
+    /// amended 2026-11-23).
+    fn selectorEffect(l: *Lowerer, value: Inst.Index) bool {
+        var i = value;
+        while (l.bir.instTag(i) == .let) {
+            for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(i).lhs))), Inst.Index)) |def| {
+                if (l.mayHaveEffect(def)) return true;
+            }
+            i = @fromBackingInt(@intCast(l.bir.instData(i).rhs));
+        }
+        switch (l.bir.instTag(i)) {
+            .case => {
+                if (l.mayHaveEffect(@fromBackingInt(@intCast(l.bir.instData(i).lhs)))) return true;
+                const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(i).rhs))), Inst.Index);
+                for (branches) |br| {
+                    const body: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(br).rhs));
+                    if (l.bir.instTag(body) == .case and l.selectorEffect(body)) return true;
+                }
+                return false;
+            },
+            .call => {
+                const d = l.bir.instData(i);
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
+                    if (l.mayHaveEffect(arg)) return true;
+                }
+                return false;
+            },
+            else => return l.mayHaveEffect(i),
+        }
     }
 
     /// The `let`s of an arm's body its result does not need — a statement,

@@ -1,0 +1,75 @@
+-- load
+<body>
+  <main id="home">
+    <p>"visit 0"</p>
+    <button id="count">"count"</button>
+  </main>
+</body>
+-- click #count
+<body>
+  <section id="counter">
+    <p>"visit 1"</p>
+    <b>"0"</b>
+    <button id="bump">"bump"</button>
+    <button id="named">"named"</button>
+  </section>
+</body>
+-- click #bump
+<body>
+  <section id="counter">
+    <p>"visit 1"</p>
+    <b>"1"</b>
+    <button id="bump">"bump"</button>
+    <button id="named">"named"</button>
+  </section>
+</body>
+-- click #bump
+<body>
+  <section id="counter">
+    <p>"visit 1"</p>
+    <b>"2"</b>
+    <button id="bump">"bump"</button>
+    <button id="named">"named"</button>
+  </section>
+</body>
+-- click #named
+<body>
+  <article>
+    <i>"ada"</i>
+    <input id="name" .value="ada">
+    <button id="home">"home"</button>
+  </article>
+</body>
+-- input #name "grace"
+<body>
+  <article>
+    <i>"grace"</i>
+    <input id="name" .value="grace">
+    <button id="home">"home"</button>
+  </article>
+</body>
+-- click #home
+<body>
+  <main id="home">
+    <p>"visit 3"</p>
+    <button id="count">"count"</button>
+  </main>
+</body>
+-- click #count
+<body>
+  <section id="counter">
+    <p>"visit 4"</p>
+    <b>"0"</b>
+    <button id="bump">"bump"</button>
+    <button id="named">"named"</button>
+  </section>
+</body>
+-- click #bump
+<body>
+  <section id="counter">
+    <p>"visit 4"</p>
+    <b>"1"</b>
+    <button id="bump">"bump"</button>
+    <button id="named">"named"</button>
+  </section>
+</body>

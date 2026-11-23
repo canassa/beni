@@ -760,6 +760,54 @@ rowText parent before shown =
     made
 
 
+-- ---- Branch regions (`browser-inline.md` §8.2, amended 2026-11-23) -----
+
+--| `(parent, before, owned)`: a branch region of `parent`, before the element
+--| `before`, or at its end when that is null: the region's state, which
+--| holds where its arm stands and, once one is shown, the arm, `k`, and its
+--| made row, `r`. A region is never followed by another region, a `For` or
+--| a text, so nothing else stands between its arm and `before`. What the
+--| region holds at `stop` is taken out of the page when `owned`: a region at
+--| the mount node; one in an element goes with it.
+pub region : V, V, V → V
+region parent before owned =
+    regionState =
+        Js.object [ ( "p", parent ), ( "b", before ), ( "k", Js.undefined ), ( "r", Js.undefined ) ]
+    if Js.to owned then own (Js.from λ⊤ → dropArm regionState)
+    regionState
+
+
+--| `(state, k, make, set)`: arm `k` of the region shown and `set`. When
+--| another arm is shown, its node is removed and `make` gives arm `k`'s
+--| row, put where the region stands; `make` is null for an arm with no node.
+--| `set` is called with the row whatever it was, kept or made: no arm is
+--| skipped because a value is the same object (`browser-inline.md` §8.2).
+pub armShown : V, V, V, V → ⊤
+armShown regionState k make set =
+    if not (Js.same (Js.get regionState "k") k) then
+        dropArm regionState
+        Js.set regionState "k" k
+        if not (Js.isNull make) then
+            row = Js.apply make []
+            Js.set regionState "r" row
+            _ =
+                Js.call (Js.get regionState "p") "insertBefore"
+                    [ Js.get row "n", Js.get regionState "b" ]
+            ⊤
+    if not (Js.isNull set) then
+        _ = Js.apply set [ Js.get regionState "r" ]
+        ⊤
+
+
+-- The shown arm's node out of the page.
+dropArm : V → ⊤
+dropArm regionState =
+    row = Js.get regionState "r"
+    if not (Js.isUndefined row) then
+        _ = Js.call (Js.get row "n") "remove" []
+        Js.set regionState "r" Js.undefined
+
+
 -- A list's elements: the array itself, or a view's plain copy (`backend.md`
 -- §4). Read, never written.
 listItems : V → V

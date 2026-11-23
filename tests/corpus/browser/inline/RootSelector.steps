@@ -1,0 +1,5 @@
+click button:nth-child(2)
+click button:nth-child(1)
+click button:nth-child(2)
+click button:nth-child(1)
+click button:nth-child(2)

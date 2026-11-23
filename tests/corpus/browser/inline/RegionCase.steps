@@ -1,0 +1,11 @@
+# Home to the counter, then a write the shown arm reads.
+click #count
+click #bump
+click #bump
+# To the third arm; its input writes its name.
+click #named
+input #name "grace"
+# Back to the first arm, and through the others again: fresh nodes, n from 0.
+click #home
+click #count
+click #bump

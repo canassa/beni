@@ -1,0 +1,18 @@
+-- A `view` whose body is a branch whose choice of arm may have an effect:
+-- `browser-tea` evaluates it at every render, a branch region at a pass of
+-- what it reads, so it is refused (docs/design/browser-inline.md §8.2,
+-- amended 2026-11-23; §5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n =
+    if Debug.log "big" (n > 3) then
+        <main><p>{n}</p></main>
+    else
+        <section><button onClick={n + 1}>{n}</button></section>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }
