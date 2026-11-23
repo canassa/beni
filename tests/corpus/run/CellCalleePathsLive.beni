@@ -112,7 +112,36 @@ takenThenChained seed =
     ints x
 
 
+step3 : Ref (List Int × List Int), Int → ⊤
+step3 r k =
+    case k of
+        0 →
+            Ref.update r λv → ( List.push v.0 1, v.1 )
+
+        1 →
+            Ref.update r λv → ( [ 0 ], v.0 )
+
+        _ →
+            ⊤
+
+
+twoPathsLoan : Int → String
+twoPathsLoan seed =
+    r = Ref.make ( [ seed ], [ 0 ] )
+    step3 r 2
+    y = (Ref.get r).0
+    step3 r 0
+    ints y
+
+
 main : Program
 main =
     Node.printLines
-        [ kept 1, loanAfter 2, movedWritten 3, keptInArm 4, takenThenBumped 5, takenThenChained 6 ]
+        [ kept 1
+        , loanAfter 2
+        , movedWritten 3
+        , keptInArm 4
+        , takenThenBumped 5
+        , takenThenChained 6
+        , twoPathsLoan 7
+        ]

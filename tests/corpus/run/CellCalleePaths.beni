@@ -44,6 +44,23 @@ apply r c =
             Ref.set r { present = [], future = [] }
 
 
+step3 : Ref (List Int × List Int), Int → ⊤
+step3 r k =
+    case k of
+        0 →
+            Ref.update r λv → ( List.push v.0 1, v.1 )
+
+        1 →
+            Ref.update r λv → ( [ 0 ], v.0 )
+
+        _ →
+            ⊤
+
+
+showP : List Int × List Int → String
+showP p = "${ints p.0} / ${ints p.1}"
+
+
 inRow : Int → String
 inRow seed =
     r = Ref.make { present = [ seed ], future = [] }
@@ -74,5 +91,14 @@ takenThenAdded seed =
     ints x
 
 
+twoPathsMoved : Int → String
+twoPathsMoved seed =
+    r = Ref.make ( [ seed ], [ 0 ] )
+    step3 r 1
+    step3 r 0
+    Ref.update r λv → ( List.push v.0 9, v.1 )
+    showP (Ref.get r)
+
+
 main : Program
-main = Node.printLines [ inRow 1, inRow 4, thenUpdate 2, takenThenAdded 3 ]
+main = Node.printLines [ inRow 1, inRow 4, thenUpdate 2, takenThenAdded 3, twoPathsMoved 5 ]

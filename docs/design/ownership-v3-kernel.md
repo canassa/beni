@@ -2902,8 +2902,11 @@ contents of a cell are locations, and that a call can change what a location of 
     version (item 5), as before, with the union's claim; each location holds, from each path, its
     renewal there, or its old contents where the path renews it not, and a cell that one path alone
     puts there holds the path's arm as its context (`tagPaths`): it is in the location on a run
-    through that path only. A cell that two paths or more put there keeps the context it had (one
-    context names no set of arms: the pessimistic side), and is kept once. A cell found through the
+    through that path only. A cell that two paths put there, and that has no path's context yet, is
+    kept once for each of them with that path's arm; one that more paths put there, or that has a
+    path's context already, keeps the context it had (one context names no set of arms: the
+    pessimistic side) and is kept once, since copies for more paths, or at every call, multiply the
+    cells of a chain of calls past the budget (§8; BN's undo app, twelve calls of six paths). A cell found through the
     paths of several calls keeps every arm (`meetPath`, a meeting that names them all, up to
     `path_chain_max`, past which the newest is dropped: the pessimistic side), since a run through
     two calls' paths is told from another by any of them; `meet` keeps two, and a chain of five calls

@@ -6748,9 +6748,15 @@ fn pathWrites(c: *const Contract, k: usize, i: usize) bool {
 
 /// The atoms of one location of a version, from `start` on, one range of
 /// them for each path of the call (kernel §13 item 13): an atom of every
-/// range is held on every run and is kept once as it is; any other holds
-/// its cell on a run through its path only, so it gets the path's
-/// context (`meet`). Each pair of atoms compared is work (kernel §8).
+/// range is held on every run and is kept once as it is; one of one range
+/// holds its cell on a run through that path only, so it gets the path's
+/// context (`meetPath`); one of two ranges, not all, is kept once for each
+/// of them with its context, where it has no path's context yet, since one
+/// context names no set of arms. Any other is kept once as it is (the
+/// pessimistic side): copies for more paths, or at more calls than one,
+/// multiply the atoms of a chain of calls past the budget (BN's undo app,
+/// twelve calls of six paths, kernel §8). Each atom looked up is work (kernel
+/// §8).
 fn tagPaths(f: *Frame, start: usize, ranges: []const [2]usize, ctxs: []const u32) Error!void {
     var out: std.ArrayList(Atom) = .empty;
     defer out.deinit(f.gpa);
@@ -6766,13 +6772,15 @@ fn tagPaths(f: *Frame, start: usize, ranges: []const [2]usize, ctxs: []const u32
     for (ranges, ctxs) |rg, ctx| for (all[rg[0]..rg[1]]) |a| {
         _ = f.charge(Loc.lookup_units);
         const got = count.getPtr(a).?;
-        // Kept once: as it is where two paths or more have it (one context
-        // cannot name a set of arms; the pessimistic side), with its path's
-        // context where only one has it.
         if (got.* == 0) continue;
         var t = a;
-        if (got.* == 1 and t.root != 0) t.ctx = try f.meetPath(t.ctx, ctx);
-        got.* = 0;
+        if (t.root != 0 and got.* == 1) {
+            t.ctx = try f.meetPath(t.ctx, ctx);
+            got.* = 0;
+        } else if (t.root != 0 and got.* == 2 and ranges.len > 2 and f.splitCtx(t.ctx)[0] == none) {
+            // One copy for each of the two paths that have it.
+            t.ctx = try f.meetPath(t.ctx, ctx);
+        } else got.* = 0;
         try out.append(f.gpa, t);
     };
     f.atoms.shrinkRetainingCapacity(start);
