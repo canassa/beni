@@ -1,0 +1,18 @@
+-- A `Show` whose body is a branch, not a lambda whose result is one element
+-- written in place (browser-inline.md §8.2, amended 2026-11-23, *A
+-- `Show`*), class 1 (§5).
+import Html exposing (Html)
+import Tea
+
+
+view : Maybe Int → Html ⊤
+view shown =
+    <main>
+        <Show when={shown} keyed>
+            {λn → if n > 1 then <b>{n}</b> else <i>{n}</i>}
+        </Show>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Just 1, update = λ_ m → m, view = view }

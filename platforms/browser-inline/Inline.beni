@@ -1405,6 +1405,20 @@ armShown regionState k make set =
         ⊤
 
 
+--| `(state, k, key, make, set)`: `armShown` for a keyed `Show`
+--| (`browser-inline.md` §8.2, amended 2026-11-23, *A `Show`*): arm `k` — 0
+--| the fallback, 1 the body — shown and `set`, and made afresh, the shown
+--| arm's node removed, when `key` is not `===` the key the region last
+--| showed: the body remounts when its key changes. The key is kept as the
+--| state's `v`, apart from the arm's number.
+pub keyShown : V, V, V, V, V → ⊤
+keyShown regionState k key make set =
+    if not (Js.same (Js.get regionState "v") key) then
+        Js.set regionState "v" key
+        Js.set regionState "k" Js.undefined
+    armShown regionState k make set
+
+
 -- The shown arm's node out of the page.
 dropArm : V → ⊤
 dropArm regionState =

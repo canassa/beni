@@ -19005,6 +19005,56 @@ pub const Lowerer = struct {
         return if (l.markupGrouped(root)) root else null;
     }
 
+    /// `cx.programShowFallbackIsText` (version 1.36): the argument of a
+    /// `Show`'s fallback when the fallback is `Html.text e` — a saturated
+    /// call of the markup primitive `text` — and null otherwise.
+    fn directShowFallbackTextArg(l: *Lowerer, node: beni_markup.Node.Index) ?Inst.Index {
+        const st = l.mk orelse return null;
+        const tree = &st.built.tree;
+        if (tree.kind(node) != .show) return null;
+        const fb = tree.show(node).fallback orelse return null;
+        const i = switch (st.built.values[@backingInt(fb)]) {
+            .inst => |x| x,
+            else => return null,
+        };
+        if (l.bir.instTag(i) != .call) return null;
+        const d = l.bir.instData(i);
+        const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        if (args.len != 1 or !l.isMarkupPrimitive(callee, "text")) return null;
+        return args[0];
+    }
+
+    /// `cx.programShowEffect` (version 1.36): whether evaluating a `Show`'s
+    /// `when`, or its key function, may have an effect — what
+    /// `Program.Branch.selector_effect` says of a branch's choice.
+    fn directShowEffect(l: *Lowerer, node: beni_markup.Node.Index) bool {
+        const st = l.mk orelse return true;
+        const tree = &st.built.tree;
+        if (tree.kind(node) != .show) return true;
+        const s = tree.show(node);
+        for ([_]?beni_markup.Value.Index{ s.when, if (s.mode == .key) s.key else null }) |x| {
+            const v = x orelse continue;
+            switch (st.built.values[@backingInt(v)]) {
+                .inst => |i| if (l.mayHaveEffect(i)) return true,
+                else => return true,
+            }
+        }
+        return false;
+    }
+
+    /// `cx.programShowFallbackText` (version 1.36): `e` of the fallback
+    /// `Html.text e`, evaluated into `block` with the locals as they are
+    /// named there; the call itself is never made.
+    fn directShowFallbackText(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index) Allocator.Error!Node.Index {
+        const st = l.mk.?;
+        const arg = l.directShowFallbackTextArg(node).?;
+        var stmts: StmtList = .empty;
+        const value = try l.expr(&stmts, arg);
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return value;
+    }
+
     /// The chain of expression `i`: markup written in place, a call of a
     /// function, or an `Html.map` of one of those; null for anything else.
     fn chainOfExpr(l: *Lowerer, i: Inst.Index, maps: []const Inst.Index, composed: bool) ?Chain {
@@ -19293,12 +19343,18 @@ pub const Lowerer = struct {
 
     /// Whether reference `callee` is `Html.map`, the markup primitive.
     fn isHtmlMap(l: *Lowerer, callee: Inst.Index) bool {
+        return l.isMarkupPrimitive(callee, "map");
+    }
+
+    /// Whether `callee` names the markup primitive `name` of a vocabulary
+    /// (`language.md` §11.13): `map` or `text`.
+    fn isMarkupPrimitive(l: *Lowerer, callee: Inst.Index, which: []const u8) bool {
         if (l.bir.instTag(callee) != .ext_value) return false;
         const d = l.bir.instData(callee);
         if (d.lhs >= l.in.interfaces.len) return false;
         const iface = &l.in.interfaces[d.lhs];
         if (d.rhs >= iface.values.len or !iface.values[d.rhs].is_markup_primitive) return false;
-        return std.mem.eql(u8, l.text(iface.symbols[@backingInt(iface.values[d.rhs].name)]), "map");
+        return std.mem.eql(u8, l.text(iface.symbols[@backingInt(iface.values[d.rhs].name)]), which);
     }
 
     /// An `Html.map` function of a constructor's shape (§9.1): the
@@ -21440,6 +21496,18 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directShowFallback(n);
     }
 
+    fn programShowFallbackIsText(impl: *anyopaque, n: M.Node.Index) bool {
+        return lowerer(impl).directShowFallbackTextArg(n) != null;
+    }
+
+    fn programShowEffect(impl: *anyopaque, n: M.Node.Index) bool {
+        return lowerer(impl).directShowEffect(n);
+    }
+
+    fn programShowFallbackText(impl: *anyopaque, into: M.Block, n: M.Node.Index) E!M.Expr {
+        return expr(try lowerer(impl).directShowFallbackText(into, n));
+    }
+
     fn programNestedEnter(impl: *anyopaque, r: M.Root.Index) E!void {
         return lowerer(impl).directNestedEnter(r);
     }
@@ -21825,6 +21893,9 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_branch_bind = programBranchBind,
         .program_branch_statements = programBranchStatements,
         .program_show_fallback = programShowFallback,
+        .program_show_fallback_is_text = programShowFallbackIsText,
+        .program_show_effect = programShowEffect,
+        .program_show_fallback_text = programShowFallbackText,
         .program_nested_enter = programNestedEnter,
         .program_branch_eager = programBranchEager,
         .program_view_statements = programViewStatements,

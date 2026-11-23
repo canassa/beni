@@ -1,0 +1,16 @@
+-- A `Show` whose `when` may have an effect, which `browser-tea` evaluates
+-- at every render and the region at a pass of its read set
+-- (browser-inline.md §8.2, amended 2026-11-23, *A `Show`*), class 1 (§5).
+import Html exposing (Html)
+import Tea
+
+
+view : Maybe Int → Html ⊤
+view shown =
+    <main>
+        <Show when={Debug.log "shown" shown} keyed>{λn → <b>{n}</b>}</Show>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Just 1, update = λ_ m → m, view = view }
