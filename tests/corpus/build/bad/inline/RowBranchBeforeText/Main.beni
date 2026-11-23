@@ -1,5 +1,6 @@
--- A branch in a `For`'s row: a branch region of a row is not compiled yet
--- (docs/design/browser-inline.md §8.2, amended 2026-11-23; §5, class 1).
+-- A branch in a `For`'s row followed by text: a branch region stands before
+-- the element after it or at its element's end (browser-inline.md §9,
+-- amended 2026-11-23, *A branch in a row*), class 1 (§5).
 import Html exposing (Html)
 import Tea
 
@@ -17,6 +18,7 @@ view rows =
                         Nothing →
                             <i>none</i>
                     }
+                    after
                 </li>
             }
         </For>

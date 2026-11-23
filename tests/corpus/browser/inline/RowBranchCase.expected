@@ -1,0 +1,174 @@
+-- load
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="mark">"mark"</button>
+    <ul>
+      <li>
+        <button id="on-1">"add"</button>
+        <p>
+          <i>"none"</i>
+        </p>
+      </li>
+      <li>
+        <span>
+          <input id="in-2" .value="">
+          <button id="off-2">"two"</button>
+        </span>
+        <p>
+          <em>"two"</em>
+        </p>
+      </li>
+    </ul>
+  </main>
+</body>
+-- input #in-2 "typed"
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="mark">"mark"</button>
+    <ul>
+      <li>
+        <button id="on-1">"add"</button>
+        <p>
+          <i>"none"</i>
+        </p>
+      </li>
+      <li>
+        <span>
+          <input id="in-2" .value="typed">
+          <button id="off-2">"two"</button>
+        </span>
+        <p>
+          <em>"two"</em>
+        </p>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #mark
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="mark">"mark"</button>
+    <ul>
+      <li>
+        <button id="on-1">"add"</button>
+        <p>
+          <i>"none"</i>
+        </p>
+      </li>
+      <li>
+        <span>
+          <input id="in-2" .value="typed">
+          <button id="off-2">"two"</button>
+        </span>
+        <p>
+          <em>"two!"</em>
+        </p>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="mark">"mark"</button>
+    <ul>
+      <li>
+        <span>
+          <input id="in-2" .value="typed">
+          <button id="off-2">"two"</button>
+        </span>
+        <p>
+          <em>"two!"</em>
+        </p>
+      </li>
+      <li>
+        <button id="on-1">"add"</button>
+        <p>
+          <i>"none"</i>
+        </p>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #on-1
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="mark">"mark"</button>
+    <ul>
+      <li>
+        <span>
+          <input id="in-2" .value="typed">
+          <button id="off-2">"two"</button>
+        </span>
+        <p>
+          <em>"two!"</em>
+        </p>
+      </li>
+      <li>
+        <span>
+          <input id="in-1" .value="">
+          <button id="off-1">"note 1"</button>
+        </span>
+        <p>
+          <em>"note 1!"</em>
+        </p>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #off-2
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="mark">"mark"</button>
+    <ul>
+      <li>
+        <button id="on-2">"add"</button>
+        <p>
+          <i>"none"</i>
+        </p>
+      </li>
+      <li>
+        <span>
+          <input id="in-1" .value="">
+          <button id="off-1">"note 1"</button>
+        </span>
+        <p>
+          <em>"note 1!"</em>
+        </p>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #on-2
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="mark">"mark"</button>
+    <ul>
+      <li>
+        <span>
+          <input id="in-2" .value="">
+          <button id="off-2">"note 2"</button>
+        </span>
+        <p>
+          <em>"note 2!"</em>
+        </p>
+      </li>
+      <li>
+        <span>
+          <input id="in-1" .value="">
+          <button id="off-1">"note 1"</button>
+        </span>
+        <p>
+          <em>"note 1!"</em>
+        </p>
+      </li>
+    </ul>
+  </main>
+</body>

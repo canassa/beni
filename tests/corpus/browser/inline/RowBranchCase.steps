@@ -1,0 +1,8 @@
+# Row 2's arm keeps its node while it stays: the typed text survives.
+input #in-2 "typed"
+click #mark
+click #reverse
+# Row 1 takes the other arm; row 2 back to the first, a new node.
+click #on-1
+click #off-2
+click #on-2
