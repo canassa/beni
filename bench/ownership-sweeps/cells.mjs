@@ -1185,7 +1185,14 @@ function genReach(shape, at, live) {
 // with the update that throws in the frame (`frame`), a closure (`closure`), a helper (`helper`) or under
 // `Task.withScheduler` (`sched`); or the frame, which reads after a spawned fiber's update throws under
 // `Task.withScheduler`, which stops only that scheduler (`frameRead`, with `spawnSched`, `spawnSchedHelper`).
-// Open (#2613): v3 accepts the live twins today, and they trap.
+// `runon.frame.<shape>`: the frame, or a reader outside its fiber tree, is the code that runs on: the frame
+// parks inside a mask while a writer fiber throws (`selfMask`), reads after the mask (`afterMask`), or a
+// caller masks a function in which a writer fiber runs (`callerMask`, `callerMaskHelper`); the frame writes
+// under `Task.withScheduler` while a reader from `Task.spawnDetached` or `Task.spawnIn (Task.openRoot ⊤)`
+// reads (`schedDetached`, `schedRoot`, `schedHelperDetached`); a detached reader in a mask
+// (`detachedMaskRead`); and, safe, unmasked detached and root readers of the frame's write, which the
+// program's stop cancels (`detachedRead`, `rootRead`); and the shapes of the lane's reviewer (below).
+// Before #2613 v3 accepted the live twins and they trapped (but `detachedRead` and `rootRead`, which pass).
 // The twin is `live` where the write is in place.
 const RUNON_OTHERS = {
   maskRead: ['_ = Task.spawn λ⊤ →', '    Task.uninterruptible λ⊤ →', '        Task.sleep (Duration.millis 5)', '        Log.info (ints (Ref.get r))'],
@@ -1202,9 +1209,35 @@ const RUNON_WRITERS = {
   spawnSchedHelper: () => ['_ = Task.spawn λ⊤ → under sc λ⊤ →', '    Task.sleep (Duration.millis 1)', '    bump r', 'Task.sleep (Duration.millis 5)', 'Log.info (ints (Ref.get r))'],
 };
 
+const RUNON_WRITER_FIBER = ['_ = Task.spawn λ⊤ →', '    Task.sleep (Duration.millis 1)', '    bump r'];
+const RUNON_READ_LATER = ['    Task.sleep (Duration.millis 5)', '    Log.info (ints (Ref.get r))'];
+const RUNON_THROWS = (push) => ['Ref.update r λl →', `    l2 = ${push}`, '    n = deep 0', '    if n > 0 then l2 else l2'];
+const RUNON_FRAMES = {
+  selfMask: () => [...RUNON_WRITER_FIBER, 'Task.uninterruptible λ⊤ →', ...RUNON_READ_LATER],
+  afterMask: () => [...RUNON_WRITER_FIBER, 'Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 5)', 'Log.info (ints (Ref.get r))'],
+  callerMask: () => ['Task.uninterruptible λ⊤ → hosting ⊤'],
+  callerMaskHelper: () => ['masked λ⊤ → hosting ⊤'],
+  schedDetached: (push) => ['_ = Task.spawnDetached λ⊤ →', ...RUNON_READ_LATER, 'Task.withScheduler sc λ⊤ →', '    Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push).map((x) => '    ' + x)],
+  schedRoot: (push) => ['root = Task.openRoot ⊤', '_ = Task.spawnIn root λ⊤ →', ...RUNON_READ_LATER, 'Task.withScheduler sc λ⊤ →', '    Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push).map((x) => '    ' + x)],
+  schedHelperDetached: () => ['_ = Task.spawnDetached λ⊤ →', ...RUNON_READ_LATER, 'Task.withScheduler sc λ⊤ →', '    Task.sleep (Duration.millis 1)', '    bump r'],
+  detachedMaskRead: (push) => ['_ = Task.spawnDetached λ⊤ →', '    Task.uninterruptible λ⊤ →', ...RUNON_READ_LATER.map((x) => '    ' + x), 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)],
+  detachedRead: (push) => ['_ = Task.spawnDetached λ⊤ →', ...RUNON_READ_LATER, 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)],
+  rootRead: (push) => ['root = Task.openRoot ⊤', '_ = Task.spawnIn root λ⊤ →', ...RUNON_READ_LATER, 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)],
+  // The lane's reviewer: a root first used under another scheduler is listed there (`scRootRead`);
+  // `withScheduler`'s work starts a reader and throws before it parks, on the program's drain
+  // (`lendFirstSeg`); and the fiber goes on on the other scheduler's drain after the call returns, to
+  // its next suspension point (`afterLend`, `afterLendBefore`, `callerPaused`).
+  scRootRead: (push) => ['root = Task.openRoot ⊤', 'Task.withScheduler sc λ⊤ →', '    _ = Task.spawnIn root λ⊤ → Task.sleep (Duration.millis 1000)', '    ⊤', '_ = Task.spawnIn root λ⊤ →', ...RUNON_READ_LATER, 'Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)],
+  lendFirstSeg: () => ['Task.sleep (Duration.millis 1)', 'Task.withScheduler sc λ⊤ → detachedThenThrow ⊤'],
+  afterLend: (push) => ['Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)', '_ = Task.spawnDetached λ⊤ →', ...RUNON_READ_LATER, ...RUNON_THROWS(push)],
+  afterLendBefore: (push) => ['_ = Task.spawnDetached λ⊤ →', ...RUNON_READ_LATER, 'Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)', ...RUNON_THROWS(push)],
+  callerPaused: () => ['Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)', 'detachedThenThrow ⊤'],
+};
+
 function genRunOn(other, writer, live) {
   const push = live ? 'List.push l 5' : 'List.push (List.copy l) 5';
-  const body = ['r = Ref.make [ 1, 2 ]', 'sc = Task.scheduler λ⊤ → ⊤', ...(RUNON_OTHERS[other] ?? []), ...RUNON_WRITERS[writer](push), 'send Done'];
+  const shape = other === 'frame' ? RUNON_FRAMES[writer](push) : [...(RUNON_OTHERS[other] ?? []), ...RUNON_WRITERS[writer](push)];
+  const body = ['r = Ref.make [ 1, 2 ]', 'sc = Task.scheduler λ⊤ → ⊤', ...shape, 'send Done'];
   return `-- runon.${other}.${writer}: see bench/ownership-sweeps/cells.mjs.
 import Cmd exposing (Cmd)
 import Duration
@@ -1244,6 +1277,28 @@ bump h =
         l2 = ${push}
         n = deep 0
         if n > 0 then l2 else l2
+
+
+detachedThenThrow : ⊤ → ⊤
+detachedThenThrow ⊤ =
+    q = Ref.make [ 1, 2 ]
+    _ = Task.spawnDetached λ⊤ →
+        Task.sleep (Duration.millis 5)
+        Log.info (ints (Ref.get q))
+    Ref.update q λl →
+        l2 = ${push}
+        n = deep 0
+        if n > 0 then l2 else l2
+
+
+hosting : ⊤ → ⊤
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        bump r
+    Task.sleep (Duration.millis 5)
+    Log.info (ints (Ref.get r))
 
 
 work : (Msg → ⊤) → ⊤
@@ -1323,6 +1378,7 @@ const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../.
 const runon = [];
 for (const other of Object.keys(RUNON_OTHERS)) for (const writer of ['frame', 'closure', 'helper', 'sched']) runon.push([other, writer]);
 for (const writer of ['spawnSched', 'spawnSchedHelper']) runon.push(['frameRead', writer]);
+for (const shape of Object.keys(RUNON_FRAMES)) runon.push(['frame', shape]);
 if (runon.some(([o, w]) => `runon.${o}.${w}`.includes(filter))) {
   // The platform copy: `browser-inline` with no `"lists"` key, over the repository's `browser-base`.
   const plat = path.resolve(out, '_platform');
