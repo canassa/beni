@@ -7201,6 +7201,15 @@ and their later additions. No cause is new: a record demand is rejected for the 
   (`language.md` §11.11), so making it earlier is unobservable. A capture of a record **whole** (`x` itself, used
   whole in the body) holds the object, and is a whole use wherever the closure is consumed (§31.4 item 5).
   Report mode counts the eager reads (§31.12).
+  *Amended 2026-11-23 (#2617): a closure inside a closure.* A closure is made when the closure around it
+  runs, which may be after a write of the field: `(λs → Cmd.perform λsend → … model.count …) "x"` after
+  `{ model | count = … }`, or a body that makes its inner closure after a sleep. So a path read in a nested
+  closure is read once, when the **outermost** closure made in the holder's frame is made, and every closure
+  inside it uses that temporary; the table lists the read at that creation alone (a holder bound inside a closure
+  counts that closure's frame as its own). A local function runs where it is called (§18.8): made inside a
+  closure, its reads of a local of a frame around that closure are that closure's; made in the holder's own
+  frame, a read in a closure in its body is listed at the outermost closure there, and a direct read is made
+  when the function runs (#2620 is the call after a write).
 - **A send gives up every cell its payload holds** (§23.2, `bit_d`). Record objects are among those cells now, so
   `send (Saved model.form)` from a body whose arm keeps `model` is `later-use` at the send, as a list is.
 - **A command, a subscription or a view handler that keeps a closure** escapes what the closure holds (§31.4
@@ -7862,7 +7871,7 @@ update's own result, or through anything bound after `D`, names the new version 
   version does not see**, on every path from the holder's binding to the read. When two updates write `f` in turn
   (`s = { r | a = 1 }; u = { s | a = 2 }; … r.a`), the read of `r.a` is placed before the first.
 
-For a capture of a field path, `P` is the closure's creation (§31.6). For a write made by a callee (§31.7), it is
+For a capture of a field path, `P` is the closure's creation (§31.6): of the outermost closure made in the holder's frame, when closures nest. For a write made by a callee (§31.7), it is
 before the call.
 
 **Soundness.** The argument is the thesis's (§6.3, versions and stale references), with one step for the hoist:

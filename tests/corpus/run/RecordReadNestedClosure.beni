@@ -1,0 +1,100 @@
+-- run: a record written in place, and a closure nested in a closure that
+-- reads a field the write changes (#2617; ownership-checker.md §31.6,
+-- amended 2026-11-23). The read is made where the outermost closure is
+-- made, and the inner closures use it: two deep, three, from `List.map`'s
+-- callback, a holder bound in the callback, a nested field, two fields
+-- written, a closure bound by a `let` before the write, and a local
+-- function that returns closures or is made inside one. Its answers
+-- are the spreads'; `.in-place` builds it again with its records written
+-- in place.
+import Node exposing (Program)
+
+
+type alias P =
+    n : Int
+    tag : String
+
+
+type alias Box =
+    p : P
+    k : Int
+
+
+depth2 : P → String
+depth2 p =
+    ( q, f ) = ( { p | n = p.n + 1 }, (λs → λ⊤ → s ++ String.fromInt p.n) "x" )
+    "${f ⊤} ${String.fromInt q.n}"
+
+
+depth3 : P → String
+depth3 p =
+    ( q, f ) = ( { p | n = p.n + 1 }, (λa → (λb → λ⊤ → a ++ b ++ String.fromInt p.n) "y") "x" )
+    "${f ⊤} ${String.fromInt q.n}"
+
+
+mapped : P → String
+mapped p =
+    ( q, fs ) = ( { p | n = p.n + 1 }, List.map [ "a", "b" ] λs → λ⊤ → s ++ String.fromInt p.n )
+    String.join (List.map fs λf → f ⊤) "," ++ " " ++ String.fromInt q.n
+
+
+inList : List P → String
+inList ps =
+    parts = List.map ps λp →
+        ( q, f ) = ( { p | n = p.n + 1 }, (λs → λ⊤ → s ++ String.fromInt p.n) "x" )
+        "${f ⊤}/${String.fromInt q.n}"
+    String.join parts ","
+
+
+nestedField : Box → String
+nestedField b =
+    ( c, f ) =
+        ( { b | p = { n = 9, tag = "new" } }, (λs → λ⊤ → s ++ String.fromInt b.p.n ++ b.p.tag) "x" )
+    "${f ⊤} ${String.fromInt c.p.n}"
+
+
+twoFields : P → String
+twoFields p =
+    ( q, f ) =
+        ( { p | n = p.n + 1, tag = "new" }, (λs → λ⊤ → s ++ String.fromInt p.n ++ p.tag) "x" )
+    "${f ⊤} ${q.tag}"
+
+
+letBound : P → String
+letBound p =
+    h = λs → λ⊤ → s ++ String.fromInt p.n
+    q = { p | n = p.n + 1 }
+    (h "x") ⊤ ++ " " ++ String.fromInt q.n
+
+
+localReturns : P → String
+localReturns p =
+    g s = λt → λ⊤ → s ++ t ++ String.fromInt p.n
+    b = g "x"
+    q = { p | n = p.n + 1 }
+    (b "y") ⊤ ++ " " ++ String.fromInt q.n
+
+
+localInside : P → String
+localInside p =
+    f =
+        λs →
+            g t = t ++ String.fromInt p.n
+            g s
+    q = { p | n = p.n + 1 }
+    f "x" ++ " " ++ String.fromInt q.n
+
+
+main : Program
+main =
+    Node.printLines
+        [ depth2 { n = 0, tag = "t" }
+        , depth3 { n = 0, tag = "t" }
+        , mapped { n = 0, tag = "t" }
+        , inList [ { n = 0, tag = "t" }, { n = 5, tag = "u" } ]
+        , nestedField { p = { n = 0, tag = "old" }, k = 1 }
+        , twoFields { n = 0, tag = "old" }
+        , letBound { n = 0, tag = "t" }
+        , localReturns { n = 0, tag = "t" }
+        , localInside { n = 0, tag = "t" }
+        ]

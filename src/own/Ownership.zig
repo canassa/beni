@@ -7691,7 +7691,18 @@ const U32SliceContext = struct {
 /// below the path (§23.2).
 /// `fields`: a record write of the capture, with the fields it writes
 /// (§31.4 item 4); null for a list's.
-const Capture = struct { local: u32, path: u32, read_inst: u32 = none, deep: bool = false, extent: WriteExtent = .deep, fields: ?[]const u32 = null };
+const Capture = struct {
+    local: u32,
+    path: u32,
+    read_inst: u32 = none,
+    deep: bool = false,
+    extent: WriteExtent = .deep,
+    fields: ?[]const u32 = null,
+    /// An eager read carried out of a nested closure (§31.6): the creation
+    /// of the outermost closure it was carried out of, or `none` while it
+    /// is in the frame of the closure that reads it.
+    creation: u32 = none,
+};
 
 /// How a lambda was consumed: what decides its demands on its own
 /// parameters (§16.5).
@@ -13957,16 +13968,43 @@ const Walker = struct {
             const value = try w.single(.{ .kind = .closure, .a = ci });
             try w.useCaptures(value, w.token(body));
             // §31.6: its reads of outer field paths happen here, where it is
-            // made: reads of the version the creation sees.
+            // made: reads of the version the creation sees. A read of a local
+            // of an enclosing frame is carried out to the closure made in
+            // that frame and read there, once, for every closure it nests:
+            // an inner closure is made when the outer one runs, which may be
+            // after a write of the field (#2617).
             for (w.frames.items[id].eager.items) |cap| {
-                if (cap.read_inst != none) try w.publishRead(.{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .read_inst = cap.read_inst, .capture = creation }, none, creation, 0, none);
                 if (cap.local < w.local_frame.len and w.local_frame[cap.local] == w.frame) {
+                    if (cap.read_inst != none) try w.publishRead(.{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .read_inst = cap.read_inst, .capture = creation }, none, creation, 0, none);
                     try w.uses.append(w.a, .{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = w.token(body), .record_read = true, .read_inst = cap.read_inst, .capture = creation });
-                } else if (w.frame != 0) try w.frames.items[w.frame].eager.append(w.a, cap);
+                } else if (w.frame != 0) {
+                    var out = cap;
+                    out.creation = creation;
+                    try w.frames.items[w.frame].eager.append(w.a, out);
+                } else try w.publishEager(cap, creation, tok);
             }
             if (cls.once) try w.onceCreation(ci, w.token(body));
+        } else for (w.frames.items[id].eager.items) |cap| {
+            // A local function's captures are read when it runs (§18.8). One
+            // made inside a closure runs inside it, so a read of a local of a
+            // frame around that closure is carried out with the closure's
+            // own. One of a local of the frame that makes the function is
+            // read where the outermost closure in its body is made, and a
+            // direct one when the function runs: a call after a write of the
+            // field reads the new value (#2620, open).
+            if (w.frame != 0 and !(cap.local < w.local_frame.len and w.local_frame[cap.local] == w.frame)) {
+                try w.frames.items[w.frame].eager.append(w.a, cap);
+            } else if (cap.creation != none) try w.publishEager(cap, creation, tok);
         }
         return w.single(.{ .kind = .closure, .a = ci });
+    }
+
+    /// An eager read that no enclosing closure carries further (§31.6):
+    /// read where the outermost closure it was carried out of is made.
+    fn publishEager(w: *Walker, cap: Capture, creation: u32, tok: u32) Allocator.Error!void {
+        if (cap.read_inst == none) return;
+        const at = if (cap.creation != none) cap.creation else creation;
+        try w.publishRead(.{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .read_inst = cap.read_inst, .capture = at }, none, at, 0, none);
     }
 
     /// §18.8: the creation of a once closure (or a call of a once local

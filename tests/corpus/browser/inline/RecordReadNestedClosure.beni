@@ -1,0 +1,160 @@
+-- A record written in place, and a closure nested in a closure that reads
+-- a field the write changes (#2617; ownership-checker.md §31.6, amended
+-- 2026-11-23): the read is made where the outermost closure is made, in
+-- the arm, before the store, and every closure inside it uses that value.
+-- Each command sends the old value: two closures deep, three, a nested
+-- field, two fields written, a record bound from a list, and a body that
+-- makes its inner closure after a sleep, when `Bump` has written the
+-- field again; a local function in a command body, before and after a
+-- sleep, and one called before the write that returns the command.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+import Time
+
+
+type alias Inner =
+    n : Int
+
+
+type alias Item =
+    n : Int
+
+
+type alias Model =
+    count : Int
+    label : String
+    inner : Inner
+    items : List Item
+    got : String
+
+
+type Msg
+    = Two
+    | Three
+    | Field
+    | Both
+    | InList
+    | Later
+    | Local
+    | LocalLater
+    | Helper
+    | Bump
+    | Got String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Two →
+            ( { model | count = model.count + 1 }
+            , Cmd.batch
+                [ (λs → Cmd.perform λsend → send (Got (s ++ String.fromInt model.count))) "two" ]
+            )
+
+        Three →
+            ( { model | count = model.count + 1 }
+            , Cmd.batch
+                [ (λa →
+                      (λb → Cmd.perform λsend → send (Got (a ++ b ++ String.fromInt model.count)))
+                          "ee"
+                  )
+                    "thr"
+                ]
+            )
+
+        Field →
+            ( { model | inner = { n = model.inner.n + 1 } }
+            , Cmd.batch
+                [ (λs → Cmd.perform λsend → send (Got (s ++ String.fromInt model.inner.n))) "field"
+                ]
+            )
+
+        Both →
+            ( { model | count = model.count + 1, label = model.label ++ "!" }
+            , Cmd.batch
+                [ (λs →
+                      Cmd.perform λsend →
+                          send (Got (s ++ String.fromInt model.count ++ model.label))
+                  )
+                    "both"
+                ]
+            )
+
+        InList →
+            case model.items of
+                [ it, …rest ] →
+                    ( { model | items = [ { it | n = it.n + 1 }, …rest ] }
+                    , Cmd.batch
+                        [ (λs → Cmd.perform λsend → send (Got (s ++ String.fromInt it.n))) "item" ]
+                    )
+
+                [] →
+                    ( model, Cmd.none )
+
+        Later →
+            ( model
+            , Cmd.perform λsend →
+                Time.sleep (Time.millis 5)
+                (λs → send (Got (s ++ String.fromInt model.count))) "later"
+            )
+
+        Local →
+            ( { model | count = model.count + 1 }
+            , Cmd.perform λsend →
+                g s = s ++ String.fromInt model.count
+                send (Got (g "local"))
+            )
+
+        LocalLater →
+            ( model
+            , Cmd.perform λsend →
+                Time.sleep (Time.millis 5)
+                g s = s ++ String.fromInt model.count
+                send (Got (g "loclater"))
+            )
+
+        Helper →
+            mk s = Cmd.perform λsend → (λt → send (Got (s ++ t ++ String.fromInt model.count))) "t"
+            c = mk "helper"
+            ( { model | count = model.count + 1 }, c )
+
+        Bump →
+            ( { model | count = model.count + 10 }, Cmd.none )
+
+        Got s →
+            ( { model | got = model.got ++ " " ++ s }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="got">{model.got}</p>
+        <p id="count">{String.fromInt model.count}</p>
+        <button id="two" onClick={Two}>two</button>
+        <button id="three" onClick={Three}>three</button>
+        <button id="field" onClick={Field}>field</button>
+        <button id="both" onClick={Both}>both</button>
+        <button id="inlist" onClick={InList}>inlist</button>
+        <button id="later" onClick={Later}>later</button>
+        <button id="local" onClick={Local}>local</button>
+        <button id="loclater" onClick={LocalLater}>loclater</button>
+        <button id="helper" onClick={Helper}>helper</button>
+        <button id="bump" onClick={Bump}>bump</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ →
+                ( { count = 0, label = "l", inner = { n = 0 }, items = [ { n = 0 } ], got = "" }
+                , Cmd.none
+                )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
