@@ -1,4 +1,4 @@
-## 2026-11-23 16:00 CET — branch regions on browser-inline
+## 2026-11-23 16:05 CET — branch regions on browser-inline
 
 **What I did.** `browser-inline` compiles a branch region (`browser-inline.md` §8.2, amended
 2026-11-23; interface 1.31): a `view` whose body is an `if`, a `case` or a helper call, and a hole

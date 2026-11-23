@@ -190,6 +190,8 @@ by its type — hides nothing: it is written exactly, and accepted.
    on 2026-10-17 — `Show`, branches). The message says *"A limit of the
    compiler: … does not compile … yet"* and what to write instead; it names no slice and no
    plan, which are this document's and not the user's.
+   *Amended 2026-11-23 (#966):* branches are compiled as branch regions (§8.2, *A branch
+   region*); what a region refuses stays in this class.
    *Amended 2026-10-25 (S2's design pass, §9; not built):* S2's `For` is a `For` over a `Dict` that
    a root holds (§9.1); the `For` shapes §9.6 lists stay class 1, and an edit by key of the rows of
    a keyed `For` over a `List` is class 3 (§9.6, D2).
@@ -417,7 +419,8 @@ beni over `Js` in `Inline.beni`:
   and total. Every other value, including an effect, a potentially throwing call, a foreign call or an
   operation whose totality is unknown, executes only in the selected arm, as in an ordinary `if` or
   `case`. A hidden arm does not log or throw. Entering it computes current values; no value persists
-  as a memo while it is hidden. A branch of any other shape is S4's (§5, class 1).
+  as a memo while it is hidden. A branch of any other shape is S4's (§5, class 1). *Amended
+  2026-11-23:* a branch of any other shape is a branch region, below.
   *Amended 2026-10-19 (the owner): a `case` in markup.* A hole whose value is a `case` (or an `if`
   of `else if`s) of any number of arms, each one element written in place or `<></>`, each element
   arm eager, is one eager `when` per element arm: every arm's element is in the markup, in
