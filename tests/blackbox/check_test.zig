@@ -5105,35 +5105,17 @@ test "ownership v3: a walk that gave up accepts no send" {
 // - `row-parameter`, `for-row-message`, `for-row-keeps`: the runtime calls a
 //   `For` row with each item of `each`; the row is applied to them as at a
 //   call site, so what it keeps of its item escapes (kernel §6.12).
-test "ownership v3: the faults of the fifth blind test are refused" {
+/// One case of the fifth blind test's faults: `check` with v3 of one
+/// program of `bench/ownership-sweeps/`. Each test below judges one program
+/// and its twin: v3 checks the platform's modules in every process (it has
+/// no cache), so each run costs seconds, and twenty in one test came close
+/// to its 120-second guard under load (#2603).
+const FifthBlindCase = struct { name: []const u8, platform: []const u8, accepted: bool, why: []const u8 = "" };
+
+fn fifthBlindCases(cases: []const FifthBlindCase) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
-    const Case = struct { name: []const u8, platform: []const u8, accepted: bool, why: []const u8 = "" };
-    const tea = "platforms/browser-tea";
-    const page = "platforms/browser";
-    const cases = [_]Case{
-        .{ .name = "blind5c-faults/entry-tuple-pair.live", .platform = tea, .accepted = false, .why = "entry Main.update model.0" },
-        .{ .name = "blind5c-faults/entry-tuple-pair.dead", .platform = tea, .accepted = true },
-        .{ .name = "blind5c-faults/entry-unknown-settle.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
-        .{ .name = "blind5c-faults/entry-unknown-settle.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5c-faults/entry-unknown-view.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
-        .{ .name = "blind5c-faults/entry-unknown-view.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5c-faults/hole-closure.live", .platform = page, .accepted = false, .why = "later-use" },
-        .{ .name = "blind5c-faults/hole-closure.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5c-faults/row-parameter.live", .platform = page, .accepted = false, .why = "entry Main.update model.rows[*]" },
-        .{ .name = "blind5c-faults/row-parameter.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5d-faults/for-row-keeps.live", .platform = "node", .accepted = false, .why = "escaped" },
-        .{ .name = "blind5d-faults/for-row-keeps.dead", .platform = "node", .accepted = true },
-        .{ .name = "blind5d-faults/for-row-message.live", .platform = page, .accepted = false, .why = "entry Main.update model.rows[*]" },
-        .{ .name = "blind5d-faults/for-row-message.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5d-faults/pair-model.live", .platform = tea, .accepted = false, .why = "entry Main.update model.0" },
-        .{ .name = "blind5d-faults/pair-model.dead", .platform = tea, .accepted = true },
-        .{ .name = "blind5d-faults/settle-no-code.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
-        .{ .name = "blind5d-faults/settle-no-code.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5d-faults/view-no-code.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
-        .{ .name = "blind5d-faults/view-no-code.dead", .platform = page, .accepted = true },
-    };
     for (cases) |c| {
         const r = try w.runWith(&.{
             "check",
@@ -5150,6 +5132,76 @@ test "ownership v3: the faults of the fifth blind test are refused" {
             return error.TestUnexpectedVerdict;
         }
     }
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/entry-tuple-pair" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/entry-tuple-pair.live", .platform = "platforms/browser-tea", .accepted = false, .why = "entry Main.update model.0" },
+        .{ .name = "blind5c-faults/entry-tuple-pair.dead", .platform = "platforms/browser-tea", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/entry-unknown-settle" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/entry-unknown-settle.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5c-faults/entry-unknown-settle.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/entry-unknown-view" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/entry-unknown-view.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5c-faults/entry-unknown-view.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/hole-closure" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/hole-closure.live", .platform = "platforms/browser", .accepted = false, .why = "later-use" },
+        .{ .name = "blind5c-faults/hole-closure.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/row-parameter" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/row-parameter.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.rows[*]" },
+        .{ .name = "blind5c-faults/row-parameter.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/for-row-keeps" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/for-row-keeps.live", .platform = "node", .accepted = false, .why = "escaped" },
+        .{ .name = "blind5d-faults/for-row-keeps.dead", .platform = "node", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/for-row-message" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/for-row-message.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.rows[*]" },
+        .{ .name = "blind5d-faults/for-row-message.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/pair-model" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/pair-model.live", .platform = "platforms/browser-tea", .accepted = false, .why = "entry Main.update model.0" },
+        .{ .name = "blind5d-faults/pair-model.dead", .platform = "platforms/browser-tea", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/settle-no-code" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/settle-no-code.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5d-faults/settle-no-code.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/view-no-code" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/view-no-code.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5d-faults/view-no-code.dead", .platform = "platforms/browser", .accepted = true },
+    });
 }
 
 // The siblings of the fifth blind test's faults that the audit of research
@@ -6620,34 +6672,19 @@ test "ownership v3: a library's exported function is called by the host" {
 // run walked is counted, and the walk stops at the budget (kernel §8). Since
 // research report 135 an old run of the chain is read in one step, and the
 // chain is accepted.
-test "ownership v3: a let that a markup lowering keeps, and a long chain of writes" {
+/// One group of the cases of the test below: `check` with v3 of each
+/// program of `bench/ownership-sweeps/blind10i-faults/`. One test per program
+/// and its twins: v3 checks the platform's modules in every process (it has
+/// no cache), so each run costs seconds, and sixteen in one test came close
+/// to its 120-second guard under load (#2603).
+const KeptLetCase = struct { name: []const u8, accepted: bool, why: []const u8 = "" };
+
+const kept_let_escaped = "List.push xs is refused: escaped";
+
+fn keptLetCases(cases: []const KeptLetCase) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
-    const Case = struct { name: []const u8, accepted: bool, why: []const u8 = "" };
-    const escaped = "List.push xs is refused: escaped";
-    const cases = [_]Case{
-        .{ .name = "view-let-kept.live", .accepted = false, .why = escaped },
-        .{ .name = "view-let-kept.kept", .accepted = false, .why = "List.push xs is refused" },
-        .{ .name = "view-let-kept.dead", .accepted = true },
-        .{ .name = "view-let-scalar.live", .accepted = false, .why = escaped },
-        .{ .name = "view-let-record.live", .accepted = false, .why = "List.push r.l is refused: escaped" },
-        .{ .name = "view-let-record.dead", .accepted = true },
-        .{ .name = "view-let-nested.live", .accepted = false, .why = "is refused: escaped" },
-        .{ .name = "view-let-chain.live", .accepted = false, .why = escaped },
-        .{ .name = "view-let-helper.live", .accepted = false, .why = escaped },
-        .{ .name = "view-let-helper.dead", .accepted = true },
-        .{ .name = "view-let-comp.live", .accepted = false, .why = escaped },
-        .{ .name = "view-let-comp.dead", .accepted = true },
-        // Found by the review of report 134: a root that is a component call
-        // alone has no row in the markup section of the dispatch table.
-        .{ .name = "view-let-wrap.live", .accepted = false, .why = escaped },
-        .{ .name = "view-let-wrap.dead", .accepted = true },
-        // 400 writes of one list: refused by the module's budget until research
-        // report 135, which reads an old run of a chain in one step.
-        .{ .name = "chain-of-writes.slow", .accepted = true },
-        .{ .name = "chain-of-writes.control", .accepted = true },
-    };
     // Every case is run, so a run before the fix names each one it gets wrong.
     var bad = false;
     for (cases) |c| {
@@ -6672,6 +6709,71 @@ test "ownership v3: a let that a markup lowering keeps, and a long chain of writ
         }
     }
     if (bad) return error.TestUnexpectedVerdict;
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-kept" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-kept.live", .accepted = false, .why = kept_let_escaped },
+        .{ .name = "view-let-kept.kept", .accepted = false, .why = "List.push xs is refused" },
+        .{ .name = "view-let-kept.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-scalar" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-scalar.live", .accepted = false, .why = kept_let_escaped },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-record" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-record.live", .accepted = false, .why = "List.push r.l is refused: escaped" },
+        .{ .name = "view-let-record.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-nested" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-nested.live", .accepted = false, .why = "is refused: escaped" },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-chain" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-chain.live", .accepted = false, .why = kept_let_escaped },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-helper" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-helper.live", .accepted = false, .why = kept_let_escaped },
+        .{ .name = "view-let-helper.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-comp" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-comp.live", .accepted = false, .why = kept_let_escaped },
+        .{ .name = "view-let-comp.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-wrap" {
+    try keptLetCases(&.{
+        // Found by the review of report 134: a root that is a component call
+        // alone has no row in the markup section of the dispatch table.
+        .{ .name = "view-let-wrap.live", .accepted = false, .why = kept_let_escaped },
+        .{ .name = "view-let-wrap.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: chain-of-writes" {
+    try keptLetCases(&.{
+        // 400 writes of one list: refused by the module's budget until research
+        // report 135, which reads an old run of a chain in one step.
+        .{ .name = "chain-of-writes.slow", .accepted = true },
+        .{ .name = "chain-of-writes.control", .accepted = true },
+    });
 }
 
 // Research report 134's review: `compatible` climbs the contexts of two
