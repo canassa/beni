@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 33 },
+    .targets = .{ .major = 1, .minor = 34 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -323,7 +323,7 @@ fn branchView(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!
     );
     var page: Page = .{ .cx = cx, .tree = tree, .p = p, .index = first, .rootless = true };
     try page.ctxs.append(cx.arena, .{ .parent = null, .node = .none, .arm = 0, .root = first });
-    try page.region(.none, br, 0, .{ .at = .{ .parent = null, .at_mount = true, .next = false } }, .{});
+    try page.region(.none, br, 0, .{ .at = .{ .parent = null, .at_mount = true, .next = false } }, .{}, null);
     return page.mount(tree.root(first).node);
 }
 
@@ -714,6 +714,12 @@ const Ctx = struct {
     /// amended 2026-10-19): entered with its arguments evaluated in the
     /// enclosing context.
     kind: enum { arm, call } = .arm,
+    /// A call whose callee's body is a branch (§8.4, amended 2026-11-23,
+    /// #2498): the call entered and its parameters bound, with no markup
+    /// root of its own. `root` is one of the branch's arms', which no `let`
+    /// is ever bound from at this level (`levelValues`); the context holds
+    /// only the branch's `when`s or its region.
+    bare: bool = false,
 };
 
 /// One part of a text binding: text written as it is, or a hole's value.
@@ -1857,7 +1863,10 @@ const Page = struct {
                 var out: std.ArrayList(Html) = .empty;
                 if (try pg.cx.programPiece(n)) |piece_facts| {
                     try out.append(pg.a(), try pg.pieceHole(n, piece_facts, ctx, scope));
-                } else if (!try pg.helper(n, scope, ctx, &out)) try pg.when(n, scope, ctx, &out, if (top and ctx == 0) .{ .at = .{ .parent = null, .at_mount = true, .next = false } } else .{ .refused = "a branch whose arms read what it binds, inside a fragment that is not the `view`'s top level" });
+                } else {
+                    const at: RegionAt = if (top and ctx == 0) .{ .at = .{ .parent = null, .at_mount = true, .next = false } } else .{ .refused = "a branch whose arms read what it binds, inside a fragment that is not the `view`'s top level" };
+                    if (!try pg.helper(n, scope, ctx, &out, at)) try pg.when(n, scope, ctx, &out, at, null);
+                }
                 return out.items;
             },
             .component => return later(pg.cx, n, "a component"),
@@ -1962,7 +1971,6 @@ const Page = struct {
                     try out.append(pg.a(), try pg.pieceHole(child, piece_facts, ctx, inner));
                     continue;
                 }
-                if (try pg.helper(child, inner, ctx, &out)) continue;
                 // Where a branch region would stand: before the element after
                 // the hole, or at the element's end (§8.2, amended 2026-11-23).
                 const at: RegionAt = if (pg.under_control != 0)
@@ -1973,7 +1981,8 @@ const Page = struct {
                     .{ .at = .{ .parent = target, .at_mount = false, .next = true } }
                 else
                     .{ .refused = "a branch whose arms read what it binds, followed by text, a hole or a `For` in its element" };
-                try pg.when(child, inner, ctx, &out, at);
+                if (try pg.helper(child, inner, ctx, &out, at)) continue;
+                try pg.when(child, inner, ctx, &out, at, null);
                 continue;
             }
             try out.appendSlice(pg.a(), try pg.markup(child, inner, ctx, false));
@@ -2064,13 +2073,14 @@ const Page = struct {
     /// holes have the facts of the call's path. False when the hole is not
     /// such a call, for `when` to try; a call that is one but cannot be
     /// written in place is refused.
-    fn helper(pg: *Page, n: m.Node.Index, scope: parser.Scope, ctx: u32, out: *std.ArrayList(Html)) m.Error!bool {
+    fn helper(pg: *Page, n: m.Node.Index, scope: parser.Scope, ctx: u32, out: *std.ArrayList(Html), where: RegionAt) m.Error!bool {
         const cx = pg.cx;
         const callee = cx.programCallee(n) orelse return false;
         const r = callee.root orelse switch (callee.refusal) {
             .not_markup => return false,
             .recursive => return later(cx, n, "a function returning markup that calls itself"),
             .other_module => return false,
+            .branch => return pg.helperBranch(n, callee, scope, ctx, out, where),
             else => return later(cx, n, "this call of a function returning markup"),
         };
         if (callee.maps != 0) return later(cx, n, "a function returning markup under `Html.map` in the program's own module");
@@ -2084,15 +2094,50 @@ const Page = struct {
         return true;
     }
 
+    /// A view helper whose body is a branch (§8.4, amended 2026-11-23,
+    /// #2498): the call entered, its parameters bound, as a call written in
+    /// place is, and in that context the callee's branch compiled as the
+    /// same branch written at the hole would be — eager `when`s, or a
+    /// branch region. The hole's facts are read outside the call, on the
+    /// path the call's frame extends.
+    fn helperBranch(pg: *Page, n: m.Node.Index, callee: m.Program.Callee, scope: parser.Scope, ctx: u32, out: *std.ArrayList(Html), where: RegionAt) m.Error!bool {
+        const cx = pg.cx;
+        if (callee.maps != 0) return later(cx, n, "a function returning markup under `Html.map` in the program's own module");
+        if (callee.statements) return later(cx, n, "a helper whose body has `let`s before its `if` or `case`");
+        const facts = try pg.known(n, cx.programHole(.{ .node = n }));
+        try cx.programInlineEnter(null, n, null, false);
+        defer cx.programInlineLeave();
+        const br = cx.programBranch(n) orelse return later(cx, n, not_when);
+        const arm_root = for (br.arms) |arm| switch (arm.what) {
+            .markup, .call => |r| break r,
+            .value => {},
+        } else return later(cx, n, not_when);
+        try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = 0, .root = arm_root, .group = facts.group, .entry_groups = facts.entry_groups, .kind = .call, .bare = true });
+        try pg.when(n, scope, @intCast(pg.ctxs.items.len - 1), out, where, facts);
+        return true;
+    }
+
+    /// Whether every context from `ctx` out to the `view`'s is the call of
+    /// a helper whose body is a branch (`Ctx.bare`): where a branch region
+    /// may stand besides the `view`'s own markup (§8.4, amended
+    /// 2026-11-23).
+    fn bareChain(pg: *const Page, ctx: u32) bool {
+        var at: ?u32 = ctx;
+        while (at) |c| : (at = pg.ctxs.items[c].parent) {
+            if (c != 0 and !pg.ctxs.items[c].bare) return false;
+        }
+        return true;
+    }
+
     /// An `html` hole among an element's children: an eager `when`
     /// (§8.2, D-b) — an `if` one arm of which is one element written in
     /// place and the other `<></>`. Its element is in the markup, in the
     /// arm's context; the `when` is a write of the hole's context.
-    fn when(pg: *Page, n: m.Node.Index, scope: parser.Scope, ctx: u32, out: *std.ArrayList(Html), where: RegionAt) m.Error!void {
+    fn when(pg: *Page, n: m.Node.Index, scope: parser.Scope, ctx: u32, out: *std.ArrayList(Html), where: RegionAt, known_facts: ?m.Program.HoleFacts) m.Error!void {
         const cx = pg.cx;
         const tree = pg.tree;
         const br = cx.programBranch(n) orelse return later(cx, n, not_when);
-        if (br.arms.len < 2) return pg.region(n, br, ctx, where, scope);
+        if (br.arms.len < 2) return pg.region(n, br, ctx, where, scope, known_facts);
         // Each arm one element written in place, or `<></>`: one eager
         // `when` per element arm (§8.2, D-b; a `case`, amended 2026-10-19).
         var shown: std.ArrayList(u32) = .empty;
@@ -2104,7 +2149,7 @@ const Page = struct {
             }
             const r = switch (arm.what) {
                 .markup => |r| r,
-                else => return pg.region(n, br, ctx, where, scope),
+                else => return pg.region(n, br, ctx, where, scope, known_facts),
             };
             const node = tree.root(r).node;
             const empty = tree.kind(node) == .fragment and tree.fragment(node).children.len == 0;
@@ -2112,14 +2157,14 @@ const Page = struct {
             if (tree.kind(node) != .element) return later(cx, n, not_when);
             // An arm that reads what the branch binds, or has `let`s: a
             // branch region (§8.2, amended 2026-11-23).
-            if (!arm.eager or arm.statements) return pg.region(n, br, ctx, where, scope);
+            if (!arm.eager or arm.statements) return pg.region(n, br, ctx, where, scope, known_facts);
             try shown.append(pg.a(), @intCast(k));
         }
         if (shown.items.len == 0 and !removed) return later(cx, n, not_when);
         // At the mount node, eager arms would be several top-level nodes:
         // the branch is a region there (§8.2, amended 2026-11-23).
-        if (shown.items.len > 1 and where == .at and where.at.at_mount) return pg.region(n, br, ctx, where, scope);
-        const facts = try pg.known(n, cx.programHole(.{ .node = n }));
+        if (shown.items.len > 1 and where == .at and where.at.at_mount) return pg.region(n, br, ctx, where, scope, known_facts);
+        const facts = known_facts orelse try pg.known(n, cx.programHole(.{ .node = n }));
         if (shown.items.len == 0) {
             // Retain selector and helper-argument effects and throws.
             var groups: std.ArrayList(u32) = .empty;
@@ -2154,7 +2199,7 @@ const Page = struct {
     /// eager `when`s, in context `ctx`, standing where `at` says. Each arm
     /// with a node is a unit of its own, planned as a `For`'s row is; the
     /// region is one write, in the read set of the whole branch value.
-    fn region(pg: *Page, n: m.Node.Index, br: m.Program.Branch, ctx: u32, at: RegionAt, scope: parser.Scope) m.Error!void {
+    fn region(pg: *Page, n: m.Node.Index, br: m.Program.Branch, ctx: u32, at: RegionAt, scope: parser.Scope, known_facts: ?m.Program.HoleFacts) m.Error!void {
         const cx = pg.cx;
         const tree = pg.tree;
         const place = switch (at) {
@@ -2163,7 +2208,9 @@ const Page = struct {
         };
         // Another module's markup is a piece of one element (§8.4).
         if (pg.piece) return pg.regionLater(n, not_when);
-        if (ctx != 0) return pg.regionLater(n, "a branch whose arms read what it binds, inside an `if` or a `case` written eagerly or a helper's markup");
+        // A helper whose body is the branch is entered with no markup of its
+        // own around the region (§8.4, amended 2026-11-23).
+        if (!pg.bareChain(ctx)) return pg.regionLater(n, "a branch whose arms read what it binds, inside an `if` or a `case` written eagerly or a helper's markup");
         if (cx.build.prerender != .none) return pg.regionLater(n, "a branch whose arms read what it binds, or a `view` whose body is an `if` or a `case`, on a page that prerenders");
         if (br.selector_effect) return pg.regionLater(n, "a branch whose choice of arm may have an effect, which `browser-tea` evaluates at every render,");
         const arms = try pg.a().alloc(?RegionUse.Arm, br.arms.len);
@@ -2189,7 +2236,7 @@ const Page = struct {
             pg.row_events = pg.row_events or unit_plan.events;
         }
         if (!any) return pg.regionLater(n, not_when);
-        const facts = cx.programHole(.{ .node = n });
+        const facts = known_facts orelse cx.programHole(.{ .node = n });
         if (facts.group == std.math.maxInt(u32)) return pg.regionLimit(n, "the write-set pass did not reach this branch on the `view`'s call path, so `browser-inline` cannot say which messages change it");
         try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null });
         try pg.writes.append(pg.a(), .{ .target = place.parent, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .region = @intCast(pg.regions.items.len - 1) } });
@@ -3433,6 +3480,7 @@ const Page = struct {
     fn unsafeLets(pg: *Page, ctx: u32, values: []const m.Value.Index) m.Error!void {
         var at: ?u32 = ctx;
         while (at) |c| : (at = pg.ctxs.items[c].parent) {
+            if (pg.ctxs.items[c].bare) continue;
             const r = pg.ctxs.items[c].root;
             const lets = pg.tree.root(r).lets;
             for (try pg.neededLets(r, values), 0..) |needed, k| {
@@ -3690,6 +3738,8 @@ const Page = struct {
     /// of another declaration names its locals by other numbers, so testing
     /// it against this root's `let`s would match a local it does not read.
     fn levelValues(pg: *Page, ctx: u32, reads: []const m.Value.Index, level: u32) m.Error![]const m.Value.Index {
+        // A helper's branch's call has no root of its own (`Ctx.bare`).
+        if (pg.ctxs.items[level].bare) return &.{};
         const decl = pg.declOf(level);
         var out: std.ArrayList(m.Value.Index) = .empty;
         if (pg.declOf(ctx) == decl) try out.appendSlice(pg.a(), reads);
@@ -4090,7 +4140,7 @@ const Page = struct {
                 const call = pg.tree.hole(x.node).call orelse continue;
                 for (0..call.args.len) |i| try vals.append(pg.a(), call.args.at(@intCast(i)));
             }
-            try pg.bindLets(into, r, vals.items);
+            if (!pg.ctxs.items[ctx].bare) try pg.bindLets(into, r, vals.items);
             // A context and a child can interleave in the document. Prepare
             // each write and each child's first write at its original place.
             for (p.f.writes.items) |wi| {
@@ -4680,7 +4730,7 @@ const Render = struct {
             const call = pg.tree.hole(x.node).call orelse continue;
             for (0..call.args.len) |i| try reads.append(pg.a(), call.args.at(@intCast(i)));
         }
-        try pg.bindLets(blk, pg.ctxs.items[c].root, reads.items);
+        if (!pg.ctxs.items[c].bare) try pg.bindLets(blk, pg.ctxs.items[c].root, reads.items);
         for (pg.writes.items) |w| if (w.ctx == c and w.what == .observe) {
             try r.js().expression(blk, try pg.cx.programBranchArm(blk, w.what.observe));
         };

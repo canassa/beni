@@ -1,0 +1,10 @@
+# Nothing to Just: the editor is made, its value the saved text.
+click #start
+input #edit "grace"
+# Just to Nothing, through the editor's own blur handler.
+focus #edit
+blur #edit
+# And back: a fresh editor, written from the new saved text.
+click #start
+input #edit "linus"
+click #done

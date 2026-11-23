@@ -1,0 +1,37 @@
+-- A view helper whose body is a `case` that is a branch region, called in
+-- an arm written eagerly: a region inside an eager arm is not compiled yet
+-- (docs/design/browser-inline.md §8.4, amended 2026-11-23, #2498; §5,
+-- class 1).
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+    name : Maybe String
+
+
+banner : Maybe String → Html {}
+banner name =
+    case name of
+        Just s →
+            <b>{s}</b>
+
+        Nothing →
+            <i>none</i>
+
+
+view : Model → Html {}
+view model =
+    <main>
+        {if model.open then
+            <div>{banner model.name}</div>
+         else
+            <></>
+        }
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox { init = λ⊤ → { open = True, name = Just "ada" }, update = λ_ m → m, view = view }

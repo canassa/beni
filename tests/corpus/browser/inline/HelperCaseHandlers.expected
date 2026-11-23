@@ -1,0 +1,208 @@
+-- load
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"0"</p>
+    <div id="x">
+      <button class="a">"1"</button>
+      ""
+    </div>
+    <div id="y">
+      ""
+      <button class="b">"tens 101"</button>
+    </div>
+  </main>
+</body>
+-- click #x>.a
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"1"</p>
+    <div id="x">
+      <button class="a">"1"</button>
+      ""
+    </div>
+    <div id="y">
+      ""
+      <button class="b">"tens 101"</button>
+    </div>
+  </main>
+</body>
+-- click #y>.b
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"1010"</p>
+    <div id="x">
+      <button class="a">"1"</button>
+      ""
+    </div>
+    <div id="y">
+      ""
+      <button class="b">"tens 101"</button>
+    </div>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"1010"</p>
+    <div id="x">
+      <button class="a">"2"</button>
+      ""
+    </div>
+    <div id="y">
+      ""
+      <button class="b">"tens 102"</button>
+    </div>
+  </main>
+</body>
+-- click #x>.a
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"2"</p>
+    <div id="x">
+      <button class="a">"2"</button>
+      ""
+    </div>
+    <div id="y">
+      ""
+      <button class="b">"tens 102"</button>
+    </div>
+  </main>
+</body>
+-- click #y>.b
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"1020"</p>
+    <div id="x">
+      <button class="a">"2"</button>
+      ""
+    </div>
+    <div id="y">
+      ""
+      <button class="b">"tens 102"</button>
+    </div>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"1020"</p>
+    <div id="x">
+      ""
+      <button class="b">"tens 2"</button>
+    </div>
+    <div id="y">
+      <button class="a">"102"</button>
+      ""
+    </div>
+  </main>
+</body>
+-- click #x>.b
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"20"</p>
+    <div id="x">
+      ""
+      <button class="b">"tens 2"</button>
+    </div>
+    <div id="y">
+      <button class="a">"102"</button>
+      ""
+    </div>
+  </main>
+</body>
+-- click #y>.a
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"102"</p>
+    <div id="x">
+      ""
+      <button class="b">"tens 2"</button>
+    </div>
+    <div id="y">
+      <button class="a">"102"</button>
+      ""
+    </div>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"102"</p>
+    <div id="x">
+      ""
+      <button class="b">"tens 3"</button>
+    </div>
+    <div id="y">
+      <button class="a">"103"</button>
+      ""
+    </div>
+  </main>
+</body>
+-- click #x>.b
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"30"</p>
+    <div id="x">
+      ""
+      <button class="b">"tens 3"</button>
+    </div>
+    <div id="y">
+      <button class="a">"103"</button>
+      ""
+    </div>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"30"</p>
+    <div id="x">
+      <button class="a">"3"</button>
+      ""
+    </div>
+    <div id="y">
+      ""
+      <button class="b">"tens 103"</button>
+    </div>
+  </main>
+</body>
+-- click #x>.a
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="flip">"flip"</button>
+    <p id="got">"3"</p>
+    <div id="x">
+      <button class="a">"3"</button>
+      ""
+    </div>
+    <div id="y">
+      ""
+      <button class="b">"tens 103"</button>
+    </div>
+  </main>
+</body>

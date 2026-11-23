@@ -1,0 +1,4 @@
+element "root"
+click [data-role=next]
+click [data-role=next]
+click [data-role=next]

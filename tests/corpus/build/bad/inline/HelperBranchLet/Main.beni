@@ -1,0 +1,25 @@
+-- A view helper whose body has a `let` before its `case`: the branch is
+-- evaluated alone where the hole calls the helper, with no `let` of the
+-- helper bound, so it is not compiled yet (docs/design/browser-inline.md
+-- §8.4, amended 2026-11-23, #2498; §5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+banner : Int → Html {}
+banner n =
+    big = n > 9
+    case big of
+        True →
+            <b>many</b>
+
+        False →
+            <i>few</i>
+
+
+view : Int → Html {}
+view n = <main>{banner n}</main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 3, update = λ_ m → m, view = view }

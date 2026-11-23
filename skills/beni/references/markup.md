@@ -241,9 +241,9 @@ not evaluate it again. A `pub` helper in a `--library` build is refused as a mar
 branch read is computed one time when a value that it reads changes. A statement runs at the start
 and when a value that it reads changes. A pattern `let` must be pure and total.
 
-The body of `view`, or a hole, can be an `if` or a `case` of arms that are one element, `<></>` or a
-helper call whose body is one element. Limits: a choice with an effect, an unused arm `let`, a
-branch in a `For` row or an eager arm, and text after a branch.
+The body of `view`, a hole, or a helper body that a hole calls can be an `if` or a `case` of arms
+that are one element, `<></>` or a one-element helper call. Limits: a choice with an effect, an unused
+arm `let`, a `let` before a helper's branch, a branch in a `For` row or an eager arm, and text after it.
 
 ## `For` on `browser-inline`
 

@@ -618,6 +618,9 @@ beni over `Js` in `Inline.beni`:
     element's end, or in a control whose value changes; and a region on a page that prerenders.
     `build/bad/inline/Region*/`, `build/bad/prerender/ViewBranch/`; the pages are
     `browser/inline/Region*` and the `browser/tea` pages copied beside them.
+    *Amended 2026-11-23 (#2498):* a view helper whose body is the branch is not a region inside
+    a helper's markup: the helper has no markup around the branch, and the region stands at the
+    hole that calls it (§8.4, *A view helper whose body is a branch*).
 - **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
   markup type, and still compiles markup that a program holds in a name, passes or returns, when
   the compiler can see which root the name stands for. Such a name is a **name for a markup
@@ -658,6 +661,9 @@ beni over `Js` in `Inline.beni`:
     `case` or a call (#2498). Markup held in the model stays §8.7's `MarkupValue/` rule (class
     3). `browser/inline/MarkupValue*`, `LetOneOwner`, `LetMarkupHandler`;
     `build/bad/inline/MarkupLetArgument/`, `MarkupLetRead/`, `MarkupArgumentReadsLet/`.
+    *Amended 2026-11-23 (#2498):* markup a helper returns through an `if` or a `case` is
+    compiled where a hole calls the helper (§8.4, *A view helper whose body is a branch*);
+    markup it returns through a call stays refused.
 - **Evaluation order** (*added 2026-10-19, the review of #398*). A binding function evaluates, per
   context: first the `let`s it reads; then every value that may throw — a hole's or an attribute's
   value, or a `when`'s branch value, holding any call that is not a basic operator
@@ -919,6 +925,55 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   `browser/inline/MarkupValueHelperArg` and `CaseValueArm/` the page
   `browser/inline/MarkupValueCaseArm`. A constant whose body is markup is a helper of no
   parameter; a `let` of a helper whose value is markup is no `let` "no hole reads".
+- **A view helper whose body is a branch** (*amended 2026-11-23, #2498*: the view helper above
+  and §8.2's branches, composed; an eager-`when`-only draft of 2026-11-11 was never merged). A
+  hole whose value calls a function of the program's own module — under no `Html.map`, not
+  calling itself — whose body is an `if` or a `case` (`Program.Callee.refusal` `branch`, version
+  1.34) is compiled exactly as the same branch written at the hole would be, with the call's
+  parameters bound around it:
+  - **The call's context.** The hole is the call's context, entered as a view helper's call is:
+    its arguments evaluated in the enclosing context, its parameters bound, and no markup root of
+    its own (`Ctx.bare`), since the callee has no markup around the branch. Inside it the branch
+    is the callee's `if` or `case`, evaluated in the callee's declaration, and §8.2's rules apply
+    unchanged: one eager `when` per element arm when every arm is one element or `<></>` and
+    reads nothing the branch binds, and a branch region otherwise — an arm that reads a variable
+    its pattern binds (`Just draft → <input value={draft} …>`), an arm with `let`s a hole reads,
+    an arm that calls a helper. A `let` of an arm is that arm's root's (`Root.lets`), so an arm
+    with one is never eager (`eagerArm`), and it is evaluated with the arm's values, once per pass
+    that writes what it reads, never at the choice and never at an event (`HelperCaseArmLet`); a
+    `let` of an arm that no hole reads is a statement (`Arm.statements`), refused as in the `view`.
+  - **The path.** The write-set pass walks the callee's body on the call's path (`write-sets.md`,
+    *a hole's facts per call*), which the call's frame already extends by the hole's token, so
+    choosing and entering an arm (`programBranchEnter`, `programBranchBind`,
+    `programBranchEager`) adds no step, and an arm the pass proved dead on that path is left out
+    as in the `view`. The hole's facts are read outside the call: one group, the call's, whose
+    reads are the arguments' and so every value of the branch; a write any arm reads runs the
+    `when`s or the region's entry, which then write nothing or `set` the arm shown, as §8.2's
+    region entry is coarser than its arms' holes. Every write still compares with what the node
+    shows, and nothing is skipped on an identity check (rule 8).
+  - **Two calls** of one helper are two contexts, each with its own `when`s or region, its own
+    arguments and its own handlers. A handler of an eager arm whose message reads a parameter is
+    bound with the call's arguments captured, as any helper's handler is (§8.2, *Evaluation
+    order*); one of a region's arm goes through the dispatcher with the message its `set` last
+    kept (§9's rows).
+  - **What stays refused** (class 1, at the hole): `let`s before the branch in the callee's body,
+    whose values the branch would read unbound (`build/bad/inline/HelperBranchLet/`); whatever
+    §8.2 refuses of the same branch written at the hole — an arm that is a markup value
+    (`HelperBranchValue/`), an arm with a `let` no hole reads (`HelperBranchStatement/`), a region
+    followed by text or a hole (`HelperBranchBeforeText/`), in a
+    control whose value changes, or on a page that prerenders; a region inside an eager arm or
+    inside a helper's markup (`HelperBranchInEagerArm/`), and a helper's branch in a region's arm
+    or a `For`'s row, which refuse a helper's markup; a helper under `Html.map` or calling
+    itself; and another module's helper, a piece (§8.4, *View pieces*). Eager `when`s nest: a
+    helper's branch in an eager arm of another's compiles (`browser/inline/HelperCaseNested`).
+  - Pages: `browser/inline/HelperCase`, `HelperCaseTwice`, `HelperCaseHandlers`,
+    `HelperCaseNested`, `HelperCaseRegion`, `HelperCaseLetLog`, `HelperCaseArmLet`, `Routes` (a copy
+    of `browser/tea/Routes`) and `browser/prerender/HelperBranchOpens`, each with `browser-tea`'s
+    transcript of the same source but for the empty placeholders each one lists (the prerendered
+    page has `ArmOpens`'s). `emit/release/inline/HelperCase` and `HelperCaseRegion` pin the
+    shapes, which are those of the `case` written in the `view`. The region is 2 bytes of brotli
+    away from it (1 048 against 1 046); the `when`s are 45 bytes more (661 against 616), the
+    empty bucket of the call's argument group that every view helper's call has (#2500).
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
   module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
   `ResearchS2/`, `ResearchS3/`, `Texts/`).
