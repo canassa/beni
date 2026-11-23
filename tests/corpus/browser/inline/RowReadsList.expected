@@ -1,0 +1,60 @@
+-- load
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <ul>
+      <li>
+        <b>"a"</b>
+        <i>"a,b,c"</i>
+      </li>
+      <li>
+        <b>"b"</b>
+        <i>"a,b,c"</i>
+      </li>
+      <li>
+        <b>"c"</b>
+        <i>"a,b,c"</i>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #relabel
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <ul>
+      <li>
+        <b>"a!"</b>
+        <i>"a!,b,c"</i>
+      </li>
+      <li>
+        <b>"b"</b>
+        <i>"a!,b,c"</i>
+      </li>
+      <li>
+        <b>"c"</b>
+        <i>"a!,b,c"</i>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #relabel
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <ul>
+      <li>
+        <b>"a!!"</b>
+        <i>"a!!,b,c"</i>
+      </li>
+      <li>
+        <b>"b"</b>
+        <i>"a!!,b,c"</i>
+      </li>
+      <li>
+        <b>"c"</b>
+        <i>"a!!,b,c"</i>
+      </li>
+    </ul>
+  </main>
+</body>

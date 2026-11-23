@@ -9249,3 +9249,52 @@ tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 23:48 #0 :: cell seen◆ :: absent
 tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 23:53 #0 :: SsrRowKeeps.keep seen◆ :: absent :: accepted  v2 checks the write into a cell and the payload it consumes (`Ref`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/run/SsrRowKeeps.beni SsrRowKeeps 23:53 #0 :: SsrRowKeeps.keep r :: absent :: accepted  v2 checks the write into a cell and the payload it consumes (`Ref`; the `◆` slot, §2.13.12); v1 makes no such demand
 tests/corpus/browser/tea/PairModelInPlace.beni PairModelInPlace 59:5 #0 :: entry PairModelInPlace.update model.0 :: accepted :: absent  v1's entry demand: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ForKeyed.beni ForKeyed 51:5 #0 :: entry ForKeyed.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ApiLogin.beni ApiLogin 111:5 #0 :: entry ApiLogin.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/BakedList.beni BakedList 57:5 #0 :: entry BakedList.update model.opened :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/DuplicateKeys.beni DuplicateKeys 86:5 #0 :: entry DuplicateKeys.update model.inserted :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/DuplicateKeys.beni DuplicateKeys 86:5 #0 :: entry DuplicateKeys.update model.rekeyed :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/DuplicateKeys.beni DuplicateKeys 86:5 #0 :: entry DuplicateKeys.update model.removed :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/DuplicateKeys.beni DuplicateKeys 86:5 #0 :: entry DuplicateKeys.update model.swapped :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/FilteredFor.beni FilteredFor 108:5 #0 :: entry FilteredFor.update model.todos :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ForForms.beni ForForms 95:5 #0 :: entry ForForms.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpJsonBody.beni HttpJsonBody 93:5 #0 :: entry HttpJsonBody.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpJsonList.beni HttpJsonList 136:5 #0 :: entry HttpJsonList.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpMultipart.beni HttpMultipart 70:5 #0 :: entry HttpMultipart.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpProgress.beni HttpProgress 46:17 #0 :: send <Done …> :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpProgress.beni HttpProgress 88:5 #0 :: entry HttpProgress.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpResponseMeta.beni HttpResponseMeta 68:5 #0 :: entry HttpResponseMeta.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/KeyedMoves.beni KeyedMoves 83:5 #0 :: entry KeyedMoves.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/KeyedOriginal.beni KeyedOriginal 91:5 #0 :: entry KeyedOriginal.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ListValues.beni ListValues 63:8 #0 :: entry ListValues.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/NavigateFragment.beni NavigateFragment 42:5 #0 :: entry NavigateFragment.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/RekeyNaN.beni RekeyNaN 52:5 #0 :: entry RekeyNaN.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/RowItemOnly.beni RowItemOnly 57:5 #0 :: entry RowItemOnly.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/RowReadsList.beni RowReadsList 40:5 #0 :: entry RowReadsList.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/SelectAndRemove.beni SelectAndRemove 87:5 #0 :: entry SelectAndRemove.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/StorageBasics.beni StorageBasics 77:5 #0 :: entry StorageBasics.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/TeaLinkGuard.beni TeaLinkGuard 78:5 #0 :: entry TeaLinkGuard.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/TeaRouter.beni TeaRouter 115:5 #0 :: entry TeaRouter.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/TypedInput.beni TypedInput 39:8 #0 :: entry TypedInput.update model.seen :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ValueCommands.beni ValueCommands 98:5 #0 :: entry ValueCommands.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ValueCommands.beni ValueCommands 98:5 #0 :: entry ValueCommands.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpJson.beni HttpJson 93:5 #0 :: entry HttpJson.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpJsonDerived.beni HttpJsonDerived 117:5 #0 :: entry HttpJsonDerived.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+
+tests/corpus/browser/inline/BlurBetweenHandlers.beni BlurBetweenHandlers 67:8 #0 :: entry BlurBetweenHandlers.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/DetachedRowEvent.beni DetachedRowEvent 53:8 #0 :: entry DetachedRowEvent.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HelperTwoLists.beni HelperTwoLists 44:8 #0 :: entry HelperTwoLists.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/Keyed.beni Keyed 79:5 #0 :: entry Keyed.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/KeyedInPlace.beni KeyedInPlace 117:8 #0 :: entry KeyedInPlace.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/KeyedInPlaceMap.beni KeyedInPlaceMap 122:8 #0 :: entry KeyedInPlaceMap.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/KeyEvents.beni KeyEvents 76:5 #0 :: entry KeyEvents.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/NestedFor.beni NestedFor 96:5 #0 :: entry NestedFor.update model.groups :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/NestedFor.beni NestedFor 96:5 #0 :: entry NestedFor.update model.groups[*].kids :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/NoOpEdits.beni NoOpEdits 69:5 #0 :: entry NoOpEdits.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/PositionRows.beni PositionRows 83:5 #0 :: entry PositionRows.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/RandomValues.beni RandomValues 105:5 #0 :: entry RandomValues.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/RandomValues.beni RandomValues 90:21 #0 :: ++ rolls :: accepted :: rejected  #1704: under v2 core's and the platforms' contracts read as pessimistic, so a value through them is unknown or escapes
+tests/corpus/browser/inline/ReconcileMoves.beni ReconcileMoves 79:5 #0 :: entry ReconcileMoves.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/RemoveFocusedRow.beni RemoveFocusedRow 66:8 #0 :: entry RemoveFocusedRow.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/RowBlur.beni RowBlur 57:8 #0 :: entry RowBlur.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ForEdits.beni ForEdits 101:5 #0 :: entry ForEdits.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

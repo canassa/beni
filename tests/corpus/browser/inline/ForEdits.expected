@@ -1,0 +1,372 @@
+-- load
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"-"</p>
+    <ul>
+      <li>
+        <input .value="">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- input li:nth-child(1)>input "a"
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a"</p>
+    <ul>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- input li:nth-child(2)>input "b"
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b"</p>
+    <ul>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="b">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- input li:nth-child(3)>input "c"
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c"</p>
+    <ul>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="b">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="c">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #front
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c"</p>
+    <ul>
+      <li>
+        <input .value="">
+        <span>"f4"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="b">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="c">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #middle
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c"</p>
+    <ul>
+      <li>
+        <input .value="">
+        <span>"f4"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"m5"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="b">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="c">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c"</p>
+    <ul>
+      <li>
+        <input .value="c">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"m5"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="b">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"f4"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c"</p>
+    <ul>
+      <li>
+        <input .value="">
+        <span>"f4"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="b">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"m5"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="c">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- input li:nth-child(5)>input "cc"
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c 3:cc"</p>
+    <ul>
+      <li>
+        <input .value="">
+        <span>"f4"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="b">
+        <span>"b"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"m5"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="cc">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click li:nth-child(2)>button
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c 3:cc -2"</p>
+    <ul>
+      <li>
+        <input .value="">
+        <span>"f4"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="a">
+        <span>"a"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="">
+        <span>"m5"</span>
+        <button>"x"</button>
+      </li>
+      <li>
+        <input .value="cc">
+        <span>"c"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c 3:cc -2"</p>
+    <ul></ul>
+  </main>
+</body>
+-- click #refill
+<body>
+  <main>
+    <button id="front">"front"</button>
+    <button id="middle">"middle"</button>
+    <button id="swap">"swap"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="clear">"clear"</button>
+    <button id="refill">"refill"</button>
+    <p id="log">"- 1:a 2:b 3:c 3:cc -2"</p>
+    <ul>
+      <li>
+        <input .value="">
+        <span>"r6"</span>
+        <button>"x"</button>
+      </li>
+    </ul>
+  </main>
+</body>

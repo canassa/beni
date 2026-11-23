@@ -69,6 +69,13 @@ pub const lowering: m.Lowering = .{
         .{ .name = "safeUrl", .arity = 1 },
         .{ .name = "when", .arity = 2 },
         .{ .name = "on", .arity = 4 },
+        // A `For`'s rows (§9, amended 2026-11-23): `(html)` its row's
+        // template, and `(parent, end, list, key, make, set)` its rows made to
+        // agree with its list.
+        .{ .name = "forTemplate", .arity = 1 },
+        .{ .name = "forRows", .arity = 6 },
+        // `(parent, before, text)`: a text node of a row made and placed.
+        .{ .name = "rowText", .arity = 3 },
         // `on` for a handler inside eager arms, apart so that a page with
         // none ships neither it nor its arm walk (#874).
         .{ .name = "onArm", .arity = 5 },
@@ -688,6 +695,10 @@ const Write = struct {
         event: u32,
         /// Evaluate a choice whose only reachable markup is empty.
         observe: m.Node.Index,
+        /// A `For`, the only child of the element at `target`: its rows
+        /// made to agree with its list (§9, amended 2026-11-23). An index
+        /// into `Page.fors`.
+        rows: u32,
     },
     /// A `stateful` attribute: a control the user edits (§8.3).
     stateful: bool = false,
@@ -734,6 +745,303 @@ const Run = struct {
     len: u32,
     row: u32,
     elements: union(enum) { children: struct { parent: ?u32, from: u32 }, places },
+};
+
+// ---- Rows: `For` (`browser-inline.md` §9, the simple form) --------------
+
+/// A `For` of the page: its node and its row, planned.
+/// `end`: the element its rows stand before — its next sibling, a plain
+/// element — or null when the rows are its parent's last children.
+const ForUse = struct { node: m.Node.Index, plan: *const RowPlan, end: ?u32 };
+
+/// A `For`'s row, planned before anything is written (§9, amended
+/// 2026-11-23): its template's HTML, and what its `set` writes, in document
+/// order. A row's elements are numbered within the row, as a unit's are:
+/// `null` is the row's top element, `n` its `n`-th descendant.
+const RowPlan = struct {
+    html: []const u8,
+    /// Some op refers to a descendant of the row's top element.
+    elements: bool,
+    ops: []const RowOp,
+    /// The row, or a row of a `For` in it, has an event: the page then has
+    /// its dispatcher, which every row's listener hands its message.
+    events: bool,
+    /// The row, or a row of a `For` in it, has a control the user edits
+    /// (§8.3, *Controlled inputs*).
+    stateful: bool,
+};
+
+/// One thing a row's `set` does, on the element at `target`.
+const RowOp = struct {
+    target: ?u32,
+    what: union(enum) {
+        /// The element's whole text: texts and text holes.
+        text: struct { parts: []const Part, string: bool },
+        /// A property, or an attribute written as one (§8.2's `prop`).
+        /// `attribute_only`: written with `setAttribute` when it differs,
+        /// as a scalar `String` class is (§8.2) — in a row, also any other
+        /// attribute of a `String` or a number that is no DOM property,
+        /// its value written as a string.
+        prop: struct { value: Operand, key: ?[]const u8, attribute: []const u8, attribute_only: bool, url: bool, number: bool = false },
+        /// A text node of an element whose children mix elements and text
+        /// holes: `make` creates it, before the element child `anchor`
+        /// (null: at the end), and `set` writes a hole's, kept as the row's
+        /// `t<slot>`. `value` null: a constant text, `text`.
+        child_text: struct { anchor: ?u32, slot: u32, value: ?m.Value.Index, text: []const u8, number: bool },
+        /// An event: `set` keeps its handler value in the row's `h<slot>`,
+        /// which the listener `make` wired reads at the event.
+        event: struct { item: m.Item, index: u32, slot: u32 },
+        /// A `For`, the only child of the element: its rows synced.
+        rows: struct { node: m.Node.Index, plan: *const RowPlan, end: ?u32 },
+    },
+};
+
+/// Where the rows of the `For` at `children[i]` stand, in element `e`:
+/// before the element after it, whose place is `next` — the place the
+/// walk gives the next element — or, as its parent's last children, at
+/// the end (null). Refused beside anything else after it, whose node the
+/// lowering does not hold, and in an element whose own value a control
+/// writes, which would be written before the rows its value chooses among.
+fn forEnd(pg: *Page, e: m.Element, children: []const m.Node.Index, i: usize, next: u32) m.Error!?u32 {
+    const tree = pg.tree;
+    for (tree.itemsOf(e.items)) |it| {
+        if (it.kind != .attribute or it.attribute == .none or it.value.kind != .dynamic) continue;
+        if (tree.attributeFacts(it.attribute).stateful) return later(pg.cx, children[i], "a `For` beside other children of a control whose value changes");
+    }
+    if (i + 1 == children.len) return null;
+    if (tree.kind(children[i + 1]) != .element) return later(pg.cx, children[i], "a `For` followed by text, a hole or another `For` in its element");
+    return next;
+}
+
+/// The walk of one row's markup (`RowBuild.plan`): what §9's simple form
+/// compiles, and the refusals of everything else, each class 1 (§5).
+const RowBuild = struct {
+    pg: *Page,
+    count: u32 = 0,
+    ops: std.ArrayList(RowOp) = .empty,
+    slots: u32 = 0,
+    texts: u32 = 0,
+    events: bool = false,
+    stateful: bool = false,
+
+    /// `For` `n`'s row, planned; `scope` is its parent element's.
+    fn plan(pg: *Page, n: m.Node.Index, scope: parser.Scope) m.Error!*const RowPlan {
+        const tree = pg.tree;
+        const cx = pg.cx;
+        const f = tree.for_(n);
+        if (f.fallback != null) return later(cx, n, "a `For` with a `fallback`");
+        const row = tree.row(f.row);
+        if (row.kind != .markup) return later(cx, n, "a `For` whose row function is not a lambda whose body is one element written in place");
+        const top = tree.root(row.body).node;
+        if (tree.kind(top) != .element) return later(cx, top, "a `For` row that is not one element");
+        var b: RowBuild = .{ .pg = pg };
+        const html = try b.element(top, scope, true);
+        var out: std.ArrayList(u8) = .empty;
+        // The template is parsed alone: its closing run is left out.
+        try serialise(pg.a(), &out, &.{html}, null, true);
+        const elements = for (b.ops.items) |op| {
+            if (op.target != null) break true;
+            switch (op.what) {
+                .child_text => |x| if (x.anchor != null) break true,
+                .rows => |x| if (x.end != null) break true,
+                else => {},
+            }
+        } else false;
+        const p = try pg.a().create(RowPlan);
+        p.* = .{ .html = out.items, .elements = elements, .ops = b.ops.items, .events = b.events, .stateful = b.stateful };
+        return p;
+    }
+
+    fn element(b: *RowBuild, n: m.Node.Index, scope: parser.Scope, top: bool) m.Error!Html {
+        const pg = b.pg;
+        const tree = pg.tree;
+        const cx = pg.cx;
+        cx.at(n);
+        const e = tree.element(n);
+        const facts = tree.elementFacts(e.row);
+        const name = tree.string(facts.name);
+        if (facts.namespace != .html) return later(cx, n, "an element of the SVG or MathML namespace");
+        if (parser.misnested(scope, name)) |why| return cx.report(n, why);
+        const target: ?u32 = if (top) null else blk: {
+            b.count += 1;
+            break :blk b.count - 1;
+        };
+        // A `For` in a row, the only child of its element: synced by the
+        // row's `set`, before the element's own attributes are written (a
+        // `select`'s `value` chooses among the options its rows make).
+        const own_children = tree.childrenOf(e.children);
+        const rows = !facts.void and own_children.len == 1 and tree.kind(own_children[0]) == .for_;
+        if (rows) {
+            if (parser.content(name) != .normal) return later(cx, n, "the content of an element whose content the parser reads as text");
+            const p = try plan(pg, own_children[0], scope.enter(name));
+            try b.ops.append(pg.a(), .{ .target = target, .what = .{ .rows = .{ .node = own_children[0], .plan = p, .end = null } } });
+            b.events = b.events or p.events;
+            b.stateful = b.stateful or p.stateful;
+        }
+        var attributes: std.ArrayList(u8) = .empty;
+        for (tree.itemsOf(e.items), 0..) |it, i| try b.item(n, target, it, e.items.start + @as(u32, @intCast(i)), &attributes);
+        const base: Html = .{ .kind = .element, .name = name, .attributes = attributes.items, .target = target };
+        if (facts.void) {
+            var out = base;
+            out.void = true;
+            return out;
+        }
+        const inner = scope.enter(name);
+        const children = tree.childrenOf(e.children);
+        if (parser.content(name) != .normal and children.len != 0) return later(cx, n, "the content of an element whose content the parser reads as text");
+        if (rows) return base;
+        // Texts and text holes only, a hole among them: the element's text
+        // is one write, as a unit's (§8.2).
+        var holes: u32 = 0;
+        const texts = for (children) |child| {
+            switch (tree.kind(child)) {
+                .text => {},
+                .hole => if (textHole(tree.hole(child).kind)) {
+                    holes += 1;
+                } else break false,
+                else => break false,
+            }
+        } else true;
+        if (texts and holes != 0) {
+            if (parser.movesText(inner.parent)) return cx.report(n, "the parser moves text written here out of the table");
+            var parts: std.ArrayList(Part) = .empty;
+            var string = true;
+            for (children) |child| switch (tree.kind(child)) {
+                .text => try parts.append(pg.a(), .{ .text = tree.string(tree.text(child).text) }),
+                else => {
+                    const h = tree.hole(child);
+                    if (h.kind == .text_number) string = false;
+                    try parts.append(pg.a(), .{ .value = h.value });
+                },
+            };
+            try b.ops.append(pg.a(), .{ .target = target, .what = .{ .text = .{ .parts = parts.items, .string = string or parts.items.len > 1 } } });
+            return base;
+        }
+        // Elements beside text holes: each text a node `make` creates
+        // before the element after it, one per text or hole, as
+        // `browser-tea` keeps them.
+        const mixed = for (children) |child| {
+            if (tree.kind(child) == .hole and textHole(tree.hole(child).kind)) break true;
+        } else false;
+        if (mixed and parser.movesText(inner.parent)) return cx.report(n, "the parser moves text written here out of the table");
+        var pending: std.ArrayList(usize) = .empty;
+        var out: std.ArrayList(Html) = .empty;
+        for (children, 0..) |child, ci| switch (tree.kind(child)) {
+            .for_ => {
+                const end = try forEnd(pg, e, children, ci, b.count);
+                const p = try plan(pg, child, inner);
+                try b.ops.append(pg.a(), .{ .target = target, .what = .{ .rows = .{ .node = child, .plan = p, .end = end } } });
+                b.events = b.events or p.events;
+                b.stateful = b.stateful or p.stateful;
+            },
+            .text => {
+                if (parser.movesText(inner.parent)) return cx.report(child, "the parser moves text written here out of the table");
+                if (mixed) {
+                    try pending.append(pg.a(), b.ops.items.len);
+                    try b.ops.append(pg.a(), .{ .target = target, .what = .{ .child_text = .{ .anchor = null, .slot = 0, .value = null, .text = tree.string(tree.text(child).text), .number = false } } });
+                    continue;
+                }
+                var text: std.ArrayList(u8) = .empty;
+                try escapeText(pg.a(), &text, tree.string(tree.text(child).text));
+                try out.append(pg.a(), .{ .kind = .text, .name = text.items });
+            },
+            .element => {
+                const el = try b.element(child, inner, false);
+                for (pending.items) |i| b.ops.items[i].what.child_text.anchor = el.target;
+                pending.clearRetainingCapacity();
+                try out.append(pg.a(), el);
+            },
+            .hole => {
+                const h = tree.hole(child);
+                if (!textHole(h.kind)) return later(cx, child, "a hole of markup in a `For` row");
+                try pending.append(pg.a(), b.ops.items.len);
+                try b.ops.append(pg.a(), .{ .target = target, .what = .{ .child_text = .{ .anchor = null, .slot = b.texts, .value = h.value, .text = "", .number = h.kind == .text_number } } });
+                b.texts += 1;
+            },
+            .component => return later(cx, child, "a component in a `For` row"),
+            .show => return later(cx, child, "a `Show`"),
+            else => return later(cx, child, "this markup in a `For` row"),
+        };
+        var el = base;
+        el.children = out.items;
+        return el;
+    }
+
+    /// An attribute or an event of row element `n` (`target`): a constant
+    /// one in the template, any other an op of `set`.
+    fn item(b: *RowBuild, n: m.Node.Index, target: ?u32, it: m.Item, index: u32, out: *std.ArrayList(u8)) m.Error!void {
+        const pg = b.pg;
+        const tree = pg.tree;
+        const cx = pg.cx;
+        switch (it.kind) {
+            .attribute => {},
+            .event => {
+                if (it.value.kind != .dynamic) return limit(cx, n, "this event's handler is a message written as a literal, which `browser-inline` cannot route to a key");
+                try b.ops.append(pg.a(), .{ .target = target, .what = .{ .event = .{ .item = it, .index = index, .slot = b.slots } } });
+                b.slots += 1;
+                b.events = true;
+                return;
+            },
+            else => return later(cx, n, "an escape attribute"),
+        }
+        const name = tree.string(it.name);
+        var stateful = false;
+        var attribute_only = false;
+        var property: ?[]const u8 = null;
+        if (it.attribute != .none) {
+            const f = tree.attributeFacts(it.attribute);
+            attribute_only = f.classes and it.class == .string;
+            if (f.raw or f.styles or (f.classes and !attribute_only)) return later(cx, n, "an attribute written as raw HTML, or a class or style list");
+            if (f.property) |prop| property = tree.string(prop);
+            stateful = f.stateful;
+        }
+        // A URL, as a unit's (§10.5, amended 2026-11-05).
+        if (it.url) {
+            const plain = std.mem.indexOfScalar(u8, name, ':') == null;
+            switch (it.value.kind) {
+                .constant => {
+                    const c = it.value.constant;
+                    switch (c.kind) {
+                        .string => {
+                            const text = tree.string(c.text);
+                            if (scriptUrl(text)) |script| return writeValue(pg.a(), out, name, if (script) "" else text);
+                            if (!plain) return later(cx, n, "a URL whose first characters are outside ASCII, in an attribute with a namespace prefix");
+                            try b.ops.append(pg.a(), .{ .target = target, .what = .{ .prop = .{ .value = .{ .text = text }, .key = null, .attribute = name, .attribute_only = true, .url = true } } });
+                            return;
+                        },
+                        .number => return writeAttribute(pg.a(), out, name, c, tree),
+                        else => return later(cx, n, "an attribute that holds a URL"),
+                    }
+                },
+                .dynamic => {
+                    if (it.class != .string) return later(cx, n, "an attribute that holds a URL, whose value changes and is not a `String`");
+                    if (!plain) return later(cx, n, "an attribute with a namespace prefix that holds a URL and whose value changes");
+                    try b.ops.append(pg.a(), .{ .target = target, .what = .{ .prop = .{ .value = .{ .value = it.value.dynamic.? }, .key = null, .attribute = name, .attribute_only = true, .url = true } } });
+                    return;
+                },
+                else => return later(cx, n, "an attribute that holds a URL"),
+            }
+        }
+        switch (it.value.kind) {
+            .constant => {
+                if (stateful) return later(cx, n, "a constant value of a control");
+                return writeAttribute(pg.a(), out, name, it.value.constant, tree);
+            },
+            .dynamic => {},
+            else => return later(cx, n, "this attribute's value"),
+        }
+        const key: ?[]const u8 = if (attribute_only) null else if (property) |prop|
+            (if (std.mem.eql(u8, prop, "value")) null else prop)
+        else if (it.class == .bool and isBoolProperty(name))
+            name
+        else if (std.mem.indexOfScalar(u8, name, ':') == null and (it.class == .string or it.class == .int or it.class == .float)) {
+            // No DOM property: the attribute itself, its value a string.
+            try b.ops.append(pg.a(), .{ .target = target, .what = .{ .prop = .{ .value = .{ .value = it.value.dynamic.? }, .key = null, .attribute = name, .attribute_only = true, .url = false, .number = it.class != .string } } });
+            return;
+        } else return later(cx, n, "an attribute that is not a DOM property and whose value changes");
+        if (stateful) b.stateful = true;
+        try b.ops.append(pg.a(), .{ .target = target, .what = .{ .prop = .{ .value = .{ .value = it.value.dynamic.? }, .key = key, .attribute = name, .attribute_only = attribute_only, .url = false } } });
+    }
 };
 
 fn addKind(a: std.mem.Allocator, kinds: *std.ArrayList([]const u8), k: []const u8) m.Error!void {
@@ -897,6 +1205,10 @@ const Page = struct {
     /// The page is another module's root, written as pieces (`piece`).
     piece: bool = false,
     pieces: std.ArrayList(PieceUse) = .empty,
+    /// The page's `For`s (§9, amended 2026-11-23), and whether a row of
+    /// one has an event: the page then has its dispatcher.
+    fors: std.ArrayList(ForUse) = .empty,
+    row_events: bool = false,
     /// The root plan (§8.4, amended 2026-10-22): this unit's row of the
     /// program's table; a piece's holders, one per argument of its
     /// function; the names of its own row and of the program's table, and
@@ -967,6 +1279,179 @@ const Page = struct {
         return limit(pg.cx, n, "the write-set pass did not reach this hole on the `view`'s call path, so `browser-inline` cannot say which messages change it; write it in the program's own `view`, or a function the `view` calls directly");
     }
 
+    /// `For` `n`, the only child of the element at `target` (§9, amended
+    /// 2026-11-23): its row planned, and one write of the element whose
+    /// read set is the `For`'s — its list, its key, and what its rows read
+    /// (the write-set pass's edge of the `For`).
+    fn forChild(pg: *Page, n: m.Node.Index, target: ?u32, ctx: u32, scope: parser.Scope, end: ?u32) m.Error!void {
+        if (pg.piece) return later(pg.cx, n, "a `For` in another module's markup");
+        const facts = try pg.known(n, pg.cx.programHole(.{ .node = n }));
+        const p = try RowBuild.plan(pg, n, scope);
+        try pg.fors.append(pg.a(), .{ .node = n, .plan = p, .end = end });
+        pg.row_events = pg.row_events or p.events;
+        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .rows = @intCast(pg.fors.items.len - 1) } });
+    }
+
+    /// The values of the root a `For`'s write reads: its list, its key
+    /// function and its row's captures.
+    fn forValues(pg: *Page, n: m.Node.Index, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        const f = pg.tree.for_(n);
+        try out.append(pg.a(), f.each);
+        if (f.mode == .key) if (f.key) |k| try out.append(pg.a(), k);
+        const row = pg.tree.row(f.row);
+        for (0..row.captures.len) |k| try out.append(pg.a(), row.captures.at(@intCast(k)));
+    }
+
+    /// The call that syncs `For` `n`'s rows into `parent`, into `blk`, its
+    /// values already evaluated there: `rows(parent, list, key, make, set)`,
+    /// the key `undefined` by position, `null` by reference.
+    fn writeRows(pg: *Page, blk: m.Block, parent: m.Expr, end: m.Expr, n: m.Node.Index, p: *const RowPlan) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        const f = pg.tree.for_(n);
+        const row = pg.tree.row(f.row);
+        const key = switch (f.mode) {
+            .key => try cx.value(f.key.?),
+            .position => try js.literal(.undefined),
+            else => try js.literal(.null),
+        };
+        // The row's captures, read where the `For` stands, under names its
+        // `set` reads them by.
+        const captures = try pg.a().alloc(m.Name, row.captures.len);
+        for (captures, 0..) |*c, k| {
+            c.* = try cx.fresh("capture");
+            try js.constant(blk, c.*, try cx.value(row.captures.at(@intCast(k))));
+        }
+        const each = try cx.value(f.each);
+
+        // The template, parsed once at the mount.
+        const template = try cx.fresh("template");
+        try js.constant(pg.body, template, try js.call(try js.name(try cx.runtime("forTemplate")), &.{try js.string(p.html)}));
+
+        // `make`: a row's node cloned, its elements found, its listeners
+        // wired; each hands the dispatcher the message the row's `set` last
+        // kept, applied to the event's payload when it takes one.
+        const mk = try js.block();
+        const node = try cx.fresh("node");
+        try js.constant(mk, node, try js.call(try js.member(try js.name(template), "cloneNode"), &.{try js.literal(.true)}));
+        const elements: ?m.Name = if (p.elements) blk: {
+            const e = try cx.fresh("elements");
+            try js.constant(mk, e, try js.call(try js.member(try js.name(node), "querySelectorAll"), &.{try js.string("*")}));
+            break :blk e;
+        } else null;
+        const made = try cx.fresh("row");
+        var props: std.ArrayList(m.Property) = .empty;
+        try props.append(pg.a(), .{ .key = "n", .value = try js.name(node) });
+        if (elements) |e| try props.append(pg.a(), .{ .key = "e", .value = try js.name(e) });
+        // The texts of an element that mixes elements and text holes, each
+        // made before the element after it; a hole's kept for `set`.
+        for (p.ops) |op| if (op.what == .child_text) {
+            const ct = op.what.child_text;
+            const parent_el = if (op.target) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.name(node);
+            const anchor = if (ct.anchor) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.literal(.null);
+            const made_text = try js.call(try js.name(try cx.runtime("rowText")), &.{ parent_el, anchor, try js.string(ct.text) });
+            if (ct.value == null) {
+                try js.expression(mk, made_text);
+                continue;
+            }
+            const t = try cx.fresh("text");
+            try js.constant(mk, t, made_text);
+            try props.append(pg.a(), .{ .key = try std.fmt.allocPrint(pg.a(), "t{d}", .{ct.slot}), .value = try js.name(t) });
+        };
+        try js.constant(mk, made, try js.object(props.items));
+        for (p.ops) |op| if (op.what == .event) {
+            const ev = op.what.event;
+            const at = if (op.target) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.name(node);
+            const kept = try js.member(try js.name(made), try std.fmt.allocPrint(pg.a(), "h{d}", .{ev.slot}));
+            const rb = try js.block();
+            var read_params: []const m.Name = &.{};
+            if (ev.item.form == .payload) {
+                const e = try cx.fresh("event");
+                read_params = try pg.a().dupe(m.Name, &.{e});
+                const payload = if (try cx.extractor(ev.index)) |x| try js.call(x, &.{try js.name(e)}) else try js.name(e);
+                try js.@"return"(rb, try cx.call(kept, &.{payload}));
+            } else try js.@"return"(rb, kept);
+            const read = try js.arrow(read_params, rb);
+            const facts = pg.tree.eventFacts(ev.item.event);
+            const dom = pg.tree.string(facts.dom_name);
+            const dispatch = try js.name(pg.dispatch.?);
+            if (!facts.prevent_default and !facts.stop_propagation) {
+                const kind = if (std.mem.eql(u8, dom, "click")) try js.literal(.undefined) else try js.string(dom);
+                try js.expression(mk, try js.call(try js.name(try cx.runtime("on")), &.{ at, dispatch, kind, read }));
+                continue;
+            }
+            const e = try cx.fresh("event");
+            const lb = try js.block();
+            const stopped = try js.block();
+            try js.@"return"(stopped, null);
+            try js.@"if"(lb, try js.call(try js.name(try cx.runtime("stopped")), &.{}), stopped, null);
+            if (facts.prevent_default) try js.expression(lb, try js.call(try js.member(try js.name(e), "preventDefault"), &.{}));
+            if (facts.stop_propagation) try js.expression(lb, try js.call(try js.member(try js.name(e), "stopPropagation"), &.{}));
+            try js.expression(lb, try js.call(try js.name(try cx.runtime("send")), &.{ dispatch, try js.name(e), read }));
+            try js.expression(mk, try js.call(try js.member(at, "addEventListener"), &.{ try js.string(dom), try js.arrow(&.{e}, lb) }));
+        };
+        try js.@"return"(mk, try js.name(made));
+
+        // `set`: the row's values evaluated with its item, its position and
+        // the captures bound, then each write, kept handler and inner `For`
+        // in document order.
+        const st = try js.block();
+        const r = try cx.fresh("row");
+        const value_item = try cx.fresh("item");
+        const position = try cx.fresh("position");
+        _ = try cx.rowValues(st, f.row, value_item, if (row.arity == 2) position else null, captures);
+        const row_node = try js.member(try js.name(r), "n");
+        for (p.ops) |op| {
+            const at = if (op.target) |t| try js.index(try js.member(try js.name(r), "e"), try pg.num(t)) else row_node;
+            switch (op.what) {
+                .text => |x| {
+                    const value = if (x.parts.len == 1 and x.parts[0] == .value)
+                        try cx.value(x.parts[0].value)
+                    else value: {
+                        const tp = try pg.a().alloc(m.TemplatePart, x.parts.len);
+                        for (tp, x.parts) |*t, part| t.* = switch (part) {
+                            .text => |s| .{ .text = s },
+                            .value => |v| .{ .expr = try cx.value(v) },
+                        };
+                        break :value try js.template(tp);
+                    };
+                    const shown = if (x.string) value else try js.template(&.{.{ .expr = value }});
+                    try js.expression(st, try js.call(try js.name(try cx.runtime("text")), &.{ at, shown }));
+                },
+                .prop => |x| {
+                    const value = switch (x.value) {
+                        .value => |v| try cx.value(v),
+                        .text => |t| try js.string(t),
+                    };
+                    if (x.attribute_only) {
+                        try pg.writeStringAttribute(st, at, x.attribute, if (x.number) try js.template(&.{.{ .expr = value }}) else value, x.url);
+                    } else if (x.key) |k| {
+                        try js.expression(st, try js.call(try js.name(try cx.runtime("prop")), &.{ at, value, try js.string(k) }));
+                    } else try js.expression(st, try js.call(try js.name(try cx.runtime("prop")), &.{ at, value }));
+                },
+                .event => |x| try js.assign(st, try js.member(try js.name(r), try std.fmt.allocPrint(pg.a(), "h{d}", .{x.slot})), try cx.value(x.item.value.dynamic.?)),
+                .child_text => |x| if (x.value) |v| {
+                    const value = try cx.value(v);
+                    const shown = if (x.number) try js.template(&.{.{ .expr = value }}) else value;
+                    try js.expression(st, try js.call(try js.name(try cx.runtime("text")), &.{ try js.member(try js.name(r), try std.fmt.allocPrint(pg.a(), "t{d}", .{x.slot})), shown }));
+                },
+                .rows => |x| try pg.writeRows(st, at, if (x.end) |t| try js.index(try js.member(try js.name(r), "e"), try pg.num(t)) else try js.literal(.null), x.node, x.plan),
+            }
+        }
+        try js.expression(blk, try js.call(try js.name(try cx.runtime("forRows")), &.{
+            parent,
+            end,
+            each,
+            key,
+            try js.arrow(&.{}, mk),
+            try js.arrow(&.{ r, value_item, position }, st),
+        }));
+    }
+
+    fn num(pg: *Page, n: u32) m.Error!m.Expr {
+        return pg.cx.js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{n}));
+    }
+
     // ---- The walk: markup, writes and events ---------------------------
 
     /// The markup of node `n` of context `ctx`, in `scope`, refusing what
@@ -999,7 +1484,7 @@ const Page = struct {
                 return out.items;
             },
             .component => return later(pg.cx, n, "a component"),
-            .for_ => return later(pg.cx, n, "a `For`"),
+            .for_ => return later(pg.cx, n, "a `For` that is not the only child of its element"),
             .show => return later(pg.cx, n, "a `Show`"),
             else => return later(pg.cx, n, "this markup"),
         }
@@ -1017,6 +1502,16 @@ const Page = struct {
             pg.count += 1;
             break :blk pg.count - 1;
         };
+        // A `For`, the only child of its element (§9, amended 2026-11-23):
+        // one write of the element, which makes its rows agree with its list,
+        // made before the element's own attributes are written — a
+        // `select`'s `value` chooses among the options its rows make.
+        const own_children = tree.childrenOf(e.children);
+        const rows = !facts.void and own_children.len == 1 and tree.kind(own_children[0]) == .for_;
+        if (rows) {
+            if (parser.content(name) != .normal) return later(pg.cx, n, "the content of an element whose content the parser reads as text");
+            try pg.forChild(own_children[0], target, ctx, scope.enter(name), null);
+        }
         var attributes: std.ArrayList(u8) = .empty;
         // Each attribute whose value changes, where it stands among the
         // written ones, and a written `value` (`prerender.md` §4.1).
@@ -1037,6 +1532,7 @@ const Page = struct {
         const inner = scope.enter(name);
         const children = tree.childrenOf(e.children);
         if (parser.content(name) != .normal and children.len != 0) return later(pg.cx, n, "the content of an element whose content the parser reads as text");
+        if (rows) return base;
         // Texts and text holes only, a hole among them: the element's text
         // is one binding, mixed or alone.
         var holes: u32 = 0;
@@ -1056,7 +1552,13 @@ const Page = struct {
             return out;
         }
         var out: std.ArrayList(Html) = .empty;
-        for (children) |child| {
+        for (children, 0..) |child, ci| {
+            // A `For` beside other children: its rows stand before the
+            // element after it, or at its parent's end.
+            if (tree.kind(child) == .for_) {
+                try pg.forChild(child, target, ctx, inner, try forEnd(pg, e, children, ci, pg.count));
+                continue;
+            }
             if (tree.kind(child) == .hole) {
                 const h = tree.hole(child);
                 if (textHole(h.kind)) return limit(pg.cx, child, "`browser-inline` writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own");
@@ -1436,6 +1938,13 @@ const Page = struct {
         // A command that runs sends messages of any key: every key is then
         // reached, through the dispatcher.
         var runs = (element_ and try pg.command(null)) or messages;
+        // A row's event hands its message to the dispatcher (§9, amended
+        // 2026-11-23), whose name the rows' listeners are written with
+        // before any handler is.
+        if (pg.row_events) {
+            runs = true;
+            pg.dispatch = try cx.fresh("dispatch");
+        }
 
         pg.body = try js.block();
         const body = pg.body;
@@ -1455,6 +1964,7 @@ const Page = struct {
         // (`prerender.md` §6): its view is one element of its own, or the
         // prerender tree's render function refused it.
         pg.hydrating = cx.build.prerender == .client;
+        if (pg.hydrating and pg.fors.items.len != 0) return later(cx, pg.fors.items[0].node, "a `For` in a prerendered page");
         if (pg.hydrating and (pg.top_nodes.len != 1 or pg.top_nodes[0].kind != .element or pg.top_nodes[0].ctx != 0))
             return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
         // A program of each page's value reads it from the page before
@@ -1558,6 +2068,8 @@ const Page = struct {
             if (w.target != null) break true;
         } else for (pg.events.items) |ev| {
             if (ev.target != null) break true;
+        } else for (pg.fors.items) |f| {
+            if (f.end != null) break true;
         } else false;
         if (placed and !pg.hydrating) {
             // One element referred to is reached by its path from the top
@@ -1628,6 +2140,18 @@ const Page = struct {
         try pg.letsOnce();
         try pg.argsOnce();
         for (pg.functions.items) |*f| try pg.writeEntry(body, f);
+        // A `For` whose read set some key writes is in a bucket that key's
+        // pass runs: an entry of no bucket runs at the first pass alone, and
+        // its rows would never follow a write (§9, amended 2026-11-23).
+        if (std.debug.runtime_safety) for (pg.functions.items) |*f| for (f.writes.items) |wi| {
+            const w = pg.writes.items[wi];
+            if (w.what != .rows) continue;
+            var written = false;
+            for (0..keys.len) |k| for (w.groups) |g| {
+                if (cx.programCalls(@intCast(k), g)) written = true;
+            };
+            if (written) std.debug.assert((try pg.functionBuckets(f)).len != 0);
+        };
 
         // Plan events before writing handlers: each key determines which
         // stateful controls its arm writes back. Each DOM listener carries
@@ -1645,6 +2169,15 @@ const Page = struct {
             const slot = try stateful_at.getOrPut(pg.a(), w.target);
             if (!slot.found_existing) slot.value_ptr.* = .empty;
             try addRefs(pg.a(), slot.value_ptr, try pg.functionBuckets(f));
+        };
+        // A control in a `For`'s row is written back by every key: its
+        // event goes through the dispatcher, which may reach any (§8.3,
+        // *Controlled inputs*; §9, amended 2026-11-23).
+        for (pg.functions.items) |*f| for (f.writes.items) |wi| {
+            const w = pg.writes.items[wi];
+            if (w.what != .rows or !pg.fors.items[w.what.rows].plan.stateful) continue;
+            const bs = try pg.functionBuckets(f);
+            for (pg.controls) |*c| try addRefs(pg.a(), c, bs);
         };
         // DOM sites get their arm at wiring. Only non-DOM consumers need
         // a named handler; all sites still contribute to key-wide controls.
@@ -1698,7 +2231,7 @@ const Page = struct {
                 named[k] = true;
                 if (element_) _ = try pg.command(@intCast(k));
             }
-            pg.dispatch = try cx.fresh("dispatch");
+            if (pg.dispatch == null) pg.dispatch = try cx.fresh("dispatch");
         }
 
         // Each handler body writes the model, then its write pass runs the
@@ -2003,6 +2536,7 @@ const Page = struct {
         if (pg.top_nodes.len > 1) return later(cx, view_node, "a `view` of more than one top-level node");
         if (pg.top_nodes.len == 0 or pg.top_nodes[0].kind != .element or pg.top_nodes[0].ctx != 0)
             return later(cx, view_node, "a prerendered page of a `view` whose top-level node is not one element of its own; it does not prerender it");
+        if (pg.fors.items.len != 0) return later(cx, pg.fors.items[0].node, "a `For` in a prerendered page");
         const body = try js.block();
         const route = try cx.fresh("route");
         // A program of each page's value renders from the value its schema
@@ -2241,6 +2775,10 @@ const Page = struct {
             if (only != null and only.? != t) return null;
             only = t;
         };
+        for (pg.fors.items) |f| if (f.end) |t| {
+            if (only != null and only.? != t) return null;
+            only = t;
+        };
         return only;
     }
 
@@ -2371,6 +2909,7 @@ const Page = struct {
             .when => |x| try out.append(pg.a(), pg.tree.hole(x.node).value),
             .observe => |n| try out.append(pg.a(), pg.tree.hole(n).value),
             .event => {},
+            .rows => |i| try pg.forValues(pg.fors.items[i].node, out),
         }
     }
 
@@ -2762,6 +3301,7 @@ const Page = struct {
                     .text => {},
                 },
                 .event => {},
+                .rows => |i| try pg.forValues(pg.fors.items[i].node, values),
                 .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
                 .observe => |n| try reads.append(pg.a(), pg.tree.hole(n).value),
             }
@@ -2930,6 +3470,7 @@ const Page = struct {
                         .text => |t| try js.string(t),
                     },
                     .event => |ei| try pg.capturedArguments(ei, p.call_args.items),
+                    .rows => |i| return later(cx, pg.fors.items[i].node, "a `For` whose binding prepares a guarded arm or a helper argument that may fail"),
                     .observe => |n| try p.branch(into, ctx, n),
                     .when => |x| value: {
                         const taken = try p.branch(into, ctx, x.node);
@@ -3018,7 +3559,7 @@ const Page = struct {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value }));
                 },
                 .when => try js.expression(into, try js.call(try js.name(try cx.runtime("when")), &.{ node, ready.value })),
-                .observe => {},
+                .observe, .rows => {},
             }
             if (ready.selected) |n| try js.@"if"(blk, try js.name(n), into, null);
         }
@@ -3089,12 +3630,18 @@ const Page = struct {
                         .value => |v| if (cx.valueSafe(v)) try own.append(pg.a(), v),
                         .text => {},
                     },
+                    .rows => |i| {
+                        var all: std.ArrayList(m.Value.Index) = .empty;
+                        try pg.forValues(pg.fors.items[i].node, &all);
+                        for (all.items) |v| if (cx.valueSafe(v)) try own.append(pg.a(), v);
+                    },
                     .when, .event, .observe => {},
                 }
                 try cx.rootValues(blk, pg.ctxs.items[ctx].root, own.items);
                 const node = try pg.ref(w.target);
                 switch (w.what) {
                     .event => unreachable,
+                    .rows => |i| try pg.writeRows(blk, node, if (pg.fors.items[i].end) |t| try pg.ref(t) else try js.literal(.null), pg.fors.items[i].node, pg.fors.items[i].plan),
                     .text => |parts| {
                         const value = if (parts.len == 1 and parts[0] == .value)
                             try cx.value(parts[0].value)

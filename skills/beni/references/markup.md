@@ -241,4 +241,55 @@ effect and that only an event reads is evaluated when its binding is refreshed, 
 not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
 the markup-value diagnostic, and it never drops the export silently.
 
-Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.4.7, §9.8.20; `docs/design/frontend.md` §10.1; `docs/design/browser-inline.md` §5, §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.
+## `For` on `browser-inline`
+
+On `browser-inline`, a `For` over a `List` compiles, keyed by a key function, by position
+(`keyed={False}`) or by reference. After each write of a value that the `For` reads, its rows are
+made to agree with the list by key: a row keeps its node while its key stays. The `set` of every
+row runs again. A row's `Debug.log` thus logs one time for each row.
+
+- The row function must be a lambda whose body is one element.
+- The `For` is the only child of its element, or the elements after it are plain elements.
+- A row's event can send the row's key: `onClick={Remove row.id}`.
+
+These are still compiler limitations: `fallback`; text, a hole or a `For` after a `For`; a `For`
+beside other children of a control whose value changes; a `when`, a `case`, a markup hole, a
+component or a `Show` in a row; a `For` in another module's markup; a `For` in a prerendered page;
+a `For` over a `Dict`.
+
+```beni platform=browser-inline
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Remove Int
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+update : Msg, List Row → List Row
+update msg rows =
+    case msg of
+        Remove id →
+            List.filter rows λr → r.id ≠ id
+
+
+view : List Row → Html Msg
+view rows =
+    <ul>
+        <For each={rows} keyed={.id}>
+            {λr → <li><span>{r.label}</span><button onClick={Remove r.id}>x</button></li>}
+        </For>
+    </ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ { id = 1, label = "one" } ], update = update, view = view }
+```
+
+Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.4.7, §9.8.20; `docs/design/frontend.md` §10.1; `docs/design/browser-inline.md` §5, §8.2, §8.3, §8.4, §9; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.

@@ -1,0 +1,17 @@
+-- A `For` with a `fallback` on `browser-inline`: the simple form
+-- (browser-inline.md §9, amended 2026-11-23) does not compile it, class 1
+-- (§5), refused at the `For`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : List String → Html ⊤
+view items =
+    <ul>
+        <For each={items} fallback={<li>none</li>}>{λs → <li>{s}</li>}</For>
+    </ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ "a" ], update = λ_ m → m, view = view }

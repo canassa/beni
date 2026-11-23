@@ -1,0 +1,3 @@
+# Three keystrokes, each a task of its own: every one after the first is
+# typed into the text the last render put back.
+type #name "abc"
