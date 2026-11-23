@@ -1,0 +1,49 @@
+-- A `Show`'s fallback is an attribute, evaluated at every pass of the
+-- `Show` whichever arm is taken (browser-inline.md §8.2, amended
+-- 2026-11-23, *A `Show`*; language.md §11.18): once the body is shown, a
+-- `Debug.todo` in the fallback, written as `Html.text` or in place, still
+-- throws, and the page stops as `browser-tea`'s does. Its transcript is
+-- `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Bump
+
+
+type alias Model =
+    n : Int
+
+
+boom : Int → String
+boom n = if n > 1 then Debug.todo "fallback evaluated" else "fb"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <div>
+            <Show
+                when={if model.n > 0 then Just model.n else Nothing}
+                keyed
+                fallback={Html.text (boom model.n)}
+            >
+                {λk → <b>{k}</b>}
+            </Show>
+        </div>
+        <section>
+            <Show
+                when={if model.n > 0 then Just model.n else Nothing}
+                keyed
+                fallback={<p>{boom model.n}</p>}
+            >
+                {λk → <b>{k}</b>}
+            </Show>
+        </section>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 0 }, update = λ_ m → { m | n = m.n + 1 }, view = view }

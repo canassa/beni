@@ -773,9 +773,11 @@ beni over `Js` in `Inline.beni`:
     body or fallback is a limit of the compiler (class 1).
   - **One binding entry** in the `Show`'s read set — its `when`, its key function, its fallback
     and its body, which the write-set pass records as one edge (`write-sets.md`, *a `Show`'s
-    arms*) — evaluates `when` once; on `Just v`, the key, `f v` or `v` itself, once, then every
-    value of the body; on `Nothing`, the fallback's. Only the arm taken is evaluated (#459), and
-    all of it before anything is shown, as a region's arm (*Evaluation order*). Then the runtime's
+    arms*) — evaluates the attributes as `language.md` §11.18 orders them: `when` once and the
+    fallback's values, whichever arm is taken (a `Debug.todo` in the fallback throws while the
+    body is shown, as on `browser-tea`); then, on `Just v`, the key, `f v` or `v` itself, once,
+    and every value of the body. The body is evaluated only when it is taken (#459), and all of
+    it before anything is shown, as a region's arm (*Evaluation order*). Then the runtime's
     `keyShown(state, k, key, make, set)`: arm `k` — 0 the fallback, 1 the body — shown as
     `armShown` shows it, and made afresh, the shown arm's node removed, when `key` is not `===` the
     key the region last showed (`language.md` §11.18's remount: inputs' text, focus and scroll
