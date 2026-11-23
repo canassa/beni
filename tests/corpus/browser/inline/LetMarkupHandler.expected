@@ -3,7 +3,7 @@
   <main>
     <button id="bump">"bump"</button>
     <button id="send">"send"</button>
-    <p id="sent">""</p>
+    <p id="sent"></p>
   </main>
 </body>
 -- click #send

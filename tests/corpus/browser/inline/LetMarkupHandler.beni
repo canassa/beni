@@ -1,5 +1,6 @@
 -- A copy of `browser/tea/LetMarkupHandler` on `browser-inline` (browser-inline.md §8.2, amended
--- 2026-11-23, *A markup value*), with that page's transcript.
+-- 2026-11-23, *A markup value*), with that page's transcript but for one difference: at
+-- load the empty `sent` paragraph has no text node here, where `browser-tea` keeps an empty one.
 --
 -- A derived value that is markup holds a handler (§5.4; S4's amendment,
 -- item 4): `button` is a `let` of `view` only markup reads, so it is a slot
