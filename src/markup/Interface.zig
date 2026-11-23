@@ -82,7 +82,9 @@ const std = @import("std");
 /// Version 1.28 adds the update-context writer dependencies and absence fact.
 /// Version 1.29 lets the write-set pass read `afterRender` commands
 /// (`Lowering.Effects.after_render`).
-pub const version: Version = .{ .major = 1, .minor = 29 };
+/// Version 1.30 adds `Context.programViewStatementGroups`: the read sets of a
+/// `view`'s statements (`browser-inline.md` §8.2, amended 2026-11-23).
+pub const version: Version = .{ .major = 1, .minor = 30 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1868,6 +1870,15 @@ pub const Context = struct {
         return cx.vtable.program_let(cx.impl, r, k);
     }
 
+    /// 1.30, inside `Lowering.program` only, for a `view` with `view_lets`:
+    /// the read set of each of its body's statements (`_ = e`, a `⊤` line),
+    /// as a group (`programHole`'s), in source order; null when the
+    /// write-set pass did not record one of them (`browser-inline.md` §8.2,
+    /// amended 2026-11-23).
+    pub fn programViewStatementGroups(cx: *Context) ?[]const u32 {
+        return cx.vtable.program_view_statement_groups(cx.impl);
+    }
+
     /// 1.14 (`Lowering.effects`): what the program's subscription set is
     /// (`browser-inline.md` §3).
     pub fn programSubscriptions(cx: *Context) Program.Subscriptions {
@@ -2133,6 +2144,7 @@ pub const VTable = struct {
     program_branch_eager: *const fn (impl: *anyopaque, node: Node.Index, k: u32) Error!void,
     program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,
     program_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32) Program.HoleFacts,
+    program_view_statement_groups: *const fn (impl: *anyopaque) ?[]const u32,
     program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,
     program_subscription_start: *const fn (impl: *anyopaque, block: Block, i: u32, send: Expr) Error!Expr,
     program_subscription_message: *const fn (impl: *anyopaque, i: u32, payload: Expr) Error!Expr,

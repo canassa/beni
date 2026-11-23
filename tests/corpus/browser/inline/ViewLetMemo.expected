@@ -1,0 +1,61 @@
+-- load
+console.log: statement: 0
+console.log: sum: 0
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <p id="one">"0 and 0"</p>
+    <p id="two">"0"</p>
+    <p id="three">"0"</p>
+  </main>
+</body>
+-- click #a
+console.log: sum: 1
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <p id="one">"1 and 0"</p>
+    <p id="two">"1"</p>
+    <p id="three">"2"</p>
+  </main>
+</body>
+-- click #c
+console.log: statement: 1
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <p id="one">"1 and 1"</p>
+    <p id="two">"1"</p>
+    <p id="three">"2"</p>
+  </main>
+</body>
+-- click #b
+console.log: sum: 2
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <p id="one">"2 and 1"</p>
+    <p id="two">"2"</p>
+    <p id="three">"4"</p>
+  </main>
+</body>
+-- click #c
+console.log: statement: 2
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="c">"c"</button>
+    <p id="one">"2 and 2"</p>
+    <p id="two">"2"</p>
+    <p id="three">"4"</p>
+  </main>
+</body>

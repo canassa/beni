@@ -1,0 +1,15 @@
+-- A pattern `let` of `view` whose value may throw: every binding function that enters the
+-- `view` evaluates it, so it is refused, a limit of the compiler (docs/design/browser-inline.md
+-- §8.2, amended 2026-11-23; §5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n =
+    ( a, b ) = if n > 3 then Debug.todo "too many" else ( n, n * 2 )
+    <main><p>{a}</p><p>{b}</p><button onClick={n + 1}>+</button></main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }

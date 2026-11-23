@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 29 },
+    .targets = .{ .major = 1, .minor = 30 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -238,11 +238,18 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     );
     switch (p.view) {
         .markup => {},
-        .function => return cx.programReport(.view, .not_implemented,
+        // `let`s and statements around markup (§8.2, amended 2026-11-23),
+        // but not on a page that prerenders.
+        .function => if (!p.view_lets) return cx.programReport(.view, .not_implemented,
             \\A limit of the compiler: `browser-inline` compiles a `view` whose body is markup
-            \\written in place, and this one's computes its markup, or has `let`s, which it does not compile yet
-            \\(`docs/design/browser-inline.md` §5, class 1). Write the markup in place as the body of
-            \\`view`, or build this program with `--platform=browser-tea`.
+            \\written in place, after any `let`s, and this one's computes its markup — an `if`, a
+            \\`case` or a call — which it does not compile yet (`docs/design/browser-inline.md` §8.2;
+            \\§5, class 1). Write the markup in place as the body of `view`, with the choice in a
+            \\hole, or build this program with `--platform=browser-tea`.
+        ) else if (cx.build.prerender != .none) return cx.programReport(.view, .not_implemented,
+            \\A limit of the compiler: `browser-inline` does not compile a `view` with `let`s on a
+            \\page that prerenders yet (`docs/design/browser-inline.md` §8.2; §5, class 1). Write
+            \\the values in the markup, or build this program with `--platform=browser-tea`.
         ),
         .other_module => return cx.programReport(.view, .not_implemented,
             \\A limit of the compiler: `browser-inline` compiles a `view` declared in the module that
@@ -724,6 +731,11 @@ const Event = struct {
 const Function = struct {
     groups: []const u32,
     writes: std.ArrayList(u32) = .empty,
+    /// An entry with no write (§8.2, amended 2026-11-23): the `view`'s
+    /// statements, or the memo node of the view root's `let` `memo`, which
+    /// evaluates it into its slot.
+    kind: enum { writes, statements, memo } = .writes,
+    memo: u32 = 0,
 };
 
 /// Another module's root the page shows as pieces: its hole, its top
@@ -1243,6 +1255,12 @@ const Page = struct {
     used_own: bool = false,
     used_table: bool = false,
     cell: ?m.Name = null,
+    /// Per `let` of the view's root, its memo slot when several binding
+    /// functions read it (§8.2, amended 2026-11-23); and the groups of the
+    /// view's statements, null when it has none.
+    memo: []?m.Name = &.{},
+    memo_mask: []const bool = &.{},
+    statements: ?[]const u32 = null,
 
     fn a(pg: *Page) std.mem.Allocator {
         return pg.cx.arena;
@@ -1915,6 +1933,12 @@ const Page = struct {
         const cx = pg.cx;
         const js = cx.js;
         if (pg.top_nodes.len > 1) return later(cx, view_node, "a `view` of more than one top-level node");
+        // The statements of a `view` with `let`s, one entry of their own
+        // (§8.2, amended 2026-11-23).
+        if (pg.p.view_lets) {
+            const groups = cx.programViewStatementGroups() orelse return limit(cx, view_node, "the write-set pass gave no read set for a statement of this `view`, and `browser-inline` runs a statement again when what it reads is written");
+            if (groups.len != 0) pg.statements = try pg.a().dupe(u32, groups);
+        }
         const element_ = pg.p.constructor >= 1;
         const keys = cx.programKeys();
         pg.handlers = try pg.a().alloc(?m.Name, keys.len);
@@ -2044,7 +2068,7 @@ const Page = struct {
         // The model, kept only when something reads it.
         pg.model = try cx.fresh("model");
         const titled = pg.p.constructor >= 2;
-        const reads_model = pg.writes.items.len != 0 or pg.events.items.len != 0 or pg.pieces.items.len != 0 or subs.len != 0 or runs or titled;
+        const reads_model = pg.writes.items.len != 0 or pg.events.items.len != 0 or pg.pieces.items.len != 0 or subs.len != 0 or runs or titled or pg.statements != null;
         if (reads_model) {
             const first_model = if (element_) try js.member(init, "a") else init;
             // A root reaches the model through the program's cell when no
@@ -2179,6 +2203,7 @@ const Page = struct {
         // The program's own binding entries, in document order.
         try pg.guardGroups();
         try pg.group();
+        try pg.memos();
         try pg.letsOnce();
         try pg.argsOnce();
         for (pg.functions.items) |*f| try pg.writeEntry(body, f);
@@ -3121,17 +3146,25 @@ const Page = struct {
     /// the model, then each eager arm. Returns how many arms were entered.
     const CallArgs = struct { ctx: u32, args: []const m.Expr };
 
-    fn enter(pg: *Page, blk: m.Block, ctx: u32, saved: ?*std.ArrayList(CallArgs)) m.Error!u32 {
+    fn enter(pg: *Page, blk: m.Block, ctx: u32, saved: ?*std.ArrayList(CallArgs), reads: []const m.Value.Index) m.Error!u32 {
         var chain: std.ArrayList(u32) = .empty;
         var at: ?u32 = ctx;
         while (at) |c| : (at = pg.ctxs.items[c].parent) try chain.insert(pg.a(), 0, c);
         if (pg.piece) {
             try pg.cx.pieceViewEnter(blk, try pg.viewArgs());
         } else try pg.cx.programViewEnter(blk, try pg.modelRef());
+        // Each level's `let`s that `reads`, or a call's arguments, read,
+        // bound as soon as the level is entered, in its own declaration: an
+        // argument of a deeper call may read them (D-d; §8.2, amended
+        // 2026-11-23).
+        try pg.bindLets(blk, pg.ctxs.items[0].root, try pg.levelValues(ctx, reads, 0));
         for (chain.items[1..]) |c| {
             const x = pg.ctxs.items[c];
             switch (x.kind) {
-                .arm => try pg.cx.programBranchEager(x.node, x.arm),
+                .arm => {
+                    try pg.cx.programBranchEager(x.node, x.arm);
+                    try pg.bindLets(blk, x.root, try pg.levelValues(ctx, reads, c));
+                },
                 .call => {
                     // A binding function may enter a helper again through a
                     // nested arm. Rebind its parameters each time, but evaluate
@@ -3165,6 +3198,7 @@ const Page = struct {
                         break :args evaluated;
                     };
                     try pg.cx.programInlineEnter(blk, x.node, args, false);
+                    try pg.bindLets(blk, x.root, try pg.levelValues(ctx, reads, c));
                 },
             }
         }
@@ -3178,6 +3212,37 @@ const Page = struct {
         var out: std.ArrayList(m.Root.Index) = .empty;
         var at: ?u32 = ctx;
         while (at) |c| : (at = pg.ctxs.items[c].parent) try out.insert(pg.a(), 0, pg.ctxs.items[c].root);
+        return out.items;
+    }
+
+    /// The helper call whose declaration `ctx`'s values are written in: the
+    /// nearest call context on its path, itself included; null for the
+    /// unit's own (the `view`'s, or a piece's function's). An arm is written
+    /// in its branch's declaration.
+    fn declOf(pg: *const Page, ctx: u32) ?u32 {
+        var at: ?u32 = ctx;
+        while (at) |c| : (at = pg.ctxs.items[c].parent) {
+            if (c != 0 and pg.ctxs.items[c].kind == .call) return c;
+        }
+        return null;
+    }
+
+    /// Of `reads`, the values of context `ctx`, and the arguments of the
+    /// calls on its path, those written in the declaration of `level`, a
+    /// context on that path: what may read `level`'s root's `let`s. A value
+    /// of another declaration names its locals by other numbers, so testing
+    /// it against this root's `let`s would match a local it does not read.
+    fn levelValues(pg: *Page, ctx: u32, reads: []const m.Value.Index, level: u32) m.Error![]const m.Value.Index {
+        const decl = pg.declOf(level);
+        var out: std.ArrayList(m.Value.Index) = .empty;
+        if (pg.declOf(ctx) == decl) try out.appendSlice(pg.a(), reads);
+        var at: ?u32 = ctx;
+        while (at) |c| : (at = pg.ctxs.items[c].parent) {
+            const x = pg.ctxs.items[c];
+            if (c == 0 or x.kind != .call or pg.declOf(x.parent.?) != decl) continue;
+            const call = pg.tree.hole(x.node).call orelse continue;
+            for (0..call.args.len) |i| try out.append(pg.a(), call.args.at(@intCast(i)));
+        }
         return out.items;
     }
 
@@ -3294,6 +3359,10 @@ const Page = struct {
         const needed = try pg.neededLets(r, values);
         for (0..lets.len) |kk| {
             if (!needed[kk]) continue;
+            if (pg.memoOf(r, @intCast(kk))) {
+                try cx.bindLet(r, @intCast(kk), pg.memo[kk].?);
+                continue;
+            }
             const lv = lets.at(@intCast(kk));
             try cx.rootValues(blk, r, &.{lv});
             const n = try cx.fresh("let");
@@ -3317,7 +3386,9 @@ const Page = struct {
                 break;
             };
             if (needed[k]) continue;
-            for (k + 1..lets.len) |j| if (needed[j] and cx.valueReadsLet(r, @intCast(k), lets.at(@intCast(j)))) {
+            // A memo node's `let` is read from its slot: what it reads is
+            // its entry's to evaluate (§8.2, amended 2026-11-23).
+            for (k + 1..lets.len) |j| if (needed[j] and !pg.memoOf(r, @intCast(j)) and cx.valueReadsLet(r, @intCast(k), lets.at(@intCast(j)))) {
                 needed[k] = true;
                 break;
             };
@@ -3384,6 +3455,83 @@ const Page = struct {
         }
     }
 
+    /// Whether `let` `k` of root `r` is a memo node: the view root's, read
+    /// from its slot (§8.2, amended 2026-11-23).
+    fn memoOf(pg: *const Page, r: m.Root.Index, k: u32) bool {
+        return !pg.piece and r == pg.index and k < pg.memo_mask.len and pg.memo_mask[k];
+    }
+
+    /// The view root's `let`s several binding functions read, directly or
+    /// through another `let`, made memo nodes, and the view's statements:
+    /// each an entry of its own before every other (§8.2, amended
+    /// 2026-11-23). A `let` a memo node's value reads is read by that node
+    /// too, so the set grows until no `let` outside it has two readers.
+    fn memos(pg: *Page) m.Error!void {
+        if (pg.piece) return;
+        const cx = pg.cx;
+        const js = cx.js;
+        const r = pg.index;
+        const lets = pg.tree.root(r).lets;
+        pg.memo = try pg.a().alloc(?m.Name, lets.len);
+        @memset(pg.memo, null);
+        const mask = try pg.a().alloc(bool, lets.len);
+        @memset(mask, false);
+        pg.memo_mask = mask;
+        // A `let` an event's handler value reads — or an argument of a call
+        // the event is in — is a memo node whoever else reads it: the handler
+        // takes the value the last pass computed, as the page shows it, and
+        // evaluates nothing of the `let` at the event.
+        for (pg.events.items) |ev| {
+            if (ev.item.value.kind != .dynamic) continue;
+            const vals = try pg.levelValues(ev.ctx, &.{ev.item.value.dynamic.?}, 0);
+            for (mask, 0..) |*is, k| {
+                for (vals) |v| if (cx.valueReadsLet(r, @intCast(k), v)) {
+                    is.* = true;
+                };
+            }
+        }
+        const readers = try pg.a().alloc(u32, lets.len);
+        // A reader is a context a binding function enters: one function that
+        // writes in two contexts evaluates its `let`s once in each, so two
+        // count. Only the values written in the `view`'s own declaration
+        // read its `let`s (`levelValues`).
+        while (lets.len != 0) {
+            @memset(readers, 0);
+            for (pg.functions.items) |*f| {
+                var done: std.ArrayList(u32) = .empty;
+                for (f.writes.items) |first| {
+                    const ctx = pg.writes.items[first].ctx;
+                    if (std.mem.indexOfScalar(u32, done.items, ctx) != null) continue;
+                    try done.append(pg.a(), ctx);
+                    var values: std.ArrayList(m.Value.Index) = .empty;
+                    const reads = try pg.functionReads(f, ctx, &values);
+                    for (try pg.neededLets(r, try pg.levelValues(ctx, reads, 0)), readers) |yes, *n| n.* += @intFromBool(yes);
+                }
+            }
+            for (mask, 0..) |is, k| if (is) {
+                for (try pg.neededLets(r, &.{lets.at(@intCast(k))}), readers) |yes, *n| n.* += @intFromBool(yes);
+            };
+            var grew = false;
+            for (mask, readers) |*is, n| if (!is.* and n > 1) {
+                is.* = true;
+                grew = true;
+            };
+            if (!grew) break;
+        }
+        var front: std.ArrayList(Function) = .empty;
+        if (pg.statements) |groups| try front.append(pg.a(), .{ .groups = try sorted(pg.a(), groups), .kind = .statements });
+        for (mask, 0..) |is, k| if (is) {
+            const facts = cx.programLet(r, @intCast(k));
+            if (facts.group == std.math.maxInt(u32)) return limit(cx, pg.tree.root(r).node, "the write-set pass gave no read set for a `let` of this `view` that several binding functions read, and `browser-inline` computes such a `let` again when what it reads is written");
+            const slot = try cx.fresh("memo");
+            try js.let(pg.body, slot, null);
+            pg.memo[k] = slot;
+            try front.append(pg.a(), .{ .groups = try sorted(pg.a(), &.{facts.group}), .kind = .memo, .memo = @intCast(k) });
+        };
+        if (front.items.len == 0) return;
+        try pg.functions.insertSlice(pg.a(), 0, front.items);
+    }
+
     fn letsOnce(pg: *Page) m.Error!void {
         var seen: std.AutoHashMapUnmanaged(u64, u32) = .empty;
         for (pg.functions.items, 0..) |*f, fi| {
@@ -3394,10 +3542,15 @@ const Page = struct {
                 try done.append(pg.a(), ctx);
                 var values: std.ArrayList(m.Value.Index) = .empty;
                 const reads = try pg.functionReads(f, ctx, &values);
-                for (try pg.chainRoots(ctx)) |r| {
-                    const needed = try pg.neededLets(r, reads);
+                var chain: std.ArrayList(u32) = .empty;
+                var at: ?u32 = ctx;
+                while (at) |c| : (at = pg.ctxs.items[c].parent) try chain.append(pg.a(), c);
+                for (chain.items) |level| {
+                    const r = pg.ctxs.items[level].root;
+                    const needed = try pg.neededLets(r, try pg.levelValues(ctx, reads, level));
                     for (needed, 0..) |yes, k| {
                         if (!yes) continue;
+                        if (pg.memoOf(r, @intCast(k))) continue;
                         const key = (@as(u64, @backingInt(r)) << 32) | k;
                         const gop = try seen.getOrPut(pg.a(), key);
                         if (gop.found_existing and gop.value_ptr.* != fi) return limit(pg.cx, pg.tree.root(r).node, "a `let` of this `view` is read by several binding functions, directly or through another `let`, and `browser-inline` computes a `let` in each function that reads it (D-d); one several read is a memo node, which slice S3 brings");
@@ -3445,7 +3598,19 @@ const Page = struct {
             const cx = pg.cx;
             const js = cx.js;
             const r = pg.ctxs.items[ctx].root;
-            try pg.bindLets(into, r, p.reads.items);
+            // Only the values written in this context's declaration read its
+            // root's `let`s (`levelValues`).
+            const decl = pg.declOf(ctx);
+            var vals: std.ArrayList(m.Value.Index) = .empty;
+            for (p.f.writes.items) |wi| {
+                if (pg.declOf(pg.writes.items[wi].ctx) == decl) try pg.writeReads(pg.writes.items[wi], &vals);
+            }
+            for (pg.ctxs.items, 0..) |x, ci| {
+                if (ci == 0 or x.kind != .call or p.first[ci] == std.math.maxInt(u32) or pg.declOf(x.parent.?) != decl) continue;
+                const call = pg.tree.hole(x.node).call orelse continue;
+                for (0..call.args.len) |i| try vals.append(pg.a(), call.args.at(@intCast(i)));
+            }
+            try pg.bindLets(into, r, vals.items);
             // A context and a child can interleave in the document. Prepare
             // each write and each child's first write at its original place.
             for (p.f.writes.items) |wi| {
@@ -3614,6 +3779,27 @@ const Page = struct {
     fn writeFunction(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
+        switch (f.kind) {
+            .writes => {},
+            // The view's statements, evaluated for what they do (§8.2,
+            // amended 2026-11-23).
+            .statements => {
+                const arms = try pg.enter(blk, 0, null, &.{});
+                _ = try cx.programViewStatements(blk);
+                pg.leave(arms);
+                return;
+            },
+            // A memo node: the `let`, the `let`s its value reads first,
+            // evaluated into its slot.
+            .memo => {
+                const lv = pg.tree.root(pg.index).lets.at(f.memo);
+                const arms = try pg.enter(blk, 0, null, &.{lv});
+                try cx.rootValues(blk, pg.index, &.{lv});
+                try js.assign(blk, try js.name(pg.memo[f.memo].?), try cx.value(lv));
+                pg.leave(arms);
+                return;
+            },
+        }
         if (pg.prepares(f)) return pg.writePrepared(blk, f);
         var done: std.ArrayList(u32) = .empty;
         var call_args: std.ArrayList(CallArgs) = .empty;
@@ -3621,17 +3807,17 @@ const Page = struct {
             const ctx = pg.writes.items[first].ctx;
             if (std.mem.indexOfScalar(u32, done.items, ctx) != null) continue;
             try done.append(pg.a(), ctx);
-            const arms = try pg.enter(blk, ctx, &call_args);
             var takens: std.ArrayList(struct { node: m.Node.Index, name: m.Name }) = .empty;
             var values: std.ArrayList(m.Value.Index) = .empty;
             const reads = try pg.functionReads(f, ctx, &values);
             // The `let`s of the view's body its root takes (`Root.lets`, D-d):
-            // each the function reads evaluated here, in source order, and
-            // no other (`letsOnce`: no other function reads it).
+            // each the function reads evaluated as `enter` enters its root, in
+            // source order, and no other (`letsOnce`: no other function reads
+            // it; `memos`: one several read is read from its slot).
             // An arm's root is never the view's own, so their `let`s, bound per
             // root and ordinal, never alias.
             if (ctx != 0) std.debug.assert(pg.ctxs.items[ctx].root != pg.ctxs.items[0].root);
-            for (try pg.chainRoots(ctx)) |r| try pg.bindLets(blk, r, reads);
+            const arms = try pg.enter(blk, ctx, &call_args, reads);
             // A value that may throw (`cx.valueSafe`: a call other than a basic
             // operator) is evaluated before the function's first write, so a
             // throw leaves the page as it was (§8.2, *Evaluation order*); each
@@ -3787,7 +3973,10 @@ const Page = struct {
                 try saved.append(pg.a(), .{ .ctx = c, .args = args });
             }
         }
-        const arms = try pg.enter(blk, ev.ctx, if (ev.captures.len == 0) null else &saved);
+        // The view root's `let`s the handler value, or an argument of a call
+        // it is in, reads are memo nodes (`memos`): read from their slots
+        // (§8.2, amended 2026-11-23).
+        const arms = try pg.enter(blk, ev.ctx, if (ev.captures.len == 0) null else &saved, &.{v});
         const message = try cx.programMessageFields(blk, v, payload);
         pg.leave(arms);
         return switch (message) {

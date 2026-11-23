@@ -241,6 +241,10 @@ effect and that only an event reads is evaluated when its binding is refreshed, 
 not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
 the markup-value diagnostic, and it never drops the export silently.
 
+`view` can have `let`s and statements before its markup. A `let` that more holes or an event read
+is computed one time when a value that it reads changes. A statement runs at the start and when a
+value that it reads changes, not at each render. A pattern `let` must be pure and total.
+
 ## `For` on `browser-inline`
 
 On `browser-inline`, a `For` over a `List` compiles, keyed by a key function, by position

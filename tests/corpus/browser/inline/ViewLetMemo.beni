@@ -1,0 +1,52 @@
+-- A `view` with `let`s and a statement (docs/design/browser-inline.md §8.2, amended
+-- 2026-11-23). `sum` is read by two holes whose read sets differ, so it is a memo node:
+-- it is computed once at the mount and once per pass that writes `a` or `b`, and both
+-- holes read it then; a write of `c` alone shows `c` and leaves `sum` as it was.
+-- `twice` reads `sum` and is read by one hole. The statement runs at the mount and
+-- whenever `c` is written.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+
+
+type Msg
+    = IncA
+    | IncB
+    | IncC
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        IncA →
+            { model | a = model.a + 1 }
+
+        IncB →
+            { model | b = model.b + 1 }
+
+        IncC →
+            { model | c = model.c + 1 }
+
+
+view : Model → Html Msg
+view model =
+    _ = Debug.log "statement" model.c
+    sum = Debug.log "sum" (model.a + model.b)
+    twice = sum * 2
+    <main>
+        <button id="a" onClick={IncA}>a</button>
+        <button id="b" onClick={IncB}>b</button>
+        <button id="c" onClick={IncC}>c</button>
+        <p id="one">{sum} and {model.c}</p>
+        <p id="two">{sum}</p>
+        <p id="three">{twice}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { a = 0, b = 0, c = 0 }, update = update, view = view }

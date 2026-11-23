@@ -427,6 +427,48 @@ beni over `Js` in `Inline.beni`:
   release optimiser keeps a binding whose value reads a field, which it cannot prove pure — so
   #351's first text, which evaluated every `let` in every binding function and counted on release
   to drop the unread ones, was wrong.
+  *Amended 2026-11-23 (#966): a `view` whose body is `let`s and statements around markup is
+  compiled, and a `let` several holes read is a memo node.* The `view` of the program (not
+  another module's, §8.4, and not a page that prerenders) may be a function whose body is `let`s
+  and statements around markup written in place (`Program.view_lets`). What each part compiles to:
+  - **A `let` the root alone reads** (`Root.lets`) is evaluated in the binding function of the
+    hole that reads it, as above.
+  - **A `let` several binding functions read**, directly or through another `let`, is a **memo
+    node**: one binding entry of its own, in the `let`'s read set (`programLet`), which evaluates
+    the `let` into a slot of the mount, and the functions that read it read the slot. A `let` binds
+    once per pass that writes what it reads, and at the mount: never because its value is `===`
+    the last one (rule 8). Its entry comes before every function that reads it (a lower ordinal),
+    so a pass that writes the `let`'s reads computes it before any reader runs. A reader's read
+    set holds the `let`'s reads (the write-set pass reads through the `let`), so every reader runs
+    in such a pass too, and a reader that runs for its own reads alone takes the slot as it is.
+    A `let` that throws throws in its entry, before any reader writes.
+    A reader is counted per context a binding function enters (a function writing in the `view`
+    and in an eager arm evaluates its `let`s once in each), and an event's handler value — or an
+    argument of a helper call the event is in — is a reader that makes the `let` a memo node
+    alone: the handler sends the value the last pass computed and evaluates nothing at the event.
+  - **Where a `let` is bound.** A binding function binds the `view`'s `let`s it needs as it
+    enters the `view`, before it enters a helper's markup, whose arguments may read them; a
+    helper's own locals are numbered apart from the `view`'s, so only the values written in the
+    `view`'s own declaration (its holes, its eager arms, the arguments of the calls it makes) are
+    tested against its `let`s (`browser/inline/ViewLetHelper`).
+  - **The statements** — `_ = e`, a `⊤` line, an `if` without `else` — run in one binding entry
+    of their own, before every other entry, whose read sets are the statements' (the write-set
+    pass records each statement's reads as a `let`'s, `programViewStatementGroups`, version 1.30):
+    at the mount, and in each pass that writes what any statement reads. On `browser-tea`, which
+    runs the whole `view` per render, a statement runs at every render instead; so a statement
+    that reads nothing (`Log.info "view"`) runs once here, and a `Debug.log` of the model logs only
+    when what it reads is written. That is a difference of when, not of what: a statement whose
+    outcome can change runs every time it can.
+  - **Any other `let` of the body** — a pattern (`( a, b ) = …`), or one the tree does not move
+    into the root — is evaluated by every binding function that enters the `view`
+    (`programViewEnter`), so it is accepted only when its value is pure and total
+    (`instSafeMode`): evaluating it once or n times cannot be told apart. One that may have an
+    effect or throw is a limit of the compiler (class 1, at the `let`).
+  A `let` several holes of a view helper or of an arm read stays refused as before (§8.4,
+  `HelperArgTwice`), and so does one of another module's `view` (`PieceLetTwice`): their roots are
+  entered once per call, and a memo node per call is not built. A `view` whose body past its
+  `let`s is an `if` or a `case` (`Program.view_branch`), a call (`page shown`) or a markup value
+  stays class 1 (`browser/tea/RootSelector`, `TemplateRootLets`, `TemplateRootValue`).
 - **Evaluation order** (*added 2026-10-19, the review of #398*). A binding function evaluates, per
   context: first the `let`s it reads; then every value that may throw — a hole's or an attribute's
   value, or a `when`'s branch value, holding any call that is not a basic operator
