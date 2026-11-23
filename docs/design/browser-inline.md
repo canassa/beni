@@ -499,6 +499,8 @@ beni over `Js` in `Inline.beni`:
   entered once per call, and a memo node per call is not built. A `view` whose body past its
   `let`s is an `if` or a `case` (`Program.view_branch`), a call (`page shown`) or a markup value
   stays class 1 (`browser/tea/RootSelector`, `TemplateRootLets`, `TemplateRootValue`).
+  *Amended 2026-11-23 (*A markup value*, below):* a body whose result is a `let` that names
+  markup is that markup (`browser/inline/MarkupValueRootLet`).
 - **A branch region** (*amended 2026-11-23, #966*). A `view` whose body past its `let`s is an `if`,
   a `case` or a call of a function whose body is markup (`Program.view_branch`), and an `html` hole
   of the `view`'s own markup whose value is an `if` or a `case` that is not an eager `when` (its
@@ -556,6 +558,42 @@ beni over `Js` in `Inline.beni`:
     element's end, or in a control whose value changes; and a region on a page that prerenders.
     `build/bad/inline/Region*/`, `build/bad/prerender/ViewBranch/`; the pages are
     `browser/inline/Region*` and the `browser/tea` pages copied beside them.
+- **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
+  markup type, and still compiles markup that a program holds in a name, passes or returns, when
+  the compiler can see which root the name stands for. Such a name is a **name for a markup
+  root**, never a value: no code evaluates it, nothing is stored, and there is nothing to compare.
+  - **What is a name for a root.** (a) A `let` whose value is markup written in place, of the
+    `view` or of a view helper (`namedMarkupLet`). (b) A constant of the program's module whose
+    body, past its `let`s, is markup: a view helper of no parameter (§8.4). (c) A view helper's
+    parameter whose argument, at the hole's call, is markup written in place or such a constant,
+    when only `html` holes of the helper read the parameter (`markupArgSlot`). (d) The result of
+    a view helper or of the `view` that is a `let` of kind (a) (`resultRoot`): the helper's markup
+    is that root.
+  - **What it compiles to.** Each `html` hole that reads the name enters its root in place, as a
+    view helper's call is entered (§8.4): the root's elements are the page's, in document order;
+    its holes are bindings in their own groups (`programHole`); its events are wired as any
+    event of the unit is. Two holes that read one name are two copies, with their own elements
+    and listeners and the same groups, as two calls of one helper are and as `browser-tea` shows
+    one `Html` value at two places. A constant is entered on the path its hole extends, since
+    the write-set pass walks it there; a `let`'s root and an argument's are entered on the path
+    they were walked on — where the `let` is bound, or where the call's arguments are evaluated —
+    so the hole adds no step. An argument's root reads its values in the caller's context. The
+    argument itself is bound to `undefined`, which no code reads: a read of such a parameter
+    other than by a hole is refused (`markupParamRead`). A constant is also a branch region's
+    arm, a call of no argument (`Arm.What.call`).
+  - **When it is written.** Only by the writes of its holes and attributes, in the read sets the
+    write-set pass gives each of them: a pass that writes what a copy's hole reads writes that
+    hole, in place, and nothing else. Nothing is rebuilt, and nothing is skipped because a value
+    is `===` the last one (rule 8 of `CLAUDE.md`): the name has no value to compare. A `let` its
+    root takes (`Root.lets`) is evaluated by each copy's binding, as each call of a helper
+    evaluates its own; `browser-tea` evaluates it once per copy too (`browser/inline/MarkupValueLetTwice`).
+  - **What stays refused** (class 1, at the read): any other read of the name — a `let` of markup
+    passed to a helper, put in a list, a record or a `Maybe`, or read by code that is not a
+    hole; a parameter read other than by a hole; a constant under `Html.map`; a `let` of markup
+    in a branch's arm or a `For`'s row; and markup a helper returns through an `if`, a `case` or
+    a call (#2498). Markup held in the model stays §8.7's `MarkupValue/` rule (class 3).
+    `browser/inline/MarkupValue*`, `LetOneOwner`, `LetMarkupHandler`;
+    `build/bad/inline/MarkupLetArgument/`, `MarkupLetRead/`.
 - **Evaluation order** (*added 2026-10-19, the review of #398*). A binding function evaluates, per
   context: first the `let`s it reads; then every value that may throw — a hole's or an attribute's
   value, or a `when`'s branch value, holding any call that is not a basic operator
@@ -812,6 +850,11 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   call sites bind their own arguments. This is local evaluation, not a memo shared between passes. Two calls of one helper
   share its root, so a `let` of the helper read by both, in two functions, is refused the same
   way: conservative, never unsound.
+  *Amended 2026-11-23 (§8.2, *A markup value*):* markup passed to a helper as an argument written
+  in place, and a constant as a branch's arm, are compiled: `HelperMarkupArg/` is the page
+  `browser/inline/MarkupValueHelperArg` and `CaseValueArm/` the page
+  `browser/inline/MarkupValueCaseArm`. A constant whose body is markup is a helper of no
+  parameter; a `let` of a helper whose value is markup is no `let` "no hole reads".
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
   module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
   `ResearchS2/`, `ResearchS3/`, `Texts/`).

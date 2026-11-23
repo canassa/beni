@@ -224,9 +224,10 @@ nothing. Build the model with updates, and keep an untouched list as the same va
 ## Helpers on `browser-inline`
 
 On `browser-inline`, a view can call a function of its own module that returns markup. The
-compiler writes that markup at the call. These are still compiler limitations:
+compiler writes that markup at the call, and writes a `let`, a constant or a helper argument
+whose value is markup at each hole that shows it. These are still compiler limitations:
 
-- markup that is held or passed as data;
+- markup held in the model, a list or a `Maybe`, and a markup `let` passed to a helper;
 - a helper argument that has an effect and that more than one binding function reads;
 - a class list or a style list. A String `class` can change; an empty one keeps the attribute.
 
@@ -234,8 +235,7 @@ Keep the program as it is and report the limitation. Do not change its evaluatio
 compile. Only arm values that are proved pure and total are evaluated before their arm is shown.
 Other values are evaluated in the selected arm, from the current model. An argument that has an
 effect and that only an event reads is evaluated when its binding is refreshed, and a click does
-not evaluate it again. A `pub` helper in a `--library` build is a markup value, refused with
-the markup-value diagnostic.
+not evaluate it again. A `pub` helper in a `--library` build is refused as a markup value.
 
 `view` can have `let`s and statements before its markup. A `let` that more holes, an event or a
 branch read is computed one time when a value that it reads changes. A statement runs at the start

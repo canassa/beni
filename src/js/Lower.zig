@@ -7685,7 +7685,13 @@ pub const Lowerer = struct {
             return l.coreSchemaValue(l.valid_sites.shapeRunner(inst.int()), p);
         }
         return switch (l.bir.instTag(inst)) {
-            .local => try l.ident(try l.localName(d.lhs), p),
+            .local => if ((d.lhs < l.locals.len and l.locals[d.lhs].kind == .let and l.namedMarkupLet(l.locals[d.lhs].inst) != null) or l.markupParamRead(inst))
+                (if (try l.refuseMarkupValue(inst))
+                    try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused)
+                else
+                    unreachable)
+            else
+                try l.ident(try l.localName(d.lhs), p),
             // A markup primitive is the markup runtime's export of its name
             // (`boundary.md` §9.3), in its own module as in any other.
             .top => if (d.lhs < l.bir.decls.len and l.bir.decls[d.lhs].kind == .vocab_markup)
@@ -12142,6 +12148,10 @@ pub const Lowerer = struct {
                     // A `let` only a grouped root reads is that root's to
                     // evaluate (`boundary.md` §9.4.6, 1.5, `Root.lets`).
                     if (l.markupMovedLet(def)) continue;
+                    // A name for a markup root is evaluated nowhere: the
+                    // holes that read it enter the root (*A markup value*),
+                    // and any other read is refused where it is lowered.
+                    if (l.namedMarkupLet(def) != null) continue;
                     const payload = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
                     const params = l.bir.extraSlice(
                         .{ .start = payload.params_start, .end = payload.params_end },
@@ -15266,9 +15276,9 @@ pub const Lowerer = struct {
             const root = st.built.rootAt(at.int()) orelse return .{ .function, null };
             return .{ if (lets) .function else .markup, root };
         };
-        if (l.bir.instTag(at) != .markup) return .{ .function, null };
-        const st = l.mk orelse return .{ .function, null };
-        const root = st.built.rootAt(at.int()) orelse return .{ .function, null };
+        // A body whose result is a `let` naming a root is that root (*A
+        // markup value*): its `let`s are bound as the `view` is entered.
+        const root = l.resultRoot(at) orelse return .{ .function, null };
         return .{ if (at == body) .markup else .function, root };
     }
 
@@ -16803,11 +16813,14 @@ pub const Lowerer = struct {
         // out unless code names it after all (`wanted`, then refused as a
         // markup value, as before).
         if (l.in.markup) |mk| if (mk.lowering.no_markup_values != null) for (l.bir.decls, 0..) |dc, i| {
-            if (dc.kind != .value or dc.params == 0) continue;
+            // A constant whose body is markup too (`browser-inline.md` §8.2,
+            // amended 2026-11-23, *A markup value*): a function of no
+            // parameter.
+            if (dc.kind != .value) continue;
             if (l.in.public_roots and dc.is_pub) continue;
             var body = dc.body.unwrap() orelse continue;
             while (l.bir.instTag(body) == .let) body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
-            if (l.bir.instTag(body) != .markup) continue;
+            if (l.bir.instTag(body) != .markup and !(l.bir.instTag(body) == .local and l.resultRoot(body) != null)) continue;
             if (l.consumed.len == 0) {
                 l.consumed = try l.scratch.alloc(bool, l.bir.decls.len);
                 @memset(l.consumed, false);
@@ -18080,6 +18093,13 @@ pub const Lowerer = struct {
         callee: ?Inst.Index = null,
         /// Version 1.15: the callee of another module (`other_module`).
         ext: ?Inst.Index = null,
+        /// The root is the value of a `let` of the enclosing declaration
+        /// (`namedMarkupLet`): entered where it stands, its inputs read under
+        /// the names their locals have there, on the path it was walked on.
+        nested: bool = false,
+        /// A parameter's argument (`chainOfParam`): the context of the
+        /// caller, where the root's inputs are read.
+        outer: ?DeclCtx = null,
     };
 
     /// One call entered (`cx.programInlineEnter`): its chain, the context
@@ -18256,7 +18276,9 @@ pub const Lowerer = struct {
             const root = st.built.rootAt(r.int()) orelse return .value;
             return if (l.markupGrouped(root)) .{ .markup = root } else .value;
         }
-        if (l.bir.instTag(r) != .call) return .value;
+        // A constant whose body is markup is a call of no argument (*A markup
+        // value*).
+        if (l.bir.instTag(r) != .call and l.bir.instTag(r) != .top) return .value;
         const chain = l.chainOfExpr(r, &.{}, true) orelse return .value;
         const root = chain.root orelse return .value;
         if (chain.refusal != .none or chain.decl == null or chain.maps.len != 0 or chain.component != null) return .value;
@@ -18455,7 +18477,7 @@ pub const Lowerer = struct {
                             try cells.append(l.scratch, try l.ident(try l.localName(local), p));
                         }
                     },
-                    .call => {
+                    .call => if (l.bir.instTag(inst) == .call) {
                         const d = l.bir.instData(inst);
                         for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
                             try cells.append(l.scratch, try l.expr(out, arg));
@@ -18473,7 +18495,7 @@ pub const Lowerer = struct {
                 var cells: std.ArrayList(Node.Index) = .empty;
                 if (l.bir.instTag(inst) == .markup) {
                     for (ov.inputs) |local| try cells.append(l.scratch, try l.ident(try l.localName(local), p));
-                } else {
+                } else if (l.bir.instTag(inst) == .call) {
                     const d = l.bir.instData(inst);
                     for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
                         try cells.append(l.scratch, try l.expr(out, arg));
@@ -18874,15 +18896,200 @@ pub const Lowerer = struct {
                     else => null,
                 };
             },
+            // A constant of this module whose body is markup: a function
+            // of no parameter, called (`browser-inline.md` §8.2, amended
+            // 2026-11-23, *A markup value*).
+            .top => {
+                if (st.lowering.no_markup_values == null) return null;
+                const decl = l.bir.instData(i).lhs;
+                if (decl >= l.bir.decls.len or l.bir.decls[decl].kind != .value or l.bir.decls[decl].params != 0) return null;
+                const chain = l.chainOfRef(i, &.{}, maps, composed);
+                return if (chain.root != null) chain else null;
+            },
+            .local => {
+                if (maps.len != 0) return null;
+                if (l.letDefOf(i)) |def| {
+                    const root = l.namedMarkupLet(def) orelse return null;
+                    return .{ .root = root, .nested = true };
+                }
+                return l.chainOfParam(i);
+            },
             else => return null,
         }
+    }
+
+    /// The chain of an argument `arg` that names a markup root, entered
+    /// where the callee's hole reads its parameter: markup written in place
+    /// in the caller, or a constant of this module whose body is markup.
+    /// Either was walked as the call's argument, on the call's path, so it
+    /// is entered with no step of its own (*A markup value*).
+    fn markupArgChain(l: *Lowerer, arg: Inst.Index) ?Chain {
+        const st = l.mk orelse return null;
+        if (st.lowering.no_markup_values == null) return null;
+        switch (l.bir.instTag(arg)) {
+            .markup => {
+                const root = st.built.rootAt(arg.int()) orelse return null;
+                return .{ .root = root, .nested = true };
+            },
+            .top => {
+                const decl = l.bir.instData(arg).lhs;
+                if (decl >= l.bir.decls.len or l.bir.decls[decl].kind != .value or l.bir.decls[decl].params != 0) return null;
+                var chain = l.chainOfRef(arg, &.{}, &.{}, true);
+                if (chain.root == null or chain.refusal != .none or chain.statements) return null;
+                chain.nested = true;
+                return chain;
+            },
+            else => return null,
+        }
+    }
+
+    /// The chain of `inst`, a read of a parameter of the call entered last,
+    /// whose argument names a markup root (`markupArgChain`), its inputs
+    /// read in the caller.
+    fn chainOfParam(l: *Lowerer, inst: Inst.Index) ?Chain {
+        const frames = l.inline_frames.items;
+        if (frames.len == 0) return null;
+        const frame = frames[frames.len - 1];
+        const decl = frame.chain.decl orelse return null;
+        if (frame.chain.component != null or decl >= l.bir.decls.len) return null;
+        const dc = l.bir.decls[decl];
+        if (inst.int() < dc.inst_start.int() or inst.int() >= dc.inst_end.int()) return null;
+        const arg = (l.argumentOf(frame, inst) catch return null) orelse return null;
+        var chain = l.markupArgChain(arg) orelse return null;
+        chain.outer = frame.caller;
+        return chain;
+    }
+
+    /// Whether root value `v` is an argument of a hole's call that names a
+    /// markup root, to a parameter that only `html` holes of the callee
+    /// read: no code evaluates it, and each of those holes enters the root
+    /// (*A markup value*).
+    fn markupArgSlot(l: *Lowerer, v: usize) bool {
+        const st = l.mk orelse return false;
+        if (st.lowering.no_markup_values == null) return false;
+        const inst = switch (st.built.values[v]) {
+            .inst => |i| i,
+            else => return false,
+        };
+        if (l.bir.instTag(inst) != .markup and l.bir.instTag(inst) != .top) return false;
+        if (l.markupArgChain(inst) == null) return false;
+        for (st.built.tree.holes) |h| {
+            const hc = h.call orelse continue;
+            const start = hc.args.start;
+            if (v < start or v >= start + hc.args.len) continue;
+            const callee = switch (st.built.values[@backingInt(hc.callee)]) {
+                .callee => |c| c,
+                else => return false,
+            };
+            if (l.bir.instTag(callee) != .top) return false;
+            const decl = l.bir.instData(callee).lhs;
+            if (decl >= l.bir.decls.len) return false;
+            const params = l.paramsOf(decl);
+            const k = v - start;
+            if (k >= params.len or l.bir.instTag(params[k]) != .pat_var) return false;
+            return l.paramOnlyInHoles(decl, l.bir.instData(params[k]).lhs);
+        }
+        return false;
+    }
+
+    /// Whether every read of local `local` of declaration `decl` is the
+    /// whole value of an `html` hole.
+    fn paramOnlyInHoles(l: *Lowerer, decl: u32, local: u32) bool {
+        const st = l.mk orelse return false;
+        const dc = l.bir.decls[decl];
+        var reads: u32 = 0;
+        for (dc.inst_start.int()..dc.inst_end.int()) |i| {
+            const at: Inst.Index = @fromBackingInt(@intCast(i));
+            if (l.bir.instTag(at) != .local or l.bir.instData(at).lhs != local) continue;
+            reads += 1;
+            const in_hole = for (st.built.tree.holes) |h| {
+                if (h.kind != .html) continue;
+                switch (st.built.values[@backingInt(h.value)]) {
+                    .inst => |x| if (x == at) break true,
+                    else => {},
+                }
+            } else false;
+            if (!in_hole) return false;
+        }
+        return reads != 0;
+    }
+
+    /// Whether `inst`, a read of a local of the declaration being lowered,
+    /// reads a parameter some hole's call binds to a markup root
+    /// (`markupArgSlot`): such a parameter holds no value, so a read that
+    /// needs one is refused, and only the callee's holes read it.
+    fn markupParamRead(l: *Lowerer, inst: Inst.Index) bool {
+        const st = l.mk orelse return false;
+        if (st.lowering.no_markup_values == null) return false;
+        const local = l.bir.instData(inst).lhs;
+        if (local >= l.locals.len or l.locals[local].kind != .param) return false;
+        const decl = for (l.bir.decls, 0..) |d, di| {
+            if (inst.int() >= d.inst_start.int() and inst.int() < d.inst_end.int()) break di;
+        } else return false;
+        for (st.built.tree.holes) |h| {
+            const hc = h.call orelse continue;
+            const callee = switch (st.built.values[@backingInt(hc.callee)]) {
+                .callee => |c| c,
+                else => continue,
+            };
+            if (l.bir.instTag(callee) != .top or l.bir.instData(callee).lhs != decl) continue;
+            const params = l.paramsOf(@intCast(decl));
+            for (params, 0..) |param, k| {
+                if (k >= hc.args.len) break;
+                if (l.bir.instTag(param) != .pat_var or l.bir.instData(param).lhs != local) continue;
+                if (l.markupArgSlot(hc.args.start + k)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// The markup root a function's result `body`, past its `let`s, is:
+    /// markup written in place, or a read of a `let` of the same body that
+    /// names a root (`namedMarkupLet`) — a helper returning its markup
+    /// value (*A markup value*).
+    fn resultRoot(l: *Lowerer, body: Inst.Index) ?beni_markup.Root.Index {
+        const st = l.mk orelse return null;
+        return switch (l.bir.instTag(body)) {
+            .markup => st.built.rootAt(body.int()),
+            .local => l.namedMarkupLet(l.letDefOf(body) orelse return null),
+            else => null,
+        };
+    }
+
+    /// The `let_def` that binds the local read `inst`, by the declaration
+    /// whose code holds it, or null.
+    fn letDefOf(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        const local = l.bir.instData(inst).lhs;
+        for (l.bir.decls) |d| {
+            if (inst.int() < d.inst_start.int() or inst.int() >= d.inst_end.int()) continue;
+            const locals = l.bir.declLocals(d);
+            if (local >= locals.len or locals[local].kind != .let) return null;
+            return locals[local].inst;
+        }
+        return null;
+    }
+
+    /// Under a lowering that has no markup value, a `let` whose value is
+    /// markup written in place names that root: no code evaluates it, and
+    /// each hole that reads it enters the root where the hole stands
+    /// (`browser-inline.md` §8.2, amended 2026-11-23, *A markup value*).
+    fn namedMarkupLet(l: *Lowerer, def: Inst.Index) ?beni_markup.Root.Index {
+        const st = l.mk orelse return null;
+        if (st.lowering.no_markup_values == null) return null;
+        if (def.int() >= l.bir.insts.len or l.bir.instTag(def) != .let_def) return null;
+        const d = l.bir.instData(def);
+        const payload = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
+        if (payload.params_end != payload.params_start) return null;
+        const rhs: Inst.Index = @fromBackingInt(@intCast(d.rhs));
+        if (l.bir.instTag(rhs) != .markup) return null;
+        return st.built.rootAt(rhs.int());
     }
 
     /// The chain of a call of reference `callee` with `args`: a function of
     /// this module whose body after its `let`s is markup, not already on
     /// the path being entered.
     fn chainOfRef(l: *Lowerer, callee: Inst.Index, args: []const Inst.Index, maps: []const Inst.Index, composed: bool) Chain {
-        const st = l.mk.?;
+        std.debug.assert(l.mk != null);
         var chain: Chain = .{ .args = args, .maps = maps, .composed = composed };
         const d = l.bir.instData(callee);
         switch (l.bir.instTag(callee)) {
@@ -18909,11 +19116,11 @@ pub const Lowerer = struct {
         var body = l.bodyOf(decl);
         while (l.bir.instTag(body) == .let) {
             for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(body).lhs))), Inst.Index)) |def| {
-                if (l.bir.instTag(def) != .let_def or !l.markupMovedLet(def)) chain.statements = true;
+                if (l.bir.instTag(def) != .let_def or !(l.markupMovedLet(def) or l.namedMarkupLet(def) != null)) chain.statements = true;
             }
             body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
         }
-        const root = if (l.bir.instTag(body) == .markup) st.built.rootAt(body.int()) else null;
+        const root = l.resultRoot(body);
         if (root == null) {
             chain.refusal = .not_markup;
             return chain;
@@ -19031,10 +19238,17 @@ pub const Lowerer = struct {
     fn directInlineEnter(l: *Lowerer, block: ?beni_markup.Block, node: beni_markup.Node.Index, args: ?[]const Node.Index, made: bool) Allocator.Error!void {
         const st = l.mk.?;
         const chain = l.directChain(node) orelse Chain{};
-        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
-        var frame: InlineFrame = .{ .node = node, .chain = chain, .caller = l.declCtx() };
+        // A `let`'s root was walked where the `let` is bound, on the path of
+        // the declaration that binds it: the hole adds no step.
+        if (!chain.nested) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = chain, .caller = l.declCtx(), .token = !chain.nested };
         if (args) |values| if (chain.root) |root_index| {
             var stmts: StmtList = .empty;
+            // A parameter's argument: read in the caller, where it is written.
+            if (chain.outer) |outer| {
+                l.setDeclCtx(outer);
+                frame.entered = true;
+            }
             if (chain.decl) |decl| {
                 _ = try l.enterDecl(decl);
                 frame.entered = true;
@@ -19769,6 +19983,7 @@ pub const Lowerer = struct {
             .comparison = .{ .ctx = l, .classify = classifyComparison },
             .debug_module = if (l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol())) |d| d.int() else null,
             .parameterised_templates = mk.lowering.parameterised_templates,
+            .named_markup_lets = mk.lowering.no_markup_values != null,
         }) orelse blk: {
             // A module with no markup of its own may still call a program
             // constructor: the hook runs with an empty tree (§9.4.6, 1.6).
@@ -20008,6 +20223,12 @@ pub const Lowerer = struct {
     /// the lowering can name it.
     fn markupBind(l: *Lowerer, out: *StmtList, v: usize, inst: Inst.Index) Allocator.Error!void {
         const st = l.mk.?;
+        // An argument that names a markup root is no value: the callee's
+        // holes enter the root (`markupArgSlot`).
+        if (l.markupArgSlot(v)) {
+            st.bound[v] = .{ .node = try l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused) };
+            return;
+        }
         const value = if (l.templateValueToken(v)) |token| blk: {
             var body: StmtList = .empty;
             const result = try l.expr(&body, inst);

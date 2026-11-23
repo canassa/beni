@@ -206,10 +206,10 @@ const RegionAt = union(enum) {
 };
 
 const no_markup_values =
-    \\A limit of the compiler: `browser-inline` has no markup value yet; it compiles markup only
-    \\as a program's `view`, written in place (`docs/design/browser-inline.md` §5, class 1).
-    \\Write markup held, passed or returned by a helper in place in the `view`, or build this
-    \\program with `--platform=browser-tea`.
+    \\A limit of the compiler: `browser-inline` has no run-time markup value yet; it compiles
+    \\markup written in place, and a `let`, a constant or a helper's argument that names markup
+    \\where a hole shows it (`docs/design/browser-inline.md` §8.2; §5, class 1). Show this markup
+    \\in a hole of the `view` or of a helper, or build this program with `--platform=browser-tea`.
 ;
 
 fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {

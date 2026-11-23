@@ -1,0 +1,46 @@
+-- A constant whose body is markup, shown at two holes of the `view` and at one of a helper's
+-- (browser-inline.md §8.2, amended 2026-11-23, *A markup value*): a function of no parameter,
+-- written in place at each hole, each copy with its own listener.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Reset
+
+
+reset : Html Msg
+reset = <button class="reset" onClick={Reset}>reset</button>
+
+
+row : String, Int → Html Msg
+row name n =
+    <section id={name}>
+        <p>{n}</p>
+        {reset}
+    </section>
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <div id="top">{reset}</div>
+        <button id="inc" onClick={Inc}>inc</button>
+        {row "inner" n}
+        <div id="bottom">{reset}</div>
+    </main>
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Inc →
+            n + 1
+
+        Reset →
+            0
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 1, update = update, view = view }

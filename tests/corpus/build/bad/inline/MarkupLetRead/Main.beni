@@ -1,0 +1,24 @@
+-- A `let` of markup read by code that is not a hole (browser-inline.md §8.2, amended
+-- 2026-11-23, *A markup value*): the `let` names a root and holds no value, so the statement
+-- that reads it is refused at the read.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+view : Int → Html Msg
+view n =
+    count = <p>{n}</p>
+    _ = Debug.log "count" count
+
+    <main>
+        {count}
+        <button onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λInc n → n + 1, view = view }
