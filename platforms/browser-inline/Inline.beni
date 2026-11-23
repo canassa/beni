@@ -1172,6 +1172,33 @@ prop node value key =
         writeProp node name value
 
 
+--| `(node, name, flag)`: a class list entry's binding (`browser-inline.md`
+--| §8.2, *A class or style list*) — the class `name` on the node, or off
+--| it, as `flag` says, written when the node differs. `classList.toggle`
+--| with a flag writes nothing when the node agrees in the DOM Standard, but
+--| a DOM that runs the update steps then makes `class=""` on a node with no
+--| class (happy-dom does), so the compare is this function's, as every
+--| binding's is.
+pub toggle : V, V, Bool → ⊤
+toggle node name flag =
+    list = Js.get node "classList"
+    if Js.to (Js.call list "contains" [ name ]) ≠ flag then
+        _ = Js.call list "toggle" [ name, Js.from flag ]
+        ⊤
+
+
+--| `(node, name, value)`: a style list entry's binding (`browser-inline.md`
+--| §8.2, *A class or style list*) — the CSS property `name` set to `value`,
+--| an empty value removing it (`style.setProperty`), written when the value
+--| the node reads back differs.
+pub style : V, V, V → ⊤
+style node name value =
+    declaration = Js.get node "style"
+    if not (Js.same (Js.call declaration "getPropertyValue" [ name ]) value) then
+        _ = Js.call declaration "setProperty" [ name, value ]
+        ⊤
+
+
 --| `(url)`: the value a URL binding writes (`browser-inline.md` §10.5,
 --| amended 2026-11-05) — `browser`'s `safeUrl` and its pattern, the same
 --| code (`platforms/browser/Rt.beni`). Elm's rule: a URL whose scheme is

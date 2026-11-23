@@ -1,0 +1,52 @@
+-- Class and style lists written in place, and an attribute that is no DOM
+-- property (docs/design/browser-inline.md §8.2, *A class or style list*,
+-- amended 2026-11-23, #2499, #2635): the constant entries are in the
+-- markup (`class=base`, `style=color:red`), each changing entry is one
+-- runtime call in the list's binding — `toggle(node, name, flag)` or
+-- `style(node, name, value)` — and the `title` is `setAttribute` behind a
+-- `getAttribute` compare.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    on : Bool
+    n : Int
+
+
+type Msg
+    = Toggle
+    | Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | on = not model.on }
+
+        Inc →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p
+            class={[ ( "base", True ), ( "on", model.on ) ]}
+            style={[ ( "color", "red" ), ( "width", "${String.fromInt model.n}px" ) ]}
+            title={String.fromInt model.n}
+        >
+            {model.n}
+        </p>
+        <button onClick={Toggle}>t</button>
+        <button onClick={Inc}>i</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { on = False, n = 0 }, update = update, view = view })
+        "root"

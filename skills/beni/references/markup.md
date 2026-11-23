@@ -229,7 +229,7 @@ whose value is markup at each hole that shows it. These are still compiler limit
 
 - markup held in the model, a list or a `Maybe`, and a markup `let` passed to a helper;
 - a helper argument that has an effect and that more than one binding function reads;
-- a class list or a style list. A String `class` can change; an empty one keeps the attribute.
+- a class or style list held as a value, or with a name that is empty, repeats or has spaces.
 
 Keep the program as it is and report the limitation. Do not change its evaluation to make it
 compile. Only arm values that are proved pure and total are evaluated before their arm is shown.

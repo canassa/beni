@@ -300,6 +300,13 @@ place:
   value is a constant or a hole of the same unit, and otherwise the first pass writes it.
   *Amended 2026-11-05 (`browser-inline.md` §10.5, #1169):* a URL binding's value is
   `safeUrl` of it, `""` for a script URL, so the page holds what the client's first pass writes.
+- **A class list** (*amended 2026-11-23, `browser-inline.md` §8.2, #2499*) — the attribute as the
+  client's first pass leaves it: the baked names, then the name of each toggle whose flag `init`
+  makes true, in entry order, separated by spaces; with no baked name, the attribute is written
+  only when some flag is true, since `toggle` makes none otherwise. A style list's baked entries
+  are written as the markup has them; one with an entry whose value changes is refused (the
+  string would be the CSS parser's serialisation). An attribute that is no DOM property is
+  written as its value, a number as `String(n)` writes it.
 - **An event** — nothing. A listener is the client's (research 36 §2.12 records the same for
   Solid's `ssr`).
 - **An eager `when`** (§8.2 there) — the arm `init`'s model shows is written; **an arm it hides is

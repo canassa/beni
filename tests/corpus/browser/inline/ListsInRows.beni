@@ -1,0 +1,106 @@
+-- Class and style lists in a `For`'s rows and in a branch region's arm
+-- (docs/design/browser-inline.md §8.2, *A class or style list*, amended
+-- 2026-11-23, #2499, #2635): the template bakes the constant entries, and
+-- every `set` runs each entry's write, which writes only where the node
+-- differs. A row's class turns on and off with its item, and with a flag of
+-- the model that every row reads; the arm's class with the model.
+-- Each step's transcript is `browser-tea`'s for the same source.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Item =
+    id : Int
+    done : Bool
+
+
+type alias Model =
+    items : List Item
+    dim : Bool
+    open : Maybe Int
+
+
+type Msg
+    = Check Int
+    | Dim
+    | Open
+    | Add
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Check id →
+            { model
+                | items =
+                    List.map model.items λi → if i.id == id then { i | done = not i.done } else i
+            }
+
+        Dim →
+            { model | dim = not model.dim }
+
+        Open →
+            case model.open of
+                Just _ →
+                    { model | open = Nothing }
+
+                Nothing →
+                    { model | open = Just (List.length model.items) }
+
+        Add →
+            { model | items = [ …model.items, { id = List.length model.items, done = False } ] }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <ul>
+            <For each={model.items} keyed={.id}>
+                {λi →
+                    <li
+                        data-role="row${String.fromInt i.id}"
+                        class={[ ( "row", True ), ( "done", i.done ), ( "dim", model.dim ) ]}
+                        style={[ ( "opacity", if model.dim then "0.5" else "" ) ]}
+                        onClick={Check i.id}
+                    >
+                        {i.id}
+                    </li>
+                }
+            </For>
+        </ul>
+        <div>
+            {case model.open of
+                Just n →
+                    <section
+                        data-role="open"
+                        class={[ ( "panel", True ), ( "dim", model.dim ), ( "many", n > 2 ) ]}
+                    >
+                        {n}
+                    </section>
+
+                Nothing →
+                    <p data-role="shut" class={[ ( "dim", model.dim ) ]}>shut</p>
+            }
+        </div>
+        <button data-role="dim" onClick={Dim}>d</button>
+        <button data-role="open" onClick={Open}>o</button>
+        <button data-role="add" onClick={Add}>a</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init =
+                λ⊤ →
+                    { items = [ { id = 0, done = False }, { id = 1, done = True } ]
+                    , dim = False
+                    , open = Nothing
+                    }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

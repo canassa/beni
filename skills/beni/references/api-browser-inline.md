@@ -97,10 +97,12 @@ module Inline
   value startWork : V, V → V  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
+  value style : V, V, V → ⊤  -- impure
   value subscribe : (⊤ → a) → a  -- impure
   value take : V, V, V, V → V  -- impure
   value text : V, V → ⊤  -- impure
   value title : String → ⊤  -- impure
+  value toggle : V, V, Bool → ⊤  -- impure
   value update : (⊤ → ⊤) → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Tea

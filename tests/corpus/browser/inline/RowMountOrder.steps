@@ -1,0 +1,6 @@
+# A third row mounts in each list, its values in source order.
+click #add
+# Only the mark changed: every row runs the value that reads it, none the label.
+click #mark
+# Row 1's item changed: its mark runs, then its label.
+click #rename

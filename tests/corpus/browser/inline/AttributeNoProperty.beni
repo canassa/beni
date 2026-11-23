@@ -1,0 +1,52 @@
+-- An attribute that is no DOM property, whose value changes
+-- (docs/design/browser-inline.md §8.2, *A class or style list, … an
+-- attribute that is no property*, amended 2026-11-23, #2635): a `String`
+-- (`title`, `sandbox`) or a number (`progress`'s `value`, `colspan`) is
+-- written with `setAttribute` when `getAttribute` differs, a number as
+-- `String(n)` writes it. Each step's transcript is `browser-tea`'s.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    n : Int
+    name : String
+
+
+type Msg
+    = Inc
+    | Rename
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Rename →
+            { model | name = "${model.name}!" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p data-role="p" title={model.name}>{model.name}</p>
+        <progress data-role="g" max="10" value={String.fromInt model.n} />
+        <iframe data-role="f" sandbox={if model.n > 1 then "allow-scripts" else ""} title="f" />
+        <table>
+            <tbody>
+                <tr><td data-role="c" colspan={model.n + 1}>c</td></tr>
+            </tbody>
+        </table>
+        <button data-role="inc" onClick={Inc}>i</button>
+        <button data-role="rename" onClick={Rename}>r</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { n = 0, name = "a" }, update = update, view = view })
+        "root"

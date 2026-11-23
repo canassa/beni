@@ -74,6 +74,11 @@ pub const lowering: m.Lowering = .{
         // (§10.5, amended 2026-11-05).
         .{ .name = "safeUrl", .arity = 1 },
         .{ .name = "when", .arity = 2 },
+        // `(node, name, flag)` and `(node, name, value)`: a class list's
+        // and a style list's entry (§8.2, *A class or style list*,
+        // 2026-11-23).
+        .{ .name = "toggle", .arity = 3 },
+        .{ .name = "style", .arity = 3 },
         .{ .name = "on", .arity = 4 },
         // A `For`'s rows (§9, amended 2026-11-23): `(html)` its row's
         // template, and `(parent, end, list, key, make, set)` its rows made to
@@ -697,11 +702,22 @@ const Html = struct {
     /// program gives it: what an `option` is selected by (`prerender.md`
     /// §4.1).
     value: ?[]const u8 = null,
+    /// A class list with toggles (§8.2, *A class or style list*): where its
+    /// baked `class` ends in `attributes`, which the string form writes
+    /// itself, with the toggles' names, from the `entry` writes `dynamic`
+    /// holds at the attribute's start.
+    classes_end: u32 = 0,
 };
 
 /// A write of an attribute whose value changes, at byte `at` of its
 /// element's `attributes`.
 const Dynamic = struct { at: u32, write: u32 };
+
+/// One entry of a class or style list whose value changes, written in place
+/// (§8.2, *A class or style list*, amended 2026-11-23): a class `name` on
+/// or off as the `Bool` `value` says, or with `style`, the CSS property
+/// `name` set to the `String` `value`.
+const Entry = struct { name: []const u8, value: m.Value.Index, style: bool };
 
 /// Where a binding's or an event's values are evaluated: the `view`'s root
 /// (context 0), or an eager arm of a branch in an enclosing context.
@@ -755,7 +771,12 @@ const Write = struct {
         /// (with `attribute_only`): the attribute holds a URL, and the
         /// binding and the string form write `safeUrl(value)` (§10.5,
         /// amended 2026-11-05).
-        prop: struct { value: Operand, key: ?[]const u8, attribute: []const u8 = "", boolean: bool = false, attribute_only: bool = false, url: bool = false },
+        /// `number` (with `attribute_only`): a number, written as a string.
+        prop: struct { value: Operand, key: ?[]const u8, attribute: []const u8 = "", boolean: bool = false, attribute_only: bool = false, url: bool = false, number: bool = false },
+        /// One entry of a class or style list whose value changes (§8.2,
+        /// *A class or style list*, 2026-11-23): `toggle(node, name, flag)`,
+        /// or with `style`, `style(node, name, value)`.
+        entry: Entry,
         /// Hidden while the branch at `node` takes another arm than `shown`.
         /// `arms`: how many arms the branch has.
         when: struct { node: m.Node.Index, shown: u32, arms: u32 = 2 },
@@ -879,6 +900,9 @@ const RowOp = struct {
         /// attribute of a `String` or a number that is no DOM property,
         /// its value written as a string.
         prop: struct { value: Operand, key: ?[]const u8, attribute: []const u8, attribute_only: bool, url: bool, number: bool = false },
+        /// A class or style list's entry whose value changes (§8.2, *A
+        /// class or style list*, 2026-11-23), written at each `set`.
+        entry: Entry,
         /// A text node of an element whose children mix elements and text
         /// holes: `make` creates it, before the element child `anchor`
         /// (null: at the end), and `set` writes a hole's, kept as the row's
@@ -922,6 +946,59 @@ fn controlled(tree: *const m.Tree, e: m.Element) bool {
         if (tree.attributeFacts(it.attribute).stateful) return true;
     }
     return false;
+}
+
+/// A class or style list written in place on element `n` (§8.2, *A class
+/// or style list*, amended 2026-11-23), split as the `dom` lowering splits
+/// it: each constant entry baked into `out` as the markup's attribute, in
+/// entry order — a class whose flag is `True`, a style property whose value
+/// is not empty — and each entry whose value changes returned, in entry
+/// order. A list held as a value, and one whose names the `dom` lowering
+/// hands its runtime (empty, repeated, a class's holding whitespace), are
+/// limits of the compiler.
+fn listEntries(pg: *Page, n: m.Node.Index, it: m.Item, out: *std.ArrayList(u8)) m.Error![]const Entry {
+    const tree = pg.tree;
+    const cx = pg.cx;
+    const style = it.class == .style_list;
+    switch (it.value.kind) {
+        .entries => {},
+        .dynamic => return later(cx, n, if (style) "a style list held as a value" else "a class list held as a value"),
+        else => return later(cx, n, if (style) "this style list" else "this class list"),
+    }
+    const entries = tree.entriesOf(it.value.entries);
+    for (entries, 0..) |e, j| {
+        const name = tree.string(e.name);
+        const repeated = for (entries[0..j]) |earlier| {
+            if (std.mem.eql(u8, tree.string(earlier.name), name)) break true;
+        } else false;
+        if (name.len == 0 or repeated or (!style and std.mem.indexOfAny(u8, name, "\t\n\x0c\r ") != null))
+            return later(cx, n, if (style) "a style list whose names repeat or are empty" else "a class list whose names repeat, are empty or hold whitespace");
+    }
+    var baked: std.ArrayList(u8) = .empty;
+    var changing: std.ArrayList(Entry) = .empty;
+    for (entries) |e| switch (e.value.kind) {
+        .constant => {
+            const c = e.value.constant;
+            if (style) {
+                if (c.kind != .string) return later(cx, n, "this style list");
+                const value = tree.string(c.text);
+                if (value.len == 0) continue;
+                if (baked.items.len != 0) try baked.append(pg.a(), ';');
+                try baked.appendSlice(pg.a(), tree.string(e.name));
+                try baked.append(pg.a(), ':');
+                try baked.appendSlice(pg.a(), value);
+            } else {
+                if (c.kind != .bool) return later(cx, n, "this class list");
+                if (!c.bool) continue;
+                if (baked.items.len != 0) try baked.append(pg.a(), ' ');
+                try baked.appendSlice(pg.a(), tree.string(e.name));
+            }
+        },
+        .dynamic => try changing.append(pg.a(), .{ .name = tree.string(e.name), .value = e.value.dynamic.?, .style = style }),
+        else => return later(cx, n, if (style) "this style list" else "this class list"),
+    };
+    if (baked.items.len != 0) try writeValue(pg.a(), out, tree.string(it.name), baked.items);
+    return changing.items;
 }
 
 /// The walk of one row's markup (`RowBuild.plan`): what §9's simple form
@@ -1170,8 +1247,15 @@ const RowBuild = struct {
         var property: ?[]const u8 = null;
         if (it.attribute != .none) {
             const f = tree.attributeFacts(it.attribute);
-            attribute_only = f.classes and it.class == .string;
-            if (f.raw or f.styles or (f.classes and !attribute_only)) return later(cx, n, "an attribute written as raw HTML, or a class or style list");
+            if (f.raw) return later(cx, n, "an attribute written as raw HTML");
+            // A class or style list in place: its entries that change are
+            // written at each `set` (§8.2, *A class or style list*).
+            if ((f.classes and it.class == .class_list) or (f.styles and it.class == .style_list)) {
+                for (try listEntries(pg, n, it, out)) |e| try b.ops.append(pg.a(), .{ .target = target, .what = .{ .entry = e } });
+                return;
+            }
+            attribute_only = (f.classes or f.styles) and it.class == .string;
+            if ((f.classes or f.styles) and !attribute_only) return later(cx, n, "this class or style attribute");
             if (f.property) |prop| property = tree.string(prop);
             stateful = f.stateful;
         }
@@ -1663,6 +1747,7 @@ const Page = struct {
                         try js.expression(st, try js.call(try js.name(try cx.runtime("prop")), &.{ at, value, try js.string(k) }));
                     } else try js.expression(st, try js.call(try js.name(try cx.runtime("prop")), &.{ at, value }));
                 },
+                .entry => |x| try js.expression(st, try entryCall(cx, at, x, try cx.value(x.value))),
                 .event => |x| try js.assign(st, try js.member(try js.name(r), try std.fmt.allocPrint(pg.a(), "h{d}", .{x.slot})), try cx.value(x.item.value.dynamic.?)),
                 .child_text => |x| if (x.value) |v| {
                     const value = try cx.value(v);
@@ -1698,6 +1783,7 @@ const Page = struct {
             },
             .child_text => |x| if (x.value) |v| try out.append(pg.a(), v),
             .event => |x| try out.append(pg.a(), x.item.value.dynamic.?),
+            .entry => |x| try out.append(pg.a(), x.value),
             .rows => |x| try pg.forValues(x.node, out),
             // A branch region's value is evaluated by its preparation.
             .region => {},
@@ -1915,11 +2001,20 @@ const Page = struct {
         // written ones, and a written `value` (`prerender.md` §4.1).
         var dynamic: std.ArrayList(Dynamic) = .empty;
         var value: ?[]const u8 = null;
+        var classes_end: u32 = 0;
         for (tree.itemsOf(e.items), 0..) |it, i| {
             const before = pg.writes.items.len;
+            const start: u32 = @intCast(attributes.items.len);
             if (try pg.item(n, target, ctx, it, e.items.start + @as(u32, @intCast(i)), &attributes)) |v| value = v;
             if (pg.writes.items.len != before and pg.writes.items[before].what == .prop)
                 try dynamic.append(pg.a(), .{ .at = @intCast(attributes.items.len), .write = @intCast(before) });
+            // A class list's toggles stand at the attribute's start, its
+            // baked names (`start .. classes_end`) being the string form's
+            // to write with them (`prerender.md` §4.1).
+            if (pg.writes.items.len != before and pg.writes.items[before].what == .entry and !pg.writes.items[before].what.entry.style) {
+                for (before..pg.writes.items.len) |wi| try dynamic.append(pg.a(), .{ .at = start, .write = @intCast(wi) });
+                classes_end = @intCast(attributes.items.len);
+            }
         }
         // A control whose value changes, around its only child's `For`:
         // the rows and the value written by one binding, of both their read
@@ -1938,7 +2033,7 @@ const Page = struct {
         defer if (below_control) {
             pg.under_control -= 1;
         };
-        const base: Html = .{ .kind = .element, .name = name, .attributes = attributes.items, .ctx = ctx, .target = target, .dynamic = dynamic.items, .value = value };
+        const base: Html = .{ .kind = .element, .name = name, .attributes = attributes.items, .ctx = ctx, .target = target, .dynamic = dynamic.items, .value = value, .classes_end = classes_end };
         if (facts.void) {
             var out = base;
             out.void = true;
@@ -2314,8 +2409,21 @@ const Page = struct {
         var property: ?[]const u8 = null;
         if (it.attribute != .none) {
             const f = tree.attributeFacts(it.attribute);
-            attribute_only = f.classes and it.class == .string;
-            if (f.raw or f.styles or (f.classes and !attribute_only)) return later(cx, n, "an attribute written as raw HTML, or a class or style list");
+            if (f.raw) return later(cx, n, "an attribute written as raw HTML");
+            // A class or style list in place: each entry that changes a
+            // write of its own, in the list's group (§8.2, *A class or
+            // style list*, amended 2026-11-23).
+            if ((f.classes and it.class == .class_list) or (f.styles and it.class == .style_list)) {
+                const changing = try listEntries(pg, n, it, out);
+                if (changing.len == 0) return null;
+                if (it.class == .style_list and cx.build.prerender != .none) return later(cx, n, "a style list whose value changes, on a page that prerenders");
+                const facts = try pg.known(n, cx.programHole(.{ .item = index }));
+                const groups = try sorted(pg.a(), &.{facts.group});
+                for (changing) |e| try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = groups, .what = .{ .entry = e } });
+                return null;
+            }
+            attribute_only = (f.classes or f.styles) and it.class == .string;
+            if ((f.classes or f.styles) and !attribute_only) return later(cx, n, "this class or style attribute");
             if (f.property) |prop| property = tree.string(prop);
             stateful = f.stateful;
         }
@@ -2389,8 +2497,13 @@ const Page = struct {
             (if (std.mem.eql(u8, prop, "value")) null else prop)
         else if (it.class == .bool and isBoolProperty(name))
             name
-        else
-            return later(cx, n, "an attribute that is not a DOM property and whose value changes");
+        else if (std.mem.indexOfScalar(u8, name, ':') == null and (it.class == .string or it.class == .int or it.class == .float)) {
+            // No DOM property: the attribute itself, its value a string, as
+            // a row writes it (§8.2, *A class or style list, … an attribute
+            // that is not a property*, amended 2026-11-23).
+            try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = .{ .value = v }, .key = null, .attribute = name, .attribute_only = true, .number = it.class != .string } }, .stateful = stateful });
+            return null;
+        } else return later(cx, n, "an attribute that is not a DOM property and whose value changes");
         try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .prop = .{ .value = .{ .value = v }, .key = key, .attribute = name, .boolean = it.class == .bool, .attribute_only = attribute_only } }, .stateful = stateful });
         return null;
     }
@@ -3494,6 +3607,7 @@ const Page = struct {
             .when => |x| try out.append(pg.a(), pg.tree.hole(x.node).value),
             .observe => |n| try out.append(pg.a(), pg.tree.hole(n).value),
             .event => {},
+            .entry => |x| try out.append(pg.a(), x.value),
             .rows => |i| try pg.forValues(pg.fors.items[i].node, out),
             .region => |i| if (pg.regions.items[i].node != .none) try pg.regionReads(pg.regions.items[i].node, pg.regions.items[i].arms, out),
         }
@@ -3944,6 +4058,7 @@ const Page = struct {
                 },
                 .event => {},
                 .rows => |i| try pg.forValues(pg.fors.items[i].node, values),
+                .entry => |x| try values.append(pg.a(), x.value),
                 .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
                 .observe => |n| try reads.append(pg.a(), pg.tree.hole(n).value),
                 .region => |i| if (pg.regions.items[i].node != .none) try pg.regionReads(pg.regions.items[i].node, pg.regions.items[i].arms, &reads),
@@ -4228,6 +4343,10 @@ const Page = struct {
                         },
                         .text => |t| try js.string(t),
                     },
+                    .entry => |x| value: {
+                        try cx.rootValues(into, r, &.{x.value});
+                        break :value try cx.value(x.value);
+                    },
                     .event => |ei| try pg.capturedArguments(ei, p.call_args.items),
                     .rows => |i| return later(cx, pg.fors.items[i].node, "a `For` whose binding prepares a guarded arm or a helper argument that may fail"),
                     .observe => |n| try p.branch(into, ctx, n),
@@ -4312,13 +4431,14 @@ const Page = struct {
                 },
                 .text => try js.expression(into, try js.call(try js.name(try cx.runtime("text")), &.{ node, ready.value })),
                 .prop => |x| if (x.attribute_only) {
-                    try pg.writeStringAttribute(into, node, x.attribute, ready.value, x.url);
+                    try pg.writeStringAttribute(into, node, x.attribute, if (x.number) try js.template(&.{.{ .expr = ready.value }}) else ready.value, x.url);
                 } else if (x.key) |key| {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value, try js.string(key) }));
                 } else {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value }));
                 },
                 .when => try js.expression(into, try js.call(try js.name(try cx.runtime("when")), &.{ node, ready.value })),
+                .entry => |x| try js.expression(into, try entryCall(cx, node, x, ready.value)),
                 .observe, .rows, .region => {},
             }
             if (ready.selected) |n| try js.@"if"(blk, try js.name(n), into, null);
@@ -4412,6 +4532,7 @@ const Page = struct {
                         .value => |v| if (cx.valueSafe(v)) try own.append(pg.a(), v),
                         .text => {},
                     },
+                    .entry => |x| if (cx.valueSafe(x.value)) try own.append(pg.a(), x.value),
                     .rows => |i| {
                         var all: std.ArrayList(m.Value.Index) = .empty;
                         try pg.forValues(pg.fors.items[i].node, &all);
@@ -4424,6 +4545,7 @@ const Page = struct {
                 const node = try pg.ref(w.target);
                 switch (w.what) {
                     .event, .region => unreachable,
+                    .entry => |x| try js.expression(blk, try entryCall(cx, node, x, try cx.value(x.value))),
                     .rows => |i| try pg.writeRows(blk, node, if (pg.fors.items[i].end) |t| try pg.ref(t) else try js.literal(.null), pg.fors.items[i].node, pg.fors.items[i].plan),
                     .text => |parts| {
                         const value = if (parts.len == 1 and parts[0] == .value)
@@ -4447,7 +4569,7 @@ const Page = struct {
                             .text => |t| try js.string(t),
                         };
                         if (x.attribute_only) {
-                            try pg.writeStringAttribute(blk, node, x.attribute, value, x.url);
+                            try pg.writeStringAttribute(blk, node, x.attribute, if (x.number) try js.template(&.{.{ .expr = value }}) else value, x.url);
                         } else if (x.key) |key| {
                             try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value, try js.string(key) }));
                         } else try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value }));
@@ -4932,11 +5054,59 @@ const Render = struct {
                 },
                 .text => |t| try js_.string(t),
             },
+            .entry => |x| v: {
+                try cx.rootValues(blk, root_, &.{x.value});
+                break :v try cx.value(x.value);
+            },
             else => unreachable,
         };
         const name = try cx.fresh("value");
         try js_.constant(blk, name, v);
         return js_.name(name);
+    }
+
+    /// A class list's attribute in the string form (`prerender.md` §4.1,
+    /// amended 2026-11-23): the baked names of `n`'s `class`
+    /// (`attributes[toggles[0].at .. n.classes_end]`, as the markup writes
+    /// them), then each toggle's name whose flag is true, in entry order;
+    /// with no baked name, the attribute only when some flag is true, as
+    /// `toggle` makes it.
+    fn classes(r: *Render, blk: m.Block, c: u32, n: Html, toggles: []const Dynamic) m.Error!void {
+        const pg = r.pg;
+        const js_ = r.js();
+        const constant = n.attributes[toggles[0].at..n.classes_end];
+        // ` class=…`: the names, unquoted or quoted by `writeValue`.
+        var baked: []const u8 = "";
+        if (constant.len != 0) {
+            const eq = std.mem.indexOfScalar(u8, constant, '=').?;
+            baked = constant[eq + 1 ..];
+            if (baked[0] == '"') baked = baked[1 .. baked.len - 1];
+        }
+        var parts: std.ArrayList(m.TemplatePart) = .empty;
+        for (toggles) |d| {
+            const x = pg.writes.items[d.write].what.entry;
+            const v = try r.value(blk, c, d.write);
+            // The name as a double-quoted value reads it back (the review:
+            // `a&b`, `q"x`), as `writeValue` writes a baked one.
+            var shown: std.ArrayList(u8) = .empty;
+            try shown.append(pg.a(), ' ');
+            try escapeAttribute(pg.a(), &shown, x.name);
+            try parts.append(pg.a(), .{ .expr = try js_.cond(v, try js_.string(shown.items), try js_.string("")) });
+        }
+        if (baked.len != 0) {
+            try r.text(" class=\"");
+            try r.text(baked);
+            try r.append(blk, try js_.template(parts.items));
+            try r.text("\"");
+            return;
+        }
+        try r.flush(blk);
+        const names = try pg.cx.fresh("classes");
+        try js_.constant(blk, names, try js_.template(parts.items));
+        const yes = try js_.block();
+        const written = try js_.template(&.{ .{ .text = " class=\"" }, .{ .expr = try js_.call(try js_.member(try js_.name(names), "slice"), &.{try js_.number("1")}) }, .{ .text = "\"" } });
+        try js_.assign(yes, try js_.name(r.out), try js_.binary(.add, try js_.name(r.out), written));
+        try js_.@"if"(blk, try js_.binary(.strict_ne, try js_.name(names), try js_.string("")), yes, null);
     }
 
     /// ` name="value"`, the value a string of `v`, escaped.
@@ -4959,9 +5129,22 @@ const Render = struct {
         // A control's value that is its content, or its options'.
         var content: ?m.Expr = null;
         var chosen: ?m.Expr = null;
-        for (n.dynamic) |d| {
+        var i: usize = 0;
+        while (i < n.dynamic.len) : (i += 1) {
+            const d = n.dynamic[i];
             try r.text(n.attributes[at..d.at]);
             at = d.at;
+            // A class list's toggles, all at the attribute's start: the
+            // attribute as the first pass leaves it (`prerender.md` §4.1,
+            // amended 2026-11-23), in place of its baked names.
+            if (pg.writes.items[d.write].what == .entry) {
+                var end = i;
+                while (end < n.dynamic.len and n.dynamic[end].at == d.at and pg.writes.items[n.dynamic[end].write].what == .entry) end += 1;
+                try r.classes(blk, c, n, n.dynamic[i..end]);
+                at = n.classes_end;
+                i = end - 1;
+                continue;
+            }
             const x = pg.writes.items[d.write].what.prop;
             const v = try r.value(blk, c, d.write);
             if (!x.attribute_only and x.key == null and std.mem.eql(u8, n.name, "textarea")) {
@@ -5116,6 +5299,14 @@ test "a constant URL is checked as the browser runtime's safeUrl checks it" {
     try t.expectEqual(@as(?bool, false), scriptUrl("javascript.html"));
     try t.expectEqual(@as(?bool, null), scriptUrl("\xc2\xa0javascript:x"));
     try t.expectEqual(@as(?bool, false), scriptUrl("/caf\xc3\xa9"));
+}
+
+/// A class or style list entry's write (§8.2, *A class or style list*):
+/// `toggle(node, name, flag)` or `style(node, name, value)`, through the
+/// runtime, which compares first.
+fn entryCall(cx: *m.Context, node: m.Expr, e: Entry, value: m.Expr) m.Error!m.Expr {
+    const js = cx.js;
+    return js.call(try js.name(try cx.runtime(if (e.style) "style" else "toggle")), &.{ node, try js.string(e.name), value });
 }
 
 /// ` name=value`: unquoted where the parser reads it back so, bare when

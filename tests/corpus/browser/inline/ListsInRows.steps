@@ -1,0 +1,8 @@
+element "root"
+click [data-role=row0]
+click [data-role=dim]
+click [data-role=add]
+click [data-role=open]
+click [data-role=row1]
+click [data-role=dim]
+click [data-role=open]

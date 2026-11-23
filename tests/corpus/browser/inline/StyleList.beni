@@ -1,0 +1,61 @@
+-- A style list and a `style` of a `String` (docs/design/browser-inline.md
+-- §8.2, *A class or style list*, amended 2026-11-23, #2635): a constant
+-- entry is baked into the markup as `name:value`, an empty one writes
+-- nothing, and each entry whose value changes is a `style` write in entry
+-- order, `setProperty` when the node reads back another value; `""`
+-- removes the property. The `div`'s `style` of a `String` is the attribute.
+-- Each step's transcript is `browser-tea`'s for the same source.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    wide : Bool
+    n : Int
+
+
+type Msg
+    = Widen
+    | Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Widen →
+            { model | wide = not model.wide }
+
+        Inc →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p
+            data-role="p"
+            style={[ ( "color", "red" )
+                   , ( "margin", "" )
+                   , ( "width", if model.wide then "200px" else "100px" )
+                   , ( "--gap", if model.n > 1 then "${String.fromInt model.n}px" else "" )
+                   ]
+                  }
+        >
+            {model.n}
+        </p>
+        <span data-role="s" style={[ ( "font-weight", if model.wide then "bold" else "" ) ]}>
+            s
+        </span>
+        <div data-role="d" style={if model.wide then "display:block" else "display:none"}>d</div>
+        <i data-role="c" style="color:blue">c</i>
+        <button data-role="widen" onClick={Widen}>w</button>
+        <button data-role="inc" onClick={Inc}>i</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { wide = False, n = 0 }, update = update, view = view })
+        "root"

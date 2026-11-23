@@ -520,10 +520,80 @@ beni over `Js` in `Inline.beni`:
   a number only; a text hole beside an element is a limit of the compiler (§8.7).
 - **An attribute** whose value changes is `prop`; a constant one, and one `init` bakes, is in the
   markup. An attribute that is not a DOM property and whose value changes, a URL, raw HTML, and a
-  class or style list that changes are limits of the compiler. *Amended 2026-10-29 (§10.5):* a
+  class or style list that changes are limits of the compiler (*amended 2026-11-23:* all but raw
+  HTML and a few shapes compile, below). *Amended 2026-10-29 (§10.5):* a
   constant URL is checked and written into the markup. *Amended 2026-11-05 (§10.5, #1169):* a URL
   that changes is a binding through the runtime's `safeUrl`, and so is a constant URL the build
   cannot decide.
+- **A class or style list, a `style`, and an attribute that is not a property** (*amended
+  2026-11-23, #2499, #2635, #966*). Three shapes `browser-tea` compiles, each split as the `dom`
+  lowering splits it (`platforms/browser/zig/dom.zig`, `entriesInPlace`, after dom-expressions'
+  compile-time split of an object literal; rule 8), so that the page shows the attribute
+  `browser-tea` shows, its names in the same order. The design of the class list is the one written
+  for #2499 on 2026-11-11 (`origin/inline-class-list`), not merged then, built now on the page, in
+  a `For`'s row and in a branch region's arm alike.
+  - **A class list written in place** (`language.md` §11.19; `Item.class` is `class_list`, its
+    value `entries`). An entry whose flag is the constant `True` is baked into the markup's `class`,
+    in entry order; one whose flag is `False` writes nothing; an entry whose flag changes is a
+    **toggle**, the runtime's `toggle(E[n], name, flag)`, in entry order: the class on the node or
+    off it as the flag says, written — `classList.toggle(name, flag)` — when
+    `classList.contains(name)` differs, one write guarded by a compare like every binding. The
+    compare is the runtime's and not the DOM's: `toggle` with a flag writes nothing when the node
+    agrees in the DOM Standard, but a DOM that runs the update steps then makes `class=""` on a
+    node with no class (happy-dom, which the gates run pages in; Chrome does not). A class that
+    turns on is appended after the element's other classes, and one that turns off leaves
+    `class=""` behind when it was the last, as `browser`'s runtime does. *Rejected:* one binding
+    writing the whole attribute from the list (`setAttribute("class", …)` behind a compare), which
+    orders the names as the list does where `browser-tea` — the oracle — appends a name that turns
+    on, so the transcripts would part after the first change.
+  - **A style list written in place** (`Item.class` is `style_list`). An entry whose value is a
+    constant non-empty `String` is baked into the markup's `style` as `name:value`, the entries
+    joined by `;`, in entry order, and one whose value is the constant `""` writes nothing; an entry
+    whose value changes is a **style write**, the runtime's `style(E[n], name, value)`:
+    `style.setProperty(name, value)` — which removes the property for `""` (`language.md` §11.19)
+    — when `style.getPropertyValue(name)` differs. A value the CSS parser serialises otherwise
+    (`#FFF` read back as `rgb(255, 255, 255)`) is then written again at each pass that runs it,
+    which writes nothing new: the compare saves work and decides nothing. `browser-tea`'s
+    `setProperty` at the mount runs for every entry; this one runs only for a value that differs.
+  - **The two lists share their rules.** The writes of one list share one group, the list's: the
+    write-set pass records an attribute's whole value as one hole, so a write that any entry reads
+    runs every write of the list, each writing nothing where the node already shows its entry; an
+    entry no key's write reaches is written by the first pass alone. In a `For`'s row and an arm, every write
+    runs at each `set`, as the row's other writes do. A list the `dom` lowering hands its runtime's
+    `classes` or `styles` instead — an entry whose name is empty or is an earlier entry's, or, for a
+    class, holds whitespace — is a limit of the compiler (§8.7, `ClassListNames/`), and so is a list
+    held as a value, `class={model.classes}` (`ClassListValue/`, `StyleListValue/`): this platform
+    ships neither `classes` nor `styles` (`language.md` §11.19's runtime diff, to come with the
+    first page that needs it). `toggle` and `style` ship only on a page that calls them.
+  - **A `style` of a `String`** is the attribute, as a scalar `String` `class` is (§5,
+    *scalar String class attributes*): a constant one in the markup, one that changes
+    `setAttribute` when `getAttribute` differs.
+  - **An attribute that is no DOM property** whose value changes and is a `String` or a number
+    (`id`, `title`, `sandbox`, a `progress`'s `value`), with no namespace prefix, is written with
+    `setAttribute` when `getAttribute` differs, its value a string, as §9's simple form writes one
+    in a row; a number is written as `String(n)` writes it. One of another type — a `Bool` that is
+    no reflected property (`readonly`), a `Maybe String` — stays a limit of the compiler
+    (`AttributeChanges/`).
+  - **The string form** (`prerender.md` §4.1, amended 2026-11-11 and 2026-11-23) writes the
+    `class` as the first pass leaves it, and an attribute that is no property as its value; a style
+    list whose value changes on a page that prerenders is a limit of the compiler, since the string
+    would have to be the CSS parser's serialisation (`build/bad/prerender/StyleList/`).
+  - **Where the transcripts part** (*the review of this slice*). They agree wherever both
+    platforms write the same node. They part where `browser-inline` keeps a node that
+    `browser-tea` makes afresh: an eager arm's element (hidden, not removed, so its toggles run
+    while it is hidden), and a row of an unkeyed `For` whose item changed. A class that turned
+    on while such a node was kept stands after the classes it already held (`class="y x"`, where
+    the new node shows `class="x y"`), and one that turned off may leave `class=""`; a class
+    list's order carries no meaning (`language.md` §11.19). And a style list that sets a
+    shorthand and one of its longhands (`margin`, `margin-left`) shows the longhand after a pass
+    that writes the shorthand, as the list says, where `browser-tea`, comparing each entry with the
+    value it last wrote, skips the longhand and loses it. Both are pinned with the difference
+    listed (`browser/inline/ClassListEagerArm`, `StyleShorthand`). A class name in the string
+    form is escaped as a baked one is.
+  Raw HTML stays a limit of the compiler. Pages: `browser/inline/ClassList`, `StyleList`,
+  `AttributeNoProperty`, `ListsInRows`, each also built on `browser-tea` as its oracle;
+  `emit/release/inline/ListsInPlace`. The vocabulary of `html` declares no attribute of a
+  `Float`, so that branch of an attribute that is no property is reached by no page.
 - **An eager `when`** (the owner's D-b) is an `html` hole whose value is an `if` — a `case` of two
   arms — one arm of which is one element written in place and the other `<></>`, and whose markup
   arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
@@ -1889,6 +1959,15 @@ whose arm calls a helper or has `let`s a hole reads, is a branch region, and `Wh
 page `browser/inline/RegionEmptyArm`. What a region refuses is §8.2's list, in
 `RegionInRow/`, `RegionSelectorEffect/`, `RegionBeforeText/`, `RegionInEagerArm/`,
 `RegionArmStatements/` and `build/bad/prerender/ViewBranch/`.
+
+*Amended 2026-11-23 (§8.2, *A class or style list, …*, #2499, #2635):* the row *an attribute
+that changes and is not a DOM property* now holds only for a value that is not a `String` or a
+number (`AttributeChanges/`, a `readonly` of a `Bool`). The row *an attribute written as raw
+HTML, or a class or style list* holds for raw HTML; three rows are added, each class 1, at the
+element: a class or style list held as a value (`ClassListValue/`, `StyleListValue/`), a list
+whose names repeat, are empty or (a class's) hold whitespace (`ClassListNames/`), and a style
+list whose value changes on a page that prerenders (`build/bad/prerender/StyleList/`).
+`StringClassList/`, whose list was constant, compiles and is withdrawn.
 
 *Amended 2026-10-25 (S2's design pass):* the keyed `For` row above is replaced, from S2, by §9.6's
 rows; `ResearchListWidget/` moves to `ListRowsById/` with the class 3 text when S2's refusals land.

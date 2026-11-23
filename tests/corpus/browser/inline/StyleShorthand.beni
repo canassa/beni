@@ -1,0 +1,57 @@
+-- A style list whose entries set a shorthand and one of its longhands
+-- (docs/design/browser-inline.md §8.2, *A class or style list*, amended
+-- 2026-11-23, the review of #2499): a pass that writes `margin` writes
+-- every entry of the list, each when the node reads back another value, so
+-- `margin-left` is written again after `margin` reset it, and the element
+-- shows what the list says. Its transcript differs from `browser-tea`'s in
+-- that: `browser-tea` compares each entry with the value it wrote last,
+-- skips `margin-left`, and shows `margin: 1px`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    n : Int
+    ml : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p
+            data-role="p"
+            style={[ ( "margin", "${String.fromInt model.n}px" )
+                   , ( "margin-left", "${String.fromInt model.ml}px" )
+                   ]
+                  }
+        >
+            {model.n}
+        </p>
+        <p
+            data-role="q"
+            class={[ ( "a", model.n > 0 ) ]}
+            style={[ ( "margin-left", "${String.fromInt model.ml}px" ) ]}
+        >
+            q
+        </p>
+        <button data-role="inc" onClick={Inc}>i</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { n = 0, ml = 7 }, update = update, view = view })
+        "root"
