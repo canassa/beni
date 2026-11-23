@@ -1,0 +1,47 @@
+-- A key that splits a constructor's record payload two fields deep
+-- (`Deep · Q`, through `r.inner.leaf`) takes its message whole
+-- (browser-inline.md §8.7, amended 2026-11-23), and a closure in its arm
+-- reads `r.inner.b` of the part the arm holds as `r`, a local the handler
+-- never declares: the hoisted read is of the message.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type L4
+    = P Int
+    | Q String Int
+
+
+type Msg
+    = Deep { a : Int, inner : { b : String, leaf : L4 } }
+
+
+type alias Model =
+    log : List String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Deep r →
+            case r.inner.leaf of
+                Q t k →
+                    { model | log = List.map model.log λx → x ++ r.inner.b ++ t }
+
+                P k →
+                    { model | log = List.push model.log "p" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="h" onClick={Deep { a = 12, inner = { b = "b12", leaf = Q "t12" 120 } }}>
+            h
+        </button>
+        <p id="log">{String.join model.log ","}</p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { log = [ "a" ] }, update = update, view = view }

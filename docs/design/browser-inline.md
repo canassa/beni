@@ -2013,8 +2013,14 @@ What stays refused: a `update` that splits one message at two places side by sid
 `*` key (§5): `browser/tea/ConcurrentJobs` and `UrlAddress`, whose `update` is a lambda that
 matches its parameter, stop at the `*` refusal now. Pages: `browser/inline/MessageWhole` (a wide
 constructor, three levels, a record, a tuple, a default step, a command's message and one the
-model holds; its transcript is `browser-tea`'s but for an empty text node) and the eleven `browser/tea` pages it compiles;
-`ArmWideWrapper` builds and moved from `build/bad/inline/` to `browser/inline/`.
+model holds; its transcript is `browser-tea`'s but for an empty text node),
+`MessageRecordClosure` and `MessageDeepRecordClosure` (a closure in the arm reads a field of a
+part of the message the arm never binds: the eager read hoisted to the closure's creation,
+`ownership-checker.md` §31.6, is a read of the message too, `hoistValue`), and ten of the eleven
+`browser/tea` pages it compiles, `SyncCommandOrder` and `NavigatePush` with the order differences
+their headers name. `ListenerOrder` builds, and its page is not copied: it pins `browser-tea`'s
+queueing of a listener's value, and its `flush` step needs a runtime export this platform does
+not have. `ArmWideWrapper` builds and moved from `build/bad/inline/` to `browser/inline/`.
 
 ### 8.8 Release
 

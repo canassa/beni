@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="rr">"rr"</button>
+    <button id="dd">"dd"</button>
+    <p id="log">"a"</p>
+  </main>
+</body>
+-- click #rr
+<body>
+  <main>
+    <button id="rr">"rr"</button>
+    <button id="dd">"dd"</button>
+    <p id="log">"aRR3"</p>
+  </main>
+</body>
+-- click #dd
+<body>
+  <main>
+    <button id="rr">"rr"</button>
+    <button id="dd">"dd"</button>
+    <p id="log">"aRR3,d4"</p>
+  </main>
+</body>
+-- click #rr
+<body>
+  <main>
+    <button id="rr">"rr"</button>
+    <button id="dd">"dd"</button>
+    <p id="log">"aRR3RR3,d4RR3"</p>
+  </main>
+</body>
