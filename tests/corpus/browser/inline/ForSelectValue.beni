@@ -1,0 +1,50 @@
+-- A controlled `select` whose options are a `For`, its only child
+-- (browser-inline.md §9, amended 2026-11-23): the rows and the select's
+-- value are one binding, the rows first, so a value chosen with a new
+-- option in one message shows it, though another element reads the same
+-- field before the select and the two read sets differ.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Choose String
+
+
+type alias Model =
+    opts : List String
+    sel : String
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model
+                | opts = List.push model.opts "o${String.fromInt model.n}"
+                , sel = "o${String.fromInt model.n}"
+                , n = model.n + 1
+            }
+
+        Choose s →
+            { model | sel = s }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p id="sel">{model.sel}</p>
+        <select id="s" value={model.sel} onInput={Choose}>
+            <For each={model.opts} keyed={λo → o}>{λo → <option value={o}>{o}</option>}</For>
+        </select>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { opts = [ "a", "b" ], sel = "b", n = 1 }, update = update, view = view }

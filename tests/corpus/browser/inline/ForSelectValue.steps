@@ -1,0 +1,5 @@
+# A new option, chosen in the same message, twice.
+click #add
+click #add
+# Chosen by the user.
+input #s "a"

@@ -187,6 +187,8 @@ pub const lowering: m.Lowering = .{
     .prerenders = true,
 };
 
+const controlled_for = "a `For` inside a control whose value changes, other than as its only child";
+
 const no_markup_values =
     \\A limit of the compiler: `browser-inline` has no markup value yet; it compiles markup only
     \\as a program's `view`, written in place (`docs/design/browser-inline.md` §5, class 1).
@@ -813,6 +815,16 @@ fn forEnd(pg: *Page, e: m.Element, children: []const m.Node.Index, i: usize, nex
     return next;
 }
 
+/// Whether element `e` is a control whose value changes: an attribute of
+/// it the user edits (`value`, `checked`) has a value the model gives.
+fn controlled(tree: *const m.Tree, e: m.Element) bool {
+    for (tree.itemsOf(e.items)) |it| {
+        if (it.kind != .attribute or it.attribute == .none or it.value.kind != .dynamic) continue;
+        if (tree.attributeFacts(it.attribute).stateful) return true;
+    }
+    return false;
+}
+
 /// The walk of one row's markup (`RowBuild.plan`): what §9's simple form
 /// compiles, and the refusals of everything else, each class 1 (§5).
 const RowBuild = struct {
@@ -821,6 +833,7 @@ const RowBuild = struct {
     ops: std.ArrayList(RowOp) = .empty,
     slots: u32 = 0,
     texts: u32 = 0,
+    under_control: u32 = 0,
     events: bool = false,
     stateful: bool = false,
 
@@ -871,8 +884,14 @@ const RowBuild = struct {
         // `select`'s `value` chooses among the options its rows make).
         const own_children = tree.childrenOf(e.children);
         const rows = !facts.void and own_children.len == 1 and tree.kind(own_children[0]) == .for_;
+        const below_control = !rows and controlled(tree, e);
+        if (below_control) b.under_control += 1;
+        defer if (below_control) {
+            b.under_control -= 1;
+        };
         if (rows) {
             if (parser.content(name) != .normal) return later(cx, n, "the content of an element whose content the parser reads as text");
+            if (b.under_control != 0) return later(cx, own_children[0], controlled_for);
             const p = try plan(pg, own_children[0], scope.enter(name));
             try b.ops.append(pg.a(), .{ .target = target, .what = .{ .rows = .{ .node = own_children[0], .plan = p, .end = null } } });
             b.events = b.events or p.events;
@@ -928,6 +947,7 @@ const RowBuild = struct {
         var out: std.ArrayList(Html) = .empty;
         for (children, 0..) |child, ci| switch (tree.kind(child)) {
             .for_ => {
+                if (b.under_control != 0) return later(cx, child, controlled_for);
                 const end = try forEnd(pg, e, children, ci, b.count);
                 const p = try plan(pg, child, inner);
                 try b.ops.append(pg.a(), .{ .target = target, .what = .{ .rows = .{ .node = child, .plan = p, .end = end } } });
@@ -1209,6 +1229,9 @@ const Page = struct {
     /// one has an event: the page then has its dispatcher.
     fors: std.ArrayList(ForUse) = .empty,
     row_events: bool = false,
+    /// The walk is below a control whose value changes, not as its only
+    /// child's `For`: a `For` there is refused (§9, amended 2026-11-23).
+    under_control: u32 = 0,
     /// The root plan (§8.4, amended 2026-10-22): this unit's row of the
     /// program's table; a piece's holders, one per argument of its
     /// function; the names of its own row and of the program's table, and
@@ -1285,6 +1308,7 @@ const Page = struct {
     /// (the write-set pass's edge of the `For`).
     fn forChild(pg: *Page, n: m.Node.Index, target: ?u32, ctx: u32, scope: parser.Scope, end: ?u32) m.Error!void {
         if (pg.piece) return later(pg.cx, n, "a `For` in another module's markup");
+        if (pg.under_control != 0) return later(pg.cx, n, controlled_for);
         const facts = try pg.known(n, pg.cx.programHole(.{ .node = n }));
         const p = try RowBuild.plan(pg, n, scope);
         try pg.fors.append(pg.a(), .{ .node = n, .plan = p, .end = end });
@@ -1508,6 +1532,7 @@ const Page = struct {
         // `select`'s `value` chooses among the options its rows make.
         const own_children = tree.childrenOf(e.children);
         const rows = !facts.void and own_children.len == 1 and tree.kind(own_children[0]) == .for_;
+        const rows_at = pg.writes.items.len;
         if (rows) {
             if (parser.content(name) != .normal) return later(pg.cx, n, "the content of an element whose content the parser reads as text");
             try pg.forChild(own_children[0], target, ctx, scope.enter(name), null);
@@ -1523,6 +1548,23 @@ const Page = struct {
             if (pg.writes.items.len != before and pg.writes.items[before].what == .prop)
                 try dynamic.append(pg.a(), .{ .at = @intCast(attributes.items.len), .write = @intCast(before) });
         }
+        // A control whose value changes, around its only child's `For`:
+        // the rows and the value written by one binding, of both their read
+        // sets, the rows first — the value chooses among the rows, whatever
+        // write reaches either (§9, amended 2026-11-23).
+        if (rows and controlled(tree, e)) {
+            var all: std.ArrayList(u32) = .empty;
+            for (pg.writes.items[rows_at..]) |w| if (w.target == target and (w.what == .rows or w.stateful)) try all.appendSlice(pg.a(), w.groups);
+            const merged = try sorted(pg.a(), all.items);
+            for (pg.writes.items[rows_at..]) |*w| if (w.target == target and (w.what == .rows or w.stateful)) {
+                w.groups = merged;
+            };
+        }
+        const below_control = !rows and controlled(tree, e);
+        if (below_control) pg.under_control += 1;
+        defer if (below_control) {
+            pg.under_control -= 1;
+        };
         const base: Html = .{ .kind = .element, .name = name, .attributes = attributes.items, .ctx = ctx, .target = target, .dynamic = dynamic.items, .value = value };
         if (facts.void) {
             var out = base;
