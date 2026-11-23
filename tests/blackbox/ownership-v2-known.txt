@@ -2843,6 +2843,7 @@ tests/corpus/browser/tea/HttpCancel.beni HttpCancel 55:5 #0 :: entry HttpCancel.
 tests/corpus/browser/inline/HttpCancel.beni HttpCancel 55:5 #0 :: entry HttpCancel.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/HttpDefect Main 75:5 #0 :: entry Main.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/HttpFailures.beni HttpFailures 161:5 #0 :: entry HttpFailures.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/HttpFailures.beni HttpFailures 161:5 #0 :: entry HttpFailures.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/HttpJson.beni HttpJson 93:5 #0 :: entry HttpJson.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/HttpJsonBody.beni HttpJsonBody 93:5 #0 :: entry HttpJsonBody.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/HttpJsonDerived.beni HttpJsonDerived 117:5 #0 :: entry HttpJsonDerived.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
