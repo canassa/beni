@@ -251,6 +251,13 @@ pub const Contract = struct {
     /// callee or a function the body runs within a call has the bit
     /// (kernel §13 item 12, *A defect*, (d)): the body may not run masked.
     hosts: bool = false,
+    /// A fiber the body started (a fork, a race's branch, `Task.start`)
+    /// in which a writer or a reader of a cell runs can still run where
+    /// the body returns: a mask or a lend of an ancestor of it while it is
+    /// parked keeps it running after a throw, so no call after this one may
+    /// park the fiber masked or lent (kernel §13 item 12, *A defect*, (d),
+    /// *Descendants of a masked fiber*; #2638). Implies `hosts`.
+    hosts_forked: bool = false,
     /// What a call leaves in a parameter's cells (kernel §13, *Renewal*):
     /// per parameter location, as `flags` is, null where the call leaves
     /// the location as it was, or the sources it holds from the call on. A
@@ -421,7 +428,7 @@ fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
 }
 
 pub fn eql(a: *const Contract, b: *const Contract) bool {
-    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy or a.casts != b.casts or a.exact != b.exact or a.switches != b.switches or a.runs_on != b.runs_on or a.hosts != b.hosts or a.cell_row != b.cell_row or a.renew_shared != b.renew_shared) return false;
+    if (a.arity != b.arity or a.entry != b.entry or a.taken != b.taken or a.nonlinear != b.nonlinear or a.old_result != b.old_result or a.record_copy != b.record_copy or a.casts != b.casts or a.exact != b.exact or a.switches != b.switches or a.runs_on != b.runs_on or a.hosts != b.hosts or a.hosts_forked != b.hosts_forked or a.cell_row != b.cell_row or a.renew_shared != b.renew_shared) return false;
     if (!std.mem.eql(u32, a.layouts, b.layouts) or !std.mem.eql(u8, a.flags, b.flags)) return false;
     if (a.res.len != b.res.len) return false;
     for (a.res, b.res) |s, t| if (!srcsEql(s, t)) return false;
@@ -498,7 +505,7 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
         renew = rn;
     }
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .runs_on = a.runs_on or b.runs_on, .hosts = a.hosts or b.hosts, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b) };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .runs_on = a.runs_on or b.runs_on, .hosts = a.hosts or b.hosts, .hosts_forked = a.hosts_forked or b.hosts_forked, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b) };
     return out;
 }
 
@@ -560,7 +567,7 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     const renew = try a.alloc(?[]const Src, c.renew.len);
     for (renew, c.renew) |*r, x| r.* = if (x) |xs| try a.dupe(Src, xs) else null;
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .runs_on = c.runs_on, .hosts = c.hosts, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths) };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .runs_on = c.runs_on, .hosts = c.hosts, .hosts_forked = c.hosts_forked, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths) };
     return out;
 }
 
@@ -582,9 +589,10 @@ pub const Effect = struct {
     /// which cannot suspend: neither.
     runs_on: bool = false,
     hosts: bool = false,
+    hosts_forked: bool = false,
 
     pub fn join(x: Effect, y: Effect) Effect {
-        return .{ .writes = x.writes or y.writes, .keeps = x.keeps or y.keeps, .no_contract = x.no_contract or y.no_contract, .rewrites = x.rewrites or y.rewrites, .runs_on = x.runs_on or y.runs_on, .hosts = x.hosts or y.hosts };
+        return .{ .writes = x.writes or y.writes, .keeps = x.keeps or y.keeps, .no_contract = x.no_contract or y.no_contract, .rewrites = x.rewrites or y.rewrites, .runs_on = x.runs_on or y.runs_on, .hosts = x.hosts or y.hosts, .hosts_forked = x.hosts_forked or y.hosts_forked };
     }
     pub fn any(x: Effect) bool {
         return x.writes or x.keeps or x.no_contract or x.rewrites;

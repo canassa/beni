@@ -1486,7 +1486,7 @@ pub const Mod = struct {
         // A function that stores into a cell it is handed (`Contract.renew`,
         // kernel §13) changes what the cell holds where the code that runs it
         // does not follow it: it writes, and keeps what it stores.
-        if (try m.declContract(target)) |c| if (c.arity != 0) return .{ .writes = c.writes() or c.renews(), .keeps = c.escapes() or c.renews(), .rewrites = Contract.rewritesFn(c), .runs_on = c.runs_on, .hosts = c.hosts };
+        if (try m.declContract(target)) |c| if (c.arity != 0) return .{ .writes = c.writes() or c.renews(), .keeps = c.escapes() or c.renews(), .rewrites = Contract.rewritesFn(c), .runs_on = c.runs_on, .hosts = c.hosts, .hosts_forked = c.hosts_forked };
         // A constant's contract says what its value holds, not what a call
         // of it does: a method written `pub eq = keeper` has no fact here,
         // nor has a function whose walk gave up. Only a declaration whose
@@ -3772,6 +3772,7 @@ pub const Mod = struct {
         // Kernel §13 item 12, *A defect*, (d).
         if (c.runs_on) w.writeAll(" runs-on") catch return error.OutOfMemory;
         if (c.hosts) w.writeAll(" hosts") catch return error.OutOfMemory;
+        if (c.hosts_forked) w.writeAll(" hosts-forked") catch return error.OutOfMemory;
         w.writeAll("; res") catch return error.OutOfMemory;
         for (m.loc.layoutEntries(c.layouts[c.arity]), 0..) |e, k| {
             w.print(" [{s}", .{try m.locText(e.loc)}) catch return error.OutOfMemory;

@@ -679,6 +679,12 @@ runs_on: bool = false,
 /// A writer of a cell the frame made runs at its switch points, or a callee
 /// or a function run within a call has the bit (`Contract.hosts`).
 hosts: bool = false,
+/// A fiber the frame started, or a callee's or a function's run within a
+/// call started, hosts a writer or a reader (`Contract.hosts_forked`):
+/// from here on no call may park this fiber masked or lent (`noteRunsOn`).
+hosts_forked: bool = false,
+/// The call being noted is one of the runtime's `send` (`noteRunsOn`).
+sender_call: bool = false,
 /// The calls in work that run within them a function that can park this
 /// fiber masked or under a scheduler of its own (`noteRunsOn`): each
 /// revokes the writers and readers registered by then where it ends
@@ -711,6 +717,15 @@ runs_on_known_calls: std.ArrayList(u32) = .empty,
 /// #2622).
 within_runs_on_calls: std.ArrayList(u32) = .empty,
 within_hosts_calls: std.ArrayList(u32) = .empty,
+/// The calls among `within_runs_on_calls` noted with `contract`: a
+/// function the walk knows, or one it does not know, that can park this
+/// fiber masked or lent runs within them. And the frame's own function
+/// parameters that a call runs within it, by `(call, draft)`: where a call
+/// is in both, the parameter's draft has `Fn.runs_on`, in either order,
+/// since the callee can run the parameter in the window the other function
+/// opens (kernel §13 item 12, *A defect*, (d), *The ways in*; #2633).
+within_known_calls: std.ArrayList(u32) = .empty,
+within_own: std.ArrayList([2]u32) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -6290,7 +6305,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const renew = try f.publishRenew(flags, off, total, &renew_shared);
     const paths = try f.publishPaths(flags, off, renew);
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .runs_on = f.runs_on or f.runsOnParams() != 0, .hosts = f.hosts, .renew = renew, .renew_shared = renew_shared, .paths = paths };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .runs_on = f.runs_on or f.runsOnParams() != 0, .hosts = f.hosts, .hosts_forked = f.hosts_forked, .renew = renew, .renew_shared = renew_shared, .paths = paths };
     return c;
 }
 
@@ -8506,7 +8521,11 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     if (code) |c| {
         if (c.contract.runs_on) try f.noteRunsOn(inst, true);
         if (c.contract.hosts) try f.hostsCall(inst);
+        if (c.contract.hosts_forked) try f.noteHostsForked(inst);
     } else if (fn_root != none) {
+        const r0 = f.roots.items[fn_root];
+        f.sender_call = r0.index < f.param_ty.items.len and m.isSender(f.param_ty.items[r0.index]);
+        defer f.sender_call = false;
         try f.noteRunsOn(inst, false);
     } else if (js_callee) {
         try f.jsArgsRunOn(inst, args, vals.items);
@@ -8790,6 +8809,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     if (code) |c| {
         if (c.contract.runs_on) try f.noteRunsOn(inst, true);
         if (c.contract.hosts) try f.hostsCall(inst);
+        if (c.contract.hosts_forked) try f.noteHostsForked(inst);
     } else if (target != .reads) try f.noteRunsOn(inst, true);
     f.revokeAt(inst, false, wrote);
     try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
@@ -8845,7 +8865,24 @@ fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
         try f.noteRunsOn(inst, true);
         f.revokeAt(inst, true, true);
     }
-    if (x.hosts or ev_info.effect.hosts) try f.hostsCall(inst);
+    if (x.hosts) try f.hostsCall(inst);
+    // Code the compiler derives runs it within the call, but what it
+    // started can outlive the call (#2638).
+    if (x.hosts_forked) try f.noteHostsForked(inst);
+    // A hosting function handed as evidence: only code of the compiler's
+    // own runs it within the call. Any other callee (a declaration, the
+    // frame's own evidence, unknown code) has no contract that says what it
+    // does with its evidence, which it can run masked or lent to a
+    // scheduler of its own, or keep in an answer or a closure: evidence
+    // meets the default (kernel §13 item 12, *A defect*, (d), *The ways
+    // in*; #2633).
+    if (ev_info.effect.hosts) {
+        const within = if (site.callee.unwrap()) |ti| switch (dt.term(ti)) {
+            .derived, .ext_derived, .codec, .primitive => true,
+            .top, .ext, .undetermined, .param, .field, .identity, .text => false,
+        } else false;
+        if (within) try f.noteHostsForked(inst) else try m.addRefusal(f, inst, .call, "a function in which a writer or a reader of a cell it made runs in another fiber is handed as evidence (`where`), and the code it is handed to can run it masked, under a scheduler of its own, or after the call, so its code runs on after a throw");
+    }
     for ([_]u4{ 1, 2, 4, 8 }) |b| if (texts & b != 0) try m.addEvidenceRefusal(f, inst, Check.RowInfo.text(b));
     return x;
 }
@@ -11399,9 +11436,27 @@ fn answersFn(use: *const Use) bool {
 /// own function parameter, or one that runs it within, passes no
 /// `contract`: the caller judges what it hands there.
 fn noteRunsOn(f: *Frame, inst: u32, contract: bool) Error!void {
+    // After a fiber that hosts a writer or a reader was started: an
+    // ancestor of it masked or lent while it is parked keeps it running
+    // after a throw (#2638). The runtime's `send` parks no fiber.
+    if (f.hosts_forked and !f.sender_call) try f.m.addRefusal(f, inst, .call, forked_refusal);
     if (contract) f.runs_on = true;
     if (std.mem.indexOfScalar(u32, f.runs_on_calls.items, inst) == null) try f.runs_on_calls.append(f.gpa, inst);
     if (contract and std.mem.indexOfScalar(u32, f.runs_on_known_calls.items, inst) == null) try f.runs_on_known_calls.append(f.gpa, inst);
+}
+
+const forked_refusal = "a call that can leave this fiber masked or under a scheduler of its own runs after a fiber in which a writer or a reader of a cell runs was started, and a fiber started by a masked or lent one runs on after a throw";
+
+/// A fiber started at the call `inst` (or by its callee, or by a function
+/// run within it) hosts a writer or a reader (kernel §13 item 12, *A
+/// defect*, (d), *Descendants of a masked fiber*; #2638): a fork's stop
+/// does not reach it where an ancestor of it is masked or lent while it is
+/// parked. So this frame hosts too (`hostsWithin`: refused in a window,
+/// and beside a function run within the call that can open one), and no
+/// later call may park the fiber masked or lent (`noteRunsOn`).
+fn noteHostsForked(f: *Frame, inst: u32) Error!void {
+    try f.hostsWithin(inst);
+    f.hosts_forked = true;
 }
 
 const within_refusal = "a function in which a writer or a reader of a cell it made runs in another fiber is run within a call that also runs a function that can leave this fiber masked or under a scheduler of its own, so code runs on after a throw in it";
@@ -11411,6 +11466,14 @@ const within_refusal = "a function in which a writer or a reader of a cell it ma
 /// #2622).
 fn noteRunsOnWithin(f: *Frame, inst: u32, contract: bool) Error!void {
     try f.noteRunsOn(inst, contract);
+    // The frame's own function parameters that the call runs within it
+    // run in the window this function can open (#2633).
+    if (contract and std.mem.indexOfScalar(u32, f.within_known_calls.items, inst) == null) {
+        try f.within_known_calls.append(f.gpa, inst);
+        for (f.within_own.items) |o| if (o[0] == inst) {
+            f.drafts.items[o[1]].runs_on = true;
+        };
+    }
     if (std.mem.indexOfScalar(u32, f.within_runs_on_calls.items, inst) != null) return;
     try f.within_runs_on_calls.append(f.gpa, inst);
     if (std.mem.indexOfScalar(u32, f.within_hosts_calls.items, inst) != null) try f.m.addRefusal(f, inst, .call, within_refusal);
@@ -11457,6 +11520,15 @@ fn revokeAt(f: *Frame, inst: u32, runs: bool, wrote: bool) void {
     } else false;
     if (std.mem.indexOfScalar(u32, f.within_runs_on_calls.items, inst)) |i| _ = f.within_runs_on_calls.swapRemove(i);
     if (std.mem.indexOfScalar(u32, f.within_hosts_calls.items, inst)) |i| _ = f.within_hosts_calls.swapRemove(i);
+    if (std.mem.indexOfScalar(u32, f.within_known_calls.items, inst)) |i| _ = f.within_known_calls.swapRemove(i);
+    {
+        var n: usize = 0;
+        for (f.within_own.items) |o| if (o[0] != inst) {
+            f.within_own.items[n] = o;
+            n += 1;
+        };
+        f.within_own.shrinkRetainingCapacity(n);
+    }
     const window = f.runs_on_window;
     if (runs or noted) f.runs_on_window = true;
     if (runs or known) f.runs_on_window_known = true;
@@ -11549,6 +11621,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     if (runsWithin(&use)) |cu| {
         if (lc.runs_on) try f.noteRunsOnWithin(cu.site.inst, true);
         if (lc.hosts) try f.hostsWithin(cu.site.inst);
+        if (lc.hosts_forked) try f.noteHostsForked(cu.site.inst);
     }
     // A writer of a cell it made runs at its switch points: where its
     // fiber can be masked or under a scheduler of its own, or where a holder
@@ -11559,7 +11632,13 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     // (a wrapper it answers runs where the frame calls the wrapper, which
     // can be inside a mask) or lets it out of sight (`Fn.kept_out`), or one
     // below any of them (kernel §13 item 12, *A defect*, (d), *Up*; #2622).
-    if (lc.hosts and (runsOnAt(&use) or (runsWithin(&use) == null and !try f.startedAt(&use)))) try f.refuse(&use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
+    if (lc.hosts and (runsOnAt(&use) or (runsWithin(&use) == null and !try f.startedAt(&use)))) {
+        try f.refuse(&use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
+    } else if (lc.hosts and runsWithin(&use) == null) {
+        // Started in a fiber of its own: a stop of this fiber's ancestors
+        // does not stop it while one of them is masked (#2638).
+        try f.noteHostsForked(use.site.inst);
+    }
     if (runsOnAt(&use)) for (0..code.ncaps) |k| if (f.isWriter(code, k)) {
         try f.refuse(&use, .call, "a function that reads or writes a cell it captured in another fiber runs where its fiber can be masked or under a scheduler of its own, so it runs on after a throw");
         break;
@@ -12283,7 +12362,17 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     // as a function with `hosts` called there would (`hostsCall`; kernel
     // §13 item 12, *A defect*, (d), *After such a call*; #2622).
     if (f.runs_on_window_known and runsWithin(&use) != null) f.drafts.items[di].runs_on = true;
-    if (runsWithin(&use)) |cu| try f.noteRunsOnWithin(cu.site.inst, false);
+    if (runsWithin(&use)) |cu| {
+        try f.noteRunsOnWithin(cu.site.inst, false);
+        // The call runs within it, in either order, this one and a
+        // function the walk knows, or one it does not know, that can park
+        // this fiber masked or lent (`within_known_calls`): the callee can
+        // run this one in the window the other opens, which is the case
+        // only the frame sees, since its caller sees one of the two alone
+        // (kernel §13 item 12, *A defect*, (d), *The ways in*; #2633).
+        if (std.mem.indexOfScalar(u32, f.within_known_calls.items, cu.site.inst) != null) f.drafts.items[di].runs_on = true;
+        try f.within_own.append(f.gpa, .{ cu.site.inst, di });
+    }
     // Held past the call where nothing starts it in a fiber of its own:
     // the caller refuses a hosting function here (kernel §13 item 12, *A
     // defect*, (d), *Up*; #2622).

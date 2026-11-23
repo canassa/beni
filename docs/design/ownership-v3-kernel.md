@@ -2910,7 +2910,8 @@ contents of a cell are locations, and that a call can change what a location of 
         such a holder carries it too (`Use.runs_on_above`, `runsOnAt`).
       - **`Fn.forks`**: the holder only starts the function in a new fiber, which begins unmasked
         in the scheduler of the fiber that starts it, whose stop stops it, and hands it to nothing else:
-        `Task.spawn`'s and `spawnDetached`'s work (worded, named: `Check.forksParam`), a race's branches
+        `Task.spawn`'s and `spawnDetached`'s work (worded, named: `Check.forksParam`; but on a page a
+        masked ancestor keeps it running after a throw: *Descendants of a masked fiber*, #2638), a race's branches
         (`Task.race`'s two and `raceAll`'s first, walked, named: `forksParams`; `begin` runs each as a
         fiber of its own), and the frame's own function parameter whose every use is such a holder.
       - **`Contract.hosts`**: a writer or a reader of a cell the body made runs in another fiber, or
@@ -3024,6 +3025,70 @@ contents of a cell are locations, and that a call can change what a location of 
         no code, data, a call's answer or a cell only through such a holder, so the rule at the
         holder covers them. It is the pessimistic side: `Task.spawn (wrap hosting)` is refused at
         `wrap`, though the wrapper is only forked after.
+      - **Descendants of a masked fiber** (*added 2026-11-23, #2638*). A third kind of fiber runs
+        program code after a throw elsewhere, beside a masked fiber and a fiber under another
+        scheduler: a fiber that a fork started (`Task.spawn`, `spawnDetached`, a race's branch,
+        `timeout`), while an ancestor of it is masked and parked. On a page the defect stop does not
+        reach it: its cancellation waits for the masked ancestor (blind round CA: 142 pages, each
+        wholly accepted before and TRAP under `--sanitize-lists`; `runtime-proof` with no cells).
+        So `Fn.forks`' "whose stop stops it" holds only where no ancestor of the new fiber is masked or
+        lent while the fiber lives, and that is decided where the ancestor is at the throw, not where
+        the fork is made: `Task.spawn hosting` and then `Task.uninterruptible λ⊤ → Task.sleep …` in
+        the same fiber traps too (`maskLater`). The rule (`Contract.hosts_forked`, `hosts-forked` in
+        the dump): a hosting function that a holder starts in a fiber of its own (*Up* accepts it
+        there, `startedAt`) makes the frame hosting (`noteHostsForked`), so *Up* judges the frame
+        where it is handed on (`Task.uninterruptible λ⊤ → Task.join (Task.spawn hosting)` is refused at
+        the mask, as `hosting` run within is), and from there to the end of the body every call that
+        can park the fiber masked or lent is refused (`noteRunsOn`, `forked_refusal`), but the
+        runtime's `send`, which parks no fiber. The contract says it, and a call of a callee with the
+        bit, or one that runs within it a function with it, does the same in the caller
+        (`noteHostsForked`): its own later masks are refused, a function that can mask or lend run
+        within the same call is refused beside it (`hostsWithin`), and so up the chain of callers. A
+        reader or a writer the frame registers needs no more: a mask of the frame's own fiber after
+        it revokes it (*In the frame*), and the frame's caller sees the frame's `hosts`. It is the
+        pessimistic side: `Task.start`'s root fiber and `spawnDetached`'s fiber have no masked
+        ancestor and are judged the same way, a callee that masks before it forks a hosting function
+        is refused as one that masks after, and a race or a timeout whose walked body masks is
+        refused where it starts a hosting function (`cells.mjs`' `runon.frame.maskChild`,
+        `maskLater`, `raceHost`, `timeoutHost`).
+      - **The ways in** (*added 2026-11-23, #2633*). Each fix of (d) closed the holes at the ways in
+        that its readers had found, and the next reader found another way (code reader CR6: `where`
+        evidence, and the frame's own function parameter beside a function that lends). So every way
+        a function value enters or leaves a frame is listed here against the four rules, each cell
+        with the code that answers it and a `cells.mjs` page that proves it (`runon.frame.<shape>`;
+        REFUSED where the live twin traps without the rule, SAME where the program is safe). *Down*:
+        a writer or a reader is registered only at a fork (`forkedAt`). *Up*: a hosting function
+        runs only within a call of the frame or started in a fiber of its own. *In the frame*: a call
+        that can park the fiber masked or lent revokes the writers and notes `runs_on`. *After*: the
+        window to the end of the body, and what the frame's own function parameter publishes.
+
+        | Way in or out | *Down* | *Up* | *In the frame* | *After* |
+        |---|---|---|---|---|
+        | 1. The frame's own function parameter, and a closure's capture (a parameter of its contract) | the caller registers, by the facts the draft publishes (`flowOwn`: `lost`, `not_forks`, `defect`) | the caller judges, by `runs_on`, `kept_out`, `after_call` (`flowOwn`, `callParam`) | a call of it, or one that runs it within, notes `runs_on` with no contract (`call`, `flowOwn`) | `runs_on` where a known window is open (`callParam`, `flowOwn`), `after_call` where only its own parameter's call opened it; **new**: `runs_on` where one call runs within it the parameter and a function that can park the fiber masked or lent, in either order (`within_known_calls`, `within_own`; `midLend`, `midNest`, `midRunner`) |
+        | 2. A function the frame makes or names: a lambda, a partial application (a lambda the parser makes), a reference to a declaration of this or another module, a local function, a join of them | `flowCode`: `forkedAt` before `isWriter`, `registerWriter` | `flowCode`: `hosts` with `runsOnAt`, or no `runsWithin` and no `startedAt` (`partHost`, `partLend`, `partArg`, `aliasHost`) | `flowCode`: run within a call, its `runs_on` and `hosts` count at the call (`noteRunsOnWithin`, `hostsWithin`) | the pair at one call is refused (`within_runs_on_calls`, `within_hosts_calls`) |
+        | 3. A call of a declaration, a closure or a reference, of this or another module (`declContract` reads the same `Contract`, every `Fn` fact) | `applyAt`: a closure the callee loses registers only where it forks | the callee's `hosts`: `hostsCall` (refused in a window) | the callee's `runs_on`: `noteRunsOn`, `revokeAt` | `runs_on_window`, `runs_on_window_known` |
+        | 4. A method call (`methodCall`) | none: its target is a declaration or code the compiler derives | a declaration: as 3; derived code: its effect through `termsInfo`, run within (`evidenceAt`, `hostsCall`) | a declaration: as 3; derived code: its `runs_on` (`evidenceAt`); a field, or a target the table does not name: unknown code, `noteRunsOn` | as 3; on the frame's own evidence (`.param`) it is a read, with no fact: the binding judges it (row 5) |
+        | 5. `where` evidence, bound at a call or a reference (`evidence`; another module's method by `Mod.edgeEffect`) | none: evidence is a declaration, never a closure of the frame | **new**: hosting evidence is refused at the binding unless the callee is code the compiler derives, which runs it within (`evidenceAt`; `evMask`, `evAfter`, `evLend`, `evTwice`, `evRef`, `evKeep`, `evMod`, `evModKeep`) | `runs_on` evidence: `noteRunsOn` and `revokeAt` at the binding, before the arguments flow (`evidenceAt`) | that window refuses the callee's `hosts` and a hosting argument at the call, and gives the frame's own parameter there `runs_on` (`evWriter`) |
+        | 6. Data and constructors (a record, a tuple, a list, a `Maybe`, a `Dict`) and cells (`Ref.make`, `Ref.set`) | `mention`, `flowTop`: no fork, so no writer (`stashRead`, `stashWrite`, `dataRead`, `boxRead`) | the default use: refused (`maybeHost`, `cellHost`) | read back, a value of no code: a call of it `noteRunsOn` (`call`), run within a call `flowUnknown` | as 3 |
+        | 7. A call's answer | the holder answers it (`flag_a`, `answersFn`): no fork (`wrapRead`) | `startedAt` is false at `answersFn` (`ansHost`, `ansIf`, `wrapHost*`) | in the caller a value of no code, as 6 | as 3 |
+        | 8. Code the walk does not know: a value of no code, a function handed what its holder hands (`defaultParams`), JavaScript (`jsCode`), markup and the runtime | `flowTop`: no fork | the default use: refused (`ownCallHost`, `evArg`) | `noteRunsOn` (`call`), `noteRunsOnWithin` (`flowUnknown`, `defaultParams`, `jsArgsRunOn`) | as 3 |
+        | 9. Core's holders: `spawn`, `spawnDetached`, races (`Fn.forks`), `start` (`Fn.starts`), masks and `withScheduler` (`Fn.runs_on`), hooks (`Fn.defect`), and every other walked parameter (`bracket`, `onExit`, `defer`, `par`, `forEach`, `timeout`, `restore`) | `forkedAt` (`Check.forksParam`, `forksParams`) | `startedAt` (`startsParams`); a walked contract says `lost`, `kept_out` or `runs_on` (`hookBracket`, `hookExit`, `hookDefer`, `hookDefect`, `parHost`, `forEachHost`, `restoreHost`); **new**: a start makes the frame hosting (`noteHostsForked`; `maskChild`, `maskRace`, `maskSpawner`) | `runsOnParams`, and the walked contracts | **new**: no call that can mask or lend after a start of a hosting function (`hosts_forked`; `maskLater`) |
+
+        The cells marked **new** were the holes (row 9's are *Descendants of a masked fiber*, above). *Row 5, Up*: before, `evidenceAt` only called
+        `hostsCall` for hosting evidence, which refuses only in a window already open, and in the
+        callee a dispatch site on its evidence parameter is a read, with no fact: no contract said
+        what the callee does with its evidence, so `maskRun x = Task.uninterruptible λ⊤ → x.go`,
+        `keep x = λ⊤ → x.go` and a helper that hands it on ran a hosting method masked or lent with
+        no refusal. Evidence meets the default use: no contract follows it. It is the pessimistic
+        side: `callIt H` with `callIt x = x.go` and a hosting `go` is refused, though `callIt` runs it
+        within. *Row 1, After*: the frame's own parameter `h` that a callee runs after a function
+        that lends the fiber, both handed at one call (`twoCalls (λ⊤ → Task.withScheduler s …) h`),
+        published nothing, since the callee cannot judge the pair (its `after_call` on `h`) and the
+        frame's caller sees `h` alone. The frame sees both: it notes the pair as it notes a hosting
+        function beside one that lends (`within_runs_on_calls`), and gives `h` `runs_on`, also where
+        the other function is code the walk does not know, a list of them, or a function the callee
+        hands to another (`midRunner`: `defaultParams`). It is the pessimistic side, in either order,
+        as the pair is: `twoCalls h (λ⊤ → Task.withScheduler s …)` marks `h` too.
       No function is refused as a value for having `Fn.runs_on` on a parameter (unlike (a)): a
       writer or a hosting function never reaches a holder the walk does not follow (but the start of
       a fiber of its own, *Down* and *Up*, as amended for #2622), so a mask that

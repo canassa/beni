@@ -11596,3 +11596,21 @@ tests/corpus/run/CellRunsOnLive.beni CellRunsOnLive 150:5 #0 :: Task.withSchedul
 tests/corpus/run/CellRunsOnLive.beni CellRunsOnLive 150:27 #0 :: once r◆ :: absent :: rejected  v1 checks no cell operation; v2 refuses the cell operation by §2.13.7's rules
 tests/corpus/run/CellRunsOnLive.beni CellRunsOnLive 152:9 #0 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
 tests/corpus/run/CellRunsOnLive.beni CellRunsOnLive 152:9 #1 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWays Hoster 16:9 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWays Hoster 17:20 #0 :: cell r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWays Hoster 19:9 #0 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Hoster 16:9 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Hoster 17:20 #0 :: once r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Hoster 17:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 refuses the cell operation by §2.13.7's rules
+tests/corpus/run/CellRunsOnWaysLive Hoster 19:27 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Hoster 19:9 #0 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Hoster 19:9 #1 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Main 28:9 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Main 29:20 #0 :: once r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Main 29:9 #0 :: Task.spawn <lambda> :: absent :: rejected  v1 checks no cell operation; v2 refuses the cell operation by §2.13.7's rules
+tests/corpus/run/CellRunsOnWaysLive Main 31:27 #0 :: List.push l :: rejected :: accepted  v1 refuses the push in a cell callback; v2 accepts it there and judges the edit at the call, against the live loans (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Main 31:9 #0 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWaysLive Main 31:9 #1 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWays Main 28:9 #0 :: Ref.make <literal> :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWays Main 29:20 #0 :: cell r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)
+tests/corpus/run/CellRunsOnWays Main 31:9 #0 :: Ref.update r◆ :: absent :: accepted  v1 checks no cell operation; v2 judges the cell operation and its callback (§2.13.7, #1729)

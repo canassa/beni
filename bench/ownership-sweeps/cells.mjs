@@ -1266,6 +1266,61 @@ const RUNON_FRAMES = {
   // reviewer.
   listThenHost: () => ['_ = Task.spawn λ⊤ → runThenG [ λ⊤ → Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1) ] detachedThenThrow', 'Task.sleep (Duration.millis 50)'],
   capturedThenHost: () => ['lend = λ⊤ → Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)', 'h = λ⊤ → detachedThenThrow ⊤', '_ = Task.spawn λ⊤ →', '    lend ⊤', '    h ⊤', 'Task.sleep (Duration.millis 50)'],
+  // #2633: the ways a function value enters a frame (kernel §13 item 12 (d), *The ways in*). A
+  // hosting method handed as `where` evidence to a helper that runs it masked (`evMask`), lent
+  // (`evLend`), after a lend (`evAfter`), through a second helper (`evTwice`), bound at a reference
+  // (`evRef`), kept in an answer the fiber masks (`evKeep`), or from another module (`evMod`,
+  // `evModKeep`); and a hosting function handed to an evidence method (`evArg`). The frame's own
+  // function parameter run within a call beside a function that lends the fiber (`midLend`), inside
+  // a closure (`midNest`), after a list of them (`midList`), or after a function the callee hands
+  // another one (`midRunner`). A hosting function reached through a partial application
+  // (`partHost`, `partLend`, `partArg`), a call's answer (`ansHost`, `ansIf`), a cell (`cellHost`),
+  // a constructor (`maybeHost`), a local name (`aliasHost`), or handed to the frame's own function
+  // parameter (`ownCallHost`).
+  evMask: () => ['_ = Task.spawn λ⊤ → maskRun H', 'Task.sleep (Duration.millis 50)'],
+  evLend: () => ['_ = Task.spawn λ⊤ → lendRun sc D', 'Task.sleep (Duration.millis 50)'],
+  evAfter: () => ['_ = Task.spawn λ⊤ → afterLendRun sc D', 'Task.sleep (Duration.millis 50)'],
+  evTwice: () => ['_ = Task.spawn λ⊤ → maskRun2 H', 'Task.sleep (Duration.millis 50)'],
+  evRef: () => ['_ = Task.spawn λ⊤ → applyH maskRun H', 'Task.sleep (Duration.millis 50)'],
+  evKeep: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible (keep H)', 'Task.sleep (Duration.millis 50)'],
+  evMod: () => ['_ = Task.spawn λ⊤ → maskRun Hoster.HH', 'Task.sleep (Duration.millis 50)'],
+  evModKeep: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible (keep Hoster.HH)', 'Task.sleep (Duration.millis 50)'],
+  evArg: () => ['_ = Task.spawn λ⊤ → runEv H hosting', 'Task.sleep (Duration.millis 50)'],
+  midLend: () => ['_ = Task.spawn λ⊤ → midLend sc detachedThenThrow', 'Task.sleep (Duration.millis 50)'],
+  midNest: () => ['_ = Task.spawn λ⊤ → midNest sc detachedThenThrow', 'Task.sleep (Duration.millis 50)'],
+  midList: () => ['_ = Task.spawn λ⊤ → midList sc detachedThenThrow', 'Task.sleep (Duration.millis 50)'],
+  midRunner: () => ['_ = Task.spawn λ⊤ → midRunner sc detachedThenThrow', 'Task.sleep (Duration.millis 50)'],
+  partHost: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible (hostingN 1 _)', 'Task.sleep (Duration.millis 50)'],
+  partLend: () => ['_ = Task.spawn λ⊤ → Task.withScheduler sc (detachedThenThrowN 1 _)', 'Task.sleep (Duration.millis 50)'],
+  partArg: () => ['_ = Task.spawn λ⊤ →', '    p = maskArg hosting _', '    p 1', 'Task.sleep (Duration.millis 50)'],
+  ansHost: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible (pick ⊤)', 'Task.sleep (Duration.millis 50)'],
+  ansIf: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible (pickIf True)', 'Task.sleep (Duration.millis 50)'],
+  cellHost: () => ['_ = Task.spawn λ⊤ →', '    c = Ref.make hosting', '    Task.uninterruptible (Ref.get c)', 'Task.sleep (Duration.millis 50)'],
+  maybeHost: () => ['_ = Task.spawn λ⊤ →', '    case Just hosting of', '        Just g →', '            Task.uninterruptible g', '        Nothing →', '            ⊤', 'Task.sleep (Duration.millis 50)'],
+  aliasHost: () => ['_ = Task.spawn λ⊤ →', '    g = hosting', '    Task.uninterruptible g', 'Task.sleep (Duration.millis 50)'],
+  ownCallHost: () => ['_ = Task.spawn λ⊤ → app masked', 'Task.sleep (Duration.millis 50)'],
+  // A hosting function handed to core's holders: a release, an exit handler, a scope's finaliser, a
+  // defect hook, `par`, `forEach`, `timeout`, `race` and `restore`; and one reached through recursion
+  // (`recHost`), and a helper over evidence that lends the fiber while a reader it started reads
+  // (`evWriter`).
+  hookBracket: () => ['_ = Task.spawn λ⊤ → Task.bracket (λ⊤ → 0) (λ_ _ → hosting ⊤) λ_ → ⊤', 'Task.sleep (Duration.millis 50)'],
+  hookExit: () => ['_ = Task.spawn λ⊤ → Task.onExit (λ⊤ → ⊤) λ_ → hosting ⊤', 'Task.sleep (Duration.millis 50)'],
+  hookDefer: () => ['_ = Task.spawn λ⊤ → Task.scope λs → Task.defer s λ_ → hosting ⊤', 'Task.sleep (Duration.millis 50)'],
+  hookDefect: () => ['_ = Task.spawn λ⊤ → Task.onDefect hosting', 'Task.sleep (Duration.millis 50)'],
+  parHost: () => ['_ = Task.spawn λ⊤ → Task.par hosting λ⊤ → ⊤', 'Task.sleep (Duration.millis 50)'],
+  forEachHost: () => ['_ = Task.spawn λ⊤ → Task.forEach [ 1, 2 ] 2 λ_ → hosting ⊤', 'Task.sleep (Duration.millis 50)'],
+  timeoutHost: () => ['_ = Task.spawn λ⊤ → Task.timeout (Duration.millis 100) hosting', 'Task.sleep (Duration.millis 50)'],
+  raceHost: () => ['_ = Task.spawn λ⊤ → Task.race hosting λ⊤ → Task.sleep (Duration.millis 100)', 'Task.sleep (Duration.millis 50)'],
+  restoreHost: () => ['_ = Task.spawn λ⊤ → Task.uninterruptibleMask λrs → Task.restore rs hosting', 'Task.sleep (Duration.millis 50)'],
+  recHost: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible λ⊤ → loopHost 2', 'Task.sleep (Duration.millis 50)'],
+  evWriter: () => ['_ = Task.spawn λ⊤ → evWriter (S sc)', 'Task.sleep (Duration.millis 50)'],
+  // #2638: a hosting function forked under a fiber that is masked and parked at the throw
+  // (`maskChild`), also where the fiber masks only after the fork (`maskLater`), through a race
+  // (`maskRace`) and a helper over `spawn` (`maskSpawner`): the stop does not reach the child.
+  maskChild: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible λ⊤ → Task.join (Task.spawn hosting)', 'Task.sleep (Duration.millis 50)'],
+  maskLater: () => ['_ = Task.spawn λ⊤ →', '    _ = Task.spawn hosting', '    Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 50)', 'Task.sleep (Duration.millis 50)'],
+  maskRace: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible λ⊤ → Task.race hosting λ⊤ → Task.sleep (Duration.millis 100)', 'Task.sleep (Duration.millis 50)'],
+  maskSpawner: () => ['_ = Task.spawn λ⊤ →', '    spawner hosting', '    Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 50)', 'Task.sleep (Duration.millis 50)'],
 };
 const RUNON_HELD_DEFS = `
 
@@ -1313,6 +1368,208 @@ runThenG fs g =
     List.foldl fs ⊤ λh _ → h ⊤
     g ⊤
 `;
+// Each helper of the shapes below, by name: a program has only the ones its shape uses.
+const RUNON_WAYS_DEFS = (push) => ({
+  H: `pub type H
+    = H`,
+  go: `pub go : H → ⊤
+go h =
+    case h of
+        H →
+            hosting ⊤`,
+  run: `pub run : H, (⊤ → ⊤) → ⊤
+run h g =
+    case h of
+        H →
+            Task.uninterruptible g`,
+  D: `pub type D
+    = D`,
+  dgo: `pub dgo : D → ⊤
+dgo d =
+    case d of
+        D →
+            detachedThenThrow ⊤`,
+  maskRun: `maskRun : a → ⊤
+    where a.go : a → ⊤
+maskRun x = Task.uninterruptible λ⊤ → x.go`,
+  maskRun2: `maskRun2 : a → ⊤
+    where a.go : a → ⊤
+maskRun2 x = maskRun x`,
+  applyH: `applyH : (H → ⊤), H → ⊤
+applyH g x = g x`,
+  keep: `keep : a → (⊤ → ⊤)
+    where a.go : a → ⊤
+keep x = λ⊤ → x.go`,
+  lendRun: `lendRun : Scheduler, a → ⊤
+    where a.dgo : a → ⊤
+lendRun s x = Task.withScheduler s λ⊤ → x.dgo`,
+  afterLendRun: `afterLendRun : Scheduler, a → ⊤
+    where a.dgo : a → ⊤
+afterLendRun s x =
+    Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)
+    x.dgo`,
+  runEv: `runEv : a, (⊤ → ⊤) → ⊤
+    where a.run : a, (⊤ → ⊤) → ⊤
+runEv x g = x.run g`,
+  twoCalls: `twoCalls : (⊤ → ⊤), (⊤ → ⊤) → ⊤
+twoCalls f g =
+    f ⊤
+    g ⊤`,
+  runThenG: `runThenG : List (⊤ → ⊤), (⊤ → ⊤) → ⊤
+runThenG fs g =
+    List.foldl fs ⊤ λh _ → h ⊤
+    g ⊤`,
+  pAndH: `pAndH : ((⊤ → ⊤) → ⊤), (⊤ → ⊤), (⊤ → ⊤) → ⊤
+pAndH p l h =
+    p l
+    h ⊤`,
+  midLend: `midLend : Scheduler, (⊤ → ⊤) → ⊤
+midLend s h = twoCalls (λ⊤ → Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)) h`,
+  midNest: `midNest : Scheduler, (⊤ → ⊤) → ⊤
+midNest s h = twoCalls (λ⊤ → Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)) λ⊤ → h ⊤`,
+  midList: `midList : Scheduler, (⊤ → ⊤) → ⊤
+midList s h = runThenG [ λ⊤ → Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1) ] h`,
+  midRunner: `midRunner : Scheduler, (⊤ → ⊤) → ⊤
+midRunner s h = pAndH (λx → x ⊤) (λ⊤ → Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)) h`,
+  hostingN: `hostingN : Int, ⊤ → ⊤
+hostingN n ⊤ =
+    r = Ref.make [ 1, n ]
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        bump r
+    Task.sleep (Duration.millis 5)
+    Log.info (ints (Ref.get r))`,
+  detachedThenThrowN: `detachedThenThrowN : Int, ⊤ → ⊤
+detachedThenThrowN n ⊤ =
+    q = Ref.make [ 1, n ]
+    _ = Task.spawnDetached λ⊤ →
+        Task.sleep (Duration.millis 5)
+        Log.info (ints (Ref.get q))
+    Ref.update q λl →
+        l2 = ${push}
+        k = deep 0
+        if k > 0 then l2 else l2`,
+  maskArg: `maskArg : (⊤ → ⊤), Int → ⊤
+maskArg g n = Task.uninterruptible g`,
+  pick: `pick : ⊤ → (⊤ → ⊤)
+pick ⊤ = hosting`,
+  pickIf: `pickIf : Bool → (⊤ → ⊤)
+pickIf b = if b then hosting else λ⊤ → ⊤`,
+  app: `app : ((⊤ → ⊤) → ⊤) → ⊤
+app h = h hosting`,
+  spawner: `spawner : (⊤ → ⊤) → ⊤
+spawner g =
+    _ = Task.spawn g
+    ⊤`,
+  loopHost: `loopHost : Int → ⊤
+loopHost n = if n > 0 then loopHost (n - 1) else hosting ⊤`,
+  S: `pub type S
+    = S Scheduler`,
+  lendS: `pub lendS : S → ⊤
+lendS s =
+    case s of
+        S sc →
+            Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)`,
+  evWriter: `evWriter : a → ⊤
+    where a.lendS : a → ⊤
+evWriter x =
+    q = Ref.make [ 1, 2 ]
+    _ = Task.spawnDetached λ⊤ →
+        Task.sleep (Duration.millis 5)
+        Log.info (ints (Ref.get q))
+    x.lendS
+    Ref.update q λl →
+        l2 = ${push}
+        k = deep 0
+        if k > 0 then l2 else l2`,
+});
+// The second module of `evMod` and `evModKeep`: a type whose method hosts a writer.
+const RUNON_HOSTER = (push) => `-- The second module of runon.frame.evMod: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import List
+import Log
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+deep : Int → Int
+deep n = if n < 0 then 0 else 1 + deep (n + 1)
+
+
+bump : Ref (List Int) → ⊤
+bump h =
+    Ref.update h λl →
+        l2 = ${push}
+        n = deep 0
+        if n > 0 then l2 else l2
+
+
+hosting : ⊤ → ⊤
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        bump r
+    Task.sleep (Duration.millis 5)
+    Log.info (ints (Ref.get r))
+
+
+pub type HH
+    = HH
+
+
+pub go : HH → ⊤
+go h =
+    case h of
+        HH →
+            hosting ⊤
+`;
+// The helpers each shape of #2633 uses.
+const RUNON_WAYS = {
+  evMask: ['H', 'go', 'maskRun'],
+  evLend: ['D', 'dgo', 'lendRun'],
+  evAfter: ['D', 'dgo', 'afterLendRun'],
+  evTwice: ['H', 'go', 'maskRun', 'maskRun2'],
+  evRef: ['H', 'go', 'maskRun', 'applyH'],
+  evKeep: ['H', 'go', 'keep'],
+  evMod: ['maskRun'],
+  evModKeep: ['keep'],
+  evArg: ['H', 'run', 'runEv'],
+  midLend: ['twoCalls', 'midLend'],
+  midNest: ['twoCalls', 'midNest'],
+  midList: ['runThenG', 'midList'],
+  midRunner: ['pAndH', 'midRunner'],
+  partHost: ['hostingN'],
+  partLend: ['detachedThenThrowN'],
+  partArg: ['maskArg'],
+  ansHost: ['pick'],
+  ansIf: ['pickIf'],
+  cellHost: [],
+  maybeHost: [],
+  aliasHost: [],
+  ownCallHost: ['app'],
+  hookBracket: [],
+  hookExit: [],
+  hookDefer: [],
+  hookDefect: [],
+  parHost: [],
+  forEachHost: [],
+  timeoutHost: [],
+  raceHost: [],
+  restoreHost: [],
+  recHost: ['loopHost'],
+  evWriter: ['S', 'lendS', 'evWriter'],
+  maskChild: [],
+  maskLater: [],
+  maskRace: [],
+  maskSpawner: ['spawner'],
+};
+const RUNON_MODULES = ['evMod', 'evModKeep'];
 const RUNON_HELD = ['stashRead', 'stashWrite', 'dataRead', 'maskListRead', 'boxRead', 'wrapRead', 'memoRead', 'wrapHost', 'wrapHostLocal', 'wrapHostTwice', 'wrapHostLambda', 'wrapHostApplied', 'lendThenHost', 'twoCallsHost', 'listThenHost', 'capturedThenHost'];
 
 function genRunOn(other, writer, live) {
@@ -1329,7 +1586,7 @@ import Ref exposing (Ref)
 import String
 import Sub
 import Task exposing (Scheduler)
-import Tea
+import Tea${RUNON_MODULES.includes(writer) ? '\nimport Hoster' : ''}
 
 
 type Msg
@@ -1380,7 +1637,7 @@ hosting ⊤ =
         bump r
     Task.sleep (Duration.millis 5)
     Log.info (ints (Ref.get r))
-${RUNON_HELD.includes(writer) ? RUNON_HELD_DEFS : ''}
+${RUNON_HELD.includes(writer) ? RUNON_HELD_DEFS : ''}${writer in RUNON_WAYS && RUNON_WAYS[writer].length ? '\n\n' + RUNON_WAYS[writer].map((n) => RUNON_WAYS_DEFS(push)[n]).join('\n\n\n') + '\n' : ''}
 
 work : (Msg → ⊤) → ⊤
 work send =
@@ -1469,7 +1726,9 @@ if (runon.some(([o, w]) => `runon.${o}.${w}`.includes(filter))) {
   man.platforms = [path.relative(plat, path.join(root, 'platforms/browser-base'))];
   fs.writeFileSync(path.join(plat, 'beni.json'), JSON.stringify(man, null, 2) + '\n');
   for (const [other, writer] of runon) for (const live of [true, false]) {
-    emit(`runon.${other}.${writer}.${live ? 'live' : 'dead'}`, { 'Main.beni': genRunOn(other, writer, live), PLATFORM: path.relative(root, plat) + '\n', steps: 'throws advance 2\nadvance 10\nadvance 100\n' });
+    const files = { 'Main.beni': genRunOn(other, writer, live), PLATFORM: path.relative(root, plat) + '\n', steps: 'throws advance 2\nadvance 10\nadvance 100\n' };
+    if (RUNON_MODULES.includes(writer)) files['Hoster.beni'] = RUNON_HOSTER(live ? 'List.push l 5' : 'List.push (List.copy l) 5');
+    emit(`runon.${other}.${writer}.${live ? 'live' : 'dead'}`, files);
   }
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');

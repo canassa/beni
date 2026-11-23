@@ -109,7 +109,7 @@ async function judge(prog) {
       const kept = [];
       for (let i = 0; i < lines.length; i++) {
         if (/^file:\/\/\S+:\d+$/.test(lines[i])) { i += 2; continue; }
-        if (/^\s+at /.test(lines[i]) || lines[i].trim() === '') continue;
+        if (/^\s*at /.test(lines[i]) || lines[i].trim() === '') continue;
         kept.push(lines[i].replace(/timestamp=\S+ /g, '').split(tmp).join('<tmp>'));
       }
       return kept.join('\n');
