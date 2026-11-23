@@ -1,0 +1,3 @@
+# Body shown; the next bump makes the fallback throw.
+click #bump
+throws click #bump

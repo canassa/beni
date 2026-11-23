@@ -19033,14 +19033,22 @@ pub const Lowerer = struct {
         const tree = &st.built.tree;
         if (tree.kind(node) != .show) return true;
         const s = tree.show(node);
-        for ([_]?beni_markup.Value.Index{ s.when, if (s.mode == .key) s.key else null }) |x| {
-            const v = x orelse continue;
-            switch (st.built.values[@backingInt(v)]) {
-                .inst => |i| if (l.mayHaveEffect(i)) return true,
-                else => return true,
-            }
-        }
-        return false;
+        const when = switch (st.built.values[@backingInt(s.when)]) {
+            .inst => |i| i,
+            else => return true,
+        };
+        if (l.mayHaveEffect(when)) return true;
+        if (s.mode != .key) return false;
+        // The key function is called with `v`: what calling it may do. A
+        // lambda's body says; any other function value, what it reaches.
+        const key = switch (st.built.values[@backingInt(s.key orelse return true)]) {
+            .inst => |i| i,
+            else => return true,
+        };
+        if (l.mayHaveEffect(key)) return true;
+        if (l.bir.instTag(key) == .lambda) return l.mayHaveEffect(@fromBackingInt(@intCast(l.bir.instData(key).rhs)));
+        const d = l.in.direct orelse return true;
+        return d.debug_decls.len != 0 and l.instReachesDebug(key);
     }
 
     /// `cx.programShowFallbackText` (version 1.36): `e` of the fallback

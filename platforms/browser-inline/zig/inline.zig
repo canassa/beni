@@ -2088,7 +2088,7 @@ const Page = struct {
                 else if (tree.kind(children[ci + 1]) == .element)
                     .{ .at = .{ .parent = target, .at_mount = false, .next = true } }
                 else
-                    .{ .refused = "a `Show` followed by text, a hole or a `For` in its element" };
+                    .{ .refused = "a `Show` followed by text, a hole, a `For` or another `Show` in its element" };
                 try pg.show(child, ctx, at, inner);
                 continue;
             }
@@ -2443,9 +2443,8 @@ const Page = struct {
         var reads: std.ArrayList(m.Value.Index) = .empty;
         try pg.showReads(u.node, &reads);
         const entered = try pg.enter(blk, w.ctx, null, reads.items);
-        // `when`, the key function and the body's captures, in source
-        // order, where the `Show` stands; the fallback is evaluated only
-        // when it is shown.
+        // `when`, the key function and the body's captures, where the
+        // `Show` stands.
         var own: std.ArrayList(m.Value.Index) = .empty;
         try own.append(pg.a(), s.when);
         if (s.mode == .key) if (s.key) |k| try own.append(pg.a(), k);
@@ -2459,23 +2458,13 @@ const Page = struct {
             c.* = try cx.fresh("capture");
             try js.constant(blk, c.*, try cx.value(row.captures.at(@intCast(k))));
         }
-        // On `Just v`: the key once, then the body's values.
-        const then = try js.block();
-        const payload = try cx.fresh("item");
-        try js.constant(then, payload, try cx.maybe(try js.name(chosen)));
-        const key = if (s.mode == .key) try cx.call(try cx.value(s.key.?), &.{try js.name(payload)}) else try js.name(payload);
-        const key_name = try cx.fresh("key");
-        try js.constant(then, key_name, key);
-        const body = u.arms[1].?;
-        _ = try cx.rowValues(then, s.body, payload, null, captures);
-        const body_shown = try pg.showArm(body);
-        try js.expression(then, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(1), try js.name(key_name), body_shown[0], body_shown[1] }));
-        // On `Nothing`: the fallback, or nothing.
-        const otherwise = try js.block();
+        // The fallback, an attribute, evaluated at every pass whichever arm
+        // is taken, as `language.md` §11.18 orders a `Show`'s attributes:
+        // its values here, its `make` and `set` shown only on `Nothing`.
         const fb_shown: [2]m.Expr = if (u.arms[0]) |fb| shown: {
             if (fb.text) {
                 const t = try cx.fresh("text");
-                try js.constant(otherwise, t, try cx.programShowFallbackText(otherwise, u.node));
+                try js.constant(blk, t, try cx.programShowFallbackText(blk, u.node));
                 const template = try cx.fresh("template");
                 try js.constant(pg.body, template, try js.call(try js.name(try cx.runtime("forTemplate")), &.{try js.string(fb.plan.html)}));
                 const make = try cx.fresh("make");
@@ -2489,10 +2478,23 @@ const Page = struct {
             defer cx.programInlineLeave();
             var values: std.ArrayList(m.Value.Index) = .empty;
             try pg.unitValues(fb.plan, &values);
-            try pg.bindLets(otherwise, fb.root, values.items);
-            try cx.rootValues(otherwise, fb.root, values.items);
+            try pg.bindLets(blk, fb.root, values.items);
+            try cx.rootValues(blk, fb.root, values.items);
             break :shown try pg.showArm(fb);
         } else .{ try js.literal(.null), try js.literal(.null) };
+        // On `Just v`: the key once, then the body's values.
+        const then = try js.block();
+        const payload = try cx.fresh("item");
+        try js.constant(then, payload, try cx.maybe(try js.name(chosen)));
+        const key = if (s.mode == .key) try cx.call(try cx.value(s.key.?), &.{try js.name(payload)}) else try js.name(payload);
+        const key_name = try cx.fresh("key");
+        try js.constant(then, key_name, key);
+        const body = u.arms[1].?;
+        _ = try cx.rowValues(then, s.body, payload, null, captures);
+        const body_shown = try pg.showArm(body);
+        try js.expression(then, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(1), try js.name(key_name), body_shown[0], body_shown[1] }));
+        // On `Nothing`: the fallback, or nothing.
+        const otherwise = try js.block();
         try js.expression(otherwise, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(0), try js.literal(.undefined), fb_shown[0], fb_shown[1] }));
         try js.@"if"(blk, try cx.isJust(try js.name(chosen)), then, otherwise);
         pg.leave(entered);

@@ -1,0 +1,25 @@
+-- load
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <div>"fb"</div>
+    <section>
+      <p>"fb"</p>
+    </section>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <div>
+      <b>"1"</b>
+    </div>
+    <section>
+      <b>"1"</b>
+    </section>
+  </main>
+</body>
+-- throws click #bump
+(threw: Error: TODO: fallback evaluated)
+(the DOM did not change)
