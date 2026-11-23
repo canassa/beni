@@ -1,0 +1,152 @@
+-- load
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines"></p>
+  </main>
+</body>
+-- click #ok
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10"</p>
+  </main>
+</body>
+-- click #err
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10 | got err b 2 e2"</p>
+  </main>
+</body>
+-- click #outer-a
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10 | got err b 2 e2 | outer a 3 m3 30"</p>
+  </main>
+</body>
+-- click #outer-b
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10 | got err b 2 e2 | outer a 3 m3 30 | outer b 4 m4"</p>
+  </main>
+</body>
+-- click #rec
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10 | got err b 2 e2 | outer a 3 m3 30 | outer b 4 m4 | rec just r1 11"</p>
+  </main>
+</body>
+-- click #tup
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10 | got err b 2 e2 | outer a 3 m3 30 | outer b 4 m4 | rec just r1 11 | tup nothing t1"</p>
+  </main>
+</body>
+-- click #whole
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10 | got err b 2 e2 | outer a 3 m3 30 | outer b 4 m4 | rec just r1 11 | tup nothing t1 | whole w1 none"</p>
+  </main>
+</body>
+-- click #later
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10 | got err b 2 e2 | outer a 3 m3 30 | outer b 4 m4 | rec just r1 11 | tup nothing t1 | whole w1 none | later | got err c 5 e5 | outer a 6 m6 60 | rec nothing r7 | whole w8 80"</p>
+  </main>
+</body>
+-- click #held
+(the DOM did not change)
+-- click #held
+<body>
+  <main>
+    <button id="ok">"ok"</button>
+    <button id="err">"err"</button>
+    <button id="outer-a">"outer a"</button>
+    <button id="outer-b">"outer b"</button>
+    <button id="rec">"rec"</button>
+    <button id="tup">"tup"</button>
+    <button id="whole">"whole"</button>
+    <button id="later">"later"</button>
+    <button id="held">"held"</button>
+    <p id="lines">"got ok a 1 10 | got err b 2 e2 | outer a 3 m3 30 | outer b 4 m4 | rec just r1 11 | tup nothing t1 | whole w1 none | later | got err c 5 e5 | outer a 6 m6 60 | rec nothing r7 | whole w8 80 | got ok h 9 90"</p>
+  </main>
+</body>

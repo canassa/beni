@@ -1,0 +1,146 @@
+-- A key whose path passes a constructor of more than one field, a record
+-- or a tuple takes its message whole (browser-inline.md §8.4, amended
+-- 2026-11-23): the handler is handed the message itself, and the arm reads
+-- each field from it. Each button sends a message whose fields differ, so a
+-- field lost, or two swapped, shows in the line it logs:
+--
+--   - `Got` splits its third field and reads the first two;
+--   - `Outer` splits three constructors deep, through `Mid`, which has two
+--     fields, and reads a field at each level;
+--   - `Rec` and `Tup` split a field of a record and a component of a tuple,
+--     and read the other one;
+--   - `Whole` hands its message on to a function that reads it whole, also
+--     from a default step (`Whole#1 · _`);
+--   - `#later` sends its messages from a command's body, through the
+--     dispatcher, and `#held` sends the message the model holds.
+--
+-- The transcript is `browser-tea`'s but for the first page: the empty
+-- `#lines` has no text node here, where `browser-tea` writes an empty one.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Leaf
+    = A Int
+    | B
+
+
+type Mid
+    = Mid String Leaf
+
+
+type Msg
+    = Got String Int (Result String Int)
+    | Outer Int Mid
+    | Rec { name : String, choice : Maybe Int }
+    | Tup (String × Maybe Int)
+    | Whole String (Maybe Int)
+    | Later
+    | Held
+
+
+type alias Model =
+    lines : List String
+    held : Msg
+
+
+said : Model, String → Model
+said model line = { model | lines = List.push model.lines line }
+
+
+describe : Msg → String
+describe msg =
+    case msg of
+        Whole s (Just n) →
+            "whole ${s} ${String.fromInt n}"
+
+        Whole s Nothing →
+            "whole ${s} none"
+
+        _ →
+            "other"
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Got a n r →
+            case r of
+                Ok v →
+                    ( said model "got ok ${a} ${String.fromInt n} ${String.fromInt v}", Cmd.none )
+
+                Err why →
+                    ( said model "got err ${a} ${String.fromInt n} ${why}", Cmd.none )
+
+        Outer n (Mid s leaf) →
+            case leaf of
+                A k →
+                    ( said model "outer a ${String.fromInt n} ${s} ${String.fromInt k}", Cmd.none )
+
+                B →
+                    ( said model "outer b ${String.fromInt n} ${s}", Cmd.none )
+
+        Rec r →
+            case r.choice of
+                Just k →
+                    ( said model "rec just ${r.name} ${String.fromInt k}", Cmd.none )
+
+                Nothing →
+                    ( said model "rec nothing ${r.name}", Cmd.none )
+
+        Tup ( s, choice ) →
+            case choice of
+                Just k →
+                    ( said model "tup just ${s} ${String.fromInt k}", Cmd.none )
+
+                Nothing →
+                    ( said model "tup nothing ${s}", Cmd.none )
+
+        Whole _ m →
+            case m of
+                Just _ →
+                    ( said model (describe msg), Cmd.none )
+
+                _ →
+                    ( said model (describe msg), Cmd.none )
+
+        Later →
+            ( { model | lines = List.push model.lines "later" }
+            , Cmd.batch
+                [ Cmd.perform λsend → send (Got "c" 5 (Err "e5"))
+                , Cmd.perform λsend → send (Outer 6 (Mid "m6" (A 60)))
+                , Cmd.perform λsend → send (Rec { name = "r7", choice = Nothing })
+                , Cmd.perform λsend → send (Whole "w8" (Just 80))
+                ]
+            )
+
+        Held →
+            ( { model | held = Got "h" 9 (Ok 90) }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="ok" onClick={Got "a" 1 (Ok 10)}>ok</button>
+        <button id="err" onClick={Got "b" 2 (Err "e2")}>err</button>
+        <button id="outer-a" onClick={Outer 3 (Mid "m3" (A 30))}>outer a</button>
+        <button id="outer-b" onClick={Outer 4 (Mid "m4" B)}>outer b</button>
+        <button id="rec" onClick={Rec { name = "r1", choice = Just 11 }}>rec</button>
+        <button id="tup" onClick={Tup ( "t1", Nothing )}>tup</button>
+        <button id="whole" onClick={Whole "w1" Nothing}>whole</button>
+        <button id="later" onClick={Later}>later</button>
+        <button id="held" onClick={model.held}>held</button>
+        <p id="lines">{String.join model.lines " | "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { lines = [], held = Held }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

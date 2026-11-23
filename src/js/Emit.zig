@@ -5055,6 +5055,15 @@ const Emitter = struct {
                 if (prog.recognised and prog.keys[ki].steps.len != 0) {
                     const last = prog.keys[ki].steps[prog.keys[ki].steps.len - 1];
                     key.fields = if (last.ctor != Writes.none) w.ctorArity(last.ctor) else 1;
+                    // Version 1.35: a path through a constructor of other than
+                    // one field, a record or a tuple — the leaf's fields would
+                    // lose the rest of the message — hands the handler the
+                    // message itself (`browser-inline.md` §8.4, amended
+                    // 2026-11-23).
+                    if (keyTakesMessage(w, last.path)) {
+                        key.message = true;
+                        key.fields = 1;
+                    }
                 }
                 if (prog.recognised) {
                     const c = prog.keys[ki].caps;
@@ -5900,6 +5909,20 @@ const Emitter = struct {
 
     /// The constructor steps from the message's root to message path `p`:
     /// what a dispatcher reads to reach the value a key's step tests.
+    /// Whether a key whose last step splits the message at path `p` must
+    /// take the message whole (`Program.Key.message`): some step on the way
+    /// is a constructor of other than one field, a record or a tuple, whose
+    /// other fields a handler of the leaf's fields would not be handed.
+    fn keyTakesMessage(w: *const Writes, p: u32) bool {
+        var q = p;
+        while (q != Writes.none and w.pathParent(q) != Writes.none) : (q = w.pathParent(q)) switch (w.pathKind(q)) {
+            .ctor => if (w.ctorArity(w.pathA(q)) != 1) return true,
+            .tag => {},
+            else => return true,
+        };
+        return false;
+    }
+
     fn directAccess(e: *Emitter, w: *const Writes, p: u32) ![]const Lower.Direct.Access {
         var chain: std.ArrayList(u32) = .empty;
         var q = p;

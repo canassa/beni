@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 34 },
+    .targets = .{ .major = 1, .minor = 35 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called

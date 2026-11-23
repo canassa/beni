@@ -1,0 +1,4 @@
+# The bodies never wait, but the second: no fiber for the first and third.
+click #direct
+# The same bodies in fibers: the same log.
+click #fibers

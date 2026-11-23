@@ -97,7 +97,11 @@ const std = @import("std");
 /// Version 1.34 says of a hole's callee that its body is a branch
 /// (`Program.Callee.Refusal.branch`), which `programBranch` on the hole then
 /// reads (`browser-inline.md` §8.4, amended 2026-11-23, #2498).
-pub const version: Version = .{ .major = 1, .minor = 34 };
+/// Version 1.35 adds `Program.Key.message`, a key whose handler takes the
+/// message from its root because its path passes a constructor of other
+/// than one field, a record or a tuple (`browser-inline.md` §8.4, amended
+/// 2026-11-23).
+pub const version: Version = .{ .major = 1, .minor = 35 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -422,6 +426,13 @@ pub const Program = struct {
         /// one, however deep, else one (the message part itself): what a
         /// handler written from its fields takes (`programArmFields`).
         fields: u32 = 1,
+        /// 1.35: the handler takes the message itself, from its root, and
+        /// `fields` is one: the key's path passes a constructor of other
+        /// than one field, a record or a tuple, so the leaf constructor's
+        /// fields alone would lose the rest of the message, which `update`
+        /// may read (`browser-inline.md` §8.4, amended 2026-11-23). Every
+        /// sender hands it the message; `programArmFields` reads the parts.
+        message: bool = false,
         star_kind: StarKind = .none,
         /// 1.15: for a `*` key of lost precision, where the pass lost it: the
         /// first approximation in source order, and how many more.

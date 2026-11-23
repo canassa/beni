@@ -16638,7 +16638,7 @@ pub const Lowerer = struct {
                 const keys = l.directKeys();
                 if (key >= keys.len or m.field >= params.len) return null;
                 const s = l.directSteps(key);
-                if (!(s.len == 1 and s[0].named and keys[key].params == params.len)) return null;
+                if (!(s.len == 1 and s[0].named and !keys[key].message and keys[key].params == params.len)) return null;
                 subject = try l.ident(params[m.field], p);
                 steps = m.steps;
             },
@@ -17470,6 +17470,9 @@ pub const Lowerer = struct {
         /// other step splits a prefix of it.
         leaf: Direct.Step,
         fields: []const Node.Index,
+        /// The message itself, for a key that takes it from its root
+        /// (`Program.Key.message`): a part read whole is read from it.
+        root: ?Node.Index = null,
         /// `(declaration, local, depth)`: the local of that declaration
         /// holds the message's part at the leaf path's first `depth`
         /// accesses — 0 the message, `leaf.access.len` the leaf's value.
@@ -17515,10 +17518,26 @@ pub const Lowerer = struct {
         defer l.case_depth = depth;
         const outer = l.enterFunction(false);
         defer l.leaveFunction(outer);
-        const nodes = try l.scratch.alloc(Node.Index, fields.len);
-        for (nodes, fields) |*n, f| n.* = try l.ident(f, p);
         const steps = l.directSteps(key);
         const leaf = steps[steps.len - 1];
+        // A key that takes the message from its root (`Program.Key.message`,
+        // version 1.35) reads its leaf's fields, and each part a branch reads
+        // whole, from the message (`browser-inline.md` §8.4, amended
+        // 2026-11-23).
+        const root: ?Node.Index = if (l.directKeys()[key].message) try l.ident(fields[0], p) else null;
+        const nodes = if (root) |msg| leaf: {
+            const subject = try l.dispatchSubject(msg, leaf.access);
+            if (!leaf.named) break :leaf try l.scratch.dupe(Node.Index, &.{subject});
+            const rt = l.directCtor(leaf.ctor) orelse break :leaf try l.scratch.dupe(Node.Index, &.{});
+            const n = l.directArity(leaf.ctor) orelse 0;
+            const out = try l.scratch.alloc(Node.Index, n);
+            for (out, 0..) |*o, i| o.* = try l.ctorField(subject, rt[0], @intCast(i), p);
+            break :leaf out;
+        } else nodes: {
+            const out = try l.scratch.alloc(Node.Index, fields.len);
+            for (out, fields) |*n, f| n.* = try l.ident(f, p);
+            break :nodes out;
+        };
         for (steps) |s| {
             const prefix = s.access.len <= leaf.access.len and for (s.access, leaf.access[0..s.access.len]) |a, b| {
                 if (!std.meta.eql(a, b)) break false;
@@ -17533,7 +17552,7 @@ pub const Lowerer = struct {
                 return null;
             }
         }
-        var mt: MsgTrack = .{ .steps = steps, .leaf = leaf, .fields = nodes };
+        var mt: MsgTrack = .{ .steps = steps, .leaf = leaf, .fields = nodes, .root = root };
         const saved = try l.enterDecl(function.decl);
         defer l.leaveDecl(saved);
         try l.bindParam(&stmts, function.params[1], model);
@@ -17588,6 +17607,8 @@ pub const Lowerer = struct {
     /// a branch that reads it whole is handed (D-e).
     fn heldValue(l: *Lowerer, mt: *MsgTrack, depth: u32, p: u32) Allocator.Error!?Node.Index {
         const path = mt.leaf.access;
+        // The message the handler was handed: the part is read from it.
+        if (mt.root) |msg| return try l.dispatchSubject(msg, path[0..depth]);
         if (depth == path.len) {
             if (!mt.leaf.named) return if (mt.fields.len == 1) mt.fields[0] else null;
             const rt = l.directCtor(mt.leaf.ctor) orelse return null;
@@ -17681,17 +17702,24 @@ pub const Lowerer = struct {
                             if (!l.sameCtor(@fromBackingInt(@intCast(pd.lhs)), ctor)) continue;
                             const subs = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(pd.rhs))), Inst.Index);
                             // Taken only when every field pattern is one this
-                            // binds: a variable, or nothing.
+                            // binds: a variable, or nothing. Off the leaf
+                            // path, a variable binds the field read from the
+                            // message, for a key handed the message
+                            // (`Program.Key.message`).
                             for (subs, 0..) |sub, i| switch (l.bir.instTag(sub)) {
                                 .pat_var => if (leaf) {
                                     if (i >= mt.fields.len) return null;
-                                } else if (i != next_field.?) return null,
+                                } else if (i != next_field.? and (mt.root == null or l.directCtor(ctor) == null)) return null,
                                 .pat_wild, .pat_unit => {},
                                 else => return null,
                             };
                             for (subs, 0..) |sub, i| if (l.bir.instTag(sub) == .pat_var) {
                                 if (leaf) {
                                     try l.bindParam(out, sub, mt.fields[i]);
+                                } else if (i != next_field.?) {
+                                    const rt = l.directCtor(ctor).?;
+                                    const part = (try l.heldValue(mt, depth, l.pos(sub))).?;
+                                    try l.bindParam(out, sub, try l.ctorField(part, rt[0], @intCast(i), l.pos(sub)));
                                 } else try mt.held.append(l.scratch, .{ l.decl_index.?, l.bir.instData(sub).lhs, depth + 1 });
                             };
                             return try l.expr(out, body);
@@ -19880,7 +19908,9 @@ pub const Lowerer = struct {
         switch (composed) {
             .layers => |layers| if (l.keyOfLayers(layers)) |found| {
                 const steps = l.directSteps(found.key);
-                const args: []const Node.Index = if (steps.len == 0)
+                // A key of no steps, or one that takes the message from its
+                // root (`Program.Key.message`), is handed the message whole.
+                const args: []const Node.Index = if (steps.len == 0 or l.directKeys()[found.key].message)
                     &.{try l.composedValue(composed, p)}
                 else blk: {
                     const leaf = steps[steps.len - 1].access.len;
@@ -20054,7 +20084,7 @@ pub const Lowerer = struct {
         // last step names, however deep, or the value the last step tests
         // at a default one — the message itself for a key of no steps.
         const args = try l.scratch.alloc(Node.Index, key.fields);
-        if (steps.len == 0) {
+        if (steps.len == 0 or key.message) {
             for (args) |*a| a.* = msg;
         } else {
             const leaf = steps[steps.len - 1];
