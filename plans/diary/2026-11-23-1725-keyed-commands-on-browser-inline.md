@@ -1,7 +1,7 @@
 ## 2026-11-23 17:25 CET — keyed commands on browser-inline
 
 **What I did.** `browser-inline` compiles `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cmd.map`
-(#2615; `browser-inline.md` §4 and `write-sets.md`, amended 2026-11-23; interface 1.32). The
+(#2615; `browser-inline.md` §4 and `write-sets.md`, amended 2026-11-23; interface 1.33). The
 write-set pass reads a keyed command as its body, a cancellation as work with no body, and a map
 as its command's bodies. `Inline.beni` keeps a table of the bodies running under each key path per
 program: an item changes the table where `commands` reads it, and the body starts as an unkeyed
