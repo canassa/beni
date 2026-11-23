@@ -1,0 +1,77 @@
+-- load
+<body>
+  <main>
+    <button id="start-1">"start 1"</button>
+    <button id="start-2">"start 2"</button>
+    <button id="top">"top"</button>
+    <button id="stop-1">"stop 1"</button>
+    <button id="stop-all">"stop all"</button>
+  </main>
+</body>
+-- click #start-1
+console.log: start: "child 1 0"
+(the DOM did not change)
+-- click #start-2
+console.log: start: "child 2 1"
+(the DOM did not change)
+-- click #top
+console.log: start: "top 2"
+(the DOM did not change)
+-- advance 100
+console.log: end: "child 1 0"
+console.log: finished: "child 1 0 (through 1)"
+console.log: end: "child 2 1"
+console.log: finished: "child 2 1 (through 2)"
+console.log: end: "top 2"
+console.log: finished: "top 2"
+(the DOM did not change)
+-- click #start-1
+console.log: start: "child 1 3"
+(the DOM did not change)
+-- click #start-2
+console.log: start: "child 2 4"
+(the DOM did not change)
+-- click #start-1
+console.log: cancelled: "child 1 3"
+console.log: start: "child 1 5"
+(the DOM did not change)
+-- advance 100
+console.log: end: "child 2 4"
+console.log: finished: "child 2 4 (through 2)"
+console.log: end: "child 1 5"
+console.log: finished: "child 1 5 (through 1)"
+(the DOM did not change)
+-- click #start-1
+console.log: start: "child 1 6"
+(the DOM did not change)
+-- click #start-2
+console.log: start: "child 2 7"
+(the DOM did not change)
+-- click #top
+console.log: start: "top 8"
+(the DOM did not change)
+-- click #stop-1
+console.log: cancelled: "child 1 6"
+(the DOM did not change)
+-- advance 100
+console.log: end: "child 2 7"
+console.log: finished: "child 2 7 (through 2)"
+console.log: end: "top 8"
+console.log: finished: "top 8"
+(the DOM did not change)
+-- click #start-1
+console.log: start: "child 1 9"
+(the DOM did not change)
+-- click #start-2
+console.log: start: "child 2 10"
+(the DOM did not change)
+-- click #top
+console.log: start: "top 11"
+(the DOM did not change)
+-- click #stop-all
+console.log: cancelled: "child 1 9"
+console.log: cancelled: "child 2 10"
+console.log: cancelled: "top 11"
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

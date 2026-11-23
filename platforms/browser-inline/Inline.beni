@@ -246,8 +246,343 @@ commands cmd dispatch = List.foldl (Cmd.items cmd) ⊤ λitem _ →
                 Js.null
                 Js.undefined
 
+        Cmd.Keyed path policy job →
+            keyed dispatch path policy job
+
+        Cmd.KeyedNow path policy job →
+            keyedNow dispatch path policy job
+
+        Cmd.Cancel path →
+            cancelRuns dispatch (takeRuns (keyTable dispatch) path)
+
+        Cmd.CancelAll prefix →
+            table = keyTable dispatch
+            from = keyAt table prefix 0 (Js.to (Js.get table "length"))
+            gone = Js.call table "splice" [ Js.from from, Js.from (prefixEnd table prefix from - from) ]
+            Js.each gone λrow → cancelRuns dispatch (Js.at row 1)
+
+
+-- ---- Keyed commands (`browser-inline.md` §4, amended 2026-11-23) -------
+--
+-- `browser-tea`'s command table, kept per program: the bodies running under
+-- each key path, and what a keyed command, `Cmd.cancel` and `Cmd.cancelAll`
+-- do to them (`boundary.md` §9.8.2). The table is changed where `commands`
+-- reads the item, in the item's order, so a later item of the same command
+-- sees what an earlier one did; a body starts where an unkeyed one does,
+-- queued behind the dispatch, so bodies start in the order of their items.
+-- Each body sends through an outlet of its own, which a restart or a
+-- cancellation closes at once. Only a `Keyed` item makes an `InFiber`, so a
+-- program whose keyed bodies never wait reaches no code that waits for or
+-- cancels a fiber: every such step is in an `InFiber` arm (`backend.md` §9,
+-- *A `case` arm on a constructor nothing builds*).
+
+-- A keyed body that has not been forgotten, and its cell: `{ o, f }`, its
+-- outlet's state and its fiber, null until it is spawned, for a body that
+-- may wait; `{ o, p }`, its outlet's state and whether it has yet to run,
+-- for one that never does.
+type Run
+    = InFiber V
+    | Queued V
+
+
+-- Per program dispatcher: its table, an array of `[path, runs]` sorted by
+-- path, `runs` an array of `Run`s, oldest first. Null until the first keyed
+-- item of the page.
+keyTables : Js.Ref V
+keyTables = Js.ref Js.null
+
+
+keyTable : V → V
+keyTable dispatch =
+    if Js.isNull (Js.read keyTables) then
+        Js.write keyTables (Js.construct (Js.global "Map") [])
+    tables = Js.read keyTables
+    held = Js.call tables "get" [ dispatch ]
+    if Js.isUndefined held then
+        made = Js.array []
+        _ = Js.call tables "set" [ dispatch, made ]
+        made
+    else
+        held
+
+
+-- The first place whose path is not below `path`.
+keyAt : V, List Hosted.Key, Int, Int → Int
+keyAt table path lo hi =
+    if lo < hi then
+        mid = Js.shiftRight (lo + hi) 1
+        stored : List Hosted.Key
+        stored = Js.to (Js.at (Js.at table mid) 0)
+        if stored.compare path == LT then keyAt table path (mid + 1) hi else keyAt table path lo mid
+    else
+        lo
+
+
+-- The place of `path`'s entry, or -1.
+entryAt : V, List Hosted.Key → Int
+entryAt table path =
+    count : Int
+    count = Js.to (Js.get table "length")
+    i = keyAt table path 0 count
+    if i < count then
+        stored : List Hosted.Key
+        stored = Js.to (Js.at (Js.at table i) 0)
+        if stored == path then i else -1
+    else
+        -1
+
+
+-- The runs at `path` that have not ended, oldest first, in a new array.
+liveAt : V, List Hosted.Key → V
+liveAt table path =
+    live = Js.array []
+    i = entryAt table path
+    if i >= 0 then
+        Js.each (Js.at (Js.at table i) 1) λr →
+            if ongoing (Js.to r) then
+                _ = Js.call live "push" [ r ]
+                ⊤
+    live
+
+
+-- `path`'s runs are `runs` from now on.
+put : V, List Hosted.Key, V → ⊤
+put table path runs =
+    i = entryAt table path
+    if i >= 0 then
+        Js.setAt (Js.at table i) 1 runs
+    else
+        at = keyAt table path 0 (Js.to (Js.get table "length"))
+        _ = Js.call table "splice" [ Js.from at, Js.from 0, Js.array [ Js.from path, runs ] ]
+        ⊤
+
+
+-- `path`'s runs, its entry taken out of the table; an empty array when it
+-- has none.
+takeRuns : V, List Hosted.Key → V
+takeRuns table path =
+    i = entryAt table path
+    if i >= 0 then
+        Js.at (Js.at (Js.call table "splice" [ Js.from i, Js.from 1 ]) 0) 1
+    else
+        Js.array []
+
+
+-- The first place from `i` whose path does not start with `prefix`.
+prefixEnd : V, List Hosted.Key, Int → Int
+prefixEnd table prefix i =
+    if i < Js.to (Js.get table "length") && startsWith (Js.to (Js.at (Js.at table i) 0)) prefix then
+        prefixEnd table prefix (i + 1)
+    else
+        i
+
+
+startsWith : List Hosted.Key, List Hosted.Key → Bool
+startsWith path prefix =
+    case ( path, prefix ) of
+        ( _, [] ) →
+            True
+
+        ( [ p, …ps ], [ q, …qs ] ) →
+            if p == q then startsWith ps qs else False
+
         _ →
-            fault "a command the inline compiler did not compile"
+            False
+
+
+-- A keyed body that may wait.
+keyed : V, List Hosted.Key, Cmd.Policy, Hosted.Job V → ⊤
+keyed dispatch path policy job =
+    table = keyTable dispatch
+    old = liveAt table path
+    if Js.to (Js.get old "length") == 0 then
+        put table path (Js.array [ Js.from (spawned dispatch nothing job) ])
+    else
+        case policy of
+            Cmd.Restart →
+                closeRuns old
+                put table path (Js.array [ Js.from (spawned dispatch (λ⊤ → stopRuns old) job) ])
+
+            Cmd.Ignore →
+                ⊤
+
+            Cmd.Queue →
+                put table path (Js.array [ Js.from (spawned dispatch (λ⊤ → waitRuns old) job) ])
+
+            Cmd.Concurrent →
+                _ = Js.call old "push" [ Js.from (spawned dispatch nothing job) ]
+                put table path old
+
+
+-- A keyed body that never waits: queued as an unkeyed one is, unless a body
+-- it must wait for is in a fiber.
+keyedNow : V, List Hosted.Key, Cmd.Policy, Hosted.Job V → ⊤
+keyedNow dispatch path policy job =
+    table = keyTable dispatch
+    old = liveAt table path
+    if Js.to (Js.get old "length") == 0 then
+        put table path (Js.array [ Js.from (queued dispatch job) ])
+    else
+        case policy of
+            Cmd.Restart →
+                closeRuns old
+                put table path (Js.array [ Js.from (started policy old dispatch job 0) ])
+
+            Cmd.Ignore →
+                ⊤
+
+            Cmd.Queue →
+                put table path (Js.array [ Js.from (started policy old dispatch job 0) ])
+
+            Cmd.Concurrent →
+                _ = Js.call old "push" [ Js.from (queued dispatch job) ]
+                put table path old
+
+
+-- A body that never waits, once `old` have ended (`Restart` having closed
+-- them): queued, when none is in a fiber — what is queued before it runs
+-- first — and otherwise in a fiber that cancels them (`Restart`) or waits
+-- for them (`Queue`) first, since only a fiber can wait. The fiber is
+-- reached only through an `InFiber` arm.
+started : Cmd.Policy, V, V, Hosted.Job V, Int → Run
+started policy old dispatch job i =
+    if i < Js.to (Js.get old "length") then
+        case Js.to (Js.at old i) of
+            InFiber _ →
+                spawned
+                    dispatch
+                    (λ⊤ →
+                        case policy of
+                            Cmd.Restart →
+                                stopRuns old
+
+                            _ →
+                                waitRuns old
+                    )
+                    job
+
+            Queued _ →
+                started policy old dispatch job (i + 1)
+    else
+        queued dispatch job
+
+
+-- A body in a fiber of the program's scope, spawned where an unkeyed one
+-- is, which first runs `beforeBody`.
+spawned : V, (⊤ → ⊤), Hosted.Job V → Run
+spawned dispatch beforeBody job =
+    cell = Js.object [ ( "o", Js.from True ), ( "f", Js.null ) ]
+    send
+        (Js.from λ_ →
+            fiber =
+                Task.spawnIn (taskScope dispatch) λ⊤ →
+                    beforeBody ⊤
+                    Hosted.runJob job (outlet dispatch cell)
+            Js.set cell "f" (Js.from fiber)
+        )
+        Js.null
+        Js.undefined
+    InFiber cell
+
+
+-- A body that never waits, queued behind the dispatch as an unkeyed one is.
+queued : V, Hosted.Job V → Run
+queued dispatch job =
+    cell = Js.object [ ( "o", Js.from True ), ( "p", Js.from True ) ]
+    send
+        (Js.from λ_ →
+            Hosted.callJob job (outlet dispatch cell)
+            Js.set cell "p" (Js.from False)
+        )
+        Js.null
+        Js.undefined
+    Queued cell
+
+
+-- A run's `send`: the program's, until its cell is closed.
+outlet : V, V → Hosted.Send V
+outlet dispatch cell = λmsg → if Js.to (Js.get cell "o") then send dispatch msg Js.undefined
+
+
+ongoing : Run → Bool
+ongoing r =
+    case r of
+        InFiber cell →
+            fiber = Js.get cell "f"
+            Js.isNull fiber || Task.running (Js.to fiber)
+
+        Queued cell →
+            Js.to (Js.get cell "p")
+
+
+-- Close the outlets of `runs` now, so nothing they send after this lands.
+closeRuns : V → ⊤
+closeRuns runs = Js.each runs λr →
+    case Js.to r of
+        InFiber cell →
+            Js.set cell "o" (Js.from False)
+
+        Queued cell →
+            Js.set cell "o" (Js.from False)
+
+
+-- Close `runs` and cancel their fibers, in a fiber of the program's scope
+-- spawned where a body is, behind the bodies spawned before it. A body
+-- still queued runs to its end, as a fiber not yet started runs to its
+-- first wait before its cancellation can reach it.
+cancelRuns : V, V → ⊤
+cancelRuns dispatch runs =
+    closeRuns runs
+    cancelFrom dispatch runs 0
+
+
+-- The canceller, when a run of `runs` from `i` on is in a fiber.
+cancelFrom : V, V, Int → ⊤
+cancelFrom dispatch runs i =
+    if i < Js.to (Js.get runs "length") then
+        case Js.to (Js.at runs i) of
+            InFiber _ →
+                send
+                    (Js.from λ_ →
+                        _ = Task.spawnIn (taskScope dispatch) λ⊤ → stopRuns runs
+                        ⊤
+                    )
+                    Js.null
+                    Js.undefined
+
+            Queued _ →
+                cancelFrom dispatch runs (i + 1)
+
+
+-- Cancel each fiber and wait for its cleanup, the newest first.
+stopRuns : V → ⊤
+stopRuns runs = eachNewest runs λfiber → Task.cancel (Js.to fiber)
+
+
+-- Wait for each fiber to end, the newest first.
+waitRuns : V → ⊤
+waitRuns runs = eachNewest runs λfiber →
+    _ = Task.wait (Js.to fiber)
+    ⊤
+
+
+-- `f` applied to the fiber of each run of `runs` that has one, from the
+-- newest.
+eachNewest : V, (V → ⊤) → ⊤
+eachNewest runs f = newestFrom runs (Js.to (Js.get runs "length") - 1) f
+
+
+newestFrom : V, Int, (V → ⊤) → ⊤
+newestFrom runs i f =
+    if i >= 0 then
+        case Js.to (Js.at runs i) of
+            InFiber cell →
+                fiber = Js.get cell "f"
+                if not (Js.isNull fiber) then f fiber
+
+            Queued _ →
+                ⊤
+        newestFrom runs (i - 1) f
 
 
 -- A page reaches this map and the task kernel only when work can wait.

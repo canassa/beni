@@ -4223,6 +4223,12 @@ const Emitter = struct {
                     found.cmd_batch = ref(e, m, "batch");
                     found.cmd_perform = ref(e, m, "perform");
                     if (fx.after_render) found.cmd_after_render = ref(e, m, "afterRender");
+                    if (fx.keyed) {
+                        found.cmd_keyed = ref(e, m, "keyed");
+                        found.cmd_cancel = ref(e, m, "cancel");
+                        found.cmd_cancel_all = ref(e, m, "cancelAll");
+                        found.cmd_map = ref(e, m, "map");
+                    }
                 }
             }
             effects = found;

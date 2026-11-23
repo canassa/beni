@@ -1,0 +1,4 @@
+click #go
+click #flip
+click #go
+advance 1

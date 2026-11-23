@@ -1,0 +1,28 @@
+-- load
+<body>
+  <main>
+    <p id="got">"0"</p>
+    <button id="go">"go"</button>
+    <button id="flip">"flip"</button>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <p id="got">"1"</p>
+    <button id="go">"go"</button>
+    <button id="flip">"flip"</button>
+  </main>
+</body>
+-- click #flip
+(the DOM did not change)
+-- click #go
+(the DOM did not change)
+-- advance 1
+<body>
+  <main>
+    <p id="got">"2"</p>
+    <button id="go">"go"</button>
+    <button id="flip">"flip"</button>
+  </main>
+</body>

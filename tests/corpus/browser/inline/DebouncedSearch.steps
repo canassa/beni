@@ -1,0 +1,14 @@
+# "a", then "ab" 100 ms later: the first body is cancelled in its sleep.
+input #q "a"
+advance 100
+input #q "ab"
+# The debounce ends: "ab" is requested; the answer is 100 ms away.
+advance 250
+# "abc" while "ab"'s request is in flight: its answer never lands.
+advance 50
+input #q "abc"
+advance 400
+# Clearing the box cancels the search by key.
+input #q "x"
+input #q ""
+advance 400
