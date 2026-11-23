@@ -621,7 +621,7 @@ atDefect release =
         taskStop
         (if Js.isNull before then
             release
-        else
+         else
             Js.from λ⊤ →
                 _ = Js.apply release []
                 Js.to (Js.apply before [])
@@ -716,7 +716,17 @@ stopAll live = Js.each (Js.call live "splice" [ Js.from 0 ]) λrow →
             ⊤
 
         Hosted.Hears →
-            Js.to (Js.apply (Js.get cell "x") [])
+            unhear cell
+
+
+-- A closed key's listener removed, once it has been added: one whose
+-- start has not run, or threw, has none, and its start never runs.
+unhear : V → ⊤
+unhear cell =
+    x = Js.get cell "x"
+    if not (Js.isNull x) then
+        Js.set cell "x" Js.null
+        Js.to (Js.apply x [])
 
 
 --| `(live, dispatch, sub)`: the program's live subscriptions made the set
@@ -799,7 +809,7 @@ leave dispatch row =
             ⊤
 
         Hosted.Hears →
-            Js.to (Js.apply (Js.get cell "x") [])
+            unhear cell
 
 
 -- From the `i`th key of `order` on: one not live starts, with the body or
@@ -813,13 +823,15 @@ arriveFrom live order dispatch i =
         if rowOf live k < 0 then
             cell = Js.object [ ( "o", Js.from True ), ( "t", Js.at row 2 ), ( "x", Js.null ) ]
             at = place live k 0 (Js.to (Js.get live "length"))
-            _ = Js.call live "splice" [ Js.from at, Js.from 0, Js.array [ Js.from k, cell, Js.at row 1 ] ]
+            _ =
+                Js.call live "splice"
+                    [ Js.from at, Js.from 0, Js.array [ Js.from k, cell, Js.at row 1 ] ]
             begin dispatch cell (Js.to (Js.at row 1))
         arriveFrom live order dispatch (i + 1)
 
 
 -- A key's body run in a fiber of the program's scope, or its listener
--- added with the program's event entry; each value it sends is delivered
+-- added with the program's event entry; each value it sends is passed on
 -- through the cell.
 begin : V, V, Hosted.Kind → ⊤
 begin dispatch cell kind =
@@ -831,14 +843,29 @@ begin dispatch cell kind =
                 Js.suspending λ⊤ → Js.to (Js.apply body [ values ])
             Js.set cell "x" (Js.from fiber)
 
+        -- The listener is added where a fiber spawned now would first run,
+        -- in a microtask, through the guard: after the native event being
+        -- dispatched, which therefore never reaches it (`boundary.md`
+        -- §9.8.5, point 1). A key that left before then never adds it.
         Hosted.Hears →
-            Js.set cell "x" (subscribe λ⊤ → Js.apply body [ values ])
+            Js.to
+                (Js.apply (Js.global "queueMicrotask")
+                    [ Js.from λ_ →
+                        send
+                            (Js.from λ_ →
+                                if Js.to (Js.get cell "o") then
+                                    Js.set cell "x" (subscribe λ⊤ → Js.apply body [ values ])
+                            )
+                            Js.null
+                            Js.undefined
+                    ]
+                )
 
 
 -- One value a key's body or listener sent, while the key is live: through
--- the tagger of each of its current declarations, in order, each a
--- dispatch of its own or queued behind the one running, as a fixed set's
--- send is. One applied once the key has left is dropped.
+-- the tagger of each of its declarations current when it is sent, in
+-- order, each a dispatch of its own or queued behind the one running, as a
+-- fixed set's send is. One applied once the key has left is dropped.
 passOn : V, V, V → ⊤
 passOn cell dispatch value =
     if Js.to (Js.get cell "o") then
