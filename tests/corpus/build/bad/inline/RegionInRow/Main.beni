@@ -1,0 +1,27 @@
+-- A branch in a `For`'s row: a branch region of a row is not compiled yet
+-- (docs/design/browser-inline.md §8.2, amended 2026-11-23; §5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+view : List (Maybe String) → Html {}
+view rows =
+    <ul>
+        <For each={rows} keyed={False}>
+            {λrow →
+                <li>
+                    {case row of
+                        Just s →
+                            <b>{s}</b>
+
+                        Nothing →
+                            <i>none</i>
+                    }
+                </li>
+            }
+        </For>
+    </ul>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → [ Just "a", Nothing ], update = λ_ m → m, view = view }

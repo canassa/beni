@@ -221,29 +221,29 @@ A render clones a template once and patches only the holes whose values changed,
 record update keeps the identity of every field it does not name, and an unchanged field costs
 nothing. Build the model with updates, and keep an untouched list as the same value.
 
-## String classes on `browser-inline`
-
-Scalar String `class` values may be constant or change with the model. Empty strings retain
-an empty attribute. Class-list syntax and style lists remain compiler limits on this platform.
-
 ## Helpers on `browser-inline`
 
 On `browser-inline`, a view can call a function of its own module that returns markup. The
 compiler writes that markup at the call. These are still compiler limitations:
 
 - markup that is held or passed as data;
-- a helper argument that has an effect and that more than one binding function reads.
+- a helper argument that has an effect and that more than one binding function reads;
+- a class list or a style list. A String `class` can change; an empty one keeps the attribute.
 
 Keep the program as it is and report the limitation. Do not change its evaluation to make it
 compile. Only arm values that are proved pure and total are evaluated before their arm is shown.
 Other values are evaluated in the selected arm, from the current model. An argument that has an
 effect and that only an event reads is evaluated when its binding is refreshed, and a click does
-not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
-the markup-value diagnostic, and it never drops the export silently.
+not evaluate it again. A `pub` helper in a `--library` build is a markup value, refused with
+the markup-value diagnostic.
 
-`view` can have `let`s and statements before its markup. A `let` that more holes or an event read
-is computed one time when a value that it reads changes. A statement runs at the start and when a
-value that it reads changes, not at each render. A pattern `let` must be pure and total.
+`view` can have `let`s and statements before its markup. A `let` that more holes, an event or a
+branch read is computed one time when a value that it reads changes. A statement runs at the start
+and when a value that it reads changes. A pattern `let` must be pure and total.
+
+The body of `view`, or a hole, can be an `if` or a `case` of arms that are one element, `<></>` or a
+helper call whose body is one element. Limits: a choice with an effect, an unused arm `let`, a
+branch in a `For` row or an eager arm, and text after a branch.
 
 ## `For` on `browser-inline`
 

@@ -1,0 +1,23 @@
+-- A branch region followed by text in its element: its arm is put before
+-- the element after it, or at its element's end, so it is refused
+-- (docs/design/browser-inline.md §8.2, amended 2026-11-23; §5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+view : Maybe String → Html {}
+view name =
+    <p>
+        {case name of
+            Just s →
+                <b>{s}</b>
+
+            Nothing →
+                <i>none</i>
+        }
+        and more
+    </p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Just "ada", update = λ_ m → m, view = view }

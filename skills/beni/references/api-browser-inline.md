@@ -44,6 +44,7 @@ module Browser.Navigation
 module Inline
   opaque type NavigationKey
   value address : ⊤ → Url  -- impure
+  value armShown : V, V, V, V → ⊤  -- impure
   value arrived : Url → ⊤  -- impure
   value busy : ⊤ → Bool  -- impure
   value caught : V → ⊤  -- impure
@@ -82,6 +83,7 @@ module Inline
   value pass : V → ⊤  -- impure
   value passes : V → ⊤  -- impure
   value prop : V, V, V → ⊤  -- impure
+  value region : V, V, V → V  -- impure
   value root : V → V  -- impure
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure

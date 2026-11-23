@@ -496,6 +496,46 @@ beni over `Js` in `Inline.beni`:
   entered once per call, and a memo node per call is not built. A `view` whose body past its
   `let`s is an `if` or a `case` (`Program.view_branch`), a call (`page shown`) or a markup value
   stays class 1 (`browser/tea/RootSelector`, `TemplateRootLets`, `TemplateRootValue`).
+- **A branch region** (*amended 2026-11-23, #966*). A `view` whose body past its `let`s is an `if`
+  or a `case` (`Program.view_branch`), and an `html` hole of the `view`'s own markup whose value is
+  an `if` or a `case` that is not an eager `when` (its arms read what the branch binds, or have
+  `let`s, or are a helper's call), is a **branch region**: what `browser-tea` does for it, a
+  switch tearing the shown arm down and making the other, compiled.
+  - **One mount unit per arm.** Each arm whose result is one element written in place, or a call
+    of a function of the program's module whose body is one element (`Arm.What.call`), is a
+    template of its own, written as a `For`'s row is (§9, amended 2026-11-23): its HTML parsed
+    once, a `make` that clones it, finds its elements and wires its events, and a `set` that
+    writes its holes. An arm that is `<></>`, or that no value takes (`Arm.dead`), has no unit.
+  - **One binding entry** in the read set of the whole branch value — the scrutinee and every
+    arm's values, handlers included (`programHole`'s group of the hole, the root group for a
+    `view`'s body) — evaluates the value once (`programBranchChoose`), binds the arm it takes
+    (`programBranchBind`), evaluates every value of that arm, and only then hands the runtime's
+    `armShown` the arm's number, its `make` and its `set`. When the number is not the one shown,
+    `armShown` removes the shown arm's node and puts the new arm's made node where the region
+    stands — before the element after its hole, or at its parent's end, which is why a region
+    must be followed by an element or by nothing — then calls `set`. The region's state, made
+    at the mount by `region`, `own`s the arm shown, which `stop` removes. So a pass that writes the scrutinee and a value of the new arm writes the new
+    arm once, with fresh nodes, from the model the pass holds; a pass that writes only a value of
+    the shown arm writes it in place. No arm is skipped because a value is `===` the last one
+    (rule 8): every write of `set` compares with what the node shows, as a row's does.
+  - **The entry is guarded by the arm:** only the arm the value takes is evaluated and written; an
+    arm not shown holds no node and evaluates nothing (#459).
+  - **Events are wired at each swap**, by `make`, and go through the dispatcher with the message
+    `set` last kept (§9's rows): a listener of an arm a dispatch tore down, which the same event
+    reaches as it bubbles, sends the message that arm last showed, as Elm and `browser-tea` do
+    (`browser/tea/DetachedArmEvent`).
+  - The region's arm values are the arm's; the `view`'s `let`s are bound as the entry enters the
+    `view` (`programViewEnter`), so a `let` of a `view` whose body is a branch is evaluated once
+    per pass of the region's entry. `Lower` refuses one that may have an effect
+    (`effectfulBranchViewLet`).
+  - **What stays refused** (class 1, at the hole or the `view`): a branch whose value may have an
+    effect (`Branch.effect`), which `browser-tea` evaluates at every render and the region at a
+    pass of its read set; an arm that is a markup value (`Arm.What.value`), more than one node,
+    or has `let`s no hole reads (`Arm.statements`); in an arm, what a `For`'s row refuses (§9:
+    a helper's markup, a component, a `Show`, a hole of markup — a branch in an arm — and an
+    attribute that is not a property); a region inside an eager arm, a helper's markup or another
+    module's markup; a region in an element after which stands anything but an element or the
+    element's end; and a region on a page that prerenders.
 - **Evaluation order** (*added 2026-10-19, the review of #398*). A binding function evaluates, per
   context: first the `let`s it reads; then every value that may throw — a hole's or an attribute's
   value, or a `when`'s branch value, holding any call that is not a basic operator
@@ -1607,6 +1647,13 @@ the compiler"*, a language rule never says *"yet"*):
 | an attribute that changes and is not a DOM property `prop` writes | 1 | the element | `AttributeChanges/` |
 | an event whose handler value is a message no key can be named for when the program is built: *"… so its message would need a dispatcher …"* | 4 | the element | `MessageValue/` |
 | an `if` or `case` in markup that is not an eager `when`: arms that are not one element and `<></>`, or a shown arm that reads what the branch binds | 1 | the hole | `WhenBinds/` |
+
+*Amended 2026-11-23 (§8.2, a branch region):* the last row above keeps its markup values and its
+arms of more than one node; an `if` or a `case` whose shown arm reads what the branch binds, or
+whose arm calls a helper or has `let`s a hole reads, is a branch region, and `WhenBinds/` is the
+page `browser/inline/RegionEmptyArm`. What a region refuses is §8.2's list, in
+`RegionInRow/`, `RegionSelectorEffect/`, `RegionBeforeText/`, `RegionInEagerArm/`,
+`RegionArmStatements/` and `build/bad/prerender/ViewBranch/`.
 
 *Amended 2026-10-25 (S2's design pass):* the keyed `For` row above is replaced, from S2, by §9.6's
 rows; `ResearchListWidget/` moves to `ListRowsById/` with the class 3 text when S2's refusals land.

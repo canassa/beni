@@ -1,0 +1,88 @@
+-- A `view` whose body is a `case` of three arms is a branch region
+-- (docs/design/browser-inline.md §8.2, amended 2026-11-23): each arm a unit
+-- of its own, made when the value takes it and removed when it leaves. Each
+-- arm has a hole and a handler; a `let` of `view` is read by two arms; the
+-- input's payload reaches its key, and its value is the model's. Walked
+-- through every arm and back. Its transcript is `browser-tea`'s for the
+-- same source.
+import Html exposing (Html)
+import Tea
+
+
+type Page
+    = Home
+    | Count Int
+    | Named String
+
+
+type Msg
+    = GoHome
+    | GoCount
+    | GoNamed
+    | Bump
+    | Rename String
+
+
+type alias Model =
+    page : Page
+    visits : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        GoHome →
+            { model | page = Home, visits = model.visits + 1 }
+
+        GoCount →
+            { model | page = Count 0, visits = model.visits + 1 }
+
+        GoNamed →
+            { model | page = Named "ada", visits = model.visits + 1 }
+
+        Bump →
+            case model.page of
+                Count n →
+                    { model | page = Count (n + 1) }
+
+                _ →
+                    model
+
+        Rename s →
+            case model.page of
+                Named _ →
+                    { model | page = Named s }
+
+                _ →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    visits = "visit ${String.fromInt model.visits}"
+
+    case model.page of
+        Home →
+            <main id="home">
+                <p>{visits}</p>
+                <button id="count" onClick={GoCount}>count</button>
+            </main>
+
+        Count n →
+            <section id="counter">
+                <p>{visits}</p>
+                <b>{n}</b>
+                <button id="bump" onClick={Bump}>bump</button>
+                <button id="named" onClick={GoNamed}>named</button>
+            </section>
+
+        Named name →
+            <article>
+                <i>{name}</i>
+                <input id="name" value={name} onInput={Rename} />
+                <button id="home" onClick={GoHome}>home</button>
+            </article>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { page = Home, visits = 0 }, update = update, view = view }

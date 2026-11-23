@@ -1,0 +1,24 @@
+-- load
+<body>
+  <section>
+    <p>"first"</p>
+    <button id="grow">"grow"</button>
+  </section>
+</body>
+-- click #grow
+<body>
+  <section>
+    <p>"first"</p>
+    <p>"more"</p>
+    <button id="grow">"grow"</button>
+  </section>
+</body>
+-- click #grow
+<body>
+  <section>
+    <p>"first"</p>
+    <p>"more"</p>
+    <p>"more"</p>
+    <button id="grow">"grow"</button>
+  </section>
+</body>

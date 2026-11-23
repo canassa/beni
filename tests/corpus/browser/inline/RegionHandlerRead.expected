@@ -1,0 +1,51 @@
+-- load
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <p id="got">"-1"</p>
+    <button id="send">"on"</button>
+  </main>
+</body>
+-- click #bump
+(the DOM did not change)
+-- click #bump
+(the DOM did not change)
+-- click #send
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <p id="got">"2"</p>
+    <button id="send">"on"</button>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <p id="got">"2"</p>
+    <i>"off"</i>
+  </main>
+</body>
+-- click #bump
+(the DOM did not change)
+-- click #toggle
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <p id="got">"2"</p>
+    <button id="send">"on"</button>
+  </main>
+</body>
+-- click #send
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <p id="got">"3"</p>
+    <button id="send">"on"</button>
+  </main>
+</body>

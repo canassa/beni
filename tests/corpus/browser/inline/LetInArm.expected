@@ -1,0 +1,80 @@
+-- load
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="add">"add"</button>
+    <p id="doubled">"0"</p>
+  </main>
+</body>
+-- click #b
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="add">"add"</button>
+    <section>
+      <p id="empty">"empty"</p>
+      <ul></ul>
+    </section>
+  </main>
+</body>
+-- click #a
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="add">"add"</button>
+    <p id="doubled">"4"</p>
+  </main>
+</body>
+-- click #b
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="add">"add"</button>
+    <section>
+      <p id="empty">"empty"</p>
+      <ul></ul>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="add">"add"</button>
+    <section>
+      <p id="some">"1"</p>
+      <ul>
+        <li>"item 0"</li>
+      </ul>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="add">"add"</button>
+    <section>
+      <p id="some">"2"</p>
+      <ul>
+        <li>"item 1"</li>
+        <li>"item 0"</li>
+      </ul>
+    </section>
+  </main>
+</body>
+-- click #a
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="add">"add"</button>
+    <p id="doubled">"8"</p>
+  </main>
+</body>

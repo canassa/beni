@@ -1,0 +1,50 @@
+-- A `view` whose body is a `case` (docs/design/browser-inline.md §8.2, amended
+-- 2026-11-23): one branch region at the mount node, one entry in the read set
+-- of the whole value, which chooses the arm once and hands `armShown` its
+-- number, its `make` (a template cloned, its events wired to the dispatcher)
+-- and its `set`.
+import Html exposing (Html)
+import Tea
+
+
+type Model
+    = Idle
+    | Counting Int
+
+
+type Msg
+    = Start
+    | Bump
+    | Stop
+
+
+update : Msg, Model → Model
+update msg model =
+    case ( msg, model ) of
+        ( Start, _ ) →
+            Counting 0
+
+        ( Bump, Counting n ) →
+            Counting (n + 1)
+
+        ( Stop, _ ) →
+            Idle
+
+        _ →
+            model
+
+
+view : Model → Html Msg
+view model =
+    case model of
+        Idle →
+            <main><button onClick={Start}>start</button></main>
+
+        Counting n →
+            <section>
+                <b>{n}</b><button onClick={Bump}>+</button><button onClick={Stop}>stop</button>
+            </section>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Idle, update = update, view = view }

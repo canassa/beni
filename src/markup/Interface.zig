@@ -84,7 +84,11 @@ const std = @import("std");
 /// (`Lowering.Effects.after_render`).
 /// Version 1.30 adds `Context.programViewStatementGroups`: the read sets of a
 /// `view`'s statements (`browser-inline.md` §8.2, amended 2026-11-23).
-pub const version: Version = .{ .major = 1, .minor = 30 };
+/// Version 1.31 adds `Program.Branch.selector_effect`: whether choosing a
+/// branch's arm may have an effect (`browser-inline.md` §8.2, amended
+/// 2026-11-23, a branch region), and `Program.Arm.never`, an arm that
+/// never returns.
+pub const version: Version = .{ .major = 1, .minor = 31 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -578,6 +582,11 @@ pub const Program = struct {
         /// `reachesDebug` and `Tree.everyRender`.
         debug: bool = true,
         effect: bool = true,
+        /// 1.31: choosing the arm may have an effect: a `case`'s scrutinee,
+        /// or an `else if`'s, may, or the arguments of a call that is the
+        /// branch's one arm (`browser-inline.md` §8.2, amended 2026-11-23,
+        /// a branch region).
+        selector_effect: bool = true,
     };
 
     /// 1.10: one arm of a branch: what its result is, past the arm's
@@ -597,6 +606,11 @@ pub const Program = struct {
         /// failures execute only in the selected arm
         /// (`programBranchEager`).
         eager: bool = false,
+        /// 1.31: `what` is `value`, a call of core's `Debug.todo`, which never
+        /// returns: `programBranchChoose` throws when the value takes the arm,
+        /// so the arm shows nothing (`browser-inline.md` §8.2, amended
+        /// 2026-11-23, a branch region).
+        never: bool = false,
 
         pub const What = union(enum) {
             /// Markup written in place: this root, whose values are

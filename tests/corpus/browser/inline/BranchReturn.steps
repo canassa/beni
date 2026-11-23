@@ -1,0 +1,11 @@
+# A → B → A, the text the same.
+click #toggle
+click #toggle
+# Just → Nothing → Just, the payload the same.
+click #unpick
+click #pick
+# Home → Article → Home, then the home page's own button.
+click #bump
+click #article
+click #home
+click #bump
