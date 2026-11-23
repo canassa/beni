@@ -1,2 +1,0 @@
-click #go
-respond 1 200 chunks "a" "b" "c"

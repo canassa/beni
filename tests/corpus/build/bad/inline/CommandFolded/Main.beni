@@ -1,8 +1,7 @@
 -- A batch whose list a fold builds is not read (browser-inline.md §4,
 -- amended 2026-11-23): `List.foldl` answers a value the write-set pass
 -- does not see into, so it cannot say whether a body may suspend, and the
--- command is refused, class 4 (§5), never guessed. A `List.map` of the same
--- bodies is read.
+-- command is refused, class 4 (§5), never guessed.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub

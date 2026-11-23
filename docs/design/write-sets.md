@@ -2518,9 +2518,9 @@ The order of a deps set is a defect of its own, hidden by another: an `Alt` keep
 are equal up to the renaming of their roots, so a recursion whose base case maps its list also
 reaches the cap. Both are #2102.
 
-### *Amended 2026-11-23 (`browser-inline`'s commands, #966):* code that never returns, `bracket`, and a list of commands
+### *Amended 2026-11-23 (`browser-inline`'s commands, #966):* code that never returns, and `bracket`
 
-Three rows of §3.7 change, each because a command half of an arm could not be read through it
+Two rows of §3.7 change, each because the command half of an arm could not be read through it
 (`browser-inline.md` §4, amended 2026-11-23). No cap moves.
 
 - **`Debug.todo` is ⊥**, not `Fresh(∅)`. It never returns, so no value comes out of it, and ⊥ —
@@ -2535,10 +2535,9 @@ Three rows of §3.7 change, each because a command half of an arm could not be r
   (`core/Task.beni`; `run/BracketRelease` and `run/OnExitSeesOutcome` pin the value they answer).
   The release and the cleanup answer `⊤`, so they are walked for what they read and their answer
   is dropped. `Task`'s other functions stay `Fresh`. Pinned: `browser/inline/BracketInUpdate`.
-- **`List.map xs f` whose callback answers a command** — an effect term of `Cmd`'s, or
-  alternatives each of which is one — is a list built afresh (base none, edit `replaced`) holding
-  one element at `[*]`, `f`'s answer, and the reads of `xs`. It is `Cmd.batch`'s whole question:
-  which bodies may run, not how many. As a model value it is a `value` write, as any built list is.
-  Other list functions whose callbacks answer commands (`indexedMap`, `concatMap`, the folds) are
-  unchanged, and a batch of them stays unread. Pinned: `browser/inline/CommandsOverModelList`,
-  `SettlesManyFibers`; `build/bad/inline/CommandFolded`.
+
+The command reader is stricter in two places (`browser-inline.md` §4, amended 2026-11-23). An
+`Alt` with one alternative that is unread is unread as a whole, also beside an alternative that
+suspends. And only `[]` (`Lst(none, clear)`) is an empty list of commands. A `Lst(none, replaced)`
+with no elements is the value of a list that substitution lost (§4.2), and it is unread.
+A list of commands that `List.map` makes stays unread, waiting on #2617.

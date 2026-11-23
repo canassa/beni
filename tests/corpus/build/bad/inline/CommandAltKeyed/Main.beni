@@ -1,0 +1,56 @@
+-- A command chosen between a keyed one and one that suspends is refused
+-- (browser-inline.md §4, amended 2026-11-23): an alternative the pass
+-- cannot read makes the whole command unread, class 4 (§5). Before, the
+-- alternative that suspends was taken for the whole, the page built, and
+-- the keyed command failed when it ran.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+import Time
+
+
+type alias Model =
+    flag : Bool
+    got : Int
+
+
+type Msg
+    = Go
+    | Got
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Go →
+            if model.flag then
+                ( model, Cmd.keyed "k" Cmd.Restart λsend → send Got )
+            else
+                ( model
+                , Cmd.perform λsend →
+                    Task.sleep (Time.millis 1)
+                    send Got
+                )
+
+        Got →
+            ( { model | got = model.got + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="got">{String.fromInt model.got}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { flag = True, got = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
