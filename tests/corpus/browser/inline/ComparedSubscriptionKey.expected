@@ -1,0 +1,23 @@
+-- load
+console.log: start: ⊤
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- advance 50
+(the DOM did not change)
+-- click #flip
+(the DOM did not change)
+-- advance 60
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <p>"1"</p>
+  </main>
+</body>
+-- click #flip
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

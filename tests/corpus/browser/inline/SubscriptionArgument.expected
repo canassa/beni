@@ -1,0 +1,41 @@
+-- load
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="slower">"slower"</button>
+    <p></p>
+  </main>
+</body>
+-- advance 250
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="slower">"slower"</button>
+    <p>"a@100 a@200"</p>
+  </main>
+</body>
+-- click #relabel
+(the DOM did not change)
+-- advance 100
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="slower">"slower"</button>
+    <p>"a@100 a@200 b@300"</p>
+  </main>
+</body>
+-- click #slower
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- advance 299
+(the DOM did not change)
+-- advance 1
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="slower">"slower"</button>
+    <p>"a@100 a@200 b@300 b@650"</p>
+  </main>
+</body>

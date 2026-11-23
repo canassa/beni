@@ -1,0 +1,17 @@
+listeners window resize
+timers
+event window resize
+# Two ticks, at 100 and 200.
+advance 250
+# Off: the listener is removed and the clock cancelled at once.
+click #toggle
+listeners window resize
+timers
+event window resize
+advance 1000
+# On again at 1250: one listener, and the next tick at 1350.
+click #toggle
+listeners window resize
+timers
+event window resize
+advance 150

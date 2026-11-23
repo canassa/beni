@@ -4625,7 +4625,9 @@ const Emitter = struct {
         @memset(piece_at, &.{});
         for (e.writes_calls) |call| {
             const prog = &call.program;
-            if (prog.subscriptions_inst != Writes.none) {
+            // A set that reads the model is evaluated where the page runs
+            // (`browser-inline.md` §3, amended 2026-11-23): its field is not cut.
+            if (prog.subscriptions_inst != Writes.none and prog.subscriptions.class != .model) {
                 const b = e.writes_birs[prog.subscriptions_module];
                 try cuts.append(e.scratch, .{ .module = @fromBackingInt(@intCast(prog.subscriptions_module)), .lo = try Lift.low(b, e.scratch, prog.subscriptions_inst), .hi = prog.subscriptions_inst });
             }

@@ -1,0 +1,7 @@
+advance 250
+click #relabel
+advance 100
+click #slower
+timers
+advance 299
+advance 1

@@ -59,6 +59,7 @@ module Inline
   value forRows : V, V, V, V, V, V → ⊤  -- impure
   value forTemplate : String → V  -- impure
   value listen : V, V, V → ⊤  -- impure
+  value liveSet : V → V  -- impure
   value load : V, V, V, V → ⊤  -- impure
   value loadAll : V, V, V → ⊤  -- impure
   value loadAllPlanned : V, V, V → ⊤  -- impure
@@ -92,6 +93,7 @@ module Inline
   value run : V → ⊤  -- impure
   value safeUrl : V → V  -- impure
   value send : V, V, V → ⊤  -- impure
+  value settle : V, V, Sub V → ⊤  -- impure
   value startWork : V, V → V  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure

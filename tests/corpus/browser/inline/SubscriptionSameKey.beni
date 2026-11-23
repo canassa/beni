@@ -1,0 +1,71 @@
+-- Two declarations of one key are one resource, and two of one kind with
+-- other keys are two (browser-inline.md §3, amended 2026-11-23;
+-- boundary.md §9.8.5). Both `onResize` declarations share one listener,
+-- and each resize goes through both taggers, in declaration order; when
+-- the model drops the second, the listener stays, and a resize goes
+-- through the first alone. The two clocks have two intervals, so two
+-- keys: two timers, and dropping the slow one cancels it alone.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Resized String Browser.Events.Size
+    | Tick String Time.Posix
+    | DropSecond
+    | DropSlow
+
+
+type alias Model =
+    second : Bool
+    slow : Bool
+    log : List String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Resized who _ →
+            ( { model | log = [ …model.log, who ] }, Cmd.none )
+
+        Tick who t →
+            ( { model | log = [ …model.log, "${who}@${Time.toMillis t}" ] }, Cmd.none )
+
+        DropSecond →
+            ( { model | second = False }, Cmd.none )
+
+        DropSlow →
+            ( { model | slow = False }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    Sub.batch
+        [ Browser.Events.onResize (Resized "first" _)
+        , if model.second then Browser.Events.onResize (Resized "second" _) else Sub.none
+        , Time.every (Time.millis 100) (Tick "fast" _)
+        , if model.slow then Time.every (Time.millis 300) (Tick "slow" _) else Sub.none
+        ]
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="second" onClick={DropSecond}>drop second</button>
+        <button id="slow" onClick={DropSlow}>drop slow</button>
+        <p>{String.join model.log " "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { second = True, slow = True, log = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

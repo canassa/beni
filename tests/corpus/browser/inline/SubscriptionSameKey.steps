@@ -1,0 +1,12 @@
+listeners window resize
+timers
+event window resize
+advance 300
+# The second declaration leaves; its key stays, with one tagger.
+click #second
+listeners window resize
+event window resize
+# The slow clock leaves; the fast one keeps ticking.
+click #slow
+timers
+advance 300

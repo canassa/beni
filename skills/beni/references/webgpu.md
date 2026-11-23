@@ -215,9 +215,8 @@ refuses device descriptor =
 1. **`Gpu.Device.eachEvent device handler` calls `handler` with each event of the device.** It
    returns after the `Lost` event. A listener that starts after the loss gets `Lost` at once.
    Cancel the fiber to stop it.
-2. **`Gpu.Device.onEvent device tag` is the same as a subscription** in `browser-tea`. In
-   `browser-inline` it is a compiler limit: the device is in the model, and inline compiles only
-   subscriptions that do not depend on the model. Use `eachEvent` in a command there.
+2. **`Gpu.Device.onEvent device tag` is the same as a subscription.** Put it in `subscriptions`
+   while the model holds the device. When the device leaves the model, the subscription stops.
 3. **An `Uncaptured` event is a defect.** The engine runs every call under an error scope, so an
    error that no scope took is a fault in beni or in the browser. The listeners get the event,
    and then the program that made the device stops. Do not use events to find errors: each
