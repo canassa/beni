@@ -1,0 +1,8 @@
+click #tuple
+advance 50
+click #tuple
+advance 100
+click #record
+advance 50
+click #record
+advance 100

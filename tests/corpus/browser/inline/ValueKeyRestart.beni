@@ -1,0 +1,77 @@
+-- A copy of `browser/tea/ValueKeyRestart` on `browser-inline` (browser-inline.md §4,
+-- amended 2026-11-23), with the same transcript.
+--
+-- A custom key uses its type's own compare, including compare-EQ values
+-- built in different orders. Restart must cancel the previous body.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task exposing (Cancelled, Done)
+import Tea
+import Time
+
+
+type Bag
+    = Bag (List Int)
+
+
+pub compare : Bag, Bag → Order
+compare (Bag a) (Bag b) = List.compare (List.sort a) (List.sort b)
+
+
+type Msg
+    = ByBag
+
+
+ascending : List Int
+ascending = [ 1, 2, 3, 4, 5, 6, 7, 8 ]
+
+
+-- An even count builds from `ascending`, an odd one from its reverse.
+order : Int → List Int
+order n =
+    if Int.mod n 2 == 0 then
+        ascending
+    else
+        List.reverse ascending
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        ByBag →
+            ( n + 1
+            , Cmd.keyed (Bag (order n)) Cmd.Restart (work "bag ${String.fromInt (n + 1)}" _)
+            )
+
+
+work : String, Cmd.Send Msg → ⊤
+work name _ =
+    Task.bracket
+        (λ⊤ → ⊤)
+        (λ_ exit →
+            case exit of
+                Done _ →
+                    Debug.log "${name} done" ⊤
+
+                Cancelled →
+                    Debug.log "${name} cancelled" ⊤
+        )
+        λ_ → Time.sleep (Time.millis 100)
+
+
+view : Int → Html Msg
+view _ =
+    <main>
+        <button id="bag" onClick={ByBag}>bag</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

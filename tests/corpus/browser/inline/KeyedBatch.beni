@@ -1,0 +1,112 @@
+-- Keyed bodies that never wait, asked for in one `update` (browser-inline.md
+-- §4, amended 2026-11-23). The table is changed where the command is read,
+-- item by item, so a later item of one batch sees the body an earlier one
+-- queued as running, as `browser-tea` does:
+--
+--   - `Ignore`: the second body is dropped; a click after both ended starts
+--     the key again;
+--   - `Restart`: the first body still runs, since nothing stops a body that
+--     never waits, but its message is dropped;
+--   - `Queue`: both, in order;
+--   - `Cmd.cancelAll`: every key's body runs, and its message is dropped;
+--   - `Cmd.map`: a key under a segment is not the same key outside it, so
+--     the mapped `Ignore` drops only the mapped second body.
+--
+-- `browser-tea` runs the same bodies and logs the same lines, but for one
+-- order: a body's message here is queued behind the dispatch, after the
+-- bodies queued with it (§6), so `Queue` and `Cmd.map` log both bodies
+-- before either `update`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Ignore
+    | Restart
+    | Queue
+    | CancelAll
+    | Mapped
+    | Said String
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Ignore →
+            ( n + 1, pair Cmd.Ignore "i" n )
+
+        Restart →
+            ( n + 1, pair Cmd.Restart "r" n )
+
+        Queue →
+            ( n + 1, pair Cmd.Queue "q" n )
+
+        CancelAll →
+            ( n + 1
+            , Cmd.batch
+                [ say "x" Cmd.Concurrent "cancelled x"
+                , say "y" Cmd.Concurrent "cancelled y"
+                , Cmd.cancelAll
+                ]
+            )
+
+        Mapped →
+            ( n + 1
+            , Cmd.batch
+                [ Cmd.map (pair Cmd.Ignore "m" n) 1 inner
+                , say "m" Cmd.Ignore "outside"
+                ]
+            )
+
+        Said what →
+            Log.info "update: ${what}"
+            ( n, Cmd.none )
+
+
+inner : Msg → Msg
+inner m =
+    case m of
+        Said what →
+            Said "mapped ${what}"
+
+        _ →
+            m
+
+
+-- Two bodies under one key in one batch.
+pair : Cmd.Policy, String, Int → Cmd Msg
+pair policy key n =
+    Cmd.batch
+        [ say key policy "${key} first ${String.fromInt n}"
+        , say key policy "${key} second ${String.fromInt n}"
+        ]
+
+
+say : String, Cmd.Policy, String → Cmd Msg
+say key policy what = Cmd.keyed key policy λsend →
+    Log.info "body: ${what}"
+    send (Said what)
+
+
+view : Int → Html Msg
+view _ =
+    <main>
+        <button id="ignore" onClick={Ignore}>ignore</button>
+        <button id="restart" onClick={Restart}>restart</button>
+        <button id="queue" onClick={Queue}>queue</button>
+        <button id="cancel-all" onClick={CancelAll}>cancel all</button>
+        <button id="mapped" onClick={Mapped}>mapped</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

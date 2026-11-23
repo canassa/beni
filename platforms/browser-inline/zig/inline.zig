@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 31 },
+    .targets = .{ .major = 1, .minor = 32 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -180,6 +180,7 @@ pub const lowering: m.Lowering = .{
         .entry_capture = .{ .module = "Listen", .name = "callback" },
         .command_context = true,
         .after_render = true,
+        .keyed = true,
         .update_writers = &.{
             .{ .package = .core, .module = "Task", .name = "withClock" },
             .{ .package = .core, .module = "Task", .name = "withLogContext" },
@@ -3213,11 +3214,10 @@ const Page = struct {
             .runs, .suspends => return true,
             else => return cx.programReport(if (key == null) .init else .update, .not_implemented,
                 \\A limit of the compiler: the write-set pass could not read this command as
-                \\`Cmd.none`, `Cmd.batch`, `Cmd.perform` or `Cmd.afterRender`, and `browser-inline`
-                \\does not compile `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` or `Cmd.map` yet
-                \\(`docs/design/browser-inline.md` §4; §5, class 4). Write the command where `update`
-                \\returns it, with those four, or build this program with `--platform=browser-tea`,
-                \\which compiles it.
+                \\`Cmd.none`, `Cmd.batch`, `Cmd.perform`, `Cmd.afterRender`, `Cmd.keyed`,
+                \\`Cmd.cancel`, `Cmd.cancelAll` or `Cmd.map` (`docs/design/browser-inline.md` §4;
+                \\§5, class 4). Write the command where `update` returns it, with those, or build
+                \\this program with `--platform=browser-tea`, which compiles it.
             ),
         }
     }

@@ -1,7 +1,7 @@
--- A keyed command is not compiled on `browser-inline` yet
--- (browser-inline.md §4, amended 2026-11-23): its policies need a table
--- of the bodies running under each key, which the runtime does not have.
--- The refusal names `Cmd.keyed`, class 4 (§5).
+-- A keyed command compiles on `browser-inline` (browser-inline.md §4,
+-- amended 2026-11-23): the write-set pass reads `Cmd.keyed` as the body it
+-- runs, and the runtime keeps the bodies running under each key. It was
+-- refused, class 4, until the runtime had that table.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub
@@ -24,7 +24,7 @@ update msg n =
 
 
 view : Int → Html Msg
-view n = <main><button onClick={Go}>go</button><output>{n}</output></main>
+view n = <main><button id="go" onClick={Go}>go</button><output>{n}</output></main>
 
 
 main : Tea.Program

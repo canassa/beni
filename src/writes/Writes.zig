@@ -128,6 +128,11 @@ pub const Effects = struct {
     cmd_batch: Ref = .{},
     cmd_perform: Ref = .{},
     cmd_after_render: Ref = .{},
+    /// `browser-inline.md` §4, amended 2026-11-23 (keyed commands).
+    cmd_keyed: Ref = .{},
+    cmd_cancel: Ref = .{},
+    cmd_cancel_all: Ref = .{},
+    cmd_map: Ref = .{},
 
     pub const Ref = struct {
         m: u32 = none,
@@ -966,7 +971,7 @@ mu_seen: std.ArrayList(u32) = .empty,
 mu_walk: u32 = 0,
 /// `Input.effects`: the marker terms a subscription set, a declaration
 /// and a command are tuples headed by (`effectTerm`), made on first use.
-markers: [4]u32 = .{ none, none, none, none },
+markers: [5]u32 = .{ none, none, none, none, none },
 /// `Input.effects`: the last value `direct` walked in a key, before the
 /// k-limit cut it (`evalKey`).
 uncut: u32 = none,
@@ -2728,6 +2733,7 @@ fn topValue(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
     if (a.in.effects) |fx| {
         if (fx.sub_none.is(m, d)) return a.effectTerm(.sub, &.{});
         if (fx.cmd_none.is(m, d)) return a.effectTerm(.cmd, &.{});
+        if (fx.cmd_cancel_all.is(m, d)) return a.effectTerm(.cmd, &.{try a.marker(.cancel)});
     }
     const id = a.fnId(m, d);
     if (a.ctx.mode != .view) {
@@ -2902,15 +2908,17 @@ fn funArity(a: *Writes, t: u32) u32 {
 // declarations, a declaration one headed by the declaration marker —
 // `key, start, tag`, then each function a `Sub.map` composed onto the tag —
 // and a command one headed by the command marker whose parts are its
-// bodies. A marker is a string literal no program can write (its second
-// half is not 0), so no other value is one of these.
+// bodies — a cancellation (`Cmd.cancel`, `cancelAll`), which has none, is
+// the cancel marker itself among them. A marker is a string literal no
+// program can write (its second half is not 0), so no other value is one
+// of these.
 
-const Marker = enum(u2) { sub = 0, decl = 1, cmd = 2, work = 3 };
+const Marker = enum(u3) { sub = 0, decl = 1, cmd = 2, work = 3, cancel = 4 };
 
 fn marker(a: *Writes, which: Marker) Error!u32 {
     const i = @backingInt(which);
     if (a.markers[i] == none) {
-        const names = [_][]const u8{ "sub", "decl", "cmd", "work" };
+        const names = [_][]const u8{ "sub", "decl", "cmd", "work", "cancel" };
         a.markers[i] = try a.mkLit(lit_string, try a.internBytes(names[i]), 0xffff_ffff);
     }
     return a.markers[i];
@@ -2943,10 +2951,33 @@ fn effectConcat(a: *Writes, list: u32, which: Marker) Error!?u32 {
     var parts: std.ArrayList(u32) = .empty;
     var i: u32 = 1;
     while (i < a.termLen(list)) : (i += 1) {
-        const ps = a.effectParts(a.termWord(list, i), which) orelse return null;
+        const item = a.termWord(list, i);
+        if (which == .cmd) {
+            if (!try a.commandParts(item, &parts)) return null;
+            continue;
+        }
+        const ps = a.effectParts(item, which) orelse return null;
         try parts.appendSlice(a.arena(), ps);
     }
     return try a.effectTerm(which, parts.items);
+}
+
+/// The bodies of command term `t` appended to `parts`; false when `t` is
+/// not a command. A command chosen when it is made — `Cmd.batch [ if c then
+/// x else y ]`, `Cmd.map (if c then x else y) …` — has the bodies of each
+/// alternative: the reader asks only whether one may suspend
+/// (`write-sets.md`, amended 2026-11-23). A set of subscriptions that is
+/// chosen is not one, so only commands are read so.
+fn commandParts(a: *Writes, t: u32, parts: *std.ArrayList(u32)) Error!bool {
+    if (a.termTag(t) == .alt) {
+        for (0..a.altLen(t)) |k| {
+            if (!try a.commandParts(a.altItem(t, @intCast(k)).term, parts)) return false;
+        }
+        return true;
+    }
+    const ps = a.effectParts(t, .cmd) orelse return false;
+    try parts.appendSlice(a.arena(), ps);
+    return true;
 }
 
 /// A call of one of `Input.effects`' functions, as its term; null for any
@@ -2956,6 +2987,19 @@ fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!
     if (fx.sub_listen.is(m, d) and args.len == 3) return try a.effectTerm(.sub, &.{try a.effectTerm(.work, args)});
     if (fx.cmd_perform.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, args);
     if (fx.cmd_after_render.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, args);
+    // A keyed body is the body it runs: its key and policy are the
+    // runtime's table's, and a cancellation runs no body (`browser-inline.md`
+    // §4, amended 2026-11-23).
+    if (fx.cmd_keyed.is(m, d) and args.len == 3) return try a.effectTerm(.cmd, args[2..3]);
+    if (fx.cmd_cancel.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, &.{try a.marker(.cancel)});
+    if (fx.cmd_map.is(m, d) and args.len == 3) {
+        // The segment goes in front of each key path and the tagger onto
+        // each body's sends, both when the command runs: its bodies are
+        // the command's own.
+        var parts: std.ArrayList(u32) = .empty;
+        if (!try a.commandParts(args[0], &parts)) return try a.freshCall(args);
+        return try a.effectTerm(.cmd, parts.items);
+    }
     if (fx.sub_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .sub) orelse try a.freshCall(args);
     if (fx.cmd_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .cmd) orelse try a.freshCall(args);
     if (fx.sub_map.is(m, d) and args.len == 2) {
@@ -3017,7 +3061,10 @@ fn commandAt(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64
     }
     const bodies = try a.arena().dupe(u32, a.effectParts(t, .cmd) orelse return .{ .class = .unknown });
     if (bodies.len == 0) return .{ .class = .none };
+    const cancel = a.markers[@backingInt(Marker.cancel)];
     for (bodies) |body| {
+        // A cancellation runs, with no body to ask whether it suspends.
+        if (body == cancel) continue;
         if (a.termTag(body) != .fun) return .{ .class = .unknown };
         const at = a.funSite(body);
         if (try a.commandBodySuspends(body)) return .{ .class = .suspends, .module = at.m, .inst = at.inst };
@@ -7803,7 +7850,9 @@ pub fn closureLocal(a: *const Writes, t: u32, local: u32) u32 {
 /// it builds, and so may any term deeper than `depth`.
 fn scopedBodies(a: *const Writes, t: u32, depth: u32) bool {
     if (depth == 0) return true;
-    if (a.effectParts(t, .cmd)) |bodies| return bodies.len != 0;
+    if (a.effectParts(t, .cmd)) |bodies| return for (bodies) |body| {
+        if (body != a.markers[@backingInt(Marker.cancel)]) break true;
+    } else false;
     return switch (a.termTag(t)) {
         .same, .lit, .fresh, .ixeq => false,
         .tup => for (1..a.termLen(t)) |k| {

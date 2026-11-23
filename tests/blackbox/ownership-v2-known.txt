@@ -2819,6 +2819,7 @@ tests/corpus/browser/tea/ConduitTour ProfilePage 164:9 #0 :: send <CompletedFeed
 tests/corpus/browser/tea/DefectReleasesHost.beni DefectReleasesHost 93:5 #0 :: entry DefectReleasesHost.update model.seen :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/DetachedRowEvent.beni DetachedRowEvent 48:8 #0 :: entry DetachedRowEvent.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/DirectEvents.beni DirectEvents 58:5 #0 :: entry DirectEvents.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/DirectEvents.beni DirectEvents 61:5 #0 :: entry DirectEvents.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/DuplicateKeys.beni DuplicateKeys 86:5 #0 :: entry DuplicateKeys.update model.inserted :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/DuplicateKeys.beni DuplicateKeys 86:5 #0 :: entry DuplicateKeys.update model.rekeyed :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/DuplicateKeys.beni DuplicateKeys 86:5 #0 :: entry DuplicateKeys.update model.removed :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
@@ -2917,6 +2918,7 @@ tests/corpus/browser/tea/ValuePath Main 143:5 #0 :: entry Main.update model.root
 tests/corpus/browser/tea/ValuePathEvents Main 49:8 #0 :: entry Main.hit model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/WebSocketChat.beni WebSocketChat 114:5 #0 :: entry WebSocketChat.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/WebSocketDirect.beni WebSocketDirect 93:5 #0 :: entry WebSocketDirect.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/WebSocketDirect.beni WebSocketDirect 96:5 #0 :: entry WebSocketDirect.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/WebSocketFailures.beni WebSocketFailures 155:5 #0 :: entry WebSocketFailures.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/WebSocketLifetime.beni WebSocketLifetime 68:5 #0 :: entry WebSocketLifetime.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/WholeFor.beni WholeFor 68:5 #0 :: entry WholeFor.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

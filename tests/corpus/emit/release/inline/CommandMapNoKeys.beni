@@ -1,0 +1,35 @@
+-- A program that maps a command and makes no keyed one ships none of the
+-- key table (browser-inline.md §4, amended 2026-11-23): `Cmd.map`'s arms
+-- that build a `Keyed`, `KeyedNow`, `Cancel` or `CancelAll` are taken only
+-- on one that something else built (backend.md §9, *A `case` arm on a
+-- constructor nothing builds*), so `commands` keeps its `Now` arm alone,
+-- and no fiber runtime: the body never waits.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Got Int
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n, Cmd.map (Cmd.perform λsend → send 1) 0 Got )
+
+        Got k →
+            ( n + k, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><button onClick={Go}>go</button><output>{n}</output></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
