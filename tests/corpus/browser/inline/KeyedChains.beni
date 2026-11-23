@@ -1,0 +1,104 @@
+-- Every body still running under a key is the key's (boundary.md §9.8.2;
+-- browser-inline.md §4, amended 2026-11-23). Three `Queue` bodies under one
+-- key: the second and third wait, and all three stay under the key, so a
+-- `Restart` after them, or `Cmd.cancel`, closes and cancels every one, and
+-- none of their messages lands. And a child's `Cmd.cancelAll`, mapped under
+-- the segment 1, cancels the child's keys and not the parent's own key 1.
+-- `browser-tea` differs in both (#2627).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task exposing (Cancelled, Done)
+import Tea
+import Time
+
+
+type Msg
+    = QueueThenRestart
+    | QueueThree
+    | Stop
+    | Parent
+    | Child
+    | StopChild
+    | Got String
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        QueueThenRestart →
+            ( n + 1
+            , Cmd.batch
+                [ Cmd.keyed "q" Cmd.Queue (slow "q1" _)
+                , Cmd.keyed "q" Cmd.Queue (slow "q2" _)
+                , Cmd.keyed "q" Cmd.Restart (slow "q3" _)
+                ]
+            )
+
+        QueueThree →
+            ( n + 1
+            , Cmd.batch
+                [ Cmd.keyed "q" Cmd.Queue (slow "c1" _)
+                , Cmd.keyed "q" Cmd.Queue (slow "c2" _)
+                , Cmd.keyed "q" Cmd.Queue (slow "c3" _)
+                ]
+            )
+
+        Stop →
+            ( n, Cmd.cancel "q" )
+
+        Parent →
+            ( n + 1, Cmd.keyed 1 Cmd.Restart (slow "parent" _) )
+
+        Child →
+            ( n + 1, Cmd.map (Cmd.keyed 1 Cmd.Restart (slow "child" _)) 1 λm → m )
+
+        StopChild →
+            ( n, Cmd.map Cmd.cancelAll 1 λm → m )
+
+        Got what →
+            _ = Debug.log "got" what
+            ( n, Cmd.none )
+
+
+slow : String, Cmd.Send Msg → ⊤
+slow name send =
+    Task.bracket
+        (λ⊤ →
+            _ = Debug.log "start" name
+            ⊤
+        )
+        (λ_ exit →
+            case exit of
+                Done _ →
+                    _ = Debug.log "end" name
+                    ⊤
+
+                Cancelled →
+                    _ = Debug.log "cancelled" name
+                    ⊤
+        )
+        λ_ → Time.sleep (Time.millis 100)
+    send (Got name)
+
+
+view : Int → Html Msg
+view _ =
+    <main>
+        <button id="queue-restart" onClick={QueueThenRestart}>queue, restart</button>
+        <button id="queue-three" onClick={QueueThree}>queue three</button>
+        <button id="stop" onClick={Stop}>stop</button>
+        <button id="parent" onClick={Parent}>parent</button>
+        <button id="child" onClick={Child}>child</button>
+        <button id="stop-child" onClick={StopChild}>stop child</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

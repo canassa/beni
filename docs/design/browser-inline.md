@@ -164,19 +164,28 @@ superseded. A program may use `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cm
   command unread.
 - **The table.** `Inline.commands` keeps, per program, the bodies running under each key path,
   sorted by path with the path's `compare`. An item changes the table where `commands` reads it, in
-  the command's order, so a later item of one command sees what an earlier one did; the body itself
-  starts where an unkeyed body does, queued behind the dispatch (above), so bodies start in the
-  order of their items. Each body sends through an outlet of its own.
+  the command's order, so a later item of one command sees what an earlier one did. The body
+  itself starts as an unkeyed body does (above): one that never waits runs in the dispatch, after
+  the items queued before it; one that may wait is spawned there, in its item's order, and first
+  runs at the scheduler's next turn, after every body of the dispatch that never waits. Each body
+  sends through an outlet of its own.
   - `Restart` closes the outlets of the bodies running under the path at once, then starts the new
     body in a fiber that first cancels them and waits for their cleanup;
   - `Ignore` drops the new body while one runs;
-  - `Queue` starts it in a fiber that first waits for the running ones to end;
+  - `Queue` starts it in a fiber that first waits for the running ones to end, and keeps them
+    under the path beside it, so a later `Restart` or `Cmd.cancel` reaches every body queued
+    there (`boundary.md` §9.8.2: the fibers not yet ended, per path);
   - `Concurrent` adds it beside them;
-  - `Cmd.cancel` and `Cmd.cancelAll` take the path's entry, or every entry under the prefix, out
-    of the table, close their outlets at once and cancel their fibers in a fiber spawned behind
-    them;
+  - `Cmd.cancel` takes the path's entry out of the table, and `Cmd.cancelAll` every entry whose
+    path is longer than its prefix and starts with it — the keys of the component and of those it
+    maps in, not the key of the parent that equals the component's segment; each closes the
+    outlets at once and cancels the fibers in a fiber spawned behind them;
   - `Cmd.map` puts its segment in front of each item's path when the command is made (`Cmd.mapItem`),
-    so a child's keys never meet its parent's or another instance's.
+    so a child's keys never meet another instance's, and a child's `cancelAll` stops only its own.
+
+  `browser-tea`'s table differs in two points: its `Queue` keeps only the new body under
+  the path, and its `cancelAll` also takes the entry whose path is the prefix. Both contradict
+  `boundary.md` §9.8.2 and `Cmd`'s documentation (#2627). Page: `browser/inline/KeyedChains`.
 
   A body that never waits runs in no fiber, as an unkeyed one does: it is *running* from the
   item that queued it until it has run, in the same dispatch. So two such bodies under one key in
