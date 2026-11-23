@@ -1,0 +1,20 @@
+-- A style list whose value changes, on a page that prerenders
+-- (docs/design/browser-inline.md §8.2, *A class or style list*, amended
+-- 2026-11-23): the string form would have to be the CSS parser's
+-- serialisation of the property, so it is a limit of the compiler, class 1
+-- (§5, §8.7), at the element.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n =
+    <main>
+        <p style={[ ( "width", "${String.fromInt n}px" ) ]}>{n}</p>
+        <button onClick={n + 1}>+</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/" ]

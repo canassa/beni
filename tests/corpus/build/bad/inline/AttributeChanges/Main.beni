@@ -1,24 +1,29 @@
--- An attribute whose value changes is written through its DOM property
--- (docs/design/browser-inline.md §8.2); `placeholder`'s is not one this
--- platform writes, so a `placeholder` that reads the model is refused at
--- its element as a limit of the compiler, class 1 (§5).
+-- An attribute whose value changes is written through its DOM property, or,
+-- when it has none and is a `String` or a number, with `setAttribute`
+-- (docs/design/browser-inline.md §8.2, amended 2026-11-23); `readonly` is a
+-- `Bool` with no property this platform writes, so a `readonly` that reads
+-- the model is refused at its element as a limit of the compiler, class 1
+-- (§5).
 import Browser
 import Html exposing (Html)
 import Tea
 
 
 type Msg
-    = Typed String
+    = Lock
 
 
-view : { hint : String } → Html Msg
-view model = <input placeholder={model.hint} onInput={Typed} />
+view : { locked : Bool } → Html Msg
+view model = <input readonly={model.locked} onClick={Lock} />
 
 
 main : Tea.Program
 main =
     Browser.mountAt
         (Tea.sandbox
-            { init = λ⊤ → { hint = "name" }, update = λ(Typed s) m → { m | hint = s }, view = view }
+            { init = λ⊤ → { locked = False }
+            , update = λLock m → { m | locked = True }
+            , view = view
+            }
         )
         "root"
