@@ -6881,7 +6881,21 @@ pub const Lowerer = struct {
             },
             else => break,
         };
-        var value = try l.ident(try l.localName(r.holder), p);
+        // A holder that is a part of a key's message a handler never binds
+        // (`MsgTrack.held`) is read as every read of it is, from the
+        // message (`trackedExpr`'s `.local`), never by its name.
+        var value = held: {
+            if (l.msg_track) |mt| for (mt.held.items) |h| if (h[0] == r.decl and h[1] == r.holder) {
+                break :held (try l.heldValue(mt, h[2], p)) orelse try l.trackFail(mt, @fromBackingInt(r.inst),
+                    \\A limit of the compiler: this program's `update` reads its message, or a part of it, whole,
+                    \\and the key's handler is handed only the fields of the message's innermost constructor:
+                    \\`browser-inline` builds the message from them only through constructors of one field
+                    \\each (`docs/design/browser-inline.md` §8.4, D-e; §5, class 4). The program is valid: it
+                    \\builds with `--platform=browser-tea`.
+                , .{});
+            };
+            break :held try l.ident(try l.localName(r.holder), p);
+        };
         var k: u32 = 0;
         var i = chain.items.len;
         while (i > 0 and k < r.prefix_len) : (k += 1) {

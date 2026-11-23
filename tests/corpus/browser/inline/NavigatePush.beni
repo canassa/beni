@@ -1,3 +1,11 @@
+-- A copy of `browser/tea/NavigatePush` on `browser-inline` (browser-inline.md §8.7,
+-- amended 2026-11-23: `Done#1 · Ok` takes its message whole). Its transcript differs
+-- from that page's in one order: `onUrlChange`'s value is sent while the push runs,
+-- in the command's body (§3, *Where `browser-inline` differs*), so each
+-- `changed to …` line comes before the `push …: ok` line of the command that
+-- pushed, where `browser-tea` queues the change behind the answer. The lines are
+-- the same.
+--
 -- `Browser.Navigation` changes the page's address (boundary.md §9.8.13
 -- (c)): its direct forms: `push` adds a history entry and `replace` replaces one, each
 -- resolved against the page, and every change is announced to the

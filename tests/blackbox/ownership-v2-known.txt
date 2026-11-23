@@ -2791,6 +2791,8 @@ tests/corpus/browser/tea/ApiItems.beni ApiItems 88:5 #0 :: entry ApiItems.update
 tests/corpus/browser/tea/ApiLogin.beni ApiLogin 111:5 #0 :: entry ApiLogin.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/ArmLetOnce.beni ArmLetOnce 52:5 #0 :: entry ArmLetOnce.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/ArmLetOnce.beni ArmLetOnce 58:5 #0 :: entry ArmLetOnce.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/MessageDeepRecordClosure.beni MessageDeepRecordClosure 47:8 #0 :: entry MessageDeepRecordClosure.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/MessageRecordClosure.beni MessageRecordClosure 58:8 #0 :: entry MessageRecordClosure.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/BakedList.beni BakedList 57:5 #0 :: entry BakedList.update model.opened :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/BallMachine Main 26:40 #0 :: send Main.start :: rejected :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/BlurBetweenHandlers.beni BlurBetweenHandlers 62:8 #0 :: entry BlurBetweenHandlers.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
@@ -2875,7 +2877,6 @@ tests/corpus/browser/tea/LinkGuard.beni LinkGuard 78:5 #0 :: entry LinkGuard.upd
 tests/corpus/browser/tea/LinkOutsideMount.beni LinkOutsideMount 29:5 #0 :: entry <update> model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/ListValues.beni ListValues 63:8 #0 :: entry ListValues.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/ListenerOrder.beni ListenerOrder 115:5 #0 :: entry ListenerOrder.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
-tests/corpus/browser/inline/ListenerOrder.beni ListenerOrder 115:5 #0 :: entry ListenerOrder.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/NavigateCommands.beni NavigateCommands 85:5 #0 :: entry NavigateCommands.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/NavigateCommands.beni NavigateCommands 85:5 #0 :: entry NavigateCommands.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/NavigateCommandsLeave.beni NavigateCommandsLeave 93:5 #0 :: entry NavigateCommandsLeave.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
@@ -2884,8 +2885,8 @@ tests/corpus/browser/tea/NavigateErrors.beni NavigateErrors 78:5 #0 :: entry Nav
 tests/corpus/browser/inline/NavigateErrors.beni NavigateErrors 78:5 #0 :: entry NavigateErrors.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/NavigateFragment.beni NavigateFragment 42:5 #0 :: entry NavigateFragment.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/NavigatePush.beni NavigatePush 108:5 #0 :: entry NavigatePush.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
-tests/corpus/browser/inline/NavigatePush.beni NavigatePush 108:5 #0 :: entry NavigatePush.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
-tests/corpus/browser/inline/MessageWhole.beni MessageWhole 138:5 #0 :: entry MessageWhole.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/NavigatePush.beni NavigatePush 116:5 #0 :: entry NavigatePush.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/MessageWhole.beni MessageWhole 141:5 #0 :: entry MessageWhole.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/NestedFor.beni NestedFor 91:5 #0 :: entry NestedFor.update model.groups :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/NestedFor.beni NestedFor 91:5 #0 :: entry NestedFor.update model.groups[*].kids :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/NoOpEdits.beni NoOpEdits 63:5 #0 :: entry NoOpEdits.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

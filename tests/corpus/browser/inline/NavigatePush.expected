@@ -21,8 +21,8 @@
     <button id="two">"two"</button>
     <button id="none">"none"</button>
     <ol>
-      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /a?x=1#top"</li>
+      <li>"push /a?x=1#top: ok"</li>
     </ol>
   </main>
 </body>
@@ -38,10 +38,10 @@
     <button id="two">"two"</button>
     <button id="none">"none"</button>
     <ol>
-      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /a?x=1#top"</li>
-      <li>"push b/../e: ok"</li>
+      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /e"</li>
+      <li>"push b/../e: ok"</li>
     </ol>
   </main>
 </body>
@@ -57,12 +57,12 @@
     <button id="two">"two"</button>
     <button id="none">"none"</button>
     <ol>
-      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /a?x=1#top"</li>
-      <li>"push b/../e: ok"</li>
+      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /e"</li>
-      <li>"replace /r: ok"</li>
+      <li>"push b/../e: ok"</li>
       <li>"changed to /r"</li>
+      <li>"replace /r: ok"</li>
     </ol>
   </main>
 </body>
@@ -78,16 +78,16 @@
     <button id="two">"two"</button>
     <button id="none">"none"</button>
     <ol>
-      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /a?x=1#top"</li>
-      <li>"push b/../e: ok"</li>
+      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /e"</li>
-      <li>"replace /r: ok"</li>
+      <li>"push b/../e: ok"</li>
       <li>"changed to /r"</li>
-      <li>"push /c: ok"</li>
-      <li>"push /d: ok"</li>
+      <li>"replace /r: ok"</li>
       <li>"changed to /c"</li>
+      <li>"push /c: ok"</li>
       <li>"changed to /d"</li>
+      <li>"push /d: ok"</li>
     </ol>
   </main>
 </body>
@@ -103,16 +103,16 @@
     <button id="two">"two"</button>
     <button id="none">"none"</button>
     <ol>
-      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /a?x=1#top"</li>
-      <li>"push b/../e: ok"</li>
+      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /e"</li>
-      <li>"replace /r: ok"</li>
+      <li>"push b/../e: ok"</li>
       <li>"changed to /r"</li>
-      <li>"push /c: ok"</li>
-      <li>"push /d: ok"</li>
+      <li>"replace /r: ok"</li>
       <li>"changed to /c"</li>
+      <li>"push /c: ok"</li>
       <li>"changed to /d"</li>
+      <li>"push /d: ok"</li>
       <li>"changed to /c"</li>
     </ol>
   </main>
@@ -129,16 +129,16 @@
     <button id="two">"two"</button>
     <button id="none">"none"</button>
     <ol>
-      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /a?x=1#top"</li>
-      <li>"push b/../e: ok"</li>
+      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /e"</li>
-      <li>"replace /r: ok"</li>
+      <li>"push b/../e: ok"</li>
       <li>"changed to /r"</li>
-      <li>"push /c: ok"</li>
-      <li>"push /d: ok"</li>
+      <li>"replace /r: ok"</li>
       <li>"changed to /c"</li>
+      <li>"push /c: ok"</li>
       <li>"changed to /d"</li>
+      <li>"push /d: ok"</li>
       <li>"changed to /c"</li>
       <li>"changed to /r"</li>
     </ol>
@@ -156,16 +156,16 @@
     <button id="two">"two"</button>
     <button id="none">"none"</button>
     <ol>
-      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /a?x=1#top"</li>
-      <li>"push b/../e: ok"</li>
+      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /e"</li>
-      <li>"replace /r: ok"</li>
+      <li>"push b/../e: ok"</li>
       <li>"changed to /r"</li>
-      <li>"push /c: ok"</li>
-      <li>"push /d: ok"</li>
+      <li>"replace /r: ok"</li>
       <li>"changed to /c"</li>
+      <li>"push /c: ok"</li>
       <li>"changed to /d"</li>
+      <li>"push /d: ok"</li>
       <li>"changed to /c"</li>
       <li>"changed to /r"</li>
       <li>"changed to /c"</li>
@@ -184,16 +184,16 @@
     <button id="two">"two"</button>
     <button id="none">"none"</button>
     <ol>
-      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /a?x=1#top"</li>
-      <li>"push b/../e: ok"</li>
+      <li>"push /a?x=1#top: ok"</li>
       <li>"changed to /e"</li>
-      <li>"replace /r: ok"</li>
+      <li>"push b/../e: ok"</li>
       <li>"changed to /r"</li>
-      <li>"push /c: ok"</li>
-      <li>"push /d: ok"</li>
+      <li>"replace /r: ok"</li>
       <li>"changed to /c"</li>
+      <li>"push /c: ok"</li>
       <li>"changed to /d"</li>
+      <li>"push /d: ok"</li>
       <li>"changed to /c"</li>
       <li>"changed to /r"</li>
       <li>"changed to /c"</li>
