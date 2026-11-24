@@ -1,0 +1,21 @@
+-- A `value` written in the markup of a file input, with its `type` written
+-- there too (#2020). A value that is not empty is one no file input can
+-- show, and a write of it throws `InvalidStateError`: the runtime does not
+-- write it, at the mount or on a later render, and the page shows what
+-- HTML shows for the same tag — an empty input. `empty`'s value is the
+-- one a file input shows already, so nothing is written there either.
+import Browser
+import Html exposing (Html)
+
+
+view : Int → Html ⊤
+view n =
+    <main>
+        <button id="tick" onClick={⊤}>{n}</button>
+        <input id="named" type="file" value="report.pdf" />
+        <input id="empty" type="file" value="" />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → 0, update = λ_ n → n + 1, view = view }

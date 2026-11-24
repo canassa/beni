@@ -1065,6 +1065,13 @@ selection (`browser/inline/ControlledCaret`). *Noted 2026-10-18:* the rule is pe
 written back on its `<select>`'s event — the event is the select's, not the option's; a select shows
 the model through its own `value`.
 
+*Amended 2026-11-24 (#2020): a file input's `value`.* A script can give an `input` of type `file`
+one `value` only, the empty string. An assignment of another value throws `InvalidStateError`. So
+`prop` does not write a `value` that is not empty to an element whose `type` property is `file`,
+and the input keeps what it shows (`backend.md` §15.3, *Controlled inputs*). `prop` writes `""` as
+on each control, which removes the chosen files. `Inline.deliver` leaves a file input's state alone
+for the same reason (`prerender.md` §6.5). `browser/inline/FileInputValue`.
+
 **An event** is `on(E[n], f, type)`: `f` is the key's handler when the handler value is a
 constructor with no fields, and otherwise a function of the event that reads the payload through
 the event's extractor (`onInput`'s `target.value`) and calls the handler with the constructor's

@@ -66,7 +66,7 @@ message. Which one is decided by the handler's type.
 - `onInput={Typed}` sends `Typed` with the `String` value of an `<input>`, `<select>` or `<textarea>`.
 - A text input shows the model's value. When `update` changes the typed text (for example, to upper
   case), the caret stays at the offset it had. If the new text is shorter, the offset is cut to its
-  length. The page does not map the caret through the change.
+  length. The page does not map the caret through the change. A file input (`type="file"`) accepts only the `value` `""`, which removes its files. The page does not write a different value.
 - A handler receives the raw `Html.Event` where the vocabulary says so (`onKeyDown`, `onSubmit`,
   `onClick` through a lambda). It can call `Html.preventDefault event` itself, as a statement,
   then return the message. `Html.key event`, `Html.targetValue event` and `Html.targetChecked event`

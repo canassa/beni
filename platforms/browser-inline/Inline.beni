@@ -1138,10 +1138,11 @@ text node shown =
 -- no selection (its `selectionStart` is null, or undefined on a `select`)
 -- and one without the focus are written and left alone. A `value` the
 -- control already shows is not written, and its selection is not touched.
+-- Nor is a `value` the control refuses (`refused`).
 writeProp : V, V, V → ⊤
 writeProp el member v =
     caret = if Js.same member (Js.from "value") then Js.get el "selectionStart" else Js.undefined
-    if Js.same member (Js.from "value") && Js.same (Js.get el member) v then
+    if Js.same member (Js.from "value") && (Js.same (Js.get el member) v || refused el v) then
         ⊤
     else if
         Js.isNullish caret || not (Js.same (Js.get (Js.global "document") "activeElement") el)
@@ -1162,9 +1163,22 @@ writeProp el member v =
         ⊤
 
 
+-- Whether `el` refuses `v` as its `value`. A script can give an `input` of
+-- type `file` the empty string alone, which removes the chosen files: an
+-- assignment of another value throws `InvalidStateError` (#2020). Such a
+-- value is a model no page can show, so it is not written, and the input
+-- keeps what it shows (`browser-inline.md` §8.3, *Controlled inputs*). The
+-- `type` is the live one: it may come from the model, and it is read only
+-- for a value that is not empty. A test, with no `try`; `state` leaves a
+-- file input alone for the same reason.
+refused : V, V → Bool
+refused el v = not (Js.same v (Js.from "")) && Js.same (Js.get el "type") (Js.from "file")
+
+
 --| `(node, value, key)`: a property binding — the DOM property `key`, a
 --| control's `value` when `key` is not given, written when it differs
 --| from the node's live one, so a control the user edited shows the model.
+--| A file input's `value` that is not empty is not written (`refused`).
 pub prop : V, V, V → ⊤
 prop node value key =
     name = if Js.isUndefined key then Js.from "value" else key
