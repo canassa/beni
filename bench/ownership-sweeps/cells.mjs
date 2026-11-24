@@ -1321,7 +1321,30 @@ const RUNON_FRAMES = {
   maskLater: () => ['_ = Task.spawn λ⊤ →', '    _ = Task.spawn hosting', '    Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 50)', 'Task.sleep (Duration.millis 50)'],
   maskRace: () => ['_ = Task.spawn λ⊤ → Task.uninterruptible λ⊤ → Task.race hosting λ⊤ → Task.sleep (Duration.millis 100)', 'Task.sleep (Duration.millis 50)'],
   maskSpawner: () => ['_ = Task.spawn λ⊤ →', '    spawner hosting', '    Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 50)', 'Task.sleep (Duration.millis 50)'],
+  // #2653 (code reader CR7; `RUNON_STARTED`, rooted at `init` by `Task.start`): a fiber that runs a
+  // function which forks a hosting fiber and then one that masks, as two captures (`capFirst`), two
+  // local lambdas (`capFirstLam`) or two parameters of a helper (`capFirstParam`); a function typed
+  // `Cmd.Send` that masks, called after a hosting fork, as a local (`sendLocal`), through a helper
+  // (`sendAsp`) or a parameter (`sendParam`); a scope whose close runs a finaliser another fiber
+  // deferred, which parks masked (`deferScope`); a helper that forks a writer and a reader of its own
+  // cell and returns, and a mask after it (`hostThenMask`); and, safe and refused (the pessimistic
+  // side), a scope that runs a hosting function (`scopeHost`).
+  capFirst: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ →', '    h ⊤', '    k 1', 'Task.sleep (Duration.millis 80)'],
+  capFirstLam: () => ['h = λ⊤ →', '    _ = Task.spawn hosting', '    ⊤', 'k = λ_ → Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 50)', '_ = Task.spawn λ⊤ →', '    h ⊤', '    k 1', 'Task.sleep (Duration.millis 80)'],
+  capFirstParam: () => ['_ = Task.spawn λ⊤ → go2 forker masker', 'Task.sleep (Duration.millis 80)'],
+  sendLocal: () => ['msk : Cmd.Send Int', 'msk = masker', '_ = Task.spawn λ⊤ →', '    _ = Task.spawn hosting', '    msk 1', 'Task.sleep (Duration.millis 80)'],
+  sendAsp: () => ['msk = asSend masker', '_ = Task.spawn λ⊤ →', '    _ = Task.spawn hosting', '    msk 1', 'Task.sleep (Duration.millis 80)'],
+  sendParam: () => ['_ = Task.spawn λ⊤ → runner masker', 'Task.sleep (Duration.millis 80)'],
+  deferScope: () => ['_ = Task.spawn λ⊤ →', '    Task.scope λsp →', '        _ = Task.spawn hosting', '        _ = Task.spawn λ⊤ → Task.defer sp λ_ → Task.sleep (Duration.millis 50)', '        Task.yieldNow ⊤', 'Task.sleep (Duration.millis 80)'],
+  hostThenMask: () => ['_ = Task.spawn λ⊤ →', '    hosting2 ⊤', '    masker 1', 'Task.sleep (Duration.millis 80)'],
+  scopeHost: () => ['_ = Task.spawn λ⊤ → Task.scope λ_ → hosting ⊤', 'Task.sleep (Duration.millis 80)'],
+  // The lane's reviewer: the sibling that masks is a local lambda over the helper's own function
+  // parameter (`wrapOwn`).
+  wrapOwn: () => ['wrapRunner masker'],
 };
+// The shapes whose `work` hosts: `Cmd.perform` would refuse them, so `init` starts `work` itself
+// (`Fn.starts` accepts a hosting function), and no `send` reaches it.
+const RUNON_STARTED = ['capFirst', 'capFirstLam', 'capFirstParam', 'sendLocal', 'sendAsp', 'sendParam', 'deferScope', 'hostThenMask', 'scopeHost', 'wrapOwn'];
 const RUNON_HELD_DEFS = `
 
 stash : (⊤ → ⊤) → ⊤
@@ -1482,6 +1505,44 @@ evWriter x =
         l2 = ${push}
         k = deep 0
         if k > 0 then l2 else l2`,
+  forker: `forker : ⊤ → ⊤
+forker ⊤ =
+    _ = Task.spawn hosting
+    ⊤`,
+  masker: `masker : Int → ⊤
+masker _ = Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 50)`,
+  go2: `go2 : (⊤ → ⊤), (Int → ⊤) → ⊤
+go2 h k =
+    _ = Task.spawn λ⊤ →
+        h ⊤
+        k 1
+    Task.sleep (Duration.millis 80)`,
+  asSend: `asSend : (Int → ⊤) → Cmd.Send Int
+asSend g = g`,
+  runner: `runner : Cmd.Send Int → ⊤
+runner msk =
+    _ = Task.spawn λ⊤ →
+        _ = Task.spawn hosting
+        msk 1
+    Task.sleep (Duration.millis 80)`,
+  wrapRunner: `wrapRunner : (Int → ⊤) → ⊤
+wrapRunner g =
+    h = forker
+    k = λn → g n
+    _ = Task.spawn λ⊤ →
+        h ⊤
+        k 1
+    Task.sleep (Duration.millis 80)`,
+  hosting2: `hosting2 : ⊤ → ⊤
+hosting2 ⊤ =
+    q = Ref.make [ 1, 2 ]
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        bump q
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 5)
+        Log.info (ints (Ref.get q))
+    ⊤`,
 });
 // The second module of `evMod` and `evModKeep`: a type whose method hosts a writer.
 const RUNON_HOSTER = (push) => `-- The second module of runon.frame.evMod: see bench/ownership-sweeps/cells.mjs.
@@ -1568,6 +1629,16 @@ const RUNON_WAYS = {
   maskLater: [],
   maskRace: [],
   maskSpawner: ['spawner'],
+  capFirst: ['forker', 'masker'],
+  capFirstLam: [],
+  capFirstParam: ['go2', 'forker', 'masker'],
+  sendLocal: ['masker'],
+  sendAsp: ['asSend', 'masker'],
+  sendParam: ['runner', 'masker'],
+  deferScope: [],
+  hostThenMask: ['hosting2', 'masker'],
+  scopeHost: [],
+  wrapOwn: ['forker', 'masker', 'wrapRunner'],
 };
 const RUNON_MODULES = ['evMod', 'evModKeep'];
 const RUNON_HELD = ['stashRead', 'stashWrite', 'dataRead', 'maskListRead', 'boxRead', 'wrapRead', 'memoRead', 'wrapHost', 'wrapHostLocal', 'wrapHostTwice', 'wrapHostLambda', 'wrapHostApplied', 'lendThenHost', 'twoCallsHost', 'listThenHost', 'capturedThenHost'];
@@ -1575,7 +1646,8 @@ const RUNON_HELD = ['stashRead', 'stashWrite', 'dataRead', 'maskListRead', 'boxR
 function genRunOn(other, writer, live) {
   const push = live ? 'List.push l 5' : 'List.push (List.copy l) 5';
   const shape = other === 'frame' ? RUNON_FRAMES[writer](push) : [...(RUNON_OTHERS[other] ?? []), ...RUNON_WRITERS[writer](push)];
-  const body = ['r = Ref.make [ 1, 2 ]', 'sc = Task.scheduler λ⊤ → ⊤', ...shape, 'send Done'];
+  const started = other === 'frame' && RUNON_STARTED.includes(writer);
+  const body = ['r = Ref.make [ 1, 2 ]', 'sc = Task.scheduler λ⊤ → ⊤', ...shape, ...(started ? [] : ['send Done'])];
   return `-- runon.${other}.${writer}: see bench/ownership-sweeps/cells.mjs.
 import Cmd exposing (Cmd)
 import Duration
@@ -1645,7 +1717,7 @@ ${ind(body.join('\n'), 4)}
 
 
 init : ⊤ → Int × Cmd Msg
-init ⊤ = ( 0, Cmd.perform work )
+init ⊤ =${started ? '\n    Task.start (λ⊤ → work λ_ → ⊤) λ_ → ⊤\n    ( 0, Cmd.none )' : ' ( 0, Cmd.perform work )'}
 
 
 update : Msg, Int → Int × Cmd Msg

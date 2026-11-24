@@ -175,15 +175,24 @@ capturedThenHost ⊤ =
 main : Program
 main = Io.run λ⊤ →
     Node.printLines
-        [ stashReader ⊤
-        , stashWriter ⊤
-        , wrapMask ⊤
-        , wrapLocal ⊤
-        , wrapTwice ⊤
-        , wrapLambda ⊤
-        , wrapApplied ⊤
-        , lendThenHost ⊤
-        , twoCallsHost ⊤
-        , listThenHost ⊤
-        , capturedThenHost ⊤
+        [ fiber stashReader
+        , fiber stashWriter
+        , fiber wrapMask
+        , fiber wrapLocal
+        , fiber wrapTwice
+        , fiber wrapLambda
+        , fiber wrapApplied
+        , fiber lendThenHost
+        , fiber twoCallsHost
+        , fiber listThenHost
+        , fiber capturedThenHost
         ]
+
+
+-- Each shape runs in a fiber of its own: in one frame, a call of a
+-- function that started a reader or a writer, and then one that can mask,
+-- is refused (#2653).
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t

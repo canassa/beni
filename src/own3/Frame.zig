@@ -683,8 +683,6 @@ hosts: bool = false,
 /// call started, hosts a writer or a reader (`Contract.hosts_forked`):
 /// from here on no call may park this fiber masked or lent (`noteRunsOn`).
 hosts_forked: bool = false,
-/// The call being noted is one of the runtime's `send` (`noteRunsOn`).
-sender_call: bool = false,
 /// The calls in work that run within them a function that can park this
 /// fiber masked or under a scheduler of its own (`noteRunsOn`): each
 /// revokes the writers and readers registered by then where it ends
@@ -6305,7 +6303,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     const renew = try f.publishRenew(flags, off, total, &renew_shared);
     const paths = try f.publishPaths(flags, off, renew);
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .runs_on = f.runs_on or f.runsOnParams() != 0, .hosts = f.hosts, .hosts_forked = f.hosts_forked, .renew = renew, .renew_shared = renew_shared, .paths = paths };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .runs_on = f.runs_on or f.runsOnParams() != 0 or f.runsOnBody(), .hosts = f.hosts, .hosts_forked = f.hosts_forked, .renew = renew, .renew_shared = renew_shared, .paths = paths };
     return c;
 }
 
@@ -8523,9 +8521,6 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         if (c.contract.hosts) try f.hostsCall(inst);
         if (c.contract.hosts_forked) try f.noteHostsForked(inst);
     } else if (fn_root != none) {
-        const r0 = f.roots.items[fn_root];
-        f.sender_call = r0.index < f.param_ty.items.len and m.isSender(f.param_ty.items[r0.index]);
-        defer f.sender_call = false;
         try f.noteRunsOn(inst, false);
     } else if (js_callee) {
         try f.jsArgsRunOn(inst, args, vals.items);
@@ -11268,6 +11263,24 @@ fn runsOnParams(f: *const Frame) u32 {
     return 0;
 }
 
+/// Kernel §13 item 12, *A defect*, (d), *The ways in* (#2653): one of
+/// core's declarations whose run can park the caller's fiber masked where
+/// the walk does not see the mask. `Task.scope`: at its close, and in the
+/// scope's finaliser where the fiber running its function is cancelled,
+/// the scope's deferred finalisers run inside `uninterruptible`
+/// (`runDeferred`), which `afterDeferred` reaches only through a
+/// JavaScript reference (`deferral`'s `run`). A combinator's scope
+/// (`within`, `closeHeld`) has none: `defer` takes only a `Scope`, which
+/// `scope` and `openRoot` alone answer, and `closeRoot` runs a root's in a
+/// fiber of its own. Named directly, as `runsOnParams` names the masks.
+fn runsOnBody(f: *const Frame) bool {
+    const m = f.m;
+    const mod = m.in.module;
+    if (f.is_lambda or !m.in.isCore(mod) or mod >= m.names.module_names.len) return false;
+    if (!std.mem.eql(u8, m.names.module_names[mod], "Task")) return false;
+    return std.mem.eql(u8, m.names.declName(mod, f.decl), "scope");
+}
+
 /// Kernel §13 item 12, *A defect*, (d): the parameters (a mask) of one of
 /// core's walked declarations that only start the function they are handed
 /// in a new fiber of the current scheduler, unmasked (`Fn.forks`): a race's
@@ -11387,8 +11400,10 @@ fn startedAt(f: *Frame, use: *const Use) Error!bool {
         // The closure runs it after a call of another of its function
         // parameters or captures (`Fn.after_call`): where that one can
         // park the fiber masked or lend it, this one runs in that window
-        // (#2622).
-        if (use.fnc.after_call and try f.siblingRunsOn(use)) return false;
+        // (#2622). Or before one that runs after a call the closure could
+        // not judge (its `after_call`, as this one's call is): what this
+        // one started runs on in the window that one opens (#2653).
+        if (try f.siblingRunsOn(use, !use.fnc.after_call)) return false;
         return !use.c.runs_on and use.started_above;
     }
     return true;
@@ -11398,26 +11413,60 @@ fn startedAt(f: *Frame, use: *const Use) Error!bool {
 /// runs another of its function parameters or captures that can park the
 /// fiber masked or lend it: one the closure's holder hands it (code the
 /// walk does not know), the frame's own function parameter, a function the
-/// walk does not know, or a known one with `runs_on` (#2622).
-fn siblingRunsOn(f: *Frame, use: *const Use) Error!bool {
+/// walk does not know, or a known one with `runs_on` (#2622). With
+/// `after_only`, only one the closure runs after a call it could not
+/// judge (`Fn.after_call`): the function at `use` runs before it (#2653).
+fn siblingRunsOn(f: *Frame, use: *const Use, after_only: bool) Error!bool {
     const c = use.c;
+    var seen: std.AutoHashMapUnmanaged(Val, void) = .empty;
+    defer seen.deinit(f.gpa);
     for (0..c.arity) |i| {
         if (i == use.j) continue;
         const sf = c.fns[i] orelse continue;
-        if (!sf.called) continue;
+        if (!sf.called or (after_only and !sf.after_call)) continue;
         if (i < use.own or i >= use.args.len) return true;
-        const v = use.args[i];
-        if (v == v_none or v == v_outside) continue;
-        if (try f.codeOf(v)) |sc| {
-            if (sc.contract.runs_on) return true;
-            continue;
-        }
-        const n = f.nodes.items[v];
-        if (n.tag == .fnref and f.jsCode(.{ n.a, n.b })) continue;
-        return true;
+        if (try f.valRunsOn(use.args[i], 0, &seen)) return true;
     }
     return false;
 }
+
+/// Whether the function value `v`, run, can park the fiber masked or lend
+/// it (`siblingRunsOn`): a known one with `runs_on`, or one that runs one
+/// of its own function parameters (what its holder hands there, code the
+/// walk does not know) or a capture that can (a local `λn → g n` over the
+/// frame's own function parameter `g`: a call of a capture sets no bit;
+/// #2653); the frame's own function parameter and a value of no code can.
+/// Deeper than `max_sibling_depth` it can. Each value is read once
+/// (`seen`: one that could has answered already), and each read is work
+/// (kernel §8): past the budget it can.
+fn valRunsOn(f: *Frame, v: Val, depth: u32, seen: *std.AutoHashMapUnmanaged(Val, void)) Error!bool {
+    if (v == v_none or v == v_outside) return false;
+    if (depth > max_sibling_depth) return true;
+    if ((try seen.getOrPut(f.gpa, v)).found_existing) return false;
+    if (f.charge(Check.call_units)) return true;
+    if (try f.codeOf(v)) |sc| {
+        const lc = sc.contract;
+        if (lc.runs_on) return true;
+        for (0..lc.arity) |j| {
+            const x = lc.fns[j] orelse continue;
+            if (!x.called and !x.lost) continue;
+            if (j < sc.own_params) return true;
+            const k = j - sc.own_params;
+            if (k >= sc.ncaps) return true;
+            if (try f.valRunsOn(try f.capVal(sc, k), depth + 1, seen)) return true;
+        }
+        return false;
+    }
+    const n = f.nodes.items[v];
+    if (n.tag == .join) {
+        for (0..n.b) |ki| if (try f.valRunsOn(f.lists.items[n.a + 2 * ki], depth + 1, seen)) return true;
+        return false;
+    }
+    if (n.tag == .fnref and f.jsCode(.{ n.a, n.b })) return false;
+    return true;
+}
+
+const max_sibling_depth = 16;
 
 /// Whether the holder at `use` answers the function at its location: its
 /// contract has `flag_a` there.
@@ -11438,8 +11487,11 @@ fn answersFn(use: *const Use) bool {
 fn noteRunsOn(f: *Frame, inst: u32, contract: bool) Error!void {
     // After a fiber that hosts a writer or a reader was started: an
     // ancestor of it masked or lent while it is parked keeps it running
-    // after a throw (#2638). The runtime's `send` parks no fiber.
-    if (f.hosts_forked and !f.sender_call) try f.m.addRefusal(f, inst, .call, forked_refusal);
+    // after a throw (#2638). No callee is exempt: a function parameter's
+    // type says nothing of what the caller hands there, and the runtime's
+    // `send` reaches only a body the platform loses, which is refused
+    // where it hosts (#2653).
+    if (f.hosts_forked) try f.m.addRefusal(f, inst, .call, forked_refusal);
     if (contract) f.runs_on = true;
     if (std.mem.indexOfScalar(u32, f.runs_on_calls.items, inst) == null) try f.runs_on_calls.append(f.gpa, inst);
     if (contract and std.mem.indexOfScalar(u32, f.runs_on_known_calls.items, inst) == null) try f.runs_on_known_calls.append(f.gpa, inst);
@@ -11498,6 +11550,10 @@ fn hostsWithin(f: *Frame, inst: u32) Error!void {
 /// (d)): refused.
 fn hostsCall(f: *Frame, inst: u32) Error!void {
     f.hosts = true;
+    // The writers and readers that code started are fibers of this one,
+    // children that outlive the call: a later mask or lend of this fiber
+    // keeps them running after a throw, as a fork's do (#2653).
+    f.hosts_forked = true;
     if (f.runs_on_window) try f.m.addRefusal(f, inst, .call, "a function in which a writer or a reader of a cell it made runs in another fiber runs after a call that can leave this fiber masked or under a scheduler of its own, so code runs on after a throw in it");
 }
 

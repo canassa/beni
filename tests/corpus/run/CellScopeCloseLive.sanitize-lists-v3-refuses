@@ -1,0 +1,9 @@
+# The live twins of CellScopeClose: a fiber that runs a function which forks one in which a writer runs and then one that masks, as two captures, two local lambdas, a helper's two parameters or a lambda over a helper's own function parameter, is refused where it is forked; a mask after a helper that leaves a writer and a reader running is refused; a scope closed with a finaliser that parks masked, after its function forked such a fiber, is refused at the scope; and, the pessimistic side, a scope that runs such a function within and a mask after a call of one that joined its writer (ownership-v3-kernel.md §13 item 12, *A defect*, (d), *After such a call*, *Descendants of a masked fiber*, `Contract.runs_on`; #2653).
+76:9 list_still_used value
+90:9 list_still_used value
+99:5 list_still_used value
+107:9 list_still_used value
+115:9 list_still_used value
+124:15 list_still_used value
+132:5 list_still_used value
+142:9 list_still_used value

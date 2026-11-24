@@ -67,4 +67,13 @@ record ⊤ =
 
 
 main : Program
-main = Io.run λ⊤ → Node.printLines [ direct ⊤, mapped ⊤, record ⊤ ]
+main = Io.run λ⊤ → Node.printLines [ fiber direct, fiber mapped, fiber record ]
+
+
+-- Each shape runs in a fiber of its own: in one frame, a call of a
+-- function that started a reader or a writer, and then one that can mask,
+-- is refused (#2653).
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t

@@ -256,7 +256,9 @@ pub const Contract = struct {
     /// the body returns: a mask or a lend of an ancestor of it while it is
     /// parked keeps it running after a throw, so no call after this one may
     /// park the fiber masked or lent (kernel §13 item 12, *A defect*, (d),
-    /// *Descendants of a masked fiber*; #2638). Implies `hosts`.
+    /// *Descendants of a masked fiber*; #2638). Also where the body calls,
+    /// or runs within a call, code with `hosts`: the writers and readers
+    /// that code started outlive the call (#2653). Implies `hosts`.
     hosts_forked: bool = false,
     /// What a call leaves in a parameter's cells (kernel §13, *Renewal*):
     /// per parameter location, as `flags` is, null where the call leaves

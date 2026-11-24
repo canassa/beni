@@ -1,0 +1,4 @@
+# The live twins of CellSendTyped: a function typed `Cmd.Send` that masks, called after a fork of a fiber in which a writer runs, is refused at the call: through a parameter of that type, a local of that type, and a helper's answer of that type (ownership-v3-kernel.md §13 item 12, *A defect*, (d), *Descendants of a masked fiber*; #2653).
+50:9 list_still_used value
+60:9 list_still_used value
+64:9 list_still_used value

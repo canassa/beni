@@ -1,0 +1,87 @@
+-- The live twins of CellSendTyped: a function typed `Cmd.Send` is not the
+-- runtime's `send`. One that masks, called after a fork of a fiber in which
+-- a reader of a cell runs, is refused at the call: through a parameter of
+-- that type, a local of that type, or a helper's answer of that type
+-- (ownership-v3-kernel.md §13 item 12, *A defect*, (d), *Descendants of a
+-- masked fiber*; #2653). The fiber only reads the cell: the platform's own
+-- checker refuses a write in place in a cell's callback, and v3's refusal is
+-- at the call either way.
+import Cmd exposing (Cmd)
+import Duration
+import Html exposing (Html)
+import List
+import Ref
+import String
+import Sub exposing (Sub)
+import Task
+import Tea
+
+
+type Msg
+    = Done
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+hosting : ⊤ → ⊤
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 5)
+        _ = ints (Ref.get r)
+        ⊤
+    ⊤
+
+
+masker : Int → ⊤
+masker _ = Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 50)
+
+
+asSend : (Int → ⊤) → Cmd.Send Int
+asSend g = g
+
+
+runner : Cmd.Send Int → ⊤
+runner msk =
+    _ = Task.spawn λ⊤ →
+        _ = Task.spawn hosting
+        msk 1
+    ⊤
+
+
+work : ⊤ → ⊤
+work ⊤ =
+    m1 : Cmd.Send Int
+    m1 = masker
+    _ = Task.spawn λ⊤ →
+        _ = Task.spawn hosting
+        m1 1
+    m2 = asSend masker
+    _ = Task.spawn λ⊤ →
+        _ = Task.spawn hosting
+        m2 1
+    _ = Task.spawn λ⊤ → runner masker
+    ⊤
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ =
+    Task.start (λ⊤ → work ⊤) λ_ → ⊤
+    ( 0, Cmd.none )
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg model =
+    case msg of
+        Done →
+            ( model + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <p>{n}</p>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }
