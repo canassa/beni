@@ -1761,8 +1761,14 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
             }
             f.leaf_nest += 1;
             if (n.tag == .closure) {
-                const c = f.codes.items[n.a];
-                for (0..c.ncaps) |ki| _ = try f.allLeaves(try f.capVal(c, ki), out);
+                // A closure is observed only through its runs (kernel §6
+                // rule 3): its cells are its captures' at the locations its
+                // contract reaches, or every cell of them where it is held
+                // whole (`closureReached`).
+                if (!try f.closureReached(v, out)) {
+                    const c = f.codes.items[n.a];
+                    for (0..c.ncaps) |ki| _ = try f.allLeaves(try f.capVal(c, ki), out);
+                }
             } else {
                 // No claim, and each cell of the values that it can be made of.
                 try out.append(f.gpa, outside_atom);
@@ -3255,6 +3261,18 @@ fn closureHeld(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
     return true;
 }
 
+/// `closureHeld` for the cells the closure holds, a writer's handle among
+/// them: false, with nothing appended, where it is held whole.
+fn closureReached(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
+    const m = f.m;
+    const code = f.codes.items[f.nodes.items[v].a];
+    const lc = code.contract;
+    if (m.isDraft(lc) or lc.casts or code.own_params + code.ncaps > lc.arity) return false;
+    for (0..code.ncaps) |k| if (lc.fns[code.own_params + k] != null) return false;
+    for (0..code.ncaps) |k| try f.capHeld(code, k, out);
+    return true;
+}
+
 /// The leaves of capture `k` of the known function `code` at the
 /// locations its contract reaches, appended to `out`.
 fn capHeld(f: *Frame, code: Code, k: usize, out: *std.ArrayList(Atom)) Error!void {
@@ -3262,11 +3280,17 @@ fn capHeld(f: *Frame, code: Code, k: usize, out: *std.ArrayList(Atom)) Error!voi
     const j: u32 = @intCast(code.own_params + k);
     const capv = try f.capVal(code, k);
     const n = lc.off[j + 1] - lc.off[j];
-    // The scan of the capture's flags and of the answer's sources is work (kernel §8).
-    _ = f.charge(Loc.scanUnits(n));
+    // The scan of the capture's flags, of the answer's sources and of the
+    // renewals is work (kernel §8).
+    _ = f.charge(Loc.scanUnits(n) + Loc.scanUnits(lc.flags.len));
     for (0..n) |e| {
         var touched = lc.flags[lc.off[j] + e] != 0 or handsOn(lc, j, @intCast(e));
         if (!touched) for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j and s.e == e) {
+            touched = true;
+        };
+        // What a run leaves in a cell it was handed (`Contract.renew`): the
+        // capture is in the cell after the run (kernel §13 item 3).
+        if (!touched) for (0..lc.arity) |a| if (a != j) for (lc.off[a]..lc.off[a + 1]) |i| if (lc.renewAt(i)) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j and s.e == e) {
             touched = true;
         };
         if (!touched) continue;

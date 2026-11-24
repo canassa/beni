@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rule 10 revised the same day (#2652). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -818,7 +818,8 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    frame, its captures are parameters of its contract, and the closure value holds them (`closureOf`). A
    capture bound after the closure is made is a `later` slot read as the value bound there (`capVal`;
    lowering guarantees it is bound before any run). Local functions that name each other in a cycle are
-   one group walked to a fixed point (`findGroups`). *Invariant: a closure's leaves are its captures'.*
+   one group walked to a fixed point (`findGroups`). *Invariant: a closure's leaves are its captures' at the
+   locations a run of it reaches (below), or all of them where it is held whole.*
 
    **A kept closure is observed only through its calls** (`escape`, `heldLeaves`). A holder that the walk
    does not follow and that keeps a closure (an item of markup the runtime keeps, unknown code, a holder
@@ -833,6 +834,20 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    of a group, which can still grow) escape whole. *Research report 153: a handler `λ_ → Toggle todo.id`
    kept by the markup runtime escaped every slot of `todo`, and `update`'s in-place write of
    `todo.completed` was refused (TodoMVC); the handler reads `.id=` alone.*
+
+   **Every holder of a closure observes it only through its runs** (*amended 2026-11-24, #2652*). The
+   same reading holds wherever the walk reads the cells a closure holds, not only where a holder keeps
+   it: a closure's leaves (`leaves`, so `allLeaves` and a result's sources; `reach`, the test of another
+   operand, still reads each capture whole, the pessimistic side)
+   are its captures' leaves at the locations its contract reaches (`closureReached`: a flag, a source
+   of its answer, a supply, or a renewal of a cell it was handed, `capHeld`), and every cell
+   of them where it is held whole (a captured function, a contract that casts, a draft). A writer's
+   handle among the captures is kept: two holders of a handle are a fact of the handle (§13), not of
+   an escape. A run is the one way into the environment, wherever the closure is: in a command, a
+   subscription, a record, a tuple, a callee's answer. *Before, a closure inside a value held every
+   cell of each capture, so `Cmd.task (λ⊤ → Navigation.goBack model.key 0) …` in `update`'s answer
+   held every location of the model, none was `update`'s own (rule 13), and every write of `update`
+   was refused (`browser/tea/NavigatePush`; `run/ClosureFieldInPlace` and its live twin).*
 4. **Construct** (`built`, `listOf`, `spreadChain`, `appendChain`): a tuple, record or constructor names
    each part that holds a cell; a list literal's storage is the frame's own cell, its elements are the
    items' leaves as one run with `partDup`; a spread's base is written (a demand) and its storage is a new
