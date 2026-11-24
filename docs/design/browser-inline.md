@@ -818,6 +818,26 @@ beni over `Js` in `Inline.beni`:
     named function — and a fallback that is any
     other markup value. `build/bad/inline/Show*/`; pages `browser/inline/Show*` and the
     `browser/tea` pages copied beside them.
+- **What follows a `For`, a region or a `Show`** (*amended 2026-11-24, #2625, #966*). Each of
+  them puts its nodes before a node the mount holds — the element after it, or nothing at its
+  element's end — so until now one followed by text, a hole, another `For`, region or `Show` was
+  refused: a text of the markup has no node the mount can find, and two of them before one element
+  would change places when the first one's arm changed. Now one followed by anything but an
+  element stands before **an empty comment of its own**, written in its place in the markup as
+  dom-expressions writes one, `<!>`: the parser keeps a comment where it is, between two texts as
+  well, and it changes no layout, style, `textContent` or `querySelectorAll("*")` — the page's
+  element numbering is unchanged. The mount finds each comment once, as child `k` of its element
+  (`childNodes[k]`, `k` counted as the parser makes the children, a run of texts one node), before
+  it makes any text (*A text hole*, above) or region state; the `For`'s rows, the region's arm or
+  the `Show`'s arm are then put before that comment as they were before the element. So each keeps
+  its place whatever the others do: `browser-tea` keeps a comment at each such place too
+  (`<!---->`), and the transcripts agree there. One followed by an element, or by nothing, keeps
+  no comment, so every page that built before builds to the same bytes; a comment costs its page
+  `<!>` and one lookup at the mount. A text before a comment is made before it. What stays refused:
+  the same shapes in a `For`'s row or a region's arm (`RowBranchBeforeText/`, §9), where no
+  comment is written yet; one inside a control whose value changes. `ForBeforeText/`,
+  `ShowBeforeText/`, `RegionBeforeText/` and `HelperBranchBeforeText/` build and are withdrawn;
+  the page is `browser/inline/MarkerPlaces`.
 - **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
   markup type, and still compiles markup that a program holds in a name, passes or returns, when
   the compiler can see which root the name stands for. Such a name is a **name for a markup
@@ -2205,7 +2225,10 @@ The simple form is S2c's row unit with none of S2d's edits:
   a `For` in another module's markup (`ForInPiece/`); and a `For` in a prerendered page, which has
   no string form of its rows yet (`ForPrerendered/`). §9.6's other rows — a keyed `List` refused, a `For` over
   anything but a model path, a row that reads a global — are S2d's, whose edits need them, and
-  the simple form does not apply them.
+  the simple form does not apply them. *Amended 2026-11-24 (§8.2, *What follows a `For`, a region
+  or a `Show`*):* a `For` of the page followed by text, a hole or another `For` stands before an
+  empty comment of its own and is compiled; `ForBeforeText/` is withdrawn. In a row it stays
+  refused.
 - **A branch in a row** (*amended 2026-11-23, #2625, #966*). An `html` hole of a row whose value
   is an `if` or a `case` — or a call of a view helper whose body is one (§8.4, amended
   2026-11-23) — is a branch region of the row, as one in a region's arm is (§8.2, *A branch

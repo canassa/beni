@@ -1,0 +1,29 @@
+-- emit/release/inline: a `Show` followed by another `Show` and a `For`
+-- followed by text (browser-inline.md §8.2, amended 2026-11-24): each stands
+-- before an empty comment of its own, `<!>` in the markup, which the mount
+-- finds by its place among its parent's children. The page is
+-- `browser/inline/MarkerPlaces`.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+
+
+update : Msg, Int → Int
+update _ n = n + 1
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button onClick={Add}>add</button>
+        <Show when={if n > 1 then Just n else Nothing} keyed>{λk → <b>{k}</b>}</Show>
+        <Show when={if n > 2 then Just n else Nothing} keyed>{λk → <i>{k}</i>}</Show>
+        <p><For each={List.range 1 n} keyed={λi → i}>{λi → <u>{i}</u>}</For> items</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 1, update = update, view = view }
