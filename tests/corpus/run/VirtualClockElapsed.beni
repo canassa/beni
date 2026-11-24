@@ -18,7 +18,7 @@ main = Io.run λ⊤ →
         Clock.run clock λ⊤ →
             Task.sleep (Duration.millis 40)
             Clock.elapsed ⊤
-    Clock.adjust clock (Duration.millis 250)
+    _ = Clock.adjust clock (Duration.millis 250)
     _ = Debug.log "the sleeper woke at" (Task.join sleeper)
     _ = Debug.log "after 250 ms" (Clock.run clock Clock.elapsed)
     _ =

@@ -36,5 +36,5 @@ main = Io.run λ⊤ →
                         "slow"
             _ = Debug.log "timed out at ${String.fromInt (Clock.now ⊤)}" slow
             Task.timeout Duration.zero λ⊤ → Debug.log "never started" "zero"
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     Node.print (Debug.toString (Task.join caller))

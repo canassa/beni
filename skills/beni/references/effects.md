@@ -89,6 +89,10 @@ apart left right =
   waits until it is set, `Deferred.poll d`.
 - `Clock.now ⊤` is the time in milliseconds on the calling fiber's clock. A test can run a fiber on
   a virtual clock with `Clock.run`.
+- `Clock.virtual t` makes a virtual clock that reads `t`. `Clock.adjust clock d` moves it forward by
+  `d` and wakes each fiber whose sleep ends. It gives a `Result`: `Err (Clock.TooFar left)` when
+  the new reading is more than 9007199254740991, the largest `Int`. The clock then does not move.
+  A test that does not use the result writes `_ = Clock.adjust clock d`.
 - `Clock.elapsed ⊤` is a `Float` of milliseconds since a start that the host chooses. It never goes
   back, so `Clock.elapsed ⊤ - start` is how long the work took. Compare it only with another
   `elapsed` reading. On a virtual clock it is that clock's reading.

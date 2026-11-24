@@ -183,7 +183,7 @@ tenHours ⊤ =
             Task.retry (Schedule.exponential (Duration.hours 1) 2.0) λ⊤ →
                 n = Ref.modify attempts λk → ( k + 1, k + 1 )
                 if n < 4 then Err ⊤ else Ok n
-    Clock.adjust clock (Duration.hours 10)
+    _ = Clock.adjust clock (Duration.hours 10)
     _ = Task.join retrying
     Ref.get attempts
 

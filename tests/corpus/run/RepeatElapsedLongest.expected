@@ -1,0 +1,6 @@
+after the run at -9007199254740991, elapsed: 0
+after the run at 0, elapsed: 9007199254740991
+the longest duration: Ok ⊤
+after the run at 10, elapsed: 9007199254740991
+10 ms: Ok ⊤
+the last run was at 10

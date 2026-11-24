@@ -48,7 +48,9 @@ restore ctx =
 rang : Object.Context String, State → State
 rang ctx state =
     Debug.log "alarm ran in ${who ctx}" ⊤
-    if state.again then Object.alarmIn ctx (Duration.hours 1)
+    if state.again then
+        _ = Object.alarmIn ctx (Duration.hours 1)
+        ⊤
     { state | alarms = state.alarms + 1, again = False }
 
 
@@ -57,7 +59,7 @@ serve ctx state request =
     next = { state | served = state.served + 1 }
     case List.reverse (String.split (Worker.path request) "/") of
         [ "later", …rest ] →
-            Object.alarmIn ctx (Duration.hours 1)
+            _ = Object.alarmIn ctx (Duration.hours 1)
             ( next, Worker.text 200 "alarm in an hour" )
 
         [ "due", …rest ] →

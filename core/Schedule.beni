@@ -118,27 +118,48 @@ forever = spaced Duration.zero
 --| at once, and the intervals it missed are not made up.
 pub fixed : Duration → Schedule i
 fixed interval =
-    window = Duration.toMillis interval
-
-    if window == 0 then
+    if Duration.toMillis interval == 0 then
         forever
     else
         fromStep λm →
-            now = Duration.toMillis m.elapsed
-            Continue interval (fixedFrom window now (now + window))
+            Continue interval (fixedFrom interval m.elapsed (Duration.sum m.elapsed interval))
 
 
 -- After the first step: `start` is when it was, `lastRun` when the run
 -- this schedule last asked for was due.
-fixedFrom : Int, Int, Int → Schedule i
-fixedFrom window start lastRun = fromStep λm →
+--
+-- Every time here is a `Duration`, and every sum a `Duration.sum`, which
+-- stops at the longest duration: no step leaves the `Int` range (§17.8,
+-- amended 2026-11-24). The differences are of two durations, so they fit.
+fixedFrom : Duration, Duration, Duration → Schedule i
+fixedFrom interval start lastRun = fromStep λm →
+    window = Duration.toMillis interval
     now = Duration.toMillis m.elapsed
-    runningBehind = now > lastRun + window
-    boundary = window - Int.rem (now - start) window
-    delay = if runningBehind then 0 else if boundary == 0 then window else boundary
+
+    -- `now > lastRun + window`, without the sum. A `lastRun` that stopped
+    -- at the longest duration is a time no `now` passes, and this says so.
+    runningBehind = now - Duration.toMillis lastRun > window
+
+    -- How far `now` is past a multiple of the interval from `start`; below
+    -- zero when `now` is before `start`, which metadata of a program's
+    -- own, or a clock that went back, can make.
+    past = Int.rem (now - Duration.toMillis start) window
+
+    delay =
+        if runningBehind then
+            Duration.zero
+        else if past < 0 then
+            Duration.sum interval (Duration.millis (negate past))
+        else
+            Duration.millis (window - past)
+
     Continue
-        (Duration.millis delay)
-        (fixedFrom window start (if runningBehind then now else now + delay))
+        delay
+        (fixedFrom
+            interval
+            start
+            (if runningBehind then m.elapsed else Duration.sum m.elapsed delay)
+        )
 
 
 --| `base × factor ^ (attempt − 1)` after each run; never stop.

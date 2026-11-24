@@ -1,0 +1,14 @@
+6 ms: Err (TooFar (Duration 5))
+reads: 9007199254740986
+the sleeper woke at: 9007199254740988
+5 ms: Ok ⊤
+reads: 9007199254740991
+1 ms at the last reading: Err (TooFar (Duration 0))
+zero at the last reading: Ok ⊤
+reads: 9007199254740991
+the longest, from the first reading: Ok ⊤
+reads: 0
+the longest again: Ok ⊤
+reads: 9007199254740991
+1 ms more: Err (TooFar (Duration 0))
+the last reading is 9007199254740991

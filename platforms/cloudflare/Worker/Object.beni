@@ -1071,9 +1071,32 @@ alarmAt ctx at =
     realarm instance
 
 
---| The alarm after the duration, from now.
-pub alarmIn : Context msg, Duration → ⊤
-alarmIn ctx d = alarmAt ctx (Js.to (Js.call (Js.global "Date") "now" []) + Duration.toMillis d)
+--| Why `alarmIn` set no alarm.
+--|
+--| `TooFar`: the alarm's time would be past 9007199254740991, the last
+--| millisecond an `Int` holds.
+pub type AlarmError
+    = TooFar
+
+
+--| The alarm after the duration, from now on the host's clock: `alarmAt`
+--| of that time. `Err TooFar` when no `Int` holds that time; the alarm
+--| that was set, if any, then stays as it was.
+pub alarmIn : Context msg, Duration → Result AlarmError ⊤
+alarmIn ctx d =
+    ms = Duration.toMillis d
+
+    now : Int
+    now = Js.to (Js.call (Js.global "Date") "now" [])
+
+    -- The test comes before the sum, and stays in the range itself: a time
+    -- at or below 0 has room for every duration (boundary.md §9.12 (e.5),
+    -- amended 2026-11-24).
+    if now > 0 && ms > 9007199254740991 - now then
+        Err TooFar
+    else
+        alarmAt ctx (now + ms)
+        Ok ⊤
 
 
 --| `deleteAlarm`: no alarm. While a fiber waits, the platform keeps its

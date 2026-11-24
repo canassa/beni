@@ -33,7 +33,7 @@ main = Io.run λ⊤ →
         Clock.run clock λ⊤ →
             Task.sleep (Duration.millis 20)
             Debug.log "late woke at" (Clock.now ⊤)
-    Clock.adjust clock (Duration.millis 30)
+    _ = Clock.adjust clock (Duration.millis 30)
     _ = Debug.log "adjust returned at" (Clock.run clock Clock.now)
     _ = Task.joinAll [ busy, late ]
     Node.print "done"

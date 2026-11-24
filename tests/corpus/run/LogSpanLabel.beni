@@ -30,6 +30,6 @@ main = Io.run λ⊤ →
                         Log.info "in both"
                     Log.info "the inner span ended"
                 Log.info "no span"
-    Clock.adjust clock (Duration.millis 20)
+    _ = Clock.adjust clock (Duration.millis 20)
     Task.join worker
     Node.printLines (Ref.get seen)

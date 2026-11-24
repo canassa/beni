@@ -75,7 +75,8 @@ handle request =
   receives. `restore ctx` builds the state at each start, from `Worker.Storage`. Each handler of
   `Handlers` takes the state and returns the next one; `Object.none` has a handler for each kind
   that keeps the state. Events run one at a time: `request` (a `Worker.forward` from the Worker),
-  `received` (a message), `alarm` (only at the time `Object.alarmAt` or `alarmIn` set),
+  `received` (a message), `alarm` (only at the time `Object.alarmAt` or `alarmIn` set; `alarmIn`
+  gives `Err Object.TooFar`, and sets nothing, for a time more than 9007199254740991),
   `tick`/`ticked` (a timer the state names; `tick` must not wait), and the WebSocket handlers.
 - Reach an object with `Worker.objects (Worker.env ctx) "NAME" schema`, then `Worker.byName`,
   `Worker.unique` or `Worker.byId`. `Worker.forward ref request` sends a request. `Object.post
