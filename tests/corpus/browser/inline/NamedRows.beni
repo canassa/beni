@@ -5,8 +5,9 @@
 -- function's body is a branch turns arm in place, `<></>` an empty comment;
 -- a row's event sends the message its row last kept; and a `Show` whose
 -- body is a lambda whose body is a branch, or a named function, chooses its
--- arm with `v` bound and remounts when its key changes. Its transcript is
--- `browser-tea`'s for the same source.
+-- arm with `v` bound and remounts when its key changes. A named function's
+-- `let`s read only inside a branch's arm, or only by a `For`'s fallback, are
+-- bound. Its transcript is `browser-tea`'s for the same source.
 import Html exposing (Html)
 import Tea
 
@@ -72,6 +73,24 @@ chosen r =
         <li class="odd"><button id="odd${String.fromInt r}" onClick={Pick r}>{r}</button></li>
 
 
+armRow : Int → Html Msg
+armRow r =
+    w = "arm ${String.fromInt r}"
+    <li>{if r > 1 then <b>{w}</b> else <i>low</i>}</li>
+
+
+fallbackOnly : Int → Html Msg
+fallbackOnly s =
+    note = "only ${String.fromInt s}"
+    <section>
+        <ul>
+            <For each={List.repeat "z" (s - 1)} keyed={False} fallback={<li>{note}</li>}>
+                {λx → <li>{x}</li>}
+            </For>
+        </ul>
+    </section>
+
+
 shown : Int → Html Msg
 shown s = <p id="named">{"named ${String.fromInt s}"}</p>
 
@@ -101,6 +120,8 @@ view model =
             </Show>
         </div>
         <div id="shownamed"><Show when={model.selected} keyed>{shown}</Show></div>
+        <ul id="armrows"><For each={model.rows} keyed={λr → r}>{armRow}</For></ul>
+        <div id="fallbackonly"><Show when={model.selected} keyed>{fallbackOnly}</Show></div>
     </main>
 
 

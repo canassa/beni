@@ -45,6 +45,21 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 2"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <b>"arm 4"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- click #pick2
@@ -94,6 +109,21 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 2"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <b>"arm 4"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- click #odd1
@@ -143,6 +173,21 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 2"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <b>"arm 4"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- set #in1 "one"
@@ -192,6 +237,21 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 2"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <b>"arm 4"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- click #reverse
@@ -241,6 +301,21 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <b>"arm 2"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- click #pick1
@@ -286,6 +361,18 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- click #add
@@ -337,6 +424,21 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- click #add
@@ -394,6 +496,24 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- click #odd5
@@ -451,6 +571,24 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>
 -- click #one
@@ -512,6 +650,30 @@
     </div>
     <div id="shownamed">
       <p id="named">"named 1"</p>
+    </div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly">
+      <section>
+        <ul>
+          <li>"only 1"</li>
+        </ul>
+      </section>
     </div>
   </main>
 </body>
@@ -575,6 +737,30 @@
     <div id="shownamed">
       <p id="named">"named 1"</p>
     </div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly">
+      <section>
+        <ul>
+          <li>"only 1"</li>
+        </ul>
+      </section>
+    </div>
   </main>
 </body>
 -- click #bump
@@ -633,6 +819,30 @@
     </div>
     <div id="shownamed">
       <p id="named">"named 1"</p>
+    </div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly">
+      <section>
+        <ul>
+          <li>"only 1"</li>
+        </ul>
+      </section>
     </div>
   </main>
 </body>
@@ -695,6 +905,30 @@
     </div>
     <div id="shownamed">
       <p id="named">"named 1"</p>
+    </div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly">
+      <section>
+        <ul>
+          <li>"only 1"</li>
+        </ul>
+      </section>
     </div>
   </main>
 </body>
@@ -758,6 +992,30 @@
     <div id="shownamed">
       <p id="named">"named 1"</p>
     </div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly">
+      <section>
+        <ul>
+          <li>"only 1"</li>
+        </ul>
+      </section>
+    </div>
   </main>
 </body>
 -- click #two
@@ -819,6 +1077,30 @@
     </div>
     <div id="shownamed">
       <p id="named">"named 2"</p>
+    </div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly">
+      <section>
+        <ul>
+          <li>"z"</li>
+        </ul>
+      </section>
     </div>
   </main>
 </body>
@@ -882,6 +1164,30 @@
     <div id="shownamed">
       <p id="named">"named 1"</p>
     </div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly">
+      <section>
+        <ul>
+          <li>"only 1"</li>
+        </ul>
+      </section>
+    </div>
   </main>
 </body>
 -- click #none
@@ -939,5 +1245,23 @@
       <i>"nothing"</i>
     </div>
     <div id="shownamed"></div>
+    <ul id="armrows">
+      <li>
+        <b>"arm 4"</b>
+      </li>
+      <li>
+        <b>"arm 3"</b>
+      </li>
+      <li>
+        <i>"low"</i>
+      </li>
+      <li>
+        <b>"arm 5"</b>
+      </li>
+      <li>
+        <b>"arm 6"</b>
+      </li>
+    </ul>
+    <div id="fallbackonly"></div>
   </main>
 </body>

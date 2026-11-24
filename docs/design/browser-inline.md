@@ -2321,7 +2321,12 @@ The simple form is S2c's row unit with none of S2d's edits:
   1, at the `For`): a local function, which `Lower` cannot see into (`ForRowFunction/`, now a
   `let`-bound lambda); another module's function (`ForRowOtherModule/`, with another module's
   markup in a row below); a function that calls itself, one under `Html.map`, and one whose body
-  has `let`s no hole reads. Pages `browser/inline/NamedRows` (checked against `browser-tea` for
+  has `let`s no hole reads — which, conservatively, counts some `let`s read only by events or
+  rows inside its arms (`Chain.statements`). The body's `let`s are bound once, where the call
+  is entered, for every value its unit reads, its branch regions' arms and its `For`s'
+  fallbacks included (`Page.namedLets`; the review of this slice found a `let` read only inside
+  an arm, or only by a fallback, unbound: a `ReferenceError` in development, a wrong text in
+  release). Pages `browser/inline/NamedRows` (checked against `browser-tea` for
   the same source) and `browser/tea/ApiItems` copied beside it.
 - **A `fallback` in a row** (*amended 2026-11-24, #2637, #966*). A `For` in a row, in a region's
   arm or in a `Show`'s body may have a `fallback`, planned as the page's is: a region of the unit
