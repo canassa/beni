@@ -3200,7 +3200,7 @@ const Page = struct {
                 // the constructor alone evaluates nothing at the event; one
                 // whose message goes through the dispatcher enters the call
                 // again (`pieceMake`), and is refused there when an argument
-                // is not proved pure and total.
+                // is not proved pure and total (`valuePureTotal`).
                 var at: ?u32 = if (pg.piece) null else ctx;
                 while (at) |c| : (at = pg.ctxs.items[c].parent) {
                     const call_ctx = pg.ctxs.items[c];

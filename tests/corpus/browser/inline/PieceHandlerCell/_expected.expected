@@ -1,0 +1,110 @@
+-- load
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"1"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>
+-- click #double
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"2"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>
+-- click #more
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"3"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>
+-- click #reset
+(the DOM did not change)
+-- click #double
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"6"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>
+-- click #plus
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"16"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>
+-- click #reset
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"3"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>
+-- click #plus
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"13"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>
+-- click #more
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"14"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>
+-- click #double
+<body>
+  <main>
+    <section>
+      <button id="double">"double"</button>
+      <button id="plus">"plus ten"</button>
+      <button id="more">"more"</button>
+      <p id="cups">"28"</p>
+    </section>
+    <button id="reset">"reset"</button>
+  </main>
+</body>

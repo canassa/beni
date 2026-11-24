@@ -1,0 +1,32 @@
+--! A widget whose buttons send messages made from its model at the event.
+
+import Html exposing (Event, Html)
+
+
+pub type alias Model =
+    cups : Int
+
+
+pub type Msg
+    = Set Int
+    | More
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Set n →
+            { model | cups = n }
+
+        More →
+            { model | cups = model.cups + 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <button id="double" onClick={Set (model.cups * 2)}>double</button>
+        <button id="plus" onClick={λ_ → Set (model.cups + 10)}>plus ten</button>
+        <button id="more" onClick={More}>more</button>
+        <p id="cups">{String.fromInt model.cups}</p>
+    </section>
