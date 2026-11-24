@@ -1045,6 +1045,7 @@ const Mod = struct {
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
         m.ir.nodes.items(.host)[node.int()] = false;
+        m.ir.nodes.items(.stores)[node.int()] = false;
         if (JsIr.keyRow(m.node_keys.items, node)) |at| m.node_keys.items[at].key = .wild;
     }
 
@@ -1053,6 +1054,13 @@ const Mod = struct {
     fn setHost(m: *Mod, node: Index) void {
         std.debug.assert(m.ir.tag(node) == .call);
         m.ir.nodes.items(.host)[node.int()] = true;
+    }
+
+    /// Mark `node`, a `call`, as one that writes a record in place
+    /// (`JsIr.Node.stores`): what a copy of such a call keeps.
+    fn setStores(m: *Mod, node: Index) void {
+        std.debug.assert(m.ir.tag(node) == .call);
+        m.ir.nodes.items(.stores)[node.int()] = true;
     }
 
     /// `node`, appended by a `Copy` that keeps its source's keys, takes
@@ -1094,6 +1102,7 @@ const Mod = struct {
         };
         m.setNode(node, tag, d.lhs, d.rhs);
         if (m.ir.host(from)) m.setHost(node);
+        if (m.ir.tag(from) == .call and m.ir.stores(from)) m.setStores(node);
         if (key == .wild) return;
         if (JsIr.keyRow(m.node_keys.items, node)) |at| {
             m.node_keys.items[at].key = key;
@@ -3336,6 +3345,10 @@ const Spec = struct {
     fn pureCall(s: *Spec, m: *Mod, call: Index, depth: u32) Allocator.Error!bool {
         if (depth >= max_pure_depth) return false;
         const ir = m.ir;
+        // A call that writes a record in place is a store, whatever its
+        // callee's body shows here (`ownership-checker.md` §31.10, amended
+        // 2026-11-24).
+        if (ir.stores(call)) return false;
         const d = ir.data(call);
         const v = try s.pts.safeChain(m.index, s.cur_top, @fromBackingInt(@intCast(d.lhs))) orelse return false;
         if (v.top or v.prim or v.nullish() or v.sites.len == 0) return false;
@@ -10593,7 +10606,10 @@ const Spec = struct {
                     const k = c.src.ir.nodeKey(from);
                     if (k != .wild) try c.dst.setNodeKey(c.gpa(), to, k);
                 },
-                .call => if (c.src.ir.host(from)) c.dst.setHost(to),
+                .call => {
+                    if (c.src.ir.host(from)) c.dst.setHost(to);
+                    if (c.src.ir.stores(from)) c.dst.setStores(to);
+                },
                 else => {},
             };
             return to;

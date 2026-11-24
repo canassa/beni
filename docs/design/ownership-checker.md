@@ -7573,6 +7573,28 @@ store's target as a write, never as a read it may fold, and its value as no lite
 block-bodied helpers had stopped slice 8 from writing them in. `run/RecordInPlaceExpressions` pins the forms,
 and every `.in-place` fixture is built a third time in place, as a release ships it.
 
+*Amended 2026-11-24 (#2642): **a call that writes is a store**.* A record update made inside a callee is a
+store as much as one written where it stands, and the barrier holds for its call: a call at which the table
+has an accepted demand (§31.7, a callee that writes a record argument, at any depth and across modules, since
+each writing call in a callee's body is a demand of that body in turn) is a store for every rule above. It is
+never dropped as an unused pure value, and a pass moves it past nothing but names and literals. The lowering
+marks the call node, as it marks a `Js.apply` (`JsIr.Node.stores`), and every pass that copies a call keeps the
+mark, so a binding a pass makes from part of a value — scalar replacement of a pair, `backend.md` §9 — holds
+the mark with the call. A call whose function is not known where it is written — a parameter, a pattern's
+variable, a field, an evidence parameter — is marked too, in every module, core's included. It has no demand of
+its own: `apply f m s = f m s` writes nothing until it is handed a writer, and the demand is at the call of
+`apply`. But whole-program specialisation writes a small callee's body where it is called, with the arguments in
+its parameters' places, and `apply said model "x"` then becomes a call of `said` copied from `f m s`. That call
+must carry the mark the call of `apply` had. Value semantics alone could not see the drop: every later read of the old version is
+hoisted before the call (§31.14), so an unread call's write is unobservable to the program. But a lowering
+that keeps the object across the write sees it. `browser-inline`'s handler stores nothing back when no key gives
+the model another object (`programModelKept`), and its write pass reads the object the arm wrote. Under
+`--release`, the pair `( said model "later", Cmd.perform … )` was split into one binding per slot, and the
+model's slot had no read. It was dropped with the write in `said`, and the page never showed it. A list write
+made by a callee is not marked. No lowering keeps a list's object across a write whose result is unread.
+`browser/inline/ReleaseCalleeWrite` pins the page, with helpers at depth two, across modules, through a
+function a helper is handed, and inside a tuple, a record and `Cmd.batch`.
+
 ### 31.11 Identity, on every platform
 
 `language.md` §11.12's first promise stands: an untouched field keeps its identity. Its second is amended (that
