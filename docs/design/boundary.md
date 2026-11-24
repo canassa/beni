@@ -8572,6 +8572,10 @@ inside a handler queues it behind the events already waiting ((e.10)).
     (*measured* in the review of #1999 under Miniflare, compatibility date 2026-05-18; #2022
     records it). A time in the past fires at the next firing, as `workers/ObjectWake` shows with
     `alarmAt ctx 0`.
+  - **`L` is the language's bound, not the host's.** A JavaScript `Date` ends at 8.64 × 10¹⁵ ms,
+    which is below `L`. What a deployed workerd does with an alarm between those two times is
+    *owed*: only the acceptance under Miniflare is measured. #1995 tracks host calls that misfire
+    on a program's argument.
   - **Fixture.** `workers/ObjectAlarmTooFar`: `alarmIn` of the longest duration answers
     `Err TooFar` and `/__beni/alarms` shows no program time; after an `alarmIn` of one hour the
     same call answers `Err TooFar` again and the program's time is still set.

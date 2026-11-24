@@ -1092,11 +1092,17 @@ alarmIn ctx d =
     -- The test comes before the sum, and stays in the range itself: a time
     -- at or below 0 has room for every duration (boundary.md §9.12 (e.5),
     -- amended 2026-11-24).
-    if now > 0 && ms > 9007199254740991 - now then
+    if now > 0 && ms > lastMillisecond - now then
         Err TooFar
     else
         alarmAt ctx (now + ms)
         Ok ⊤
+
+
+-- The last millisecond an `Int` holds, 2⁵³ − 1: the number of core's
+-- longest `Duration` and of `Task`'s `lastMillisecond`.
+lastMillisecond : Int
+lastMillisecond = 9007199254740991
 
 
 --| `deleteAlarm`: no alarm. While a fiber waits, the platform keeps its

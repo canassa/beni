@@ -3021,6 +3021,12 @@ pub adjust : Virtual, Duration → Result AdjustError ⊤
   this section does.
 - **`Metadata.elapsed` and a log span's time** are differences of two readings. A difference can
   be more than `L`: a clock that began at −`L` can read 10. §17.8 and §17.11 give each its answer.
+- **Open: a sleeper's wake time.** `Task.sleep` on a virtual clock still computes the wake time
+  as the reading plus the duration, with no bound (`virtualSleep` in `core/Task.beni`). That time
+  is internal, so the decision above does not settle it, and the answer is the owner's (dashboard
+  question `clock-int-range-q1`, 2026-11-24). Until this section states that answer, the headline
+  of this amendment does not cover that sum. Since this amendment a clock never reads past `L`,
+  so today a sleeper with a later wake time is never due.
 - **Fixtures.** `run/VirtualClockAdjustTooFar`: a clock at `L` − 5 refuses 6 ms with
   `TooFar (5 ms)` and still reads `L` − 5, a sleeper due at `L` − 3 did not wake, 5 ms then moves
   the clock to `L` and wakes it, each later `adjust` but `zero` is `TooFar zero`, and a clock at
