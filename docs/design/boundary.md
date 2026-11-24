@@ -6084,10 +6084,11 @@ own, and could not stop the browser's menu.
 | the pen's eraser button | 5 | 32 |
 
 `button` is -1 when no button and no contact changed since the last event. That is each
-`pointermove` of a pointer whose buttons stay as they are. A `pointerdown` comes with the first
-button that goes down, and a `pointerup` with the last button that goes up. A button that changes
-between the two comes with a `pointermove`, whose `button` is that button (§4.1.1.1, *chorded button
-interactions*). `buttons` is 0 when no button is down. The numbers name the main and the secondary
+`pointermove` of a pointer whose buttons stay as they are. For a mouse, a `pointerdown` comes when
+the first button goes down (§4.2.3), and a `pointerup` when the last button comes up (§4.2.6). A
+button that changes between the two comes with a `pointermove` (§4.2.4; §4.1.1.1, *chorded button
+interactions*), whose `button` is that button (measured in Chrome, *As built, 2026-11-24*).
+`buttons` is 0 when no button is down. The numbers name the main and the secondary
 button, not a side: on a mouse that is set up for the left hand, the main button is the right one,
 and its `button` is 0 (MDN, `MouseEvent.button`).
 
@@ -6121,14 +6122,16 @@ own on another (rule 7). `preventDefault` on the `pointerdown` does not stop the
 **The event's pointer.** Pointer Events level 3 (§4.2.12) says that a `contextmenu` is a
 `PointerEvent`. Chrome 92, Firefox 129 and Safari 18.2 are the first versions that dispatch one
 (MDN's compatibility data, `contextmenu_event.type_pointerevent`). A browser before them dispatches
-a `MouseEvent`, which has no `pointerId`, no `pointerType` and no `isPrimary`. The standard gives
-the event the `pointerId` and the `pointerType` of the pointer that made it, and the default of
-each other pointer attribute. For an event that no pointing device made, such as a menu that the
-keyboard asks for, it gives `pointerId` -1 and `pointerType` `""` (§4.2.12.1). So on an
+a `MouseEvent`, which has no `pointerId`, no `pointerType` and no `isPrimary`. The standard has
+three rules for the event (§4.2.12.1). Each attribute of a `PointerEvent` but `pointerId` and
+`pointerType` has its default value. An event that a pointing device made has the `pointerId` and
+the `pointerType` of the pointer events that caused it. An event that no pointing device made,
+such as a menu that the keyboard asks for, has `pointerId` -1 and `pointerType` `""`. So on an
 `onContextMenu`:
 
-- **`isPrimary` is `False`**, for the mouse too: `false` is the attribute's default. Chrome 153
-  does this (*As built, 2026-11-24*).
+- **`isPrimary` is `False`**, for the mouse too. The section does not name `isPrimary`: the rule
+  of the default values gives it, and the default of `isPrimary` is `false` (§4.1,
+  `PointerEventInit`). Chrome 153 does this (*As built, 2026-11-24*).
 - `pointerType` is `""` when the event has no pointer, as (b) says of a pointer that the browser
   cannot name.
 - **`pointerId` is -1 when the event has no `pointerId`.** Before this part, the reader gave the
@@ -6154,7 +6157,7 @@ so they are true on each form of the event.
   213953, open, which says that a mouse connected to an iPad does give the event). A page for a
   touch screen measures a long press with `onPointerDown`, `onPointerUp` and a timer.
 - In Firefox, a right-click with Shift held shows the browser's menu and dispatches no
-  `contextmenu`, so no page can stop that menu.
+  `contextmenu`, so no page can stop that menu (MDN, *contextmenu event*; not measured here).
 
 `auxclick`, the click of a button that is not the main button, waits for a use.
 
