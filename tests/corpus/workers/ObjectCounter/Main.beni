@@ -71,7 +71,7 @@ serve ctx state request =
             )
 
         [ "alarm-soon", …rest ] →
-            Object.alarmIn ctx (Duration.millis 10)
+            _ = Object.alarmIn ctx (Duration.millis 10)
             ( state, Worker.text 200 "alarm set" )
 
         [ "self", …rest ] →

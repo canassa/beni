@@ -78,6 +78,8 @@ module Worker.Object
     TooManyTags
     TooManySockets
     ProtocolNotOffered
+  type AlarmError
+    TooFar
   type AskError
     Overloaded
     Reset
@@ -97,7 +99,7 @@ module Worker.Object
   value accept : Context msg, Request, List String → Result AcceptError (Socket × Response)  -- impure
   value acceptWith : Context msg, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)  -- impure
   value alarmAt : Context msg, Int → ⊤  -- impure
-  value alarmIn : Context msg, Duration → ⊤  -- impure
+  value alarmIn : Context msg, Duration → Result AlarmError ⊤  -- impure
   value ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a  -- suspends
   value autoReply : Context msg, String, String → Result AutoReplyError ⊤  -- impure
   value body : Request → String  -- impure

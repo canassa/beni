@@ -54,5 +54,5 @@ main = Io.run λ⊤ →
                         after 50 (Ok "slower")
                 , λ⊤ → after 1 (Ok "first Ok")
                 ]
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     Node.print (Debug.toString (Task.join caller))

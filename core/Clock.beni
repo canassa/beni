@@ -21,6 +21,10 @@
 --! they began to sleep among equal ones, and `adjust` lets everything they
 --! wake run as far as it can before it wakes the next.
 --!
+--! A virtual clock reads an `Int`, so its last reading is 9007199254740991,
+--! 2⁵³ − 1. `adjust` answers a `Result`: an `Err` when the clock cannot move
+--! that far. The `_ =` above says that this test does not look at it.
+--!
 --! Nothing here is `foreign`.
 
 import Duration exposing (Duration)
@@ -85,6 +89,15 @@ pub run : Virtual, (⊤ → a) → a
 run (Virtual clock) work = Task.withClock clock work
 
 
+--| Why `adjust` did not move a clock.
+--|
+--| `TooFar left`: the new reading would be past 9007199254740991, the last
+--| millisecond an `Int` holds. `left` is how far the clock can still move,
+--| so `adjust clock left` moves it to its last reading.
+pub type AdjustError
+    = TooFar Duration
+
+
 --| Move the clock forward by `duration`, and return once everything that
 --| woke has run as far as it can. Every fiber due by the new reading is
 --| woken, in the order of its wake time, the clock reading that time when
@@ -92,7 +105,17 @@ run (Virtual clock) work = Task.withClock clock work
 --| reading, wakes in the same `adjust`. Time never goes back; `zero`
 --| changes nothing.
 --|
+--| `Err (TooFar left)` when the new reading would be past the last
+--| millisecond an `Int` holds. The clock then keeps its reading and its
+--| sleepers, and nothing wakes.
+--|
+--|     -- 5 ms before the last reading: Err (Clock.TooFar (Duration.millis 5))
+--|     clock = Clock.virtual 9007199254740986
+--|     Clock.adjust clock (Duration.millis 6)
+--|
 --| Called from the fiber that drives the test, outside `run`: it waits for
 --| the others.
-pub adjust : Virtual, Duration → ⊤
-adjust (Virtual clock) duration = Task.adjustClock clock (Js.from (Duration.toMillis duration))
+pub adjust : Virtual, Duration → Result AdjustError ⊤
+adjust (Virtual clock) duration =
+    Result.mapError (Task.adjustClock clock (Js.from (Duration.toMillis duration))) λleft →
+        TooFar (Duration.millis left)

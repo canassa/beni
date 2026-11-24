@@ -36,7 +36,7 @@ main = Io.run λ⊤ →
     small = request s "one" 1
     Task.yieldNow ⊤
     _ = Debug.log "available while both wait" (Semaphore.available s)
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     _ = Task.joinAll [ holder, big, small ]
     _ = Debug.log "available at the end" (Semaphore.available s)
     Node.print "done"

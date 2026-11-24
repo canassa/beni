@@ -26,6 +26,6 @@ main = Io.run λ⊤ →
     b = sleeper clock "b" 10
     c = sleeper clock "c" 20
     d = sleeper clock "d" 20
-    Clock.adjust clock (Duration.millis 30)
+    _ = Clock.adjust clock (Duration.millis 30)
     _ = Task.joinAll [ a, b, c, d ]
     Node.print "done"

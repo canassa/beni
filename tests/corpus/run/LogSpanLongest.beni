@@ -1,0 +1,57 @@
+-- run: a log span's milliseconds are a length of time: never negative,
+-- and at most 9007199254740991, the longest duration
+-- (transparent-effects-proposal.md §17.11, amended 2026-11-24; #2022).
+-- Before the fix they were one reading less another with no bound, and
+-- the lines here read 9007199254741000, -300, 18014398509481982 and
+-- -18014398509481982.
+--
+--   - A span that begins at the first reading an `Int` holds,
+--     -9007199254740991: at the reading 0 it has run for exactly the
+--     longest duration, and at 10 for 10 ms more than any length holds,
+--     which is the longest duration.
+--   - A span that begins on a clock at 500 and writes its line on a clock
+--     at 200: the reading is before the start, so 0 ms.
+--   - A span from a clock at the first reading to one at the last
+--     reading, and the other way round: the longest duration, and 0 ms.
+import Clock
+import Duration
+import Io
+import Log exposing (Entry)
+import Node exposing (Program)
+import Task
+
+
+longest : Int
+longest = 9007199254740991
+
+
+-- The sink: each line's message and its spans.
+record : Entry → ⊤
+record entry =
+    _ = Debug.log entry.message entry.spans
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    first = Clock.virtual (negate longest)
+    lowest = Clock.virtual (negate longest)
+    last = Clock.virtual longest
+    early = Clock.virtual 200
+    late = Clock.virtual 500
+    worker = Task.spawn λ⊤ →
+        Clock.run first λ⊤ →
+            Log.withSink record λ⊤ →
+                Log.span "long" λ⊤ →
+                    Task.sleep (Duration.millis longest)
+                    Log.info "at 0"
+                    Task.sleep (Duration.millis 10)
+                    Log.info "at 10"
+    _ = Clock.adjust first (Duration.millis longest)
+    _ = Clock.adjust first (Duration.millis 10)
+    Task.join worker
+    Log.withSink record λ⊤ →
+        Clock.run late λ⊤ → Log.span "back" λ⊤ → Clock.run early λ⊤ → Log.info "from 500 to 200"
+        Clock.run lowest λ⊤ → Log.span "up" λ⊤ → Clock.run last λ⊤ → Log.info "first to last"
+        Clock.run last λ⊤ → Log.span "down" λ⊤ → Clock.run lowest λ⊤ → Log.info "last to first"
+    Node.print "done"

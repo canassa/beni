@@ -26,5 +26,5 @@ main = Io.run λ⊤ →
 
     worker = Task.spawn λ⊤ →
         Clock.run clock λ⊤ → Task.retry (Schedule.exponential (Duration.millis 100) 2.0) flaky
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     Node.print "answer: ${Debug.toString (Task.join worker)}"

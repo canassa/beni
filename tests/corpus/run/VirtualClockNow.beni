@@ -13,11 +13,11 @@ main = Io.run λ⊤ →
     a = Clock.virtual 5000
     b = Clock.virtual 0
     _ = Debug.log "a at first" (Clock.run a Clock.now)
-    Clock.adjust a (Duration.seconds 2)
+    _ = Clock.adjust a (Duration.seconds 2)
     _ = Debug.log "a after 2 s" (Clock.run a Clock.now)
-    Clock.adjust a Duration.zero
+    _ = Clock.adjust a Duration.zero
     _ = Debug.log "a after zero" (Clock.run a Clock.now)
-    Clock.adjust b (Duration.millis 7)
+    _ = Clock.adjust b (Duration.millis 7)
     _ = Debug.log "b after 7 ms" (Clock.run b Clock.now)
     Node.print
         "a then b: ${String.fromInt (Clock.run a Clock.now - Clock.run b Clock.now)} ms apart"
