@@ -9987,7 +9987,7 @@ fn checkMadeEscaped(f: *Frame, v: Val) Error!void {
     {
         const q = f.quiet();
         defer f.loud(q);
-        _ = try f.allLeaves(v, &xs);
+        try f.madeLeaves(v, &xs);
     }
     for (xs.items) |a| {
         if (a.root == 0) continue;
@@ -9996,6 +9996,20 @@ fn checkMadeEscaped(f: *Frame, v: Val) Error!void {
         } else false;
         if (!held) std.debug.panic("own3: a Js.Value made of parts and read at a type variable holds a cell of root {d} that did not escape (kernel §3.4, §9)", .{a.root});
     }
+}
+
+/// The leaves of `v` that `checkMadeEscaped` reads, by the route the
+/// escape read them (`heldLeaves`): a join arm by arm, each at its own
+/// place, and any other value whole. Read at the join's place, an arm of
+/// another place builds a map of two layouts (`Loc.cover`) that the escape
+/// never asked for, and a meeting of two arms (`meet`) (kernel §9).
+fn madeLeaves(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!void {
+    const n = f.nodes.items[v];
+    if (n.tag == .join) {
+        for (0..n.b) |ki| try f.madeLeaves(f.lists.items[n.a + 2 * ki], out);
+        return;
+    }
+    _ = try f.allLeaves(v, out);
 }
 
 /// Whether `v`, a `Js.Value` of the frame, was made by the frame of parts it
