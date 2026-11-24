@@ -1368,11 +1368,12 @@ rowText parent before shown =
 
 -- ---- Branch regions (`browser-inline.md` §8.2, amended 2026-11-23) -----
 
---| `(parent, before, owned)`: a branch region of `parent`, before the element
---| `before`, or at its end when that is null: the region's state, which
---| holds where its arm stands and, once one is shown, the arm, `k`, and its
---| made row, `r`. A region is never followed by another region, a `For` or
---| a text, so nothing else stands between its arm and `before`. What the
+--| `(parent, before, owned)`: a branch region of `parent`, before the node
+--| `before` — the element after it, or an empty comment of its own when
+--| anything else follows it (`browser-inline.md` §8.2, amended 2026-11-24)
+--| — or at its end when that is null: the region's state, which holds where
+--| its arm stands and, once one is shown, the arm, `k`, and its made row,
+--| `r`. Nothing else stands between its arm and `before`. What the
 --| region holds at `stop` is taken out of the page when `owned`: a region at
 --| the mount node; one in an element goes with it.
 pub region : V, V, V → V

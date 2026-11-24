@@ -19084,14 +19084,24 @@ pub const Lowerer = struct {
         try l.inline_frames.append(l.scratch, .{ .node = node, .chain = .{ .root = what.markup }, .caller = l.declCtx(), .bound = true, .token = !arms.helper });
     }
 
-    /// `cx.programShowFallback`: the markup root a `Show`'s fallback is,
-    /// when it is markup written there and its values can be evaluated
-    /// apart.
+    /// The fallback of a `Show` or, since version 1.37, of a `For`
+    /// (`browser-inline.md` §9, amended 2026-11-24); null for any other
+    /// node, or one with none.
+    fn fallbackOf(tree: *const beni_markup.Tree, node: beni_markup.Node.Index) ?beni_markup.Value.Index {
+        return switch (tree.kind(node)) {
+            .show => tree.show(node).fallback,
+            .for_ => tree.for_(node).fallback,
+            else => null,
+        };
+    }
+
+    /// `cx.programShowFallback`: the markup root a `Show`'s or a `For`'s
+    /// fallback is, when it is markup written there and its values can be
+    /// evaluated apart.
     fn directShowFallback(l: *Lowerer, node: beni_markup.Node.Index) ?beni_markup.Root.Index {
         const st = l.mk orelse return null;
         const tree = &st.built.tree;
-        if (tree.kind(node) != .show) return null;
-        const fb = tree.show(node).fallback orelse return null;
+        const fb = fallbackOf(tree, node) orelse return null;
         const i = switch (st.built.values[@backingInt(fb)]) {
             .inst => |x| x,
             else => return null,
@@ -19107,8 +19117,7 @@ pub const Lowerer = struct {
     fn directShowFallbackTextArg(l: *Lowerer, node: beni_markup.Node.Index) ?Inst.Index {
         const st = l.mk orelse return null;
         const tree = &st.built.tree;
-        if (tree.kind(node) != .show) return null;
-        const fb = tree.show(node).fallback orelse return null;
+        const fb = fallbackOf(tree, node) orelse return null;
         const i = switch (st.built.values[@backingInt(fb)]) {
             .inst => |x| x,
             else => return null,
@@ -21443,6 +21452,15 @@ const markup_vtable: beni_markup.VTable = struct {
             // read anything.
             else => return true,
         };
+        // Markup written in place — a `Show`'s or a `For`'s fallback — reads
+        // what its own values read, which are no children of the
+        // instruction (`browser-inline.md` §9, amended 2026-11-24).
+        if (l.bir.instTag(i) == .markup) {
+            var values: std.ArrayList(Inst.Index) = .empty;
+            l.bir.markupValues(l.scratch, @fromBackingInt(@intCast(l.bir.instData(i).lhs)), &values) catch return true;
+            for (values.items) |x| if (l.subtreeReadsLocal(x, local)) return true;
+            return false;
+        }
         return l.subtreeReadsLocal(i, local);
     }
 
