@@ -1895,7 +1895,7 @@ const Page = struct {
             try pg.unitValues(p, &values);
             var lets: std.ArrayList(m.Value.Index) = .empty;
             try lets.appendSlice(pg.a(), values.items);
-            try pg.unitLets(p, &lets);
+            try pg.namedLets(p, &lets);
             try pg.bindLets(st, named.root.?, lets.items);
             try cx.rootValues(st, named.root.?, values.items);
             try pg.setRow(st, r, p, try pg.prepareRegions(st, p));
@@ -2127,6 +2127,16 @@ const Page = struct {
             .rows => |x| if (x.fallback != null) try out.append(pg.a(), pg.tree.for_(x.node).fallback.?),
             else => {},
         };
+    }
+
+    /// What a named row function's unit `p` reads of its body's `let`s,
+    /// beyond `unitValues`: `unitLets`, and what each of its branch regions
+    /// reads (`regionReads`), its arms' values included, since the body's
+    /// `let`s are bound once, where the call is entered, and not by the arm
+    /// (§9, amended 2026-11-24).
+    fn namedLets(pg: *Page, p: *const RowPlan, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        try pg.unitLets(p, out);
+        for (p.ops) |op| if (op.what == .region) try pg.regionReads(op.what.region.node, op.what.region.arms, out);
     }
 
     /// What a branch region at `node`, of `arms`, reads of its declaration
@@ -2920,7 +2930,10 @@ const Page = struct {
             defer cx.programInlineLeave();
             var values: std.ArrayList(m.Value.Index) = .empty;
             try pg.unitValues(body.plan, &values);
-            try pg.bindLets(then, named.root.?, values.items);
+            var lets: std.ArrayList(m.Value.Index) = .empty;
+            try lets.appendSlice(pg.a(), values.items);
+            try pg.namedLets(body.plan, &lets);
+            try pg.bindLets(then, named.root.?, lets.items);
             try cx.rootValues(then, named.root.?, values.items);
             break :shown try pg.showArm(body);
         } else shown: {
