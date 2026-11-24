@@ -2876,6 +2876,14 @@ contents of a cell are locations, and that a call can change what a location of 
       that reads a cell refuses every later write of the cell in place, defect or not (BP's
       `sink` family; the lane's reviewer found a hook that logs and so runs a sink reader at the
       throw) (`cells.mjs`' `defect.*`; `run/CellDefectHookLive`, `run/CellSinkReadsLive`).
+      *Added 2026-11-24 (blind round CJ):* the list names no `Js.catchIf` handler or `Js.finally`
+      cleanup, though a platform can run user code inside either, after a write in place and before
+      its store-back; it needs none: a function handed to JavaScript meets the default use, so a
+      closure that writes a captured cell's contents and reaches `Js.catchIf` or `Js.finally` through
+      a platform's helper goes where the walk does not follow it, and its write is refused (item 11,
+      *any other holder*, `call`), and a cleanup that captured the cell beside a body that writes it
+      is a second name of the handle at the one call (item 11, the apart-arguments rule, `disjoint`).
+      CJ's probe platform, with a helper over each, found every such writer refused.
       *Amended 2026-11-22 (#2609): what code a defect runs reaches runs there too.* Before, the bit
       stopped at one hop. A helper that wraps its parameter in a closure and hands the closure to a
       hook (`install f = Task.onDefect λ⊤ → f ⊤`) left the parameter without the bit: the closure's
