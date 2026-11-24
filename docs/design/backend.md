@@ -12407,6 +12407,18 @@ before; `open` on `<details>` and `<dialog>` is a plain attribute, compared with
 written, not with the page. A vocabulary that declares `open` `stateful` must add `toggle` (which
 does not bubble, so only the capture listener sees it) to the names above.
 
+*Amended 2026-11-24 (#2020): a file input's `value`.* A script can give an `input` of type `file`
+one `value` only, the empty string, which removes the chosen files. An assignment of another value
+throws `InvalidStateError`. Thus a model's value that is not empty is a model no page can show,
+and for this one the browser sanitises nothing. The runtime does not make that write: `writeProp`,
+the step that each write of a control's property goes through (`control` and a reconcile), writes
+a `value` to an element whose `type` property is `file` only when the value is `""`. The test reads
+the live `type`, because a `type` can come from the model. The test comes after the comparison with
+the page, so a control that shows its value does not pay for it. The input keeps what it shows.
+When a write of `type` makes the control a different kind of input, that write marks the control
+(*The runtime's marks*, below), and the reconcile then writes the model's value.
+`browser/dom/FileInputValue` and `FileInputLiteral`.
+
 **Where the edited set stops**, each case with what it does (amended after review, 2026-10-08):
 
 - **Events the runtime has nothing to do with.** The four names are listened for on the whole

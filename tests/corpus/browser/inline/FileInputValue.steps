@@ -1,0 +1,6 @@
+# The load wrote "bad" to the text input alone.
+# Another value that is not empty: no write to a file input.
+click #other
+# The empty string is what the file inputs show: nothing to write.
+click #clear
+click #other

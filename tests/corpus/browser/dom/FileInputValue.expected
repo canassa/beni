@@ -1,0 +1,78 @@
+-- load
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <button id="clear">"clear"</button>
+    <button id="as-text">"text"</button>
+    <button id="as-file">"file"</button>
+    <input id="fixed" type="file" .value="">
+    <input id="first" type="file" .value="">
+    <input id="last" type="file" .value="">
+    <input id="text" .value="bad">
+  </main>
+</body>
+-- click #other
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <button id="clear">"clear"</button>
+    <button id="as-text">"text"</button>
+    <button id="as-file">"file"</button>
+    <input id="fixed" type="file" .value="">
+    <input id="first" type="file" .value="">
+    <input id="last" type="file" .value="">
+    <input id="text" .value="other.txt">
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <button id="clear">"clear"</button>
+    <button id="as-text">"text"</button>
+    <button id="as-file">"file"</button>
+    <input id="fixed" type="file" .value="">
+    <input id="first" type="file" .value="">
+    <input id="last" type="file" .value="">
+    <input id="text" .value="">
+  </main>
+</body>
+-- click #other
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <button id="clear">"clear"</button>
+    <button id="as-text">"text"</button>
+    <button id="as-file">"file"</button>
+    <input id="fixed" type="file" .value="">
+    <input id="first" type="file" .value="">
+    <input id="last" type="file" .value="">
+    <input id="text" .value="other.txt">
+  </main>
+</body>
+-- click #as-text
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <button id="clear">"clear"</button>
+    <button id="as-text">"text"</button>
+    <button id="as-file">"file"</button>
+    <input id="fixed" type="file" .value="">
+    <input id="first" type="text" .value="other.txt">
+    <input id="last" type="text" .value="other.txt">
+    <input id="text" .value="other.txt">
+  </main>
+</body>
+-- click #as-file
+<body>
+  <main>
+    <button id="other">"other"</button>
+    <button id="clear">"clear"</button>
+    <button id="as-text">"text"</button>
+    <button id="as-file">"file"</button>
+    <input id="fixed" type="file" .value="">
+    <input id="first" type="file" .value="">
+    <input id="last" type="file" .value="">
+    <input id="text" .value="other.txt">
+  </main>
+</body>
