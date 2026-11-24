@@ -2981,6 +2981,51 @@ pub elapsed : ⊤ → Float                  -- impure: milliseconds since a sta
   the host's `performance.now()` answer 5.5, 10.25, 7 and 12, and `elapsed` answers 5.5, 10.25,
   10.25 and 12.
 
+*Amended 2026-11-24 (#2022; the owner's decision of 2026-11-05 on #1988: "specify per public API. A
+typed failure for an unrepresentable deadline supplied from outside, and saturation only where it is
+already promised").* **No arithmetic of a clock leaves the `Int` range.** `L` is 9007199254740991,
+2⁵³ − 1: the last millisecond that an `Int` holds, and the longest `Duration`. Before this
+amendment a virtual clock added with no bound: `Clock.virtual L`, then an `adjust` of 2 ms, read
+9007199254740992, a number that is not an `Int`.
+
+```elm
+-- core/Clock.beni
+pub type AdjustError
+    = TooFar Duration                    -- how far the clock can still move
+pub adjust : Virtual, Duration → Result AdjustError ⊤
+```
+
+- **`Duration` saturates, and this section now says so.** A count, a sum or a product past the
+  longest duration is the longest duration, `L` ms. `core/Duration.beni` promises it and
+  `run/DurationSaturates` pins it (#1992). This is the saturation that the decision calls
+  "already promised". No other function here gets saturation.
+- **The range of a reading.** `Clock.virtual t` takes each `Int`, a negative one included: a time
+  before 1970 is a time. A virtual clock reads only whole numbers from −`L` to `L`, because
+  `adjust` is the only operation that moves one.
+- **`Clock.adjust v d` answers a `Result`.** The new reading is a deadline that the caller
+  supplies. When the reading plus `d` is at most `L`, `adjust` moves the clock as this section
+  says and answers `Ok ⊤`. When the sum is more than `L`, no `Int` holds the new reading. The
+  answer is then `Err (TooFar left)`. `left` is `L` minus the reading: how far the clock can
+  still move.
+- **A failed `adjust` does not move the clock.** The reading and the sleepers stay as they were,
+  and no sleeper wakes. The call settles first, as each `adjust` but `zero` does. It tests the
+  reading after that settle, because a fiber that ran in the settle can move the clock.
+  `adjust v left` then moves the clock to `L`, its last reading. An `adjust` of `zero` answers
+  `Ok ⊤` on each clock, a clock that reads `L` included.
+- **The test comes before the sum**, and the test stays in the range also. A reading at or below 0
+  has room for each duration, because a duration is at most `L`. Above 0, the test is
+  `d > L − reading`. For a negative reading, `L − reading` is itself past `L`, so the sign is
+  tested first.
+- **A call of `adjust` as a statement is refused** (`statement_not_unit`), because its value is a
+  `Result`. A test whose times are far from `L` writes `_ = Clock.adjust v d`, as the example of
+  this section does.
+- **`Metadata.elapsed` and a log span's time** are differences of two readings. A difference can
+  be more than `L`: a clock that began at −`L` can read 10. §17.8 and §17.11 give each its answer.
+- **Fixtures.** `run/VirtualClockAdjustTooFar`: a clock at `L` − 5 refuses 6 ms with
+  `TooFar (5 ms)` and still reads `L` − 5, a sleeper due at `L` − 3 did not wake, 5 ms then moves
+  the clock to `L` and wakes it, each later `adjust` but `zero` is `TooFar zero`, and a clock at
+  −`L` moves by `L` twice.
+
 ### 17.7 Structured combinators (P3)
 
 ```elm
@@ -3293,6 +3338,40 @@ virtual clock: attempts at 0, 100, 300, 700 ms, then `Ok`); `run/RetryRecursCoun
 three runs, then the last `Err`); `run/RetryNotOnCancel` (row 35: a cancelled attempt is not
 retried, and the caller is cancelled); `run/RepeatWhile`; page `browser/tea/RetryRequest` (a faked
 service failing twice; `advance` through the backoff).
+
+*Amended 2026-11-24 (#2022; the owner's decision of 2026-11-05 on #1988: saturation only where it
+is already promised).* **A schedule's times are `Duration`s, and `Duration` promises saturation**
+(§17.6, amended the same day). So a schedule and its runner compute each time with `Duration`'s
+own operations, and no step leaves the `Int` range. `L` is 9007199254740991, the longest duration
+in milliseconds.
+
+- **`fixed`.** Its state is three durations: the interval, the `elapsed` of its first step
+  (`start`), and the time when the run it last asked for was due (`lastRun`). `lastRun` is a
+  `Duration.sum`, so it is at most `L`.
+- **`fixed`'s test "more than one interval behind"** is `elapsed − lastRun > interval`. That is a
+  difference of two durations, which is in range. It was `elapsed > lastRun + interval`, a sum
+  with no bound. For each `lastRun` that fits, the two tests agree. A `lastRun` that saturated is
+  a time that no `elapsed` passes, and both tests say no.
+- **`fixed`'s delay** is the time to the next multiple of the interval from `start`. When
+  `elapsed` is before `start`, that delay is the interval plus the remainder, which is more than
+  one interval. A step can see an earlier `elapsed`: `Schedule.step` takes metadata that a program
+  writes, and the real clock can go back. That sum is a `Duration.sum` also, so a delay past `L`
+  is `L`. Before this amendment, `fixed (millis L)` stepped at 5 ms and then at 0 ms answered a
+  delay of 9007199254740996 ms, a `Duration` longer than the longest.
+- **`Metadata.elapsed`**, which `retry` and `repeat` make, is the time from the reading at the
+  start of the first run to the reading now, on the running fiber's clock. It is `zero` when the
+  reading now is not later, as before (`Duration.millis` of a negative count). It is the longest
+  duration when the difference is more than `L`. A virtual clock that began at −`L` and reads 10
+  ran for more than `L` milliseconds. The runner tests before it subtracts. A start at or above 0
+  leaves a difference that fits. For a start below 0 the test is `now > L + start`.
+- **Nothing else in `Schedule` adds times with no bound.** `delays` sums with `Duration.sum`,
+  `fibonacci` also, `exponential` and `jittered` go through `Duration.times`, and `concat`'s
+  shift subtracts one duration from another.
+- **Fixtures.** `run/ScheduleFixedLongest` (pure, through `step`: the delay above is `L`; an
+  interval of 100 ms with `start` 50 and `elapsed` 20 still waits 130 ms; a schedule whose
+  `lastRun` saturated is not behind). `run/RepeatElapsedLongest` (on a virtual clock that begins
+  at −`L`: a schedule that prints `elapsed` sees `L` at the reading 0 and `L` again at 10, where
+  it saw 9007199254741000).
 
 ### 17.9 `Semaphore`, `Queue`, `Latch` (P5)
 
@@ -3758,6 +3837,27 @@ rules, and the open question of the context of a message that a body sends.
 *Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`):* that question is decided.
 A message's `update` has the program's log context, whoever sends the message. So the lines that
 it writes, and the commands that it makes, have only what its own arm sets.
+
+*Amended 2026-11-24 (#2022): a span's time is a length of time.* `L` is 9007199254740991, the
+longest duration in milliseconds. The milliseconds of a log span in `Entry.spans` are the time
+from the reading when the span began to the reading when the line is written. They follow
+`Duration`'s rule (§17.6): never negative, and at most `L`. Before this amendment they were
+`now − began` with no bound, and that difference can leave the `Int` range in each direction. A
+virtual clock reads each `Int` from −`L` to `L`. A program can also write a line on a different
+clock from the one its span began on (`Log.span` around `Clock.run`). So a span that began at the
+reading −`L` printed 9007199254741000 ms at the reading 10. The two changes:
+
+- **A difference past `L` is `L`.** `Log` tests before it subtracts, as `retry`'s `elapsed` does
+  (§17.8).
+- **A reading now that is before the span's start gives 0**, where it gave a negative number. A
+  host clock that goes back, or a change of clock inside the span, makes such a reading. A negative
+  time since a start has no meaning, and `Clock.elapsed` already holds the same rule (§17.6: "a
+  duration is never negative").
+
+`Entry.time` is a reading, not a difference, and does not change. Fixture:
+`run/LogSpanLongest` (a span that begins at −`L` on a virtual clock: `L` ms at the reading 0 and
+at the reading 10; a span that begins at 500 and writes a line on a clock that reads 200: 0 ms; a
+span from a clock at −`L` to a clock at `L`: `L` ms, and the other way round: 0 ms).
 
 ### 17.12 Choices this section made, for the owner to see
 
