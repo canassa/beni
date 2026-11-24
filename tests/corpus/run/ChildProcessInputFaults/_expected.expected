@@ -1,1 +1,3 @@
-EPIPE: exited 0, stdout "after the write\n"
+no input: exited 0, stdout "standard input: ignore\n"
+empty input: exited 0, stdout "standard input: ignore\n"
+a text, EPIPE: exited 0, stdout "standard input: pipe\n"

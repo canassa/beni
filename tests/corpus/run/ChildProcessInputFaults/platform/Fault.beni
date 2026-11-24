@@ -1,11 +1,13 @@
 --! A test platform's one capability: make every later `child_process.spawn`
---! give a child that starts and whose input pipe fails with an error code
---! of the caller's choosing, by the route Node takes for a write that
---! failed. It reaches what `ChildProcess.run` does with an error of the
---! input pipe, with no real pipe and no race.
+--! give a child that starts, says what its standard input is, and whose
+--! input pipe fails with an error code of the caller's choosing, by the
+--! route Node takes for a write that failed. It reaches what
+--! `ChildProcess.run` asks of Node for the standard input, and what it does
+--! with an error of the input pipe, with no real pipe and no race.
 
---| From now on, every `child_process.spawn` gives a child that starts, and
---| whose standard input fails its first write with an error whose `code`
---| is the given one. After that the child writes `after the write` and
---| exits 0.
+--| From now on, every `child_process.spawn` gives a child that starts. A
+--| child whose standard input is a pipe fails its first write with an
+--| error whose `code` is the given one. After that, or at once when it has
+--| no pipe, the child writes what `spawn` was asked for as its standard
+--| input (`pipe`, `ignore`) and exits 0.
 pub foreign impure failInput : String → ⊤

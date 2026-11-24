@@ -1,29 +1,43 @@
--- run: an `error` event of the input pipe whose code is `EPIPE` is a
--- child that stopped reading its input, and not an error: `run` goes on
--- waiting, and answers with what the child did after that (boundary.md
--- §9.14 (k), (e)). The test platform gives the child an input pipe that
--- fails its first write with the code named, by Node's route, so the
--- case depends on no kernel buffer and on no order of events, as
--- `ChildProcessInput`'s real children do.
-import ChildProcess exposing (Output, RunError)
+-- run: what `ChildProcess.run` asks of Node for a child's standard input,
+-- and what it does when the write of the input fails with `EPIPE`
+-- (boundary.md §9.14 (k), (e)). The test platform's child says what
+-- `spawn` was asked for, and its input pipe fails its first write with
+-- the code named, by Node's route, so no case depends on a kernel buffer
+-- or on an order of events, as `ChildProcessInput`'s real children do.
+--
+--   - no `input`, and an `input` of `""`: no pipe (`ignore`, which is
+--     `/dev/null`). A real child reads an end of file at once from that
+--     and from an empty pipe, so only this case tells them apart;
+--   - a text: a pipe. Its `error` event with the code `EPIPE` is a child
+--     that stopped reading, and not an error: `run` goes on waiting, and
+--     answers with what the child did after that.
+import ChildProcess exposing (Command, Output, RunError)
 import Fault
 import Io
 import Node exposing (Program)
 
 
-describe : Result RunError Output → String
-describe result =
+child : Command
+child = ChildProcess.command "/bin/sh" [ "-c", "true" ]
+
+
+describe : String, Result RunError Output → String
+describe label result =
     case result of
         Ok output →
             case output.status of
                 ChildProcess.Exited code →
-                    "exited " ++ String.fromInt code ++ ", stdout " ++ quote output.stdout
+                    label
+                        ++ ": exited "
+                        ++ String.fromInt code
+                        ++ ", stdout "
+                        ++ quote output.stdout
 
                 ChildProcess.Signalled name →
-                    "signalled " ++ name
+                    label ++ ": signalled " ++ name
 
         Err _ →
-            "an error value"
+            label ++ ": an error value"
 
 
 quote : String → String
@@ -33,10 +47,8 @@ quote text = "\"" ++ String.replace text "\n" "\\n" ++ "\""
 main : Program
 main = Io.run λ⊤ →
     Fault.failInput "EPIPE"
-    Node.print
-        ("EPIPE: "
-            ++ describe
-                (ChildProcess.run
-                    { ChildProcess.command "/bin/sh" [ "-c", "true" ] | input = "text" }
-                )
-        )
+    Node.printLines
+        [ describe "no input" (ChildProcess.run child)
+        , describe "empty input" (ChildProcess.run { child | input = "" })
+        , describe "a text, EPIPE" (ChildProcess.run { child | input = "text" })
+        ]
