@@ -1,7 +1,12 @@
--- A view helper whose body is a `case` with an arm whose `let` no hole reads:
--- refused as the same `case` written at the hole is (docs/design/
--- browser-inline.md §8.4, amended 2026-11-23, #2498; §5, class 1). The
--- review of this slice: the `let` was dropped, and its `Debug.todo` never ran.
+-- A view helper whose body is a `case` with an arm whose `let`s no hole reads
+-- (browser-inline.md §8.4 and §8.2, amended 2026-11-24, *An arm's
+-- statements*): was `build/bad/inline/HelperBranchStatement`. The arm's `let`s
+-- run in the choice of the arm, so `unused`'s `Debug.todo` runs: choosing
+-- `Just` stops the page, as it does on `browser-tea` (checked against it for
+-- the same source, the same DOM, dev and release). One difference, of order:
+-- `loud`, which a hole and the button's message read, is evaluated with the
+-- arm's values, after the choice, so the throw comes before its log line,
+-- which `browser-tea` writes first.
 import Html exposing (Html)
 import Tea
 
@@ -62,4 +67,4 @@ view model =
 main : Tea.Program
 main =
     Tea.sandbox
-        { init = λ⊤ → { name = Just "eve", k = 0, got = "-" }, update = update, view = view }
+        { init = λ⊤ → { name = Nothing, k = 0, got = "-" }, update = update, view = view }

@@ -117,7 +117,13 @@ const std = @import("std");
 /// `programBranch*` calls of a `Show` whose body is a lambda whose body is
 /// an `if` or a `case` (`browser-inline.md` §9 and §8.2, amended
 /// 2026-11-24).
-pub const version: Version = .{ .major = 1, .minor = 39 };
+/// Version 1.40 adds `Context.programBranchChooseAll`: `programBranchChoose`
+/// with the taken arm's statements run in it, in the order they are
+/// written, sharing its `let`s (`browser-inline.md` §8.2, amended
+/// 2026-11-24, *An arm's statements*), and
+/// `Context.programBranchStatementGroups`, the read sets of an arm's
+/// statements.
+pub const version: Version = .{ .major = 1, .minor = 40 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1889,6 +1895,14 @@ pub const Context = struct {
         return cx.vtable.program_branch_choose(cx.impl, block, node);
     }
 
+    /// 1.40: `programBranchChoose`, and the taken arm's `let`s that are
+    /// statements run where they are written among its other `let`s, so a
+    /// `let` both read is evaluated once (`browser-inline.md` §8.2, amended
+    /// 2026-11-24, *An arm's statements*).
+    pub fn programBranchChooseAll(cx: *Context, block: Block, node: Node.Index) Error!Expr {
+        return cx.vtable.program_branch_choose_all(cx.impl, block, node);
+    }
+
     /// 1.10 (S4's review): arm `k` of branch `node` entered as
     /// `programBranchEnter` enters it, its values' locals bound from `from`
     /// — what `programBranchChoose` returned when it took arm `k` — with
@@ -1976,6 +1990,15 @@ pub const Context = struct {
     /// amended 2026-11-23).
     pub fn programViewStatementGroups(cx: *Context) ?[]const u32 {
         return cx.vtable.program_view_statement_groups(cx.impl);
+    }
+
+    /// 1.40: the read set of each statement of every arm of branch `node`
+    /// (an arm's `let`s no hole reads), as a group, on the current call
+    /// path; null when the write-set pass did not record one of them
+    /// (`browser-inline.md` §8.2, amended 2026-11-24, *An arm's
+    /// statements*).
+    pub fn programBranchStatementGroups(cx: *Context, node: Node.Index) ?[]const u32 {
+        return cx.vtable.program_branch_statement_groups(cx.impl, node);
     }
 
     /// 1.14 (`Lowering.effects`): what the program's subscription set is
@@ -2237,6 +2260,7 @@ pub const VTable = struct {
     program_branch_enter: *const fn (impl: *anyopaque, block: ?Block, node: Node.Index, k: u32, made: bool, held: ?Expr) Error!?Expr,
     program_branch_value: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!Expr,
     program_branch_choose: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
+    program_branch_choose_all: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
     program_branch_bind: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32, from: Expr, made: bool) Error!void,
     program_branch_statements: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!void,
     program_show_fallback: *const fn (impl: *anyopaque, node: Node.Index) ?Root.Index,
@@ -2248,6 +2272,7 @@ pub const VTable = struct {
     program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,
     program_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32) Program.HoleFacts,
     program_view_statement_groups: *const fn (impl: *anyopaque) ?[]const u32,
+    program_branch_statement_groups: *const fn (impl: *anyopaque, node: Node.Index) ?[]const u32,
     program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,
     program_subscription_start: *const fn (impl: *anyopaque, block: Block, i: u32, send: Expr) Error!Expr,
     program_subscription_message: *const fn (impl: *anyopaque, i: u32, payload: Expr) Error!Expr,

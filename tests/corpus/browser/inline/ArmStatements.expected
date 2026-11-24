@@ -1,0 +1,184 @@
+-- load
+console.log: none: 0
+console.log: first: "a"
+console.log: row: "b"
+console.log: statement: "b"
+console.log: inner: "a"
+console.log: ticks in a row: 0
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="clear">"clear"</button>
+    <button id="rename">"rename"</button>
+    <button id="tick">"0"</button>
+    <section>
+      <i id="picked">"none"</i>
+    </section>
+    <div>
+      <em id="badge">"-"</em>
+    </div>
+    <ul>
+      <li>"first"</li>
+      <li>"b"</li>
+    </ul>
+    <ol>
+      <li>
+        <b>"a"</b>
+      </li>
+      <li>
+        <i>"b"</i>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #tick
+console.log: none: 1
+console.log: inner: "a"
+console.log: ticks in a row: 1
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="clear">"clear"</button>
+    <button id="rename">"rename"</button>
+    <button id="tick">"1"</button>
+    <section>
+      <i id="picked">"none"</i>
+    </section>
+    <div>
+      <em id="badge">"-"</em>
+    </div>
+    <ul>
+      <li>"first"</li>
+      <li>"b"</li>
+    </ul>
+    <ol>
+      <li>
+        <b>"a"</b>
+      </li>
+      <li>
+        <i>"b"</i>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #ada
+console.log: loud: "ADA"
+console.log: picked: "ADA"
+console.log: badge: "ada"
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="clear">"clear"</button>
+    <button id="rename">"rename"</button>
+    <button id="tick">"1"</button>
+    <section>
+      <b id="picked">"ADA"</b>
+    </section>
+    <div>
+      <em id="badge">"ada"</em>
+    </div>
+    <ul>
+      <li>"first"</li>
+      <li>"b"</li>
+    </ul>
+    <ol>
+      <li>
+        <b>"a"</b>
+      </li>
+      <li>
+        <i>"b"</i>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #tick
+console.log: loud: "ADA"
+console.log: picked: "ADA"
+console.log: inner: "a"
+console.log: ticks in a row: 2
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="clear">"clear"</button>
+    <button id="rename">"rename"</button>
+    <button id="tick">"2"</button>
+    <section>
+      <b id="picked">"ADA"</b>
+    </section>
+    <div>
+      <em id="badge">"ada"</em>
+    </div>
+    <ul>
+      <li>"first"</li>
+      <li>"b"</li>
+    </ul>
+    <ol>
+      <li>
+        <b>"a"</b>
+      </li>
+      <li>
+        <i>"b"</i>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #rename
+console.log: first: "a!"
+console.log: row: "b!"
+console.log: statement: "b!"
+console.log: inner: "a!"
+console.log: ticks in a row: 2
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="clear">"clear"</button>
+    <button id="rename">"rename"</button>
+    <button id="tick">"2"</button>
+    <section>
+      <b id="picked">"ADA"</b>
+    </section>
+    <div>
+      <em id="badge">"ada"</em>
+    </div>
+    <ul>
+      <li>"first"</li>
+      <li>"b!"</li>
+    </ul>
+    <ol>
+      <li>
+        <b>"a!"</b>
+      </li>
+      <li>
+        <i>"b!"</i>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #clear
+console.log: none: 2
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="clear">"clear"</button>
+    <button id="rename">"rename"</button>
+    <button id="tick">"2"</button>
+    <section>
+      <i id="picked">"none"</i>
+    </section>
+    <div>
+      <em id="badge">"-"</em>
+    </div>
+    <ul>
+      <li>"first"</li>
+      <li>"b!"</li>
+    </ul>
+    <ol>
+      <li>
+        <b>"a!"</b>
+      </li>
+      <li>
+        <i>"b!"</i>
+      </li>
+    </ol>
+  </main>
+</body>

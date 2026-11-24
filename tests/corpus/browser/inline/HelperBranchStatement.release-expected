@@ -1,0 +1,27 @@
+-- load
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="clear">"clear"</button>
+    <button id="inc">"inc"</button>
+    <p id="got">"-"</p>
+    <div>
+      <i id="quiet">"0"</i>
+    </div>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="ada">"ada"</button>
+    <button id="clear">"clear"</button>
+    <button id="inc">"inc"</button>
+    <p id="got">"-"</p>
+    <div>
+      <i id="quiet">"1"</i>
+    </div>
+  </main>
+</body>
+-- throws click #ada
+(threw: Error: TODO: boom)
+(the DOM did not change)

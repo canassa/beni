@@ -770,7 +770,8 @@ beni over `Js` in `Inline.beni`:
   - **What stays refused** (class 1, at the hole or the `view`): a branch whose choice of arm may
     have an effect (`Branch.selector_effect`, version 1.31), which `browser-tea` evaluates at
     every render and the region at a pass of its read set; an arm that is any other markup value
-    (`Arm.What.value`), more than one node, or has `let`s no hole reads (`Arm.statements`); in an
+    (`Arm.What.value`), more than one node, or has `let`s no hole reads (`Arm.statements`; *amended
+    2026-11-24:* compiled, *An arm's statements* below); in an
     arm, what a `For`'s row refuses (§9: a helper's markup, a component, a `Show`, an attribute
     that is not a property); a branch in a `For`'s row (*amended 2026-11-23:* compiled, §9, *A
     branch in a row*); a region inside an eager arm, a helper's
@@ -870,6 +871,28 @@ beni over `Js` in `Inline.beni`:
   the newline, does not show). `RowBranchBeforeText/` builds and is
   withdrawn; the page is `browser/inline/RowMarkers` (checked against `browser-tea` for the same
   source, its comments apart), the golden `emit/release/inline/RowMarkers`.
+- **An arm's statements** (*amended 2026-11-24, #2625, #966*). An arm of a branch region — of
+  the page, of a unit (a branch in a row, an arm or a `Show`'s body), of a row whose top is a
+  branch, or of a view helper whose body is the branch — may have `let`s no hole reads
+  (`Arm.statements`: `_ = e`, a `⊤` line, a `let` nothing reads). They run in the choice of the
+  arm: `programBranchChooseAll` (version 1.40) is `programBranchChoose` with the taken arm's
+  statements evaluated where they are written among its other `let`s, so a `let` both a statement
+  and a hole read is evaluated once, and one a root took is bound all the same (`let_force`). The
+  choice runs at each pass of the region's entry, or of the unit's `set`, so the entry of a region
+  — and the write of the `For`, the `Show` or the region whose units hold such an arm — is also
+  in the read sets of every arm's statements (`programBranchStatementGroups`, version 1.40, the
+  groups the write-set pass records for them as for a `view`'s statements). So a statement runs at
+  every pass that writes what it reads, and at the mount; on `browser-tea`, which renders the
+  whole `view` per message, it runs at every render: a difference of when, not of what, as for a
+  `view`'s statements. A statement that throws (`Debug.todo`) stops the page as the arm is chosen,
+  before anything of it is written. A choice that may have an effect stays refused (above), so
+  the branch's value evaluated again by a later pass has no effect of its own. A `let` a root took — an
+  arm's of a view helper's branch (§8.4) — is evaluated with the arm's values, after the choice,
+  so a statement written after it runs before it: `HelperBranchStatement`'s `Debug.todo` throws
+  before the line its `loud` logs, which `browser-tea` writes first (a difference of order). Pages
+  `browser/inline/ArmStatements` and `HelperBranchStatement` (checked against `browser-tea` for
+  the same source: the same DOM, fewer log lines); `build/bad/inline/RegionArmStatements/` and
+  `HelperBranchStatement/` are withdrawn. The golden `emit/release/inline/ArmStatements`.
 - **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
   markup type, and still compiles markup that a program holds in a name, passes or returns, when
   the compiler can see which root the name stands for. Such a name is a **name for a markup
@@ -1192,7 +1215,8 @@ program site by name (option 2 of §7, extended to `update` and `view`).
     an arm that calls a helper. A `let` of an arm is that arm's root's (`Root.lets`), so an arm
     with one is never eager (`eagerArm`), and it is evaluated with the arm's values, once per pass
     that writes what it reads, never at the choice and never at an event (`HelperCaseArmLet`); a
-    `let` of an arm that no hole reads is a statement (`Arm.statements`), refused as in the `view`.
+    `let` of an arm that no hole reads is a statement (`Arm.statements`), refused as in the `view`
+    (*amended 2026-11-24:* compiled, §8.2, *An arm's statements*).
   - **The path.** The write-set pass walks the callee's body on the call's path (`write-sets.md`,
     *a hole's facts per call*), which the call's frame already extends by the hole's token, so
     choosing and entering an arm (`programBranchEnter`, `programBranchBind`,
@@ -1210,7 +1234,8 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   - **What stays refused** (class 1, at the hole): `let`s before the branch in the callee's body,
     whose values the branch would read unbound (`build/bad/inline/HelperBranchLet/`); whatever
     §8.2 refuses of the same branch written at the hole — an arm that is a markup value
-    (`HelperBranchValue/`), an arm with a `let` no hole reads (`HelperBranchStatement/`), a region
+    (`HelperBranchValue/`), an arm with a `let` no hole reads (`HelperBranchStatement/`; *amended 2026-11-24:* compiled, §8.2,
+    *An arm's statements*, the page `browser/inline/HelperBranchStatement`), a region
     followed by text or a hole (`HelperBranchBeforeText/`), in a
     control whose value changes, or on a page that prerenders; a region inside an eager arm or
     inside a helper's markup (`HelperBranchInEagerArm/`), and a helper's branch in a region's arm
@@ -2088,7 +2113,8 @@ page `browser/inline/RegionEmptyArm`. What a region refuses is §8.2's list, in
 `RowBranchBeforeText/` (*amended 2026-11-23:* it was `RegionInRow/`, which §9 now compiles),
 `RegionSelectorEffect/`, `RegionBeforeText/`, `RegionInEagerArm/`,
 `RegionArmStatements/` and `build/bad/prerender/ViewBranch/`. *Amended 2026-11-24 (§8.2, *in a unit
-too*):* `RowBranchBeforeText/` builds and is withdrawn, as `RegionBeforeText/` was.
+too*):* `RowBranchBeforeText/` builds and is withdrawn, as `RegionBeforeText/` was. *Amended
+2026-11-24 (§8.2, *An arm's statements*):* `RegionArmStatements/` builds and is withdrawn.
 
 *Amended 2026-11-23 (§8.2, *A class or style list, …*, #2499, #2635):* the row *an attribute
 that changes and is not a DOM property* now holds only for a value that is not a `String` or a
@@ -2319,7 +2345,8 @@ The simple form is S2c's row unit with none of S2d's edits:
   `set` runs, kept arm or new (rule 8). So the rows of `<></>` move with the others and go with
   them, as on `browser-tea`, and the transcripts agree (`browser/inline/RowTopBranch`). What stays
   refused (class 1, at the `For`): an arm of more than one node or of a value (`not_when`,
-  `build/bad/inline/RowTopBranchFragment/`), an arm with `let`s no hole reads, a choice that may
+  `build/bad/inline/RowTopBranchFragment/`), an arm with `let`s no hole reads (*amended 2026-11-24:*
+  compiled, §8.2, *An arm's statements*), a choice that may
   have an effect, a row whose body is a call of a helper whose body is the branch, and a named row
   function (`ForRowFunction/`). Pages `browser/tea/EmptyMarkup` and `WholeFor` build and are
   copied to `browser/inline/`, each with its listed differences of nodes. *Amended 2026-11-24:* a
