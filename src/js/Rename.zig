@@ -1122,11 +1122,11 @@ const deep_chain = 10_000;
 test "a function returning a && chain deeper than a recursive walk survives is named down to its deepest link" {
     // A derived `eq` is one left-nested `&&` as long as its record is wide.
     // The collecting walk keeps its own stack (`JsIr.pushOperands`), so
-    // the names are assigned on `small_stack`'s few pages. The one local
-    // that only the chain's deepest link reads is the second name met in
-    // the function's scope — after its parameter, which may take the
-    // function's own spelling since the body never names the function — so
-    // it is given ordinal 1 only if the walk reached the bottom first.
+    // the names are assigned on `small_stack`'s few pages. Every place the
+    // chain names a local is an occurrence, so their count shows the walk
+    // reached the deepest link; the local only that link reads, `z`, is the
+    // second name of the function's scope, after its parameter, which may
+    // take the function's own spelling since the body never names it.
     try small_stack.run(nameDeepChain, .{});
 }
 
@@ -1157,6 +1157,8 @@ fn nameDeepChain() !void {
     try testing.expectEqual(@as(?u32, 0), m.ordinal(f));
     try testing.expectEqual(@as(?u32, 0), m.ordinal(a));
     try testing.expectEqual(@as(?u32, 1), m.ordinal(z));
+    // `f`, `a`, the chain's `deep_chain` places, `z`'s declaration and `x`.
+    try testing.expectEqual(@as(usize, deep_chain + 4), m.occurs.items.len);
 }
 
 test "a declaration of 16 384 locals is named and self-checked in linear time" {
