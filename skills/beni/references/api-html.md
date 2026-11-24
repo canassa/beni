@@ -16,6 +16,8 @@ module Html
   alias Selection
     Selection
   value altKey : Event → Bool  -- impure
+  value button : Pointer → Int  -- impure
+  value buttons : Pointer → Int  -- impure
   value clientX : Pointer → Float  -- impure
   value clientY : Pointer → Float  -- impure
   value code : Event → String  -- impure
@@ -433,6 +435,7 @@ module Html
   event "onChange" on "input" "select" "textarea" delegated via controlValue : String
   event "onCheck" on "input" name "change" delegated via controlChecked : Bool
   event "onClick" delegated : Event
+  event "onContextMenu" delegated via pointer : Pointer
   event "onDblClick" delegated : Event
   event "onDragEnd" delegated : Event
   event "onDragOver" delegated : Event

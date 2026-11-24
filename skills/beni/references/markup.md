@@ -99,63 +99,11 @@ submitted event =
     Submitted
 ```
 
-### Pointer input
+### Pointer input and the context menu
 
-The mouse, the pen and a touch screen use one set of events: `onPointerDown`, `onPointerMove`,
-`onPointerUp`, `onPointerCancel`, `onPointerEnter` and `onPointerLeave`. Each handler gets an
-`Html.Pointer`.
-
-- `Html.localX p` and `Html.localY p` are CSS pixels from the top-left corner of the border box of
-  the element that has the handler. A child under the pointer does not change this.
-- `Html.clientX p` and `Html.clientY p` are the viewport's coordinates.
-- `Html.pointerId p` is the same from a pointer's down to its up or cancel; each finger has its
-  own. `Html.pointerType p` is `"mouse"`, `"pen"`, `"touch"` or `""`. `Html.isPrimary p` is the
-  mouse or the first finger.
-- `Html.pointerEvent p` is the same event as an `Html.Event`, for `Html.preventDefault` and the
-  modifier keys.
-- A `Pointer` stays correct after the dispatch, so a message can carry it into `update`.
-- When an element and an element inside it both have a handler for the same pointer event, both
-  handlers run for one event, the inner one first, as for `onClick`. On the `browser` and
-  `browser-tea` platforms the page renders once after them, so each handler runs with the view that
-  was on the page when the event came. `onPointerEnter` and `onPointerLeave` do not bubble: each
-  element gets its own enter or leave event, so nested enter or leave handlers render once for each
-  element, and an inner handler runs with the view that the outer one's render wrote.
-- On the `browser` and `browser-tea` platforms, a pointer handler on a disabled control does not
-  run, as an `onClick` there does not.
-- The pointer events name their extractor `pointer` (`via pointer`). It is private to `Html`, so
-  a program cannot call it.
-- To stop scroll and zoom under a finger, put `touch-action: none` in the element's `style`.
-  `preventDefault` cannot stop them. On iOS, a double-tap still zooms an element with
-  `position: absolute` (WebKit bug 218015).
-- To stop a long press that selects text, write `user-select: none` and `-webkit-user-select: none`
-  (Safari) in the `style`. For iOS, also write `-webkit-touch-callout: none`: it stops the
-  long-press menu.
-- End a touch on `onPointerCancel` as on `onPointerUp`: the browser cancels a pointer when it
-  takes the gesture.
-
-```beni platform=html
-import Html exposing (Html)
-
-
-type Msg
-    = Aim Float Float
-    | Lift
-
-
-pub arena : Html Msg
-arena =
-    <div
-        style="position: relative; width: 600px; height: 400px; touch-action: none"
-        onPointerDown={aim}
-        onPointerMove={aim}
-        onPointerUp={λ_ → Lift}
-        onPointerCancel={λ_ → Lift}
-    />
-
-
-aim : Html.Pointer → Msg
-aim p = Aim (Html.localX p) (Html.localY p)
-```
+The mouse, the pen and a touch screen use one set of events, `onPointerDown` and the others.
+`onContextMenu` is the event of the context menu. Each handler gets an `Html.Pointer`, with the
+point, the pointer and the buttons. Read `references/pointer.md`.
 
 ## Components
 

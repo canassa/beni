@@ -1,0 +1,244 @@
+-- load
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol></ol>
+  </main>
+</body>
+-- pointer #r1 pointerdown 4 3 button:0 buttons:1
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #r2 pointerdown 4 3 button:2 buttons:2
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #r2 contextmenu 30 40 button:2 buttons:2 box:#surface
+(contextmenu's default prevented)
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+      <li>"menu on row 2: button 2"</li>
+      <li>"menu on the surface at 30.0, 40.0: button 2, \"mouse\" #1"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #surface contextmenu 5 6 button:2
+(contextmenu's default prevented)
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+      <li>"menu on row 2: button 2"</li>
+      <li>"menu on the surface at 30.0, 40.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 5.0, 6.0: button 2, \"mouse\" #1"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #off contextmenu 7 8 button:2 box:#surface
+(contextmenu's default prevented)
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+      <li>"menu on row 2: button 2"</li>
+      <li>"menu on the surface at 30.0, 40.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 5.0, 6.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 7.0, 8.0: button 2, \"mouse\" #1"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #native contextmenu 1 2 button:2
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+      <li>"menu on row 2: button 2"</li>
+      <li>"menu on the surface at 30.0, 40.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 5.0, 6.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 7.0, 8.0: button 2, \"mouse\" #1"</li>
+      <li>"the browser's menu: button 2"</li>
+    </ol>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+        <li id="r3">"3"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+      <li>"menu on row 2: button 2"</li>
+      <li>"menu on the surface at 30.0, 40.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 5.0, 6.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 7.0, 8.0: button 2, \"mouse\" #1"</li>
+      <li>"the browser's menu: button 2"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #r3 pointerdown 7 2 button:1 buttons:4
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+        <li id="r3">"3"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+      <li>"menu on row 2: button 2"</li>
+      <li>"menu on the surface at 30.0, 40.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 5.0, 6.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 7.0, 8.0: button 2, \"mouse\" #1"</li>
+      <li>"the browser's menu: button 2"</li>
+      <li>"row 3: button 1, buttons 4"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #r3 contextmenu 9 9 button:2 box:#surface
+(contextmenu's default prevented)
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+        <li id="r3">"3"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+      <li>"menu on row 2: button 2"</li>
+      <li>"menu on the surface at 30.0, 40.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 5.0, 6.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 7.0, 8.0: button 2, \"mouse\" #1"</li>
+      <li>"the browser's menu: button 2"</li>
+      <li>"row 3: button 1, buttons 4"</li>
+      <li>"menu on row 3: button 2"</li>
+      <li>"menu on the surface at 9.0, 9.0: button 2, \"mouse\" #1"</li>
+    </ol>
+  </main>
+</body>
+-- mouse #surface contextmenu
+<body>
+  <main>
+    <div id="surface" style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none">
+      <ul>
+        <li id="r1">"1"</li>
+        <li id="r2">"2"</li>
+        <li id="r3">"3"</li>
+      </ul>
+      <button id="off" disabled="">"off"</button>
+    </div>
+    <p id="native">"native"</p>
+    <button id="add">"add"</button>
+    <ol>
+      <li>"row 1: button 0, buttons 1"</li>
+      <li>"row 2: button 2, buttons 2"</li>
+      <li>"menu on row 2: button 2"</li>
+      <li>"menu on the surface at 30.0, 40.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 5.0, 6.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at 7.0, 8.0: button 2, \"mouse\" #1"</li>
+      <li>"the browser's menu: button 2"</li>
+      <li>"row 3: button 1, buttons 4"</li>
+      <li>"menu on row 3: button 2"</li>
+      <li>"menu on the surface at 9.0, 9.0: button 2, \"mouse\" #1"</li>
+      <li>"menu on the surface at -20.0, -60.0: button 0, \"\" #-1"</li>
+    </ol>
+  </main>
+</body>
