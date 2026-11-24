@@ -1,0 +1,1 @@
+Each write of the fold is accepted under v3 and runs in place: the value Dict.update hands its callback is apart from the values at the other keys (ownership-v3-kernel.md §12 item 8).

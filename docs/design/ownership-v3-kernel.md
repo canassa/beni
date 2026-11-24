@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -2282,7 +2282,7 @@ elements are its values.
    `put` are `written returned` with what they store `stored`; `copy` is `borrowed → copyof`; the
    readers borrow, and `valueFor` and `valueAt` answer `elementof`; `traverseAt` answers `taken`,
    asserted for the loops of the module that read each position once, in order, as
-   `List.traverseAt` is; `empty` is `fresh exclusive`. The words a writer carries are v2's and v3's
+   `List.traverseAt` is; `empty` is `fresh exclusive hollow` (item 8). The words a writer carries are v2's and v3's
    only (`written`, `stored`, `elementof`, `copyof`), so v1 reads no word on them, and v2 reads a row
    over a keyed place as a `foreign` with no word (`own2/Keyed.zig`): neither judges a write of a
    dictionary, and neither checker authorises one (no lowering reads their verdicts on it).
@@ -2388,6 +2388,38 @@ elements are its values.
    dictionary after, since `update`'s own `insert` no longer reads the value its callback
    wrote. `valueFor`, `valueAt` and `traverseAt` hand a value out (`elementof`, `taken`) and
    carry no `shallow`. `List.length` is as shallow and is not marked here.
+
+8. **A walked writer's callback** (*added 2026-11-24, #2657*). `Dict.update d k λcurrent → …`,
+   called in a fold's callback (`browser/tea/SubscriptionTapFold`), is read as precisely as its
+   `get` and `insert` are. Three facts, each derived where it is used:
+   - **A supply at a position.** A function parameter's supply carries `Src.p` as a result's
+     source does (rule 10, *A position*): `update` hands `alter` `#Just.0 π1@1[π2]`. A caller
+     reads it at the positions of its own match for the argument and the index (`Frame.resolve`,
+     `atPositions`), at a call (`Use.call`); a captured function's use reads it with no position,
+     the pessimistic side. So the callback's parameter is the value at the key, and the cells
+     `update` keeps at the other positions (`π1@1[≠π2]`) are apart from it (`posApart`). The
+     match's facts are the result's: the list holds each cell once, and one match names one array
+     at one index.
+   - **A function a walked body runs at most once** (`Fn.single`). A walked body whose walk calls
+     its function parameter at most once (`callParam`, each walk of an instruction counted again)
+     and lets it flow to no other holder (`flowOwn`: a callee, a closure that captures it and runs
+     more than once, a holder that loses it) publishes `single`. A captured cell
+     that the function answers is then at one place of the owner's answer for each call, whatever
+     made it (`answerSrcs`): the owner's answer holds what the function answers where its own walk
+     put it, and its walk derived `twice` there. A caller that holds two such answers holds two
+     answers of the owner, whose atoms it compares (§4.4). A cell's row keeps its own `once`
+     (§13 item 2): what a cell keeps outlives the call, so a capture from outside the run is still
+     at two places of the contents.
+   - **A hollow row.** The v3 word **`hollow`** on a `fresh` result says that the result holds no
+     value of a type variable: `empty : ⊤ → fresh exclusive hollow Dict k v`, and
+     `List.builder`'s holes. The row names no new cell at a `var` location of its result
+     (`Check.wordedContract`, `hollowResult`), and the location holds none, as `Dict.empty`'s
+     values did when it was a top-level value (§3.1). Lowering accepts it once, on a result that is
+     `fresh` (`own_hollow_word`), and keeps it in v3's column; it is a trusted word as
+     any other of rule 10. Before, `Dict.empty ⊤` read at `Dict k (k2 × List t)` held one new cell at the
+     value, its list and the list's elements, and a fold that wrote the list was refused `disjoint`
+     on its own accumulator. The core-only reading of a body's walk (rule 10, *What it does not
+     judge*) is unchanged, and so is the walk's reading of `[]`'s element location (#2578).
 
 A walked writer handed on as a value (`applyU Dict.update d`) is a write of `d` at the call: it
 is accepted where nothing reads `d` after, its answer read or not, and refused (`later-use`)

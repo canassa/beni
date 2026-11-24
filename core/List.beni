@@ -527,7 +527,7 @@ foreign pure traverseAt : borrowed List a, borrowed Int → taken a
 --| time pushing takes at 100 000 elements, where an array grown by `push`
 --| is copied as it grows. `n` is a length, or a count that `count` cut, so
 --| `new Array(n)` takes it as it is: a fraction or `-1` throws `RangeError`.
-builder : unused Int → fresh exclusive Builder a
+builder : unused Int → fresh exclusive hollow Builder a
 builder n = Js.pure λ⊤ → Js.to (Js.construct (Js.global "Array") [ Js.from n ])
 
 

@@ -2438,6 +2438,23 @@ fn recordOwnWords3(l: *Lower, t: Index) Allocator.Error!void {
     var kept: u32 = 0;
     for (seen, 0..) |s, si| {
         const slot = s[0];
+        // `hollow` (kernel §12 item 8): on the result, once, beside
+        // `fresh`.
+        if (@as(Ast.OwnWord3, @fromBackingInt(@intCast(s[1]))) == .hollow) {
+            const ok = blk: {
+                if (slot != Bir.own_result) break :blk false;
+                if (result & W.fresh.bit() == 0) break :blk false;
+                for (seen[0..si]) |o| if (o[0] == slot and o[1] == s[1]) break :blk false;
+                break :blk true;
+            };
+            if (!ok) {
+                try l.reportOwn(s[2], .own_hollow_word);
+                continue;
+            }
+            try l.pushScratch(slot);
+            try l.pushScratch(Ast.OwnWord3.hollow.bit());
+            continue;
+        }
         // `shallow` (kernel §12): on a parameter, a value, that the words
         // read, once.
         if (@as(Ast.OwnWord3, @fromBackingInt(@intCast(s[1]))) == .shallow) {

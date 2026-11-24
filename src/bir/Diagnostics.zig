@@ -119,6 +119,9 @@ pub const Item = struct {
         /// v3's `shallow` (`ownership-v3-kernel.md` §12): not on one
         /// parameter that is a value read by the words.
         own_shallow_word,
+        /// v3's `hollow` (`ownership-v3-kernel.md` §12 item 8): not on a
+        /// result that is `fresh`.
+        own_hollow_word,
         /// `invalid_ownership_summary_size` (ownership-v2.md §4.4): why.
         attr_unknown,
         attr_module_late,
@@ -348,6 +351,13 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\It stands in front of a parameter, a value and not a function, that the
                 \\words read (`borrowed`, or `written`), once in front of it: `size :
                 \\borrowed shallow Dict k v → Int`.
+            , .{text}),
+            .own_hollow_word => try w.print(
+                \\`{s}` says that the result holds no value of a type variable, and it cannot
+                \\stand here.
+                \\
+                \\It stands in front of the result, once, beside `fresh`: `empty : ⊤ → fresh
+                \\exclusive hollow Dict k v`.
             , .{text}),
             .own_position_word => try w.print(
                 \\`{s}` says that a parameter names one position of the first parameter, and

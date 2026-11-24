@@ -262,6 +262,12 @@ const FnDraft = struct {
     after_call: bool = false,
     /// The body does something with the function: it calls it or lets it flow.
     used: bool = false,
+    /// The calls of it that the walk made (`callParam`), each walk of an
+    /// instruction counted again.
+    calls: u32 = 0,
+    /// A use other than a call of it in the frame: it flowed to another
+    /// holder (`flowOwn`), whatever that holder does with it.
+    handed: bool = false,
 };
 
 /// The call or the mention at which a function value flows: where a demand
@@ -6286,7 +6292,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             flags[off[x.a] + x.e] |= flag_s;
         };
         const fnc = try m.arena.create(CMod.Fn);
-        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0), .runs_on = dr.runs_on or (idx < 32 and (f.runsOnParams() >> @intCast(idx)) & 1 != 0), .forks = (dr.lost and !dr.not_forks and !dr.called) or (idx < 32 and (f.forksParams() >> @intCast(idx)) & 1 != 0), .starts = idx < 32 and (f.startsParams() >> @intCast(idx)) & 1 != 0, .kept_out = dr.kept_out and !(idx < 32 and ((f.startsParams() | f.forksParams()) >> @intCast(idx)) & 1 != 0), .after_call = dr.after_call };
+        fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0), .runs_on = dr.runs_on or (idx < 32 and (f.runsOnParams() >> @intCast(idx)) & 1 != 0), .forks = (dr.lost and !dr.not_forks and !dr.called) or (idx < 32 and (f.forksParams() >> @intCast(idx)) & 1 != 0), .starts = idx < 32 and (f.startsParams() >> @intCast(idx)) & 1 != 0, .kept_out = dr.kept_out and !(idx < 32 and ((f.startsParams() | f.forksParams()) >> @intCast(idx)) & 1 != 0), .after_call = dr.after_call, .single = dr.calls <= 1 and !dr.handed and !dr.lost };
         fns[idx] = fnc;
         // The function itself is used.
         if (dr.used) for (flags[off[idx]..off[idx + 1]]) |*x| {
@@ -12430,6 +12436,7 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     const di = try f.draftOf(root, null);
     const inst = use.site.inst;
     f.drafts.items[di].used = true;
+    f.drafts.items[di].handed = true;
     // A function a defect can run, handed on: so is the frame's own.
     if (defectAt(&use)) f.drafts.items[di].defect = true;
     // One that can run masked or under a scheduler of its own, too; and
@@ -12684,6 +12691,10 @@ fn resolve(f: *Frame, use: *const Use, src: Src, suffix: []const u64, deep: bool
             f.resolve_exact = false;
             const exact = f.paired_exact;
             const dup = try f.argLeaves(use.args[src.a], use.c.layouts[src.a], src.e, suffix, deep, &f.atoms);
+            // At positions of the argument's list (kernel §6 rule 10, *A
+            // position*), as a result's source is read (`atPositions`): a
+            // supply is read where the callee hands it, at the call.
+            if (src.p != 0 and use.kind == .call) try f.atPositions(use, src, start);
             f.paired_exact = false;
             f.handed_exact = exact;
             defer f.handed_exact = false;
@@ -13333,10 +13344,14 @@ fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u3
                 // holds it. A holder that runs the function once in the call
                 // (`Fn.once`) answers a cell this frame made in its run once:
                 // another run of this frame makes another (kernel §13 item 2).
+                // A walked holder that runs it at most once and hands it on
+                // to nothing (`Fn.single`) answers it at one place of its
+                // own answer for each call, whatever made it (kernel §12
+                // item 8).
                 if (ls.a - code.own_params < code.ncaps) {
                     const at = f.atoms.items.len;
                     _ = try f.argLeaves(try f.capVal(code, ls.a - code.own_params), lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
-                    const own_run = fnc.once and for (f.atoms.items[at..]) |a| {
+                    const own_run = fnc.single or fnc.once and for (f.atoms.items[at..]) |a| {
                         const rk = f.roots.items[a.root].kind;
                         if (rk != .local and rk != .fresh) break false;
                     } else true;
@@ -13543,6 +13558,7 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
         return f.unknownResult(inst, vals);
     }
     f.drafts.items[di].called = true;
+    f.drafts.items[di].calls +|= 1;
     // Called after a call that can leave this fiber masked or under a
     // scheduler of its own: it runs there (`flowOwn`; #2622).
     if (f.runs_on_window_known) f.drafts.items[di].runs_on = true;

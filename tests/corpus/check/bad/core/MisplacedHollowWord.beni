@@ -1,0 +1,19 @@
+-- check/bad (core): `misplaced_ownership_word` at v3's `hollow`
+-- (`ownership-v3-kernel.md` §12 item 8), lowering's, at the word. `hollow`
+-- says that the result holds no value of a type variable: it stands in front
+-- of the result, once, beside `fresh`, never on a parameter (10:22), on a
+-- result that is not `fresh` (13:26) or `escaped` (16:34), or twice
+-- (19:49).
+pub foreign pure ok : ⊤ → fresh exclusive hollow List Int
+
+
+pub foreign pure p : hollow Int → fresh exclusive List Int
+
+
+pub foreign pure r : ⊤ → hollow List Int
+
+
+pub foreign pure s : ⊤ → escaped hollow List Int
+
+
+pub foreign pure t : ⊤ → fresh exclusive hollow hollow List Int

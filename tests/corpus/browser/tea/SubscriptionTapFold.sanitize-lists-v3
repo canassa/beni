@@ -1,0 +1,1 @@
+The fold builds its dictionary with `Dict.update`, whose callback appends to the list it is handed in place: v3 accepts it and the page runs in place (ownership-v3-kernel.md §12 item 8).

@@ -1899,7 +1899,14 @@ pub const Mod = struct {
         if (has(rw, .fresh) or has(rw, .exclusive)) {
             described = true;
             const sites = has(rw, .exclusive);
-            for (res, 0..) |*r, ri| try r.append(gpa, Src.fresh(if (sites) @intCast(ri) else 0, false));
+            // `hollow` (kernel §12 item 8): the result holds no value of a
+            // type variable, so the row names no cell there and the
+            // location holds none.
+            const none_at_var = hollowResult(m.bir.ownSlotsV3(d));
+            for (res, 0..) |*r, ri| {
+                if (none_at_var and res_es[ri].kind == .@"var") continue;
+                try r.append(gpa, Src.fresh(if (sites) @intCast(ri) else 0, false));
+            }
         }
         // The rows of a cell (kernel §13): a new cell's handle and contents,
         // a loan of the contents, and what a store leaves in them.
@@ -2146,6 +2153,13 @@ pub const Mod = struct {
                 return m.oneStore(sig, pw, j, ri, sig.vars[j]);
             },
         }
+    }
+
+    /// Whether the word `hollow` stands on the result (`Bir.ownSlotsV3`,
+    /// kernel §12 item 8).
+    fn hollowResult(slots: []const [2]u32) bool {
+        for (slots) |s| if (s[0] == Bir.own_result and s[1] & Ast.OwnWord3.hollow.bit() != 0) return true;
+        return false;
     }
 
     /// Whether the word `shallow` stands on parameter `j` (`Bir.ownSlotsV3`,

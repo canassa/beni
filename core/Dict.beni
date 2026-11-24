@@ -34,7 +34,7 @@ pub equatable keyed foreign type Dict k v
 --| A new empty dictionary. Each call makes its own storage.
 --|
 --|     Dict.empty ⊤
-pub foreign pure empty : ⊤ → fresh exclusive Dict k v
+pub foreign pure empty : ⊤ → fresh exclusive hollow Dict k v
 
 
 --| Create a dictionary with one key-value pair.

@@ -1,0 +1,27 @@
+-- The live twin of `DictUpdateFoldInPlace`: one list is the value at two
+-- keys, so the value `Dict.update` hands its callback is not apart from the
+-- values at the other keys, and a write of it in place would change the
+-- value at key 2 too. v3 refuses it (`ownership-v3-kernel.md` §12 item 8).
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+seed : List Int → Dict Int (List Int)
+seed xs = Dict.insert (Dict.insert (Dict.empty ⊤) 1 xs) 2 xs
+
+
+bump : Dict Int (List Int) → Dict Int (List Int)
+bump d = Dict.update d 1 λcur → Just (List.push (Maybe.withDefault cur []) 9)
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    d = bump (seed [ 1 ])
+    Node.printLines
+        [ show (Maybe.withDefault (Dict.get d 1) []), show (Maybe.withDefault (Dict.get d 2) []) ]

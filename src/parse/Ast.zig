@@ -719,6 +719,10 @@ pub const OwnWord3 = enum(u5) {
     /// a length, a key, the index, or the values' references moved, never
     /// their contents (`ownership-v3-kernel.md` §12, research report 161).
     shallow,
+    /// The result holds no value of a type variable: an empty dictionary,
+    /// a builder's holes, the answer of a call that never answers
+    /// (`ownership-v3-kernel.md` §12 item 8). Beside `fresh`.
+    hollow,
 
     pub fn inSignature(text: []const u8) ?OwnWord3 {
         return std.meta.stringToEnum(OwnWord3, text);

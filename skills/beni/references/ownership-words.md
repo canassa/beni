@@ -70,6 +70,15 @@ pub pick : borrowed List a, borrowed position Int → Int
 pick xs i = i
 ```
 
+The ownership checker v3 also reads `hollow`. It goes in front of a result
+that is `fresh exclusive`, once, and says that the new container holds no
+value: no cell is at a type variable of the result. At another place it
+causes `misplaced_ownership_word`.
+
+```text
+pub foreign pure empty : ⊤ → fresh exclusive hollow Dict k v
+```
+
 The ownership checker v3 checks a declaration that has words and a beni
 body that calls no JavaScript. It compares the words with what it finds in
 the body. A word that says less than the body does causes
@@ -117,4 +126,4 @@ pub small : List Int
 small = [ 1 ]
 ```
 
-Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4; `docs/design/ownership-v3-kernel.md` §6 rule 10, §7.
+Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4; `docs/design/ownership-v3-kernel.md` §6 rule 10, §7, §12 item 8.
