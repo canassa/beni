@@ -1,0 +1,116 @@
+-- load
+<body>
+  <main>
+    <form id="form">
+      <input id="field" .value="">
+      <button id="submit">"clear"</button>
+    </form>
+    <p id="added">"0 "</p>
+    <div id="pad">"pad"</div>
+    <p id="at">"0.0"</p>
+    <button id="close">"close"</button>
+    <button id="pick">"pick"</button>
+  </main>
+</body>
+-- type #field "abcde"
+<body>
+  <main>
+    <form id="form">
+      <input id="field" .value="abcd">
+      <button id="submit">"clear"</button>
+    </form>
+    <p id="added">"0 "</p>
+    <div id="pad">"pad"</div>
+    <p id="at">"0.0"</p>
+    <button id="close">"close"</button>
+    <button id="pick">"pick"</button>
+  </main>
+</body>
+-- key #field a
+(the DOM did not change)
+-- key #field Enter
+(keydown's default prevented)
+<body>
+  <main>
+    <form id="form">
+      <input id="field" .value="">
+      <button id="submit">"clear"</button>
+    </form>
+    <p id="added">"1 abcd"</p>
+    <div id="pad">"pad"</div>
+    <p id="at">"0.0"</p>
+    <button id="close">"close"</button>
+    <button id="pick">"pick"</button>
+  </main>
+</body>
+-- click #pick
+<body>
+  <main>
+    <form id="form">
+      <input id="field" .value="">
+      <button id="submit">"clear"</button>
+    </form>
+    <p id="added">"1 picked 2"</p>
+    <div id="pad">"pad"</div>
+    <p id="at">"0.0"</p>
+    <button id="close">"close"</button>
+    <button id="pick">"pick"</button>
+  </main>
+</body>
+-- pointer #pad pointerdown 10 20 type:touch
+(pointerdown's default prevented)
+<body>
+  <main>
+    <form id="form">
+      <input id="field" .value="">
+      <button id="submit">"clear"</button>
+    </form>
+    <p id="added">"1 picked 2"</p>
+    <div id="pad">"pad"</div>
+    <p id="at">"10.0"</p>
+    <button id="close">"close"</button>
+    <button id="pick">"pick"</button>
+  </main>
+</body>
+-- pointer #pad pointerdown 30 5
+<body>
+  <main>
+    <form id="form">
+      <input id="field" .value="">
+      <button id="submit">"clear"</button>
+    </form>
+    <p id="added">"1 picked 2"</p>
+    <div id="pad">"pad"</div>
+    <p id="at">"30.0"</p>
+    <button id="close">"close"</button>
+    <button id="pick">"pick"</button>
+  </main>
+</body>
+-- click #close
+<body>
+  <main>
+    <form id="form">
+      <input id="field" .value="">
+      <button id="submit">"clear"</button>
+    </form>
+    <p id="added">"1 picked 2"</p>
+    <div id="pad">"pad"</div>
+    <p id="at">"30.0"</p>
+    ""
+    <button id="pick">"pick"</button>
+  </main>
+</body>
+-- click #submit
+<body>
+  <main>
+    <form id="form">
+      <input id="field" .value="">
+      <button id="submit">"clear"</button>
+    </form>
+    <p id="added">"0 "</p>
+    <div id="pad">"pad"</div>
+    <p id="at">"30.0"</p>
+    ""
+    <button id="pick">"pick"</button>
+  </main>
+</body>

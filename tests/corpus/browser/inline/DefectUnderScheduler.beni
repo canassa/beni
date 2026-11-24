@@ -1,0 +1,51 @@
+-- Copied from `browser/tea/DefectUnderScheduler` (#966): `browser-tea`'s transcript, unchanged.
+-- A defect under a scheduler the program makes (`Task.scheduler`) stops
+-- the page, as a defect under the program's own scheduler does
+-- (boundary.md §9.8.10 (c)): only a platform's per-request or per-object
+-- scheduler (`Task.schedulerWith`) contains a defect (the owner,
+-- 2026-11-05, #1994). The command's fiber resumes under its own
+-- scheduler after a sleep, so its throw leaves that scheduler's drain,
+-- not the program's; that scheduler stops, then the program, and the
+-- next click applies no message. The release build adds no crash screen
+-- (`.release-expected`).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Inc
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg count =
+    case msg of
+        Go →
+            ( count + 10
+            , Cmd.perform λ_ →
+                Task.withScheduler (Task.scheduler λ⊤ → ⊤) λ⊤ →
+                    Time.sleep (Time.millis 10)
+                    Debug.todo "fiber under own scheduler threw"
+            )
+
+        Inc →
+            ( count + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view count =
+    <main>
+        <p id="count">{String.fromInt count}</p>
+        <button id="go" onClick={Go}>go</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
