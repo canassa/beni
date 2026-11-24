@@ -1341,10 +1341,24 @@ const RUNON_FRAMES = {
   // The lane's reviewer: the sibling that masks is a local lambda over the helper's own function
   // parameter (`wrapOwn`).
   wrapOwn: () => ['wrapRunner masker'],
+  // #2674 (code reader CR8): the fiber hands the function that forks a hosting fiber and the one that
+  // masks to one call: two captures (`twoCap`), in the other order of the parameters (`twoCapRev`),
+  // through a closure the fiber runs (`twoCapDeep`), a helper's two parameters (`twoCapParam`), three
+  // functions to one helper (`threeCap`), a `List.map` that runs both (`mapCap`), two arms of a fold
+  // (`foldCap`), a list that holds the one that masks (`listCap`), a helper of another module (`modCap`).
+  twoCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → twoCallsI h k', 'Task.sleep (Duration.millis 80)'],
+  twoCapRev: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → twoCallsRevI k h', 'Task.sleep (Duration.millis 80)'],
+  twoCapDeep: () => ['h = forker', 'k = masker', 'go = λ⊤ → twoCallsI h k', '_ = Task.spawn λ⊤ → go ⊤', 'Task.sleep (Duration.millis 80)'],
+  twoCapParam: () => ['go2I forker masker'],
+  threeCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → threeCallsI h noop k', 'Task.sleep (Duration.millis 80)'],
+  mapCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → mapBothI h k', 'Task.sleep (Duration.millis 80)'],
+  foldCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → foldArmsI h k', 'Task.sleep (Duration.millis 80)'],
+  listCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → twoCallsI h λn → List.foldl [ k ] ⊤ λg _ → g n', 'Task.sleep (Duration.millis 80)'],
+  modCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → Hoster.twoCallsM h k', 'Task.sleep (Duration.millis 80)'],
 };
 // The shapes whose `work` hosts: `Cmd.perform` would refuse them, so `init` starts `work` itself
 // (`Fn.starts` accepts a hosting function), and no `send` reaches it.
-const RUNON_STARTED = ['capFirst', 'capFirstLam', 'capFirstParam', 'sendLocal', 'sendAsp', 'sendParam', 'deferScope', 'hostThenMask', 'scopeHost', 'wrapOwn'];
+const RUNON_STARTED = ['capFirst', 'capFirstLam', 'capFirstParam', 'sendLocal', 'sendAsp', 'sendParam', 'deferScope', 'hostThenMask', 'scopeHost', 'wrapOwn', 'twoCap', 'twoCapRev', 'twoCapDeep', 'twoCapParam', 'threeCap', 'mapCap', 'foldCap', 'listCap', 'modCap'];
 const RUNON_HELD_DEFS = `
 
 stash : (⊤ → ⊤) → ⊤
@@ -1533,6 +1547,33 @@ wrapRunner g =
         h ⊤
         k 1
     Task.sleep (Duration.millis 80)`,
+  noop: `noop : ⊤ → ⊤
+noop ⊤ = ⊤`,
+  twoCallsI: `twoCallsI : (⊤ → ⊤), (Int → ⊤) → ⊤
+twoCallsI f g =
+    f ⊤
+    g 1`,
+  twoCallsRevI: `twoCallsRevI : (Int → ⊤), (⊤ → ⊤) → ⊤
+twoCallsRevI g f =
+    f ⊤
+    g 1`,
+  threeCallsI: `threeCallsI : (⊤ → ⊤), (⊤ → ⊤), (Int → ⊤) → ⊤
+threeCallsI f x g =
+    f ⊤
+    x ⊤
+    g 1`,
+  mapBothI: `mapBothI : (⊤ → ⊤), (Int → ⊤) → ⊤
+mapBothI f g =
+    _ = List.map [ 1 ] λn →
+        f ⊤
+        g n
+    ⊤`,
+  foldArmsI: `foldArmsI : (⊤ → ⊤), (Int → ⊤) → ⊤
+foldArmsI f g = List.foldl [ 1, 2 ] ⊤ λn _ → if n == 1 then f ⊤ else g n`,
+  go2I: `go2I : (⊤ → ⊤), (Int → ⊤) → ⊤
+go2I h k =
+    _ = Task.spawn λ⊤ → twoCallsI h k
+    Task.sleep (Duration.millis 80)`,
   hosting2: `hosting2 : ⊤ → ⊤
 hosting2 ⊤ =
     q = Ref.make [ 1, 2 ]
@@ -1589,6 +1630,12 @@ go h =
     case h of
         HH →
             hosting ⊤
+
+
+pub twoCallsM : (⊤ → ⊤), (Int → ⊤) → ⊤
+twoCallsM f g =
+    f ⊤
+    g 1
 `;
 // The helpers each shape of #2633 uses.
 const RUNON_WAYS = {
@@ -1639,8 +1686,17 @@ const RUNON_WAYS = {
   hostThenMask: ['hosting2', 'masker'],
   scopeHost: [],
   wrapOwn: ['forker', 'masker', 'wrapRunner'],
+  twoCap: ['forker', 'masker', 'twoCallsI'],
+  twoCapRev: ['forker', 'masker', 'twoCallsRevI'],
+  twoCapDeep: ['forker', 'masker', 'twoCallsI'],
+  twoCapParam: ['forker', 'masker', 'twoCallsI', 'go2I'],
+  threeCap: ['forker', 'masker', 'noop', 'threeCallsI'],
+  mapCap: ['forker', 'masker', 'mapBothI'],
+  foldCap: ['forker', 'masker', 'foldArmsI'],
+  listCap: ['forker', 'masker', 'twoCallsI'],
+  modCap: ['forker', 'masker'],
 };
-const RUNON_MODULES = ['evMod', 'evModKeep'];
+const RUNON_MODULES = ['evMod', 'evModKeep', 'modCap'];
 const RUNON_HELD = ['stashRead', 'stashWrite', 'dataRead', 'maskListRead', 'boxRead', 'wrapRead', 'memoRead', 'wrapHost', 'wrapHostLocal', 'wrapHostTwice', 'wrapHostLambda', 'wrapHostApplied', 'lendThenHost', 'twoCallsHost', 'listThenHost', 'capturedThenHost'];
 
 function genRunOn(other, writer, live) {

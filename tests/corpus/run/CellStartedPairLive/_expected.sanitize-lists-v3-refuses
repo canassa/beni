@@ -1,0 +1,13 @@
+# The live twins of CellStartedPair: a fiber hands a function that forks one in which a writer runs and one that masks to one call: two captures to a helper in either order, through a closure the fiber runs, a helper's two parameters (also of another module), three functions to one helper, a `List.map` that runs both, two arms of a fold, a helper of another module; and, refused before too, a record of the two, a list that holds the one that masks, and a method that masks. Each is refused where the fiber is forked or the hosting function is handed on (ownership-v3-kernel.md §13 item 12, *A defect*, (d), *Up*; #2674).
+102:9 list_still_used value
+111:9 list_still_used value
+121:9 list_still_used value
+128:5 list_still_used value
+134:5 list_still_used value
+142:9 list_still_used value
+151:9 list_still_used value
+160:9 list_still_used value
+169:9 list_still_used value
+178:9 list_still_used value
+187:9 list_still_used value
+195:9 list_still_used value

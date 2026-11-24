@@ -11426,13 +11426,14 @@ fn startedAt(f: *Frame, use: *const Use) Error!bool {
     if (use.fnc.lost) return forkedAt(use) or startsAt(use);
     if (answersFn(use) or use.fnc.kept_out) return false;
     if (use.kind == .inner) {
-        // The closure runs it after a call of another of its function
-        // parameters or captures (`Fn.after_call`): where that one can
-        // park the fiber masked or lend it, this one runs in that window
-        // (#2622). Or before one that runs after a call the closure could
-        // not judge (its `after_call`, as this one's call is): what this
-        // one started runs on in the window that one opens (#2653).
-        if (try f.siblingRunsOn(use, !use.fnc.after_call)) return false;
+        // The closure runs or loses another function that can park the
+        // fiber masked or lend it, at any depth, in any order and through
+        // any call: this one runs in the window that one opens, or what
+        // this one started runs on in it (kernel §13 item 12, *A defect*,
+        // (d), *Up*; #2622, #2653, #2674). No order of the two is read: a
+        // callee the closure hands both to runs them in an order the
+        // closure's contract does not say.
+        if (try f.siblingRunsOn(use)) return false;
         return !use.c.runs_on and use.started_above;
     }
     return true;
@@ -11442,17 +11443,19 @@ fn startedAt(f: *Frame, use: *const Use) Error!bool {
 /// runs another of its function parameters or captures that can park the
 /// fiber masked or lend it: one the closure's holder hands it (code the
 /// walk does not know), the frame's own function parameter, a function the
-/// walk does not know, or a known one with `runs_on` (#2622). With
-/// `after_only`, only one the closure runs after a call it could not
-/// judge (`Fn.after_call`): the function at `use` runs before it (#2653).
-fn siblingRunsOn(f: *Frame, use: *const Use, after_only: bool) Error!bool {
+/// walk does not know, or a known one with `runs_on` (#2622). Every other
+/// one it runs or loses, as `valRunsOn` reads one deeper, whatever the
+/// order of the two: a callee the closure hands both to can run them in
+/// either order, and its `Fn.after_call` does not reach the closure's
+/// contract (#2674).
+fn siblingRunsOn(f: *Frame, use: *const Use) Error!bool {
     const c = use.c;
     var seen: std.AutoHashMapUnmanaged(Val, void) = .empty;
     defer seen.deinit(f.gpa);
     for (0..c.arity) |i| {
         if (i == use.j) continue;
         const sf = c.fns[i] orelse continue;
-        if (!sf.called or (after_only and !sf.after_call)) continue;
+        if (!sf.called and !sf.lost) continue;
         if (i < use.own or i >= use.args.len) return true;
         if (try f.valRunsOn(use.args[i], 0, &seen)) return true;
     }

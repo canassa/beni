@@ -3080,6 +3080,29 @@ contents of a cell are locations, and that a call can change what a location of 
         capture gives no bit, wholly accepted in either order and TRAP (`wrapOwn`). It is the
         pessimistic side: such a helper is refused even where its caller hands `g` a function that
         never masks.
+        *Amended 2026-11-24 (#2674): the rule, whatever the way in.* **A hosting function that a
+        started closure runs is started so only where nothing else that the closure runs or loses,
+        at any depth, can park the fiber masked or lend it: its own body, its captures and
+        parameters, and what it hands them to, in any order and through any call.** At each holder
+        on the way from the start to the hosting function (`started_above`), the holder's own body
+        (its `Contract.runs_on`) and every other function it runs or loses (`siblingRunsOn`, each
+        read by `valRunsOn`) are judged, and no order of the two is read. Before, the sibling was
+        judged only where the closure's contract said that one of the two ran after a call it could
+        not judge (`Fn.after_call`, the #2653 test above), and that fact is of the closure's own
+        calls: a callee the closure hands both to runs them in its own order, and its `after_call`
+        does not reach the closure's contract (`flowOwn` keeps the callee's order for nobody).
+        `Task.spawn λ⊤ → twoCalls h k`, with `twoCalls f g = (f ⊤; g 1)` and `h` a function that
+        forks `hosting`, `k` one that masks, was wholly accepted, as were the order of the
+        parameters reversed, the call inside a closure the fiber runs, and a helper `go2 h k` that
+        starts it (code reader CR8's `twocap`, `twocaprev`, `twocapdeep`, `twocapparam`, TRAP under
+        `--sanitize-lists`); and so were three functions handed to one helper, two run in a
+        `List.map` and two in the arms of a fold, and the helper of another module (`run/CellStartedPair`
+        and its live twin). Each holder is read once for each use below it, and a function value's
+        answer is read through every contract it reaches, so a callee, a module boundary or a
+        wrapper closure changes nothing. `Fn.after_call` is still published, and no start reads it.
+        It is the pessimistic side: a started closure that runs a hosting function and only loses
+        another that can mask (to a fork, a list, a cell) is refused, also where nothing runs that
+        one in the closure's fiber.
       - **Up.** A function whose contract has `hosts` is refused where it meets a use with
         `runsOnAt`, the default, or a holder that loses it and does not fork it: any of them can run
         it masked.
@@ -3177,7 +3200,7 @@ contents of a cell are locations, and that a call can change what a location of 
 
         | Way in or out | *Down* | *Up* | *In the frame* | *After* |
         |---|---|---|---|---|
-        | 1. The frame's own function parameter, and a closure's capture (a parameter of its contract) | the caller registers, by the facts the draft publishes (`flowOwn`: `lost`, `not_forks`, `defect`) | the caller judges, by `runs_on`, `kept_out`, `after_call` (`flowOwn`, `callParam`); **#2653**: one a started closure runs before a sibling with `after_call` that can mask or lend is not started so (`siblingRunsOn`, `after_only`, `valRunsOn`; `capFirst`, `capFirstLam`, `capFirstParam`, `wrapOwn`) | a call of it, or one that runs it within, notes `runs_on` with no contract (`call`, `flowOwn`); **#2653**: after a start of a hosting function it is refused, whatever its type (no `send` is exempt: `sendLocal`, `sendAsp`, `sendParam`) | `runs_on` where a known window is open (`callParam`, `flowOwn`), `after_call` where only its own parameter's call opened it; **new**: `runs_on` where one call runs within it the parameter and a function that can park the fiber masked or lent, in either order (`within_known_calls`, `within_own`; `midLend`, `midNest`, `midRunner`) |
+        | 1. The frame's own function parameter, and a closure's capture (a parameter of its contract) | the caller registers, by the facts the draft publishes (`flowOwn`: `lost`, `not_forks`, `defect`) | the caller judges, by `runs_on`, `kept_out`, `after_call` (`flowOwn`, `callParam`); **#2653**, **#2674**: one a started closure runs beside any other function it runs or loses that can mask or lend, in either order and through any call, is not started so (`siblingRunsOn`, `valRunsOn`; `capFirst`, `capFirstLam`, `capFirstParam`, `wrapOwn`, `twoCap`, `twoCapRev`, `twoCapDeep`, `twoCapParam`, `threeCap`, `mapCap`, `foldCap`, `listCap`, `modCap`) | a call of it, or one that runs it within, notes `runs_on` with no contract (`call`, `flowOwn`); **#2653**: after a start of a hosting function it is refused, whatever its type (no `send` is exempt: `sendLocal`, `sendAsp`, `sendParam`) | `runs_on` where a known window is open (`callParam`, `flowOwn`), `after_call` where only its own parameter's call opened it; **new**: `runs_on` where one call runs within it the parameter and a function that can park the fiber masked or lent, in either order (`within_known_calls`, `within_own`; `midLend`, `midNest`, `midRunner`) |
         | 2. A function the frame makes or names: a lambda, a partial application (a lambda the parser makes), a reference to a declaration of this or another module, a local function, a join of them | `flowCode`: `forkedAt` before `isWriter`, `registerWriter` | `flowCode`: `hosts` with `runsOnAt`, or no `runsWithin` and no `startedAt` (`partHost`, `partLend`, `partArg`, `aliasHost`) | `flowCode`: run within a call, its `runs_on` and `hosts` count at the call (`noteRunsOnWithin`, `hostsWithin`) | the pair at one call is refused (`within_runs_on_calls`, `within_hosts_calls`) |
         | 3. A call of a declaration, a closure or a reference, of this or another module (`declContract` reads the same `Contract`, every `Fn` fact) | `applyAt`: a closure the callee loses registers only where it forks | the callee's `hosts`: `hostsCall` (refused in a window) | the callee's `runs_on`: `noteRunsOn`, `revokeAt` | `runs_on_window`, `runs_on_window_known`; **#2653**: after a callee with `hosts`, whose fibers outlive the call, no call that can mask or lend (`hostsCall` sets `hosts_forked`; `hostThenMask`) |
         | 4. A method call (`methodCall`) | none: its target is a declaration or code the compiler derives | a declaration: as 3; derived code: its effect through `termsInfo`, run within (`evidenceAt`, `hostsCall`) | a declaration: as 3; derived code: its `runs_on` (`evidenceAt`); a field, or a target the table does not name: unknown code, `noteRunsOn` | as 3; on the frame's own evidence (`.param`) it is a read, with no fact: the binding judges it (row 5) |
