@@ -9571,8 +9571,8 @@ none uses `/bin/echo`, which NixOS lacks.
   `run`'s wait, and the release alone signals the child; without that, a hang).
 - (k), *added 2026-11-24 (#2023)*: `ChildProcessInput` (a text sent to `/bin/sh -c 'cat'` and
   read back; text that is not ASCII, and a NUL; 1 MiB through `cat`, which shows that the write
-  and the reads do not wait for each other; an empty `input`, which is an end of file at once; a
-  child that reads one line of 1 MiB and exits; a child that exits and reads nothing, with a
+  and the reads do not wait for each other; an empty `input`, which is an end of file at once;
+  two children at once, each with its own text; a child that reads one line of 1 MiB and exits; a child that exits and reads nothing, with a
   short text and with 1 MiB; a child that closes its standard input and writes after that; a
   `Task.timeout` that ends a child with 1 MiB not yet read; `OutputTooLarge` with 1 MiB not yet
   read). Without the input pipe's `error` listener the program ends at the first child that stops
@@ -9614,11 +9614,11 @@ decision 17; #2024); process groups and the signals they need (#338); output as 
 emulated and its `PATH` lookup has its own rules, and this section says nothing of it.
 
 **(k) Standard input: a text, written and then closed.** *Added 2026-11-24, for issue #2023. The
-shape of the field is the owner's, asked on the dashboard as `child-stdin-q1`. Until the answer
-comes, this text has the recommended one; (i) records the decision.* The first slice gave every
-child an empty standard input, so a program could not send a request body to `rex api call`, or a
-document to `jq`. `Command` gets a seventh field, **`input : String`**, and `command` gives it
-`""`:
+shape of the field is the owner's decision, asked on the dashboard as `child-stdin-q1`. Until the
+answer comes, this text has the recommended one. (i) records the decision.* The first slice gave
+every child an empty standard input. A program could not send a request body to `rex api call`,
+or a document to `jq`. `Command` gets a seventh field, **`input : String`**, and `command` gives
+it `""`:
 
 ```elm
 ChildProcess.run { ChildProcess.command "jq" [ ".name" ] | input = json }
@@ -9628,59 +9628,61 @@ ChildProcess.run { ChildProcess.command "jq" [ ".name" ] | input = json }
   pipe. A program that does not set `input` gives its child the same file as before. The child
   can see the difference: `/dev/null` is a character device, and a pipe from Node is a socket
   (measured on Linux, Node 24.19). So the default does not become an empty pipe.
-- **Any other text is written, and then the pipe is closed.** Standard input is a pipe
+- **The platform writes any other text, and then closes the pipe.** Standard input is a pipe
   (`stdio[0] = "pipe"`). Node emits a child's `spawn` event only when the child started, and
   before every other event of that child. On that event the platform calls
-  `child.stdin.end(text, "utf8")`, once. The child reads the bytes of the text and then an end of
-  file. After a start that failed, nothing is written.
-- **The text is written as UTF-8**, the encoding (a) reads the output in. A lone surrogate is
-  written as U+FFFD (`ef bf bd`; measured), as an invalid sequence of the output is read. A NUL
-  character is one `00` byte: the input is data and not an argument, so it is not
+  `child.stdin.end(text, "utf8")`, one time. The child reads the bytes of the text and then an
+  end of file. After a start that failed, the platform writes nothing.
+- **The platform writes the text as UTF-8**, the encoding (a) reads the output in. A lone
+  surrogate becomes U+FFFD (`ef bf bd`; measured), as an invalid sequence of the output does. A
+  NUL character is one `00` byte. The input is data and not an argument, so a NUL is not
   `InvalidArgument`.
-- **`run` does not wait for the write.** It answers on the child's `close` event, as (a) says,
-  and Node's `close` does not count the input pipe (measured: the child's `close` can come before
-  the input pipe's own). The platform writes the input and reads the two outputs on one event
-  loop, so a child that writes while it reads does not stop: `cat` gives back 1 MiB, more than a
-  pipe holds.
-- **The text has no bound of its own.** It is a string the program holds already. Node keeps its
-  bytes until the child has read them, or until the pipe is closed.
+- **`run` does not wait for the write.** It answers on the child's `close` event, as (a) says.
+  Node's `close` does not count the input pipe (measured: the child's `close` can come before the
+  input pipe's own). The platform writes the input and reads the two outputs on one event loop.
+  So a child that writes while it reads does not stop: `cat` gives back 1 MiB, more than a pipe
+  holds.
+- **The text has no bound of its own.** It is a string that the program holds already. Node
+  keeps its bytes until the child reads them, or until the pipe closes.
 
 **A child that does not read all of its input is not an error.** A child can exit, or close its
 standard input, before it reads the whole text. `grep -q` exits at its first match, and that is a
-success. One of three things then happens to the rest of the text, and the program gets the same
+success. One of three things then happens to the rest of the text. The program gets the same
 answer for each: `Ok`, with the child's status and output, as for any child that started and
 ended.
 
-1. The kernel's buffer takes the whole text, and the write succeeds although nothing reads it
+1. The kernel's buffer takes the whole text. The write succeeds, although nothing reads the text
    (measured: 10 bytes to a child that only exits give no error).
 2. The write fails with **`EPIPE`**, an `error` event of the input pipe (measured: 1 MiB to seven
    scripts that stop reading, 150 runs each; every run gave `EPIPE` with `syscall: "write"`, and
    no run gave another code). The platform's listener takes that error by its name and does
-   nothing more: Node has dropped the rest of the text. `run` goes on waiting for the child.
-3. The child exits first. Node destroys the input pipe at the child's `exit`, with the text it
-   has not written, and reports no error (measured).
+   nothing more: Node dropped the rest of the text. `run` continues to wait for the child.
+3. The child exits first. Node destroys the input pipe at the child's `exit`, with the text not
+   yet written, and reports no error (measured).
 
 Which of the three happens depends on the length of the text, on the size of the kernel's buffer
-and on the order of two events. So the answer does not say how much the child read: a field of
+and on the order of two events. So the answer does not say how much the child read. A field of
 `Output` or a `RunError` for it would make a program's result depend on a timer, which (g) rules
-out, and in case 1 it would also be wrong. The child's status and its output say what it did.
-With no listener, the `error` event of case 2 ends Node (measured), which is why the platform
+out. In case 1 it would also be wrong. The child's status and its output say what the child did.
+With no listener, the `error` event of case 2 ends Node (measured). That is why the platform
 listens.
 
 - **The input pipe has a table of its own, with one name.** `EPIPE` is the failure Node documents
   for a write that nothing reads (`errors.md`, *Common system errors*), and the only one measured.
-  Every other error of the input pipe is thrown again, (e): a code of the start's table (`ENOMEM`,
-  say) on the input pipe is not a `RunError`. `ECONNRESET` came in no run. The measurements are
-  Linux's; macOS is not measured, and a host that gives another code for a child that stopped
-  reading shows it as a defect of `ChildProcessInput`, and gets a row then.
+  The platform throws every other error of the input pipe again, (e). A code of the start's table
+  (`ENOMEM`, say) on the input pipe is not a `RunError`. `ECONNRESET` came in no run. The
+  measurements are Linux's, and macOS is not measured. If a host gives another code for a child
+  that stopped reading, `ChildProcessInput` shows it there as a defect, and the table gets a row
+  then.
 - **A descendant that still reads when the child exits gets an early end of file.** Node destroys
-  the input pipe at the child's exit (case 3), so a descendant that holds the other end reads
-  only what the kernel had (measured: the child exits at once, and a descendant that reads later
-  gets 146 176 of 8 388 608 bytes). The output is the opposite: there a descendant keeps `run`
-  waiting, (a). A program whose descendant must read the whole text makes the child wait for it.
+  the input pipe at the child's exit (case 3). A descendant that holds the other end reads only
+  what the kernel had (measured: the child exits at once, and a descendant that reads later gets
+  146 176 of 8 388 608 bytes). The output is the opposite: there a descendant keeps `run`
+  waiting, (a). A program whose descendant must read the whole text makes the child wait for the
+  descendant.
 - **A stopped child.** When (d) stops the child, or `OutputTooLarge` does, the platform closes
-  the input pipe with the output pipes and drops the text not yet written. A pipe the platform
-  destroys reports no error.
+  the input pipe with the output pipes. It drops the text not yet written. A pipe that the
+  platform destroys reports no error.
 - **Not here.** The input as bytes waits for #335's bytes. A streamed input waits for a `Stream`
   and the handle of #2024 (§17 decision 17).
 

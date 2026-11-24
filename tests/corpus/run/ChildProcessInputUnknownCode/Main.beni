@@ -1,0 +1,24 @@
+-- run: an `error` event of the input pipe whose code is not `EPIPE` is a
+-- defect that ends the program (boundary.md §9.14 (k), (e), CLAUDE.md
+-- rule 9). The code here is `ENOMEM`, which `ChildProcess.RunError` names
+-- for a start that failed (`OutOfMemory`): the input pipe has a table of
+-- its own, so a handler that read the start's table would answer an
+-- `Err`, a silent wrong answer. The program must exit 1 with Node's
+-- report of the error and print nothing after it.
+import ChildProcess
+import Debug
+import Fault
+import Io
+import Node exposing (Program)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Fault.failInput "ENOMEM"
+    Debug.log "before the run" ⊤
+    case ChildProcess.run { ChildProcess.command "/bin/sh" [ "-c", "true" ] | input = "text" } of
+        Ok _ →
+            Node.print "ran"
+
+        Err _ →
+            Node.print "an error value"

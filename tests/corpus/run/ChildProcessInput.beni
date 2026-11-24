@@ -1,0 +1,131 @@
+-- run: a command's `input` is the text its child reads on standard
+-- input: written whole as UTF-8, and then the pipe is closed (boundary.md
+-- §9.14 (k)). Every child is `/bin/sh`, and a script names only `cat` and
+-- `sleep`, which the suite's `PATH` holds (`World.program_path`).
+--
+--   - a text sent to `cat` and read back;
+--   - text that is not ASCII, and a NUL character, which is a byte of the
+--     input and not `InvalidArgument`;
+--   - 1 MiB through `cat`, more than a pipe holds: the write and the reads
+--     do not wait for each other;
+--   - no `input`, and an `input` of `""`: an end of file at once;
+--   - two children at once, each with its own text.
+--
+-- A child that does not read all of its input is not an error, and the
+-- answer is the one any child gets:
+--
+--   - a child that reads one line of 1 MiB and exits;
+--   - a child that exits and reads nothing, with a short text, which the
+--     kernel's buffer takes, and with 1 MiB, where the write fails;
+--   - a child that closes its standard input and writes after that: the
+--     write's failure does not end the wait.
+--
+-- Without the input pipe's `error` listener, the first of these with
+-- 1 MiB ends the program with Node's `Unhandled 'error' event`.
+--
+-- A child that is stopped while its input is not yet written leaves no
+-- error either: a `Task.timeout`, and output over `maxOutput`.
+import ChildProcess exposing (Command, Output, RunError)
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+sh : String → Command
+sh script = ChildProcess.command "/bin/sh" [ "-c", script ]
+
+
+-- 1 048 576 bytes, each line 16 of them.
+big : String
+big = String.repeat "0123456789abcde\n" 65536
+
+
+describe : String, Result RunError Output → String
+describe label result =
+    case result of
+        Ok output →
+            label
+                ++ ": "
+                ++ status output.status
+                ++ ", stdout "
+                ++ quote output.stdout
+                ++ ", stderr "
+                ++ quote output.stderr
+
+        Err ChildProcess.OutputTooLarge →
+            label ++ ": output too large"
+
+        Err _ →
+            label ++ ": an error"
+
+
+-- The same, for output too long to print: is it the text that was sent?
+same : String, String, Result RunError Output → String
+same label sent result =
+    case result of
+        Ok output →
+            label
+                ++ ": "
+                ++ status output.status
+                ++ ", "
+                ++ String.fromInt (String.length output.stdout)
+                ++ " characters, "
+                ++ (if output.stdout == sent then "the text sent" else "another text")
+
+        Err _ →
+            label ++ ": an error"
+
+
+status : ChildProcess.Status → String
+status s =
+    case s of
+        ChildProcess.Exited code →
+            "exited " ++ String.fromInt code
+
+        ChildProcess.Signalled name →
+            "signalled " ++ name
+
+
+quote : String → String
+quote text = "\"" ++ String.replace text "\n" "\\n" ++ "\""
+
+
+main : Program
+main = Io.run λ⊤ →
+    binary = "a\u{0}b"
+    both = Task.par (λ⊤ → ChildProcess.run { sh "sleep 0.05; cat" | input = "first" }) λ⊤ →
+        ChildProcess.run { sh "cat" | input = "second" }
+    timedOut =
+        case
+            Task.timeout (Duration.millis 50) λ⊤ →
+                ChildProcess.run { sh "exec sleep 1000" | input = big }
+        of
+            Just _ →
+                "timeout: the sleeper answered"
+
+            Nothing →
+                "timeout: the sleeper timed out"
+    Node.printLines
+        [ describe "cat" (ChildProcess.run { sh "cat" | input = "hello, child\n" })
+        , describe "not ASCII" (ChildProcess.run { sh "cat" | input = "é ✓ 😀" })
+        , same "a NUL" binary (ChildProcess.run { sh "cat" | input = binary })
+        , same "1 MiB" big (ChildProcess.run { sh "cat" | input = big })
+        , describe "no input" (ChildProcess.run (sh "cat; echo end"))
+        , describe "empty input" (ChildProcess.run { sh "cat; echo end" | input = "" })
+        , describe "first of two" both.0
+        , describe "second of two" both.1
+        , describe "reads one line"
+            (ChildProcess.run
+                { sh "read line; echo \"got $line\"; exit 4" | input = "first\n" ++ big }
+            )
+        , describe "reads nothing, short" (ChildProcess.run { sh "exit 3" | input = "ignored\n" })
+        , describe "reads nothing, 1 MiB" (ChildProcess.run { sh "exit 3" | input = big })
+        , describe "closes its input"
+            (ChildProcess.run { sh "exec 0<&-; sleep 0.1; echo still here" | input = big })
+        , timedOut
+        , describe "too large"
+            (ChildProcess.run
+                { sh "printf 12345678901; exec sleep 1000" | input = big, maxOutput = 10 }
+            )
+        ]

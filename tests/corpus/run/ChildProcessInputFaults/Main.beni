@@ -1,0 +1,42 @@
+-- run: an `error` event of the input pipe whose code is `EPIPE` is a
+-- child that stopped reading its input, and not an error: `run` goes on
+-- waiting, and answers with what the child did after that (boundary.md
+-- §9.14 (k), (e)). The test platform gives the child an input pipe that
+-- fails its first write with the code named, by Node's route, so the
+-- case depends on no kernel buffer and on no order of events, as
+-- `ChildProcessInput`'s real children do.
+import ChildProcess exposing (Output, RunError)
+import Fault
+import Io
+import Node exposing (Program)
+
+
+describe : Result RunError Output → String
+describe result =
+    case result of
+        Ok output →
+            case output.status of
+                ChildProcess.Exited code →
+                    "exited " ++ String.fromInt code ++ ", stdout " ++ quote output.stdout
+
+                ChildProcess.Signalled name →
+                    "signalled " ++ name
+
+        Err _ →
+            "an error value"
+
+
+quote : String → String
+quote text = "\"" ++ String.replace text "\n" "\\n" ++ "\""
+
+
+main : Program
+main = Io.run λ⊤ →
+    Fault.failInput "EPIPE"
+    Node.print
+        ("EPIPE: "
+            ++ describe
+                (ChildProcess.run
+                    { ChildProcess.command "/bin/sh" [ "-c", "true" ] | input = "text" }
+                )
+        )

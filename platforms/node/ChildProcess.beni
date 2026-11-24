@@ -29,6 +29,9 @@ import Task exposing (Exit, Resume)
 --|   character in them has a meaning.
 --| - `cwd`: the child's working directory; `Nothing` is the program's own.
 --| - `env`: the child's environment.
+--| - `input`: the text the child reads on its standard input, written as
+--|   UTF-8, and then an end of file. `""` is no input: the standard input
+--|   is empty.
 --| - `killAfter`: when the fiber is cancelled, the child gets `SIGTERM`,
 --|   and `SIGKILL` if it has not exited this long after.
 --| - `maxOutput`: the most bytes kept of standard output, and of standard
@@ -38,6 +41,7 @@ pub type alias Command =
     args : List String
     cwd : Maybe String
     env : Environment
+    input : String
     killAfter : Duration
     maxOutput : Int
 
@@ -112,14 +116,15 @@ pub type RunError
 
 
 --| `program` with `args`, and every other field its default: the
---| program's own working directory and environment, a `killAfter` of one
---| second and a `maxOutput` of 16 MiB.
+--| program's own working directory and environment, no `input`, a
+--| `killAfter` of one second and a `maxOutput` of 16 MiB.
 pub command : String, List String → Command
 command program args =
     { program = program
     , args = args
     , cwd = Nothing
     , env = Inherit
+    , input = ""
     , killAfter = Duration.seconds 1
     , maxOutput = 16777216
     }
@@ -130,7 +135,11 @@ command program args =
 --| `Err` with why it could not run. A non-zero exit and a signal are `Ok`.
 --|
 --| A descendant of the child that keeps its output open keeps `run`
---| waiting. Standard input is empty.
+--| waiting.
+--|
+--| The child reads `input` on its standard input. `run` does not wait for
+--| the child to read it: a child that exits, or closes its standard input,
+--| before it has read all of it is not an error, and the rest is dropped.
 --|
 --| When the fiber is cancelled, the child gets `SIGTERM`, then `SIGKILL`
 --| after `killAfter`, and the cancellation ends when the child has exited.
@@ -175,7 +184,8 @@ allNamed pairs = not (List.any pairs λ( name, _ ) → String.isEmpty name || St
 -- (the child started), `exited` (the child's process is gone, or never
 -- was), `exitWaiter` (the release's resume), `stopping` (the signals are
 -- sent), `timer` (the `SIGKILL` timer), `out` and `err` (each stream's
--- chunks and their byte count), `max` and `killAfter`.
+-- chunks and their byte count), `max` and `killAfter`. The input is not
+-- in it: `listen` hands it to the one event that writes it.
 start : Command → Value
 start cmd =
     p =
@@ -204,7 +214,7 @@ start cmd =
             λerror → refused p error
     if not (Js.isNull child) then
         Js.set p "child" child
-        listen p child
+        listen p child cmd.input
     p
 
 
@@ -262,15 +272,18 @@ push array value =
     ⊤
 
 
--- `spawn`'s options: no shell, standard input empty, both outputs piped,
--- the working directory when there is one, and the environment when it
--- is not the program's own as it is.
+-- `spawn`'s options: no shell, both outputs piped, the working directory
+-- when there is one, and the environment when it is not the program's own
+-- as it is. Standard input is a pipe when there is an `input`. With none
+-- it is empty (`/dev/null`), which a child can tell from a pipe closed at
+-- once (`boundary.md` §9.14 (k)).
 options : Command → Value
 options cmd =
+    stdin = if String.isEmpty cmd.input then "ignore" else "pipe"
     o =
         Js.object
             [ ( "shell", Js.from False )
-            , ( "stdio", Js.array [ Js.from "ignore", Js.from "pipe", Js.from "pipe" ] )
+            , ( "stdio", Js.array [ Js.from stdin, Js.from "pipe", Js.from "pipe" ] )
             ]
     case cmd.cwd of
         Just dir →
@@ -314,17 +327,54 @@ setAll env pairs =
 
 
 -- The child's events. `spawn` and `exit` track the process; `close` comes
--- when it has exited and both pipes have ended, and answers. A pipe is
--- missing after `EMFILE` and `ENFILE`, which Node reports before it makes
--- them. A pipe's own `error` has no listener: Node throws it, a defect.
-listen : Value, Value → ⊤
-listen p child =
+-- when it has exited and both output pipes have ended, and answers. A
+-- pipe is missing after `EMFILE` and `ENFILE`, which Node reports before
+-- it makes them. An output pipe's own `error` has no listener: Node
+-- throws it, a defect. The input pipe's has one, for the one failure of
+-- a write that is not a defect (`inputFailed`).
+listen : Value, Value, String → ⊤
+listen p child input =
     _ = Js.call child "on" [ Js.from "error", Js.from λerror → failed p error ]
-    _ = Js.call child "on" [ Js.from "spawn", Js.from λ_ → Js.set p "spawned" (Js.from True) ]
+    _ = Js.call child "on" [ Js.from "spawn", Js.from λ_ → started p child input ]
     _ = Js.call child "on" [ Js.from "exit", Js.from λ_ → exited p ]
     _ = Js.call child "on" [ Js.from "close", Js.from λcode signal → closed p code signal ]
     collectFrom p (Js.get child "stdout") (Js.get p "out")
     collectFrom p (Js.get child "stderr") (Js.get p "err")
+    stdin = Js.get child "stdin"
+    if not (Js.isNullish stdin) then
+        _ = Js.call stdin "on" [ Js.from "error", Js.from λerror → inputFailed error ]
+        ⊤
+
+
+-- The child has started: Node's `spawn` event, which comes before every
+-- other event of the child and never after a start that failed. The
+-- input is written whole, as UTF-8, and the pipe is closed after it; the
+-- answer does not wait for that (`boundary.md` §9.14 (k)). There is no
+-- pipe when the input is `""` (`options`).
+started : Value, Value, String → ⊤
+started p child input =
+    Js.set p "spawned" (Js.from True)
+    stdin = Js.get child "stdin"
+    if not (Js.isNullish stdin) then
+        _ = Js.call stdin "end" [ Js.from input, Js.from "utf8" ]
+        ⊤
+
+
+-- An `error` event of the input pipe. `EPIPE` is a child that closed its
+-- standard input, or exited, before the whole input was written: not an
+-- error. Node has dropped the rest, and the answer comes as for any
+-- child (`boundary.md` §9.14 (k)). Every other error is a defect, thrown
+-- again (`CLAUDE.md` rule 9): `codes` are the start's and name nothing
+-- of a write.
+inputFailed : Value → ⊤
+inputFailed error =
+    if not (brokenPipe error) then
+        Js.throw error
+
+
+brokenPipe : Value → Bool
+brokenPipe error =
+    Js.instanceOf error (Js.global "Error") && Js.same (Js.get error "code") (Js.from "EPIPE")
 
 
 collectFrom : Value, Value, Value → ⊤
@@ -449,10 +499,12 @@ forceKill p =
 
 
 -- Close beni's ends of the child's pipes, so a descendant that holds the
--- other ends keeps nothing waiting.
+-- other ends keeps nothing waiting. Input not yet written is dropped; a
+-- pipe destroyed here reports no error.
 closePipes : Value → ⊤
 closePipes p =
     child = Js.get p "child"
+    destroy (Js.get child "stdin")
     destroy (Js.get child "stdout")
     destroy (Js.get child "stderr")
 
