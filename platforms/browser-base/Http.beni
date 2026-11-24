@@ -84,7 +84,9 @@ emptyBody = Empty
 
 
 --| Text, sent with its MIME type as the `Content-Type` unless a header
---| names one.
+--| names one. A MIME type that a header value cannot hold (a line break,
+--| a character above U+00FF) is refused, `BadRequest (InvalidHeader
+--| "Content-Type")`.
 --|
 --|     Http.stringBody "text/plain" "hello"
 pub stringBody : String, String → Body
@@ -721,6 +723,20 @@ bodyProblem upper headers body =
                     Unprintable issues →
                         Just (UnprintableBody issues)
 
+                    -- The MIME type goes to `Headers.set` as the
+                    -- `Content-Type` when no header names one, and that
+                    -- throws a `TypeError` on a value a header cannot
+                    -- hold (#1995).
+                    Text mime _ →
+                        if
+                            isHeaderValue mime
+                                || List.any headers λ(Header name _) →
+                                    String.toLower name == "content-type"
+                        then
+                            Nothing
+                        else
+                            Just (InvalidHeader "Content-Type")
+
                     _ →
                         Nothing
 
@@ -836,10 +852,29 @@ start flight ms =
         Js.construct (Js.global "DOMException")
             [ Js.from "The request timed out.", Js.from "TimeoutError" ]
     Js.setAt flight 2 reason
+    arm flight ms
+
+
+-- A host timer keeps a delay of 2³¹ − 1 ms at most: past it, both hosts
+-- fire after 1 ms, and the request timed out at once (#1995). A longer
+-- timeout is a chain of timers, as `Task.sleep`'s is; the live one is
+-- always `flight[1]`, which `settled` clears.
+arm : Js.Value, Int → ⊤
+arm flight ms =
     timer =
         Js.apply (Js.global "setTimeout")
-            [ Js.from λ⊤ → Js.to (Js.call (Js.at flight 0) "abort" [ reason ]), Js.from ms ]
+            [ Js.from λ⊤ →
+                if ms > timerLimit then
+                    arm flight (ms - timerLimit)
+                else
+                    Js.to (Js.call (Js.at flight 0) "abort" [ Js.at flight 2 ])
+            , Js.from (Basics.min ms timerLimit)
+            ]
     Js.setAt flight 1 timer
+
+
+timerLimit : Int
+timerLimit = 2147483647
 
 
 -- Stop the timer, if there is one.
