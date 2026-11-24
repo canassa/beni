@@ -825,6 +825,15 @@ beni over `Js` in `Inline.beni`:
     named function — and a fallback that is any
     other markup value. `build/bad/inline/Show*/`; pages `browser/inline/Show*` and the
     `browser/tea` pages copied beside them.
+    *Amended 2026-11-24 (#2637, #966):* a body that is a lambda whose body, past its `let`s, is an
+    `if` or a `case`, and a body that is a named function of the program's module, are compiled
+    as a `For`'s row of the same shape is (§9, *A row whose top is a branch*, *A named row
+    function*): the body's arm `make` is the runtime's `emptyRow`, and its `set`, given the row
+    `keyShown` made or kept, hands `rowArm` the arm chosen with `v` bound; a key change remounts
+    the whole body, its arm chosen afresh. A `For` with a `fallback` in the body is compiled (§9).
+    `ShowBodyBranch/` builds and is withdrawn; `ShowBodyFragment/` (an arm of two elements)
+    stays refused. Pages `browser/inline/NamedRows` and `browser/tea/ShowValueArms` copied beside
+    it.
 - **What follows a `For`, a region or a `Show`** (*amended 2026-11-24, #2625, #966*). Each of
   them puts its nodes before a node the mount holds — the element after it, or nothing at its
   element's end — so until now one followed by text, a hole, another `For`, region or `Show` was
@@ -2259,7 +2268,8 @@ The simple form is S2c's row unit with none of S2d's edits:
   interface asks `programShowFallback`, `programShowFallbackIsText` and `programShowFallbackText`
   of a `For` as of a `Show` (version 1.37). What stays refused: a `fallback` on a `For` in a row or
   an arm (`ForFallbackInRow/`, class 1). `ForFallback/` builds and is the page
-  `browser/inline/ForFallback`.
+  `browser/inline/ForFallback`. *Amended 2026-11-24 (#2637):* a `fallback` on a `For` in a row, in
+  a region's arm or in a `Show`'s body is compiled, below; `ForFallbackInRow/` is withdrawn.
 - **A branch in a row** (*amended 2026-11-23, #2625, #966*). An `html` hole of a row whose value
   is an `if` or a `case` — or a call of a view helper whose body is one (§8.4, amended
   2026-11-23) — is a branch region of the row, as one in a region's arm is (§8.2, *A branch
@@ -2295,7 +2305,40 @@ The simple form is S2c's row unit with none of S2d's edits:
   `build/bad/inline/RowTopBranchFragment/`), an arm with `let`s no hole reads, a choice that may
   have an effect, a row whose body is a call of a helper whose body is the branch, and a named row
   function (`ForRowFunction/`). Pages `browser/tea/EmptyMarkup` and `WholeFor` build and are
-  copied to `browser/inline/`, each with its listed differences of nodes.
+  copied to `browser/inline/`, each with its listed differences of nodes. *Amended 2026-11-24:* a
+  named row function is compiled, below.
+- **A named row function** (*amended 2026-11-24, #2637, #966*). A row function that is a
+  function of the program's module (`{row}`, `Row.kind` `function`), not calling itself and
+  under no `Html.map`, whose body, past `let`s its holes read, is one element written in
+  place, or an `if` or a `case` whose arms are what *A row whose top is a branch* takes, is
+  compiled as the lambda `λx → row x` (or `λx i → row x i`) would be: the row's `set` enters
+  the call of the function with the item and the position bound to its parameters, as a view
+  helper's call is entered (§8.4), and evaluates the values of its body's root, or chooses the
+  branch's arm, with them. The interface asks `programCallee`, `programInlineEnter` and
+  `programInlineLeave` of the `For` (version 1.39), and a `Show`'s body is the same (§8.2). The
+  write-set pass applies the row function on the path the `For` stands on, so the call adds no
+  step to the call path, as a `let`'s root does not (`Chain.nested`). What stays refused (class
+  1, at the `For`): a local function, which `Lower` cannot see into (`ForRowFunction/`, now a
+  `let`-bound lambda); another module's function (`ForRowOtherModule/`, with another module's
+  markup in a row below); a function that calls itself, one under `Html.map`, and one whose body
+  has `let`s no hole reads. Pages `browser/inline/NamedRows` (checked against `browser-tea` for
+  the same source) and `browser/tea/ApiItems` copied beside it.
+- **A `fallback` in a row** (*amended 2026-11-24, #2637, #966*). A `For` in a row, in a region's
+  arm or in a `Show`'s body may have a `fallback`, planned as the page's is: a region of the unit
+  whose state `make` keeps as the row's `g<slot>`, made where the rows stand, and shown by the
+  unit's `set` after `forRows` while the list's `length` is 0, its values evaluated only then
+  (#459). The unit then evaluates only the values its writes read (`cx.rowValuesOf`), as a row
+  with a branch region does, since the fallback is markup, no value; a `view` `let` the fallback
+  reads is bound as one a region reads is. Since every row's `set` runs at each write of what the
+  `For` reads, a `Debug.log` in a row's shown fallback logs again when another row changes, where
+  `browser-tea` skips a row whose item is the same object: a difference of when, listed in
+  `browser/inline/RowFallback`, whose pages agree with `browser-tea`'s. A fallback of more than one
+  element stays class 1, as the page's.
+- **Another module's markup in a row** stays refused (`build/bad/inline/ForRowOtherModule/`,
+  `browser/tea/TemplateMappedRows`, `TemplateRowChoices`): a piece (§8.4) is lifted with its
+  binding functions taking `E` and the facts of one call path, and a row has no path of its own
+  per item; it needs the piece's bindings to take the row's item as a root of their own, a slice
+  of its own.
 - **`Dict`.** A `For` over a `Dict` waits for S2b (§9.9): the checker refuses it today (its `each`
   must be a `List a`), and `core/Dict` is still ordered by key, not by insertion, until #961.
 - **Dependencies.** The simple form edits no list in place and reads none by identity, so S2c's
