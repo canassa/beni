@@ -1,16 +1,21 @@
 -- run: what `ChildProcess.run` asks of Node for a child's standard input,
--- and what it does when the write of the input fails with `EPIPE`
--- (boundary.md §9.14 (k), (e)). The test platform's child says what
--- `spawn` was asked for, and its input pipe fails its first write with
--- the code named, by Node's route, so no case depends on a kernel buffer
--- or on an order of events, as `ChildProcessInput`'s real children do.
+-- and what it does with the input pipe, where a real child shows nothing
+-- or shows it only by a race (boundary.md §9.14 (k), (e)). Each child is
+-- the test platform's, in place of `child_process.spawn`'s, and notes what
+-- somebody did to its standard input.
 --
 --   - no `input`, and an `input` of `""`: no pipe (`ignore`, which is
 --     `/dev/null`). A real child reads an end of file at once from that
 --     and from an empty pipe, so only this case tells them apart;
---   - a text: a pipe. Its `error` event with the code `EPIPE` is a child
---     that stopped reading, and not an error: `run` goes on waiting, and
---     answers with what the child did after that.
+--   - a text: a pipe. Its `error` event with the code `EPIPE`, by Node's
+--     route for a write that failed, is a child that stopped reading, and
+--     not an error: `run` goes on waiting, and answers with what the child
+--     did after that;
+--   - a start that failed: nothing writes to the child's standard input,
+--     which Node makes all the same;
+--   - output over `maxOutput` from a child that never reads: the platform
+--     destroys the input pipe with the output pipes, before it signals the
+--     child, and the pending write gives no error.
 import ChildProcess exposing (Command, Output, RunError)
 import Fault
 import Io
@@ -36,8 +41,14 @@ describe label result =
                 ChildProcess.Signalled name →
                     label ++ ": signalled " ++ name
 
+        Err ChildProcess.NotFound →
+            label ++ ": not found"
+
+        Err ChildProcess.OutputTooLarge →
+            label ++ ": output too large"
+
         Err _ →
-            label ++ ": an error value"
+            label ++ ": another error"
 
 
 quote : String → String
@@ -47,8 +58,21 @@ quote text = "\"" ++ String.replace text "\n" "\\n" ++ "\""
 main : Program
 main = Io.run λ⊤ →
     Fault.failInput "EPIPE"
+    none = describe "no input" (ChildProcess.run child)
+    empty = describe "empty input" (ChildProcess.run { child | input = "" })
+    broken = describe "a text, EPIPE" (ChildProcess.run { child | input = "text" })
+    Fault.failStart ⊤
+    failed = describe "a start that failed" (ChildProcess.run { child | input = "text" })
+    failedNotes = Fault.notes ⊤
+    Fault.neverRead ⊤
+    tooLarge =
+        describe "too large, input not read"
+            (ChildProcess.run { child | input = "text", maxOutput = 10 })
+    tooLargeNotes = Fault.notes ⊤
     Node.printLines
-        [ describe "no input" (ChildProcess.run child)
-        , describe "empty input" (ChildProcess.run { child | input = "" })
-        , describe "a text, EPIPE" (ChildProcess.run { child | input = "text" })
+        [ none
+        , empty
+        , broken
+        , failed ++ "; the child noted: " ++ failedNotes
+        , tooLarge ++ "; the child noted: " ++ tooLargeNotes
         ]

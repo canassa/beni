@@ -1,11 +1,13 @@
 cat: exited 0, stdout "hello, child\n", stderr ""
 not ASCII: exited 0, stdout "é ✓ 😀", stderr ""
 a NUL: exited 0, 3 characters, the text sent
+a lone surrogate: exited 0, stdout "a�b", stderr ""
 1 MiB: exited 0, 1048576 characters, the text sent
 no input: exited 0, stdout "end\n", stderr ""
 empty input: exited 0, stdout "end\n", stderr ""
 first of two: exited 0, stdout "first", stderr ""
 second of two: exited 0, stdout "second", stderr ""
+no such program: not found
 reads one line: exited 4, stdout "got first\n", stderr ""
 reads nothing, short: exited 3, stdout "", stderr ""
 reads nothing, 1 MiB: exited 3, stdout "", stderr ""

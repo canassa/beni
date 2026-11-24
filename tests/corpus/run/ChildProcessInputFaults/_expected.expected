@@ -1,3 +1,5 @@
 no input: exited 0, stdout "standard input: ignore\n"
 empty input: exited 0, stdout "standard input: ignore\n"
 a text, EPIPE: exited 0, stdout "standard input: pipe\n"
+a start that failed: not found; the child noted: nothing
+too large, input not read: output too large; the child noted: the input pipe destroyed before the signal

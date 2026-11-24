@@ -1,9 +1,8 @@
---! A test platform's one capability: make every later `child_process.spawn`
---! give a child that starts, says what its standard input is, and whose
---! input pipe fails with an error code of the caller's choosing, by the
---! route Node takes for a write that failed. It reaches what
---! `ChildProcess.run` asks of Node for the standard input, and what it does
---! with an error of the input pipe, with no real pipe and no race.
+--! A test platform's children, in place of `child_process.spawn`'s: each
+--! reaches one thing `ChildProcess.run` does with a child's standard input
+--! that no real child shows with no race. What `spawn` is asked for; an
+--! input pipe that fails by the route Node takes for a write that failed;
+--! a child that does not start; and a child that never reads.
 
 --| From now on, every `child_process.spawn` gives a child that starts. A
 --| child whose standard input is a pipe fails its first write with an
@@ -11,3 +10,22 @@
 --| no pipe, the child writes what `spawn` was asked for as its standard
 --| input (`pipe`, `ignore`) and exits 0.
 pub foreign impure failInput : String → ⊤
+
+
+--| From now on, every `child_process.spawn` gives a child that does not
+--| start: its `error` event has the code `ENOENT`, and no `spawn` event
+--| comes. Its standard input notes it when something writes to it or ends
+--| it.
+pub foreign impure failStart : ⊤ → ⊤
+
+
+--| From now on, every `child_process.spawn` gives a child that starts,
+--| writes 11 bytes on its standard output and never reads its standard
+--| input: a write to it stays pending. A signal ends the child. Its
+--| standard input notes it when something destroys it before that signal.
+pub foreign impure neverRead : ⊤ → ⊤
+
+
+--| What the children noted since the last call, joined with `, `, or
+--| `nothing`.
+pub foreign impure notes : ⊤ → String
