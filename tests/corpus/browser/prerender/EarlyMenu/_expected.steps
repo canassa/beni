@@ -1,0 +1,5 @@
+early event [data-role=pad] pointerdown
+early event [data-role=pad] contextmenu
+early click [data-role=go]
+pointer [data-role=pad] pointerdown 3 4 button:2 buttons:2
+pointer [data-role=pad] contextmenu 3 4 button:2 buttons:2

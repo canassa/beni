@@ -1,0 +1,18 @@
+# The main button on a row, then the secondary one.
+pointer #r1 pointerdown 4 3 button:0 buttons:1
+pointer #r2 pointerdown 4 3 button:2 buttons:2
+# The menu on a row: the row's handler, then the surface's, whose point is
+# in its own box. The surface stops the browser's menu.
+pointer #r2 contextmenu 30 40 button:2 buttons:2 box:#surface
+# The surface alone.
+pointer #surface contextmenu 5 6 button:2
+# The walk passes over a disabled control: only the surface's handler runs.
+pointer #off contextmenu 7 8 button:2 box:#surface
+# The browser's menu stays.
+pointer #native contextmenu 1 2 button:2
+# A row added later has the handlers too.
+click #add
+pointer #r3 pointerdown 7 2 button:1 buttons:4
+pointer #r3 contextmenu 9 9 button:2 box:#surface
+# The mouse event of an older browser: no `pointerId` at all.
+mouse #surface contextmenu

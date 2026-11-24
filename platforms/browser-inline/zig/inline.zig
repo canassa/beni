@@ -1788,11 +1788,15 @@ const Page = struct {
     /// events, whose payload is read while the event is dispatched — the
     /// box of the element whose listener runs, its `currentTarget` — which
     /// a delivery after the dispatch cannot give (`prerender.md` §6.5,
-    /// amended 2026-10-29).
+    /// amended 2026-10-29). `contextmenu` has the pointer events'
+    /// extractor, and a delivery after the dispatch cannot stop the
+    /// browser's menu, so it is left out too (amended 2026-11-24, #2087).
     fn capturedKinds(pg: *Page) m.Error![]const []const u8 {
         var kinds: std.ArrayList([]const u8) = .empty;
         for (try pg.eventKinds()) |k| {
-            if (std.mem.indexOf(u8, k, "pointer") == null) try kinds.append(pg.a(), k);
+            if (std.mem.indexOf(u8, k, "pointer") != null) continue;
+            if (std.mem.eql(u8, k, "contextmenu")) continue;
+            try kinds.append(pg.a(), k);
         }
         return kinds.items;
     }

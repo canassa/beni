@@ -1,0 +1,59 @@
+-- A prerendered page whose program listens only to a pointer event and to
+-- `contextmenu` (docs/design/prerender.md §6.5, amended 2026-11-24;
+-- boundary.md §9.8.20 (h)): the capture script records neither kind, so
+-- the build writes no script into the page, as the page's golden shows,
+-- and the client has no code to deliver early input. A `contextmenu`
+-- before the program loads does nothing. After the takeover, the pad's
+-- handler gets the menu at its point, and stops the browser's menu.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    log : String
+
+
+type Msg
+    = Pressed Html.Pointer
+    | Menu Html.Pointer
+
+
+at : Html.Pointer → String
+at p =
+    button = String.fromInt (Html.button p)
+    "${button} at ${String.fromFloat (Html.localX p)}, ${String.fromFloat (Html.localY p)}"
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pressed p →
+            { model | log = model.log ++ " down ${at p}" }
+
+        Menu p →
+            { model | log = model.log ++ " menu ${at p}" }
+
+
+menu : Html.Pointer → Msg
+menu p =
+    Html.preventDefault (Html.pointerEvent p)
+    Menu p
+
+
+view : Model → Html Msg
+view model =
+    <section data-role="app">
+        <div data-role="pad" onPointerDown={Pressed} onContextMenu={menu}>pad</div>
+        <output data-role="log">{model.log}</output>
+    </section>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { log = "" }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

@@ -2786,6 +2786,8 @@ tests/corpus/browser/dom/Keyed.beni Keyed 85:5 #0 :: entry Keyed.update model.ro
 tests/corpus/browser/dom/KeyedInPlace.beni KeyedInPlace 111:8 #0 :: entry KeyedInPlace.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/dom/KeyedMoves.beni KeyedMoves 79:5 #0 :: entry KeyedMoves.update model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/dom/LetInMarkup.beni LetInMarkup 56:5 #0 :: entry LetInMarkup.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/dom/PointerButtons.beni PointerButtons 108:8 #0 :: entry PointerButtons.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/dom/PointerButtons.beni PointerButtons 108:8 #0 :: entry PointerButtons.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/dom/PointerEvents.beni PointerEvents 99:5 #0 :: entry PointerEvents.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/dom/PointerEvents.beni PointerEvents 99:5 #0 :: entry PointerEvents.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/dom/PointerNested.beni PointerNested 85:8 #0 :: entry PointerNested.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
@@ -2905,6 +2907,7 @@ tests/corpus/browser/tea/OwnedCommandSend.beni OwnedCommandSend 17:38 #0 :: send
 tests/corpus/browser/inline/OwnedCommandSend.beni OwnedCommandSend 18:38 #0 :: send <Items …> :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/OwnedCommandSend.beni OwnedCommandSend 29:5 #0 :: entry OwnedCommandSend.update msg#Items.0 :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/OwnedCommandSend.beni OwnedCommandSend 30:5 #0 :: entry OwnedCommandSend.update msg#Items.0 :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/tea/PointerButtons.beni PointerButtons 118:8 #0 :: entry PointerButtons.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/PointerInput.beni PointerInput 127:8 #0 :: entry PointerInput.update model.held :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/PointerInput.beni PointerInput 127:8 #0 :: entry PointerInput.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/PositionRows.beni PositionRows 79:5 #0 :: entry PositionRows.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
@@ -9420,6 +9423,7 @@ tests/corpus/browser/inline/WebSocketFailures.beni WebSocketFailures 74:13 #0 ::
 tests/corpus/browser/inline/WebSocketFailures.beni WebSocketFailures 80:13 #0 :: WebSocketFailures.note <expression>.lines :: absent :: accepted  the same demand under each checker's text: v1 names the argument a record, v2 an expression
 tests/corpus/browser/inline/SubscriptionSameEvent.beni SubscriptionSameEvent 51:5 #0 :: entry SubscriptionSameEvent.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/ListsInRows.beni ListsInRows 95:10 #0 :: entry ListsInRows.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/PointerButtons.beni PointerButtons 121:8 #0 :: entry PointerButtons.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/PointerInput.beni PointerInput 132:8 #0 :: entry PointerInput.update model.held :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/RowMountOrder.beni RowMountOrder 83:5 #0 :: entry RowMountOrder.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/RowMountOrderTake.beni RowMountOrderTake 86:5 #0 :: entry RowMountOrderTake.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

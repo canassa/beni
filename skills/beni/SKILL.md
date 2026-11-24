@@ -103,7 +103,7 @@ Open the file your task needs.
 - `references/schemas.md` — the `schema` declaration, `Type` and `Encoded`, `parse` and `print`, the modifiers,
   `tagged`, `Json` with a derived `codec`.
 - `references/markdown.md` — `Markdown.parse` and `Html.Markdown`: the CommonMark tree, rendering, raw HTML as text, limits.
-- `references/markup.md` — elements, attributes, holes, events, components, `For`, `Show`, `class` and `style`
+- `references/markup.md`, `references/pointer.md` — elements, attributes, holes, events, components, `For`, `Show`, `class` and `style`
   lists, `Html.map`, what is refused.
 - `references/platforms.md` — `node`, `browser`, `browser-tea`, `browser-inline`, `html` and `cloudflare`: what `main` is on
   each, commands, subscriptions and the modules each adds.
@@ -122,9 +122,8 @@ Open the file your task needs.
 - `references/ownership-words.md` — the ownership words core and platform packages write,
   `misplaced_ownership_word`, and `@ownership_summary_size`.
 - `references/cli.md` — every command and flag of `beni help`, the exit codes, `--diagnostics=json`.
-- `references/api-core.md` — generated core interfaces.
-- `references/api-node.md`, `references/api-browser.md`, `references/api-browser-tea.md`,
-  `references/api-browser-inline.md`, `references/api-browser-base.md`, `references/api-html.md`, `references/api-cloudflare.md` — generated platform interfaces. `api-html.md` lists the markup vocabulary.
+- `references/api-core.md`, `references/api-node.md`, `references/api-browser.md`, `references/api-browser-tea.md`,
+  `references/api-browser-inline.md`, `references/api-browser-base.md`, `references/api-html.md`, `references/api-cloudflare.md` — generated core and platform interfaces. `api-html.md` lists the markup vocabulary.
 
 A generated file writes each signature in beni's notation: `List a, (a → b) → List b`. Effects are
 inferred and never written. A value whose result reaches the host ends in the comment `-- impure`; one

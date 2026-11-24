@@ -1,0 +1,108 @@
+-- The buttons of a pointer event, and the context menu, in a page built
+-- by the `dom` lowering (boundary.md §9.8.20 (h)). `Html.button` is the
+-- button whose change made the event and `Html.buttons` the buttons that
+-- are down. `contextmenu` bubbles, so it is delegated, and its walk is the
+-- pointer events' (§9.8.20 (d)): the walk defines `currentTarget` as the
+-- element whose handler runs, so each handler reads a point in its own
+-- box. A menu asked for on a row runs the row's handler and then the
+-- surface's, in one walk, and the surface's point is in the surface's
+-- box, not in the row's. The surface's inline style places it
+-- at 20, 60, so under happy-dom too it has the box Chrome gives it
+-- (`tests/corpus/README.md`, *layout*), and a row keeps the box at 0. So
+-- the gates fail this page when the extractor of `onContextMenu` subtracts
+-- no box, or the box of the target. The surface's handler stops the
+-- browser's menu, and the step logs that. `#native` does not stop it, so
+-- no such line follows its step. A handler on a disabled button does not
+-- run, as a click handler on it does not. A row added later has a handler
+-- as well. The mouse event of an older browser has no `pointerId`:
+-- `Html.pointerId` is -1 and the type "".
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Pressed Int Int Int
+    | RowMenu Int Int
+    | Menu Float Float Int String
+    | Native Int
+    | Off
+    | Add
+
+
+type alias Model =
+    rows : List Int
+    log : List String
+
+
+point : Float, Float → String
+point x y = "${String.fromFloat x}, ${String.fromFloat y}"
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pressed row button buttons →
+            line =
+                "row ${String.fromInt row}: button ${String.fromInt button}, buttons ${String.fromInt buttons}"
+            { model | log = model.log ++ [ line ] }
+
+        RowMenu row button →
+            line = "menu on row ${String.fromInt row}: button ${String.fromInt button}"
+            { model | log = model.log ++ [ line ] }
+
+        Menu x y button pointer →
+            line =
+                "menu on the surface at ${point x y}: button ${String.fromInt button}, ${pointer}"
+            { model | log = model.log ++ [ line ] }
+
+        Native button →
+            { model | log = model.log ++ [ "the browser's menu: button ${String.fromInt button}" ] }
+
+        Off →
+            { model | log = model.log ++ [ "menu on the disabled button" ] }
+
+        Add →
+            { model | rows = model.rows ++ [ List.length model.rows + 1 ] }
+
+
+surfaceMenu : Html.Pointer → Msg
+surfaceMenu p =
+    Html.preventDefault (Html.pointerEvent p)
+    Menu
+        (Html.localX p)
+        (Html.localY p)
+        (Html.button p)
+        "\"${Html.pointerType p}\" #${String.fromInt (Html.pointerId p)}"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <div
+            id="surface"
+            style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none"
+            onContextMenu={surfaceMenu}
+        >
+            <ul>
+                <For each={model.rows}>
+                    {λrow →
+                        <li
+                            id={"r${String.fromInt row}"}
+                            onPointerDown={λp → Pressed row (Html.button p) (Html.buttons p)}
+                            onContextMenu={λp → RowMenu row (Html.button p)}
+                        >
+                            {row}
+                        </li>
+                    }
+                </For>
+            </ul>
+            <button id="off" disabled={True} onContextMenu={λ_ → Off}>off</button>
+        </div>
+        <p id="native" onContextMenu={λp → Native (Html.button p)}>native</p>
+        <button id="add" onClick={Add}>add</button>
+        <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { rows = [ 1, 2 ], log = [] }, update = update, view = view }

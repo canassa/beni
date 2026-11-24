@@ -1,0 +1,121 @@
+-- A copy of `browser/tea/PointerButtons` on `browser-inline` (boundary.md §9.8.20 (h)): the
+-- vocabulary is one for each platform, so the page and its steps are that page's.
+--
+-- The buttons of a pointer event, and the context menu (boundary.md
+-- §9.8.20 (h)). `Html.button` is the button whose change made the event
+-- and `Html.buttons` the buttons that are down: a press of the main
+-- button, a press of the secondary one while the main one is held (a
+-- move, as the standard sends it), a move with no change (-1), and the
+-- releases. `Down` carries the `Pointer` itself, and `update` reads its
+-- buttons after the dispatch. `Int32.and` tests one part of `buttons`.
+--
+-- `onContextMenu` hands a `Pointer` too. The pad's inline style places it
+-- at 40, 30, so the menu's `clientX` is 40 more than its `localX`, in
+-- Chrome and under happy-dom (`tests/corpus/README.md`, *layout*): a page
+-- opens its menu at the client point. A menu asked for on the dot, inside
+-- the pad, is at a point in the PAD's box, the element whose handler runs.
+-- The pad's handler stops the browser's menu, and the step logs that.
+-- `#native` does not, so no such line follows its step. `#split` stops it
+-- on its left half only. A `contextmenu` is never primary, as the
+-- standard dispatches it. A menu that no pointing device made has no
+-- pointer: its `pointerId` is -1 and its type "". A browser before Chrome
+-- 92, Firefox 129 and Safari 18.2 dispatches `contextmenu` as a mouse
+-- event, which has no `pointerId` at all: the `mouse` step sends that
+-- form, and `Html.pointerId` is -1, the type "" and the pointer not
+-- primary.
+import Html exposing (Html)
+import Int32
+import Tea
+
+
+type Msg
+    = Down Html.Pointer
+    | Changed String
+    | Menu String String
+
+
+type alias Model =
+    log : List String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Down p →
+            { model | log = model.log ++ [ "down ${pressed p}" ] }
+
+        Changed what →
+            { model | log = model.log ++ [ what ] }
+
+        Menu on what →
+            { model | log = model.log ++ [ "menu on ${on}: ${what}" ] }
+
+
+-- Whether the part `part` of `buttons` is down.
+held : Int, Int → Bool
+held buttons part = Int32.toInt (Int32.and (Int32.fromInt buttons) (Int32.fromInt part)) ≠ 0
+
+
+pressed : Html.Pointer → String
+pressed p =
+    buttons = Html.buttons p
+    mainDown = if held buttons 1 then " main" else ""
+    secondaryDown = if held buttons 2 then " secondary" else ""
+    "button ${String.fromInt (Html.button p)}, buttons ${String.fromInt buttons}:${mainDown}${secondaryDown}"
+
+
+place : Html.Pointer → String
+place p =
+    local = "${String.fromFloat (Html.localX p)}, ${String.fromFloat (Html.localY p)}"
+    client = "${String.fromFloat (Html.clientX p)}, ${String.fromFloat (Html.clientY p)}"
+    "at ${local}, client ${client}"
+
+
+pointer : Html.Pointer → String
+pointer p =
+    primary = if Html.isPrimary p then "primary" else "not primary"
+    "\"${Html.pointerType p}\" #${String.fromInt (Html.pointerId p)}, ${primary}"
+
+
+padMenu : Html.Pointer → Msg
+padMenu p =
+    Html.preventDefault (Html.pointerEvent p)
+    Menu "pad" "${place p}; ${pressed p}; ${pointer p}"
+
+
+splitMenu : Html.Pointer → Msg
+splitMenu p =
+    if Html.localX p < 50 then
+        Html.preventDefault (Html.pointerEvent p)
+    Menu "split" "at ${String.fromFloat (Html.localX p)}"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <div
+            id="pad"
+            style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none"
+            onPointerDown={Down}
+            onPointerMove={λp → Changed "move ${pressed p}"}
+            onPointerUp={λp → Changed "up ${pressed p}"}
+            onContextMenu={padMenu}
+        >
+            <span
+                id="dot"
+                style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"
+            />
+        </div>
+        <p
+            id="native"
+            onContextMenu={λp → Menu "native" "button ${String.fromInt (Html.button p)}"}
+        >
+            native
+        </p>
+        <p id="split" onContextMenu={splitMenu}>split</p>
+        <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { log = [] }, update = update, view = view }

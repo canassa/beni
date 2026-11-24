@@ -2044,6 +2044,7 @@ bytes each.
 | `references/effects.md` | no effect syntax, the two inferred bits, `Result` and no exceptions, `Task`, `Debug` in a release build, `Log` |
 | `references/schemas.md` | the `schema` declaration, `Type` and `Encoded`, `parse` and `print`, the modifiers, `tagged`, `core/Schema` |
 | `references/markup.md` | elements, attributes, holes, events, components, `For`, `Show`, `class` and `style` lists, `Html.map`, what is refused |
+| `references/pointer.md` | the pointer events, `Html.Pointer` and its readers, the buttons, `onContextMenu` (*added 2026-11-24*, #2087: `markup.md` was at its 300 lines) |
 | `references/platforms.md` | `node`, `browser`, `browser-tea`, `browser-inline` and `html`: what `main` is on each, and the modules each adds |
 | `references/project.md` | `beni.json`, `beni new`, the output tree, `beni serve` |
 | `references/cli.md` | every command and flag of `beni help`, the hidden migration flags a diagnostic names, the exit codes, `--diagnostics=json` |
