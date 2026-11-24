@@ -934,8 +934,8 @@ observable today; effects will make them observable in what a program *does*.
 | an element or fragment | **its attributes and events, then its children, in source order**, attributes and events interleaved as written, each once; a hole inside a child element is reached when that element is. A constant attribute or a text run evaluates nothing (§11.5) |
 | a component | its props in source order, the spread first where there is one, `children` where the children are written; then the call, **unless it is skipped** (§11.8) |
 | a call of a top-level function in an `Html msg` hole, `{f a b}` | *added 2026-09-29 with §11.6's helper skip:* the callee and the arguments, left to right, with the markup; then the call, with the platform's render, **unless it is skipped** (§11.6) — as a component's is, after the markup's other values |
-| `For` | its attributes in source order; then the row function once per row, first row first, **except for rows that are skipped** (§11.9) |
-| `Show` | its attributes in source order; then, on `Just v`, the key function once and the body once, **unless the body is skipped** (§11.18) |
+| `For` | its attributes in source order, `fallback` excepted; then the row function once per row, first row first, **except for rows that are skipped** (§11.9). *Amended 2026-11-24 (#2662):* the `fallback` is evaluated only while it is shown, when the list is empty, as an arm of a `case` is — never at a render that shows rows |
+| `Show` | its attributes in source order, `fallback` excepted; then, on `Just v`, the key function once and the body once, **unless the body is skipped** (§11.18); on `Nothing`, the `fallback`. *Amended 2026-11-24 (#2662):* the `fallback` is evaluated only while it is shown, as the `Nothing` arm of the `case` a `Show` stands for (§11.18) — never at a render that shows the body |
 | an event handler | the handler *value* is evaluated with the markup; calling a function handler, or an `Html.map` function, happens when the event fires, never during a render |
 
 **Two rows the emitter did not honour, found on 2026-09-18 by writing the fixtures for this
@@ -2253,7 +2253,7 @@ not done (research 36 question 7, accepted: identity first, measured before anyt
 `For` is Solid 2's list form (W33; research 27 §7.1, research 36 §4.4). **Its attributes** are
 `each`, the list — `List a`, and `Array a` once `core/` has one (W35; *amended 2026-10-01: there
 will be no `Array`, `List` being array-backed, §6.8, so `each` is a `List a`*) — which is required; `keyed`,
-the keying mode; and `fallback`, an optional `Html msg` shown when the list is empty. An attribute
+the keying mode; and `fallback`, an optional `Html msg` shown when the list is empty, and evaluated only then (*amended 2026-11-24*, §11.18). An attribute
 `For` does not take is `unknown_form_attribute`, with "did you mean" over the three (`key=` is
 answered with `keyed=`), and a missing `each` is `missing_form_attribute`. Its only child is one hole
 holding the **row function**, of type `a -> Html msg` or `a, Int -> Html msg`, whose second parameter
@@ -2752,9 +2752,17 @@ says the same thing, since a non-keyed conditional is exactly `case x of Just v 
 …` (§11.6). *Amended 2026-09-29:* the `case` is written from the `Show`'s own `when`, body and
 `fallback` (an empty fragment when it has none), not a fixed example.
 
-**Evaluation and skipping**: the attributes in source order; then, on `Just v`, the key function
+**Evaluation and skipping**: the attributes in source order, the `fallback` excepted (below); then, on `Just v`, the key function
 once, then the body — which **may be skipped**, like a row, when `v` and the body's inputs (§11.9's
 table) are identical to the previous render's and the key did not change.
+
+*Amended 2026-11-24 (#2662, the manager under the owner's standing rule; the owner may reverse it
+there):* **the `fallback` is evaluated only while it is shown**, on `Nothing`, as the `Nothing` arm
+of the `case` above is, whatever its form (markup written in place, `Html.text e`, a call). A
+`Debug.log` or a `Debug.todo` in it runs at no render that shows the body. The same holds for a
+`For`'s `fallback`, evaluated only at a render whose list is empty (§11.9). It is #459's rule for
+an arm (`browser-inline.md` §8.2); `browser-tea` keeps it for a fallback written in place and
+evaluates any other at every render, a listed difference (`browser/inline/FallbackShownOnly`).
 
 ### 11.19 `class` and `style` lists
 

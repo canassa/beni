@@ -186,7 +186,7 @@ done />` is `TodoItem.view { todo = t, done = True }`. `<Card.header title="x" /
   `Int`, `Float`, `Char` or `Bool`); `keyed={False}` by position; a bare `keyed`, or no `keyed`, by the
   item's identity, which a record update changes. `fallback` shows when the list is empty.
 - `Show` renders a `Maybe`. `when : Maybe a`; the child is `a → Html msg`; `keyed` remounts when
-  the identity (or the key `keyed={f}`) changes; `fallback` shows on `Nothing`.
+  the identity (or the key `keyed={f}`) changes; `fallback` shows on `Nothing`. A `fallback` runs only while it shows.
 - A row function whose body is markup is compiled in place; any other function is called per row.
 
 ## `Html.map` and the plain-call form
