@@ -9778,10 +9778,12 @@ none uses `/bin/echo`, which NixOS lacks.
   `Task.timeout` that ends a child with 1 MiB not yet read; `OutputTooLarge` with 1 MiB not yet
   read). Without the input pipe's `error` listener the program ends at the first child that stops
   reading 1 MiB, with Node's `Unhandled 'error' event` — checked by hand on the emitted
-  JavaScript. `ChildProcessInputFaults`, whose test platform gives the child an input pipe that
-  fails with `EPIPE`, by Node's route: `Ok`. `ChildProcessInputUnknownCode`: the input pipe fails
-  with `ENOMEM`, a code the start's table names and the input pipe's does not: a defect, with a
-  `.crash` golden.
+  JavaScript. `ChildProcessInputFaults`, whose test platform's child says what `spawn` was asked
+  for as its standard input: `ignore` with no `input` and with `""`, `pipe` with a text. A real
+  child reads an end of file at once from `/dev/null` and from an empty pipe, so only this case
+  tells the two apart. The same child's input pipe fails with `EPIPE`, by Node's route: `Ok`.
+  `ChildProcessInputUnknownCode`: the input pipe fails with `ENOMEM`, a code the start's table
+  names and the input pipe's does not: a defect, with a `.crash` golden.
 - The rows with no fixture: `OutputTooLarge`'s clamp to `MAX_STRING_LENGTH` (a string of 512 MiB
   is no test); an `error` event after the start (no program can make Node's `kill` fail); an
   output pipe's `error` (left to Node).
