@@ -7217,6 +7217,18 @@ and their later additions. No cause is new: a record demand is rejected for the 
   closure, its reads of a local of a frame around that closure are that closure's; made in the holder's own
   frame, a read in a closure in its body is listed at the outermost closure there, and a direct read is made
   when the function runs (#2620 is the call after a write).
+  *Amended 2026-11-24 (#2620): a local function made in the holder's frame.* Such a function runs where it is
+  called, and it may be called anywhere in its block, before a write of the field or after it: its closure exists
+  from the block's entry (§18.7), and it is a hoisted `function`. A read in its body of a field path of a local
+  of the frame that makes it, made directly or by a closure in its body, is therefore read **once in the block**,
+  after the local is bound and before any call: at the block's entry when the local is bound by then (a
+  parameter, an outer `let`, a pattern), else just after the item of the block that binds it, where the lowering
+  then writes the function. Every call uses that temporary, as every inner closure uses a closure's. The read
+  at that point is a use of the path, so a write made before it hoists it further, before that write. The
+  sentence above that read the direct read where the function runs, and a closure's where it is made, is
+  withdrawn: a call after a write read the new value (`x1` where value semantics prints `x0`), and a holder
+  bound after the function was read before it existed, a `ReferenceError` (#2617's placement).
+  `run/RecordReadLocalFunction`, `browser/inline/RecordReadLocalFunction`.
 - **A send gives up every cell its payload holds** (§23.2, `bit_d`). Record objects are among those cells now, so
   `send (Saved model.form)` from a body whose arm keeps `model` is `later-use` at the send, as a list is.
 - **A command, a subscription or a view handler that keeps a closure** escapes what the closure holds (§31.4
@@ -7506,7 +7518,8 @@ ownership path, cell, frame or interner id. A field path is copied from the BIR 
 record demand names its instruction and written fields; each hoist names its holder, the read
 instruction or record-pattern binding to rewrite, the prefix through the written field, and its
 placement. Captured paths additionally name the closure creation at which they are read eagerly.
-A placement says either before an instruction or after an update's operands and before its stores;
+A placement says either before an instruction or after an update's operands and before its stores,
+or (*amended 2026-11-24*, §31.6) after a `let` item, for a local function's read of what the item binds;
 a call's hoists go before the call. A write in a branch with reads after the join uses the enclosing
 statement before the branch. Two writes that invalidate the same read retain the first placement.
 A bad or unknown table format is a cache miss. The table is implementation information, outside the
@@ -7900,7 +7913,9 @@ update's own result, or through anything bound after `D`, names the new version 
   version does not see**, on every path from the holder's binding to the read. When two updates write `f` in turn
   (`s = { r | a = 1 }; u = { s | a = 2 }; … r.a`), the read of `r.a` is placed before the first.
 
-For a capture of a field path, `P` is the closure's creation (§31.6): of the outermost closure made in the holder's frame, when closures nest. For a write made by a callee (§31.7), it is
+For a capture of a field path, `P` is the closure's creation (§31.6): of the outermost closure made in the holder's frame, when closures nest. For a
+read in a local function made in the holder's frame, it is the block's entry or just after the item that binds
+the holder (§31.6, amended 2026-11-24). For a write made by a callee (§31.7), it is
 before the call.
 
 **Soundness.** The argument is the thesis's (§6.3, versions and stale references), with one step for the hoist:

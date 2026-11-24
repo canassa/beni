@@ -1270,7 +1270,11 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
             }
             const rp = o.in.positions.get(o.in.positions.ctx, m, bir.insts.items(.main_token)[h.inst]);
             const pp = o.in.positions.get(o.in.positions.ctx, m, bir.insts.items(.main_token)[h.placement]);
-            wr.print(": read {d}:{d}; {s} {d}:{d}", .{ rp.line, rp.col, if (h.phase == 1) "after operands" else "before", pp.line, pp.col }) catch return error.OutOfMemory;
+            wr.print(": read {d}:{d}; {s} {d}:{d}", .{ rp.line, rp.col, switch (h.phase) {
+                1 => "after operands",
+                2 => "after",
+                else => "before",
+            }, pp.line, pp.col }) catch return error.OutOfMemory;
             try hoist_lines.append(arena, .{ .text = try text.toOwnedSlice() });
         };
         r.hoist_lines = hoist_lines.items;
@@ -7704,6 +7708,16 @@ const Capture = struct {
     creation: u32 = none,
 };
 
+/// A local function's read of a local of the frame that makes it (§31.6,
+/// amended 2026-11-24): read once, where `resolveLate` finds the local
+/// bound in the block, under the key of the function's `let_def`.
+const LateEager = struct {
+    cap: Capture,
+    def: u32,
+    tok: u32,
+    done: bool = false,
+};
+
 /// How a lambda was consumed: what decides its demands on its own
 /// parameters (§16.5).
 const Consumption = struct {
@@ -8309,6 +8323,13 @@ const Walker = struct {
     /// §31.6: captures of a record's field path read when a lambda is made.
     eager_reads: u32 = 0,
     hoist_table: Hoists.Builder = .{},
+    /// The `let_def` of the local function `closure` walks next
+    /// (`walkGroup`): the key of its reads read at its block (#2620).
+    local_def: u32 = none,
+    /// A local function's reads of a local of the frame that makes it,
+    /// each read once in its block, after the local is bound and before
+    /// any call (§31.6, amended 2026-11-24; `resolveLate`).
+    late_eager: std.ArrayList(LateEager) = .empty,
     hoist_uses: std.ArrayList(struct { use: Use, prefix: u32 }) = .empty,
     hoist_read_index: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
     current_inst: u32 = none,
@@ -13896,6 +13917,8 @@ const Walker = struct {
     /// and its class read off it (§16.5).
     fn closure(w: *Walker, params: []const Inst.Index, body: Inst.Index, ci_in: ?u32, tok: u32, fn_ty: ?Var) Allocator.Error!AV {
         const creation = w.current_inst;
+        // Read before the body: a block in it sets its own.
+        const def = w.local_def;
         const saved_frame = w.frame;
         const saved_ctx = w.ctx;
         const id: u32 = @intCast(w.frames.items.len);
@@ -13985,16 +14008,25 @@ const Walker = struct {
             }
             if (cls.once) try w.onceCreation(ci, w.token(body));
         } else for (w.frames.items[id].eager.items) |cap| {
-            // A local function's captures are read when it runs (§18.8). One
+            // A local function's captures are read when it runs (§18.8), and
+            // it may run anywhere in its block, before or after a write. One
             // made inside a closure runs inside it, so a read of a local of a
             // frame around that closure is carried out with the closure's
-            // own. One of a local of the frame that makes the function is
-            // read where the outermost closure in its body is made, and a
-            // direct one when the function runs: a call after a write of the
-            // field reads the new value (#2620, open).
-            if (w.frame != 0 and !(cap.local < w.local_frame.len and w.local_frame[cap.local] == w.frame)) {
-                try w.frames.items[w.frame].eager.append(w.a, cap);
-            } else if (cap.creation != none) try w.publishEager(cap, creation, tok);
+            // own (#2617). One of a local of the frame that makes the
+            // function, read directly or by a closure in its body, is read
+            // once in the block (`resolveLate`): at its entry when the local
+            // is bound by then, else just after the item that binds it. That
+            // is after the local's binding and before every call (#2620).
+            // A local not bound yet is one of the block's own: its frame is
+            // not known, so it is never carried out from here.
+            const bound = cap.local < w.local_av.len and w.local_av[cap.local] != null;
+            const here = cap.local < w.local_frame.len and w.local_frame[cap.local] == w.frame;
+            if (bound and !here) {
+                if (w.frame != 0) try w.frames.items[w.frame].eager.append(w.a, cap) else if (cap.creation != none) try w.publishEager(cap, creation, tok);
+                continue;
+            }
+            if (cap.read_inst == none or def == none) continue;
+            try w.late_eager.append(w.a, .{ .cap = cap, .def = def, .tok = tok });
         }
         return w.single(.{ .kind = .closure, .a = ci });
     }
@@ -14072,11 +14104,17 @@ const Walker = struct {
             try group.append(w.a, .{ ld.local, ci });
             if (ld.local < w.early.len) w.early[ld.local] = 1;
         }
+        const late_from = w.late_eager.items.len;
         if (group.items.len > 0) try w.walkGroup(items, group.items);
         for (group.items) |g| if (g[0] < w.early.len) {
             w.early[g[0]] = 0;
         };
-        for (items) |item| {
+        // A local function's read of a local bound by the block's entry is
+        // read there, before any item calls the function (#2620).
+        if (items.len > 0) try w.resolveLate(late_from, items[0], 0);
+        for (items, 0..) |item, at| {
+            // ... and one of a local an item binds, just after that item.
+            if (at > 0) try w.resolveLate(late_from, items[at - 1], 2);
             const saved_inst = w.current_inst;
             if (w.mode == .report) w.inst_parent[item.int() - w.decl.inst_start.int()] = saved_inst;
             w.current_inst = item.int();
@@ -14105,10 +14143,36 @@ const Walker = struct {
                 else => {},
             }
         }
+        if (items.len > 0) try w.resolveLate(late_from, items[items.len - 1], 2);
+        // A read no item of the block binds is of a local bound later in a
+        // block around it, across a local function's frame: carried out to
+        // that frame, whose own walk places it.
+        for (w.late_eager.items[late_from..]) |late| {
+            if (!late.done and w.frame != 0) try w.frames.items[w.frame].eager.append(w.a, late.cap);
+        }
+        w.late_eager.shrinkRetainingCapacity(late_from);
         const body: Inst.Index = @fromBackingInt(@intCast(data.rhs));
         const result = try w.eval(body);
         try w.consume(&.{body}, w.token(body));
         return result;
+    }
+
+    /// Place the late reads of the block whose entries start at `from` whose
+    /// local is bound now in the walk's frame (§31.6, amended 2026-11-24):
+    /// before `at` (phase 0, the block's entry) or just after it (phase 2,
+    /// the item that bound the local). The read is a use at this point,
+    /// so a write before it hoists it further, before that write.
+    fn resolveLate(w: *Walker, from: usize, at: Inst.Index, phase: u32) Allocator.Error!void {
+        for (w.late_eager.items[from..]) |*late| {
+            if (late.done) continue;
+            const l = late.cap.local;
+            if (l >= w.local_av.len or w.local_av[l] == null or w.local_frame[l] != w.frame) continue;
+            late.done = true;
+            w.point += 1;
+            const use: Use = .{ .local = l, .path = late.cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = late.tok, .record_read = true, .read_inst = late.cap.read_inst, .capture = late.def };
+            try w.publishRead(use, none, at.int(), phase, none);
+            try w.uses.append(w.a, use);
+        }
     }
 
     /// §18.7: a block's local functions are one group. Their closures exist
@@ -14134,6 +14198,8 @@ const Walker = struct {
             w.closures.items[g[1]].class = bottom;
             try w.bindLocal(g[0], try w.single(.{ .kind = .closure, .a = g[1] }));
         }
+        // A round's late reads go with its demands and uses.
+        const late_base = w.late_eager.items.len;
         const snap = try w.snapshot();
         const assume = try w.a.alloc(*const Summary, group.len);
         for (group, assume) |g, *x| x.* = w.closures.items[g[1]].class.?;
@@ -14145,6 +14211,7 @@ const Walker = struct {
                 const ld = b.extraData(@fromBackingInt(@intCast(b.instData(item).lhs)), Bir.LetDef);
                 if (ld.params_start == ld.params_end) continue;
                 const params = b.extraSlice(.{ .start = ld.params_start, .end = ld.params_end }, Inst.Index);
+                w.local_def = item.int();
                 _ = try w.closure(params, @fromBackingInt(@intCast(b.instData(item).rhs)), group[gi][1], w.token(item), w.localType(ld.local));
                 gi += 1;
             }
@@ -14163,6 +14230,7 @@ const Walker = struct {
             }
             if (!changed) return;
             try w.restore(snap);
+            w.late_eager.shrinkRetainingCapacity(late_base);
             for (group, assume) |g, *x| {
                 if (round + 1 >= round_cap) {
                     const p = try w.a.create(Summary);
@@ -14181,6 +14249,7 @@ const Walker = struct {
                     const ld = b.extraData(@fromBackingInt(@intCast(b.instData(item).lhs)), Bir.LetDef);
                     if (ld.params_start == ld.params_end) continue;
                     const params = b.extraSlice(.{ .start = ld.params_start, .end = ld.params_end }, Inst.Index);
+                    w.local_def = item.int();
                     _ = try w.closure(params, @fromBackingInt(@intCast(b.instData(item).rhs)), group[gi][1], w.token(item), w.localType(ld.local));
                     gi += 1;
                 }
