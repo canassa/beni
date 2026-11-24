@@ -2568,6 +2568,8 @@ bench/todomvc/apps/beni/Sandbox.beni Sandbox 78:38 #0 :: ++ model.todos :: accep
 core Schedule 97:26 #0 :: List.push found :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
 tests/corpus/browser/tea/TodoMVC.beni TodoMVC 148:38 #0 :: ++ model.todos :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
 tests/corpus/browser/tea/TodoRouting.beni TodoRouting 124:38 #0 :: ++ model.todos :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
+tests/corpus/browser/inline/TodoMVC.beni TodoMVC 153:38 #0 :: ++ model.todos :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
+tests/corpus/browser/inline/TodoRouting.beni TodoRouting 127:38 #0 :: ++ model.todos :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
 tests/corpus/ownership/Binders.beni [node] Binders 78:18 #0 :: construction acc :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
 tests/corpus/ownership/CallbackKeeps.beni [browser-inline] CallbackKeeps 26:10 #0 :: List.push xs :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
 tests/corpus/ownership/CallbackKeeps.beni [browser-inline] CallbackKeeps 32:10 #0 :: List.push xs :: accepted :: rejected  v2 holds an operand evaluated earlier until its consumer runs (§2.8 held-operand); v1 lets the later write pass
@@ -2929,6 +2931,8 @@ tests/corpus/browser/tea/TemplateRows Main 60:5 #0 :: entry Main.update model.ro
 tests/corpus/browser/tea/TodoMVC.beni TodoMVC 365:5 #0 :: entry TodoMVC.update model.todos :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/TodoPage Main 454:5 #0 :: entry Main.update model.todos :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/TodoRouting.beni TodoRouting 252:5 #0 :: entry TodoRouting.update model.todos :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/TodoMVC.beni TodoMVC 370:5 #0 :: entry TodoMVC.update model.todos :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/TodoRouting.beni TodoRouting 255:5 #0 :: entry TodoRouting.update model.todos :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/TypedInput.beni TypedInput 39:8 #0 :: entry TypedInput.update model.seen :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/TypedKeys Main 123:5 #0 :: entry Main.update model.heard :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/tea/UrlAddress.beni UrlAddress 105:5 #0 :: entry <update> model :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

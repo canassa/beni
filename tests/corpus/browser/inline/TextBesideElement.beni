@@ -1,0 +1,95 @@
+-- A text hole beside an element (docs/design/browser-inline.md §8.2,
+-- amended 2026-11-24): each text of an element that mixes elements and
+-- text holes is a node of its own, made at the mount before the element
+-- after it, and a hole's is written by `text` when what it reads is
+-- written. Holes before an element, after one at the end, between two
+-- constant texts, a lone number, one inside an eager arm, and texts before
+-- a `For` and a branch region in the same element. Its transcript is
+-- `browser-tea`'s for the same source but for the nodes `browser-tea` keeps
+-- where `browser-inline` keeps none or another: an empty comment beside a
+-- `For` and a region among other children, and a comment for the hidden arm
+-- where `browser-inline` keeps an empty text node.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Bump
+    | Rename
+    | Toggle
+    | Add
+
+
+type alias Model =
+    count : Int
+    name : String
+    open : Bool
+    added : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | count = model.count + 1 }
+
+        Rename →
+            { model | name = model.name ++ "!" }
+
+        Toggle →
+            { model | open = not model.open }
+
+        Add →
+            { model | added = model.added + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <button id="rename" onClick={Rename}>rename</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <button id="add" onClick={Add}>add</button>
+        <p id="before">{model.name}<strong>!</strong></p>
+        <p id="after">
+            <strong>{String.fromInt model.count}</strong>{if model.count == 1 then
+                                                             " item"
+                                                          else
+                                                             " items"
+                                                         }
+        </p>
+        <p id="between">Hello, {model.name} and <em>more</em> count {model.count}</p>
+        <p id="number"><b>n</b>{model.count}</p>
+        {if model.open then
+            <div id="arm">open {model.name}<hr /></div>
+         else
+            <></>
+        }
+        <ul id="list">
+            seen {model.count}
+            <For each={List.range 1 model.added} keyed={λi → i}>
+                {λi → <li>{String.fromInt i}</li>}
+            </For>
+            <li>end</li>
+        </ul>
+        <section id="region">
+            label {model.name}
+            {case List.head (List.range 1 model.added) of
+                Just first →
+                    <span>{String.fromInt first}</span>
+
+                Nothing →
+                    <i>none</i>
+            }
+            <hr />
+        </section>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { count = 1, name = "ann", open = True, added = 0 }
+        , update = update
+        , view = view
+        }

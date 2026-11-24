@@ -243,7 +243,7 @@ and when a value that it reads changes. A pattern `let` must be pure and total.
 The body of `view`, a hole, or a helper body that a hole calls can be an `if` or a `case` of arms
 that are one element, `<></>` or a one-element helper call. Limits: a choice with an effect, an unused
 arm `let`, a `let` before a helper's branch, a branch in an eager arm, and text after it.
-A `Show` among the children of an element compiles: a lambda of one element, and a fallback of one element or `Html.text`.
+A `Show` among the children of an element compiles: a lambda of one element, and a fallback of one element or `Html.text`. A text hole can stand beside elements, `<p><b>{n}</b> left</p>`, except on a page that prerenders.
 
 ## `For` on `browser-inline`
 

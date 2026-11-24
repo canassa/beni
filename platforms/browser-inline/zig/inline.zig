@@ -799,6 +799,22 @@ const Write = struct {
     stateful: bool = false,
     /// A text write whose value is a `String`, not a lone number.
     string: bool = true,
+    /// A text hole beside an element (§8.2, amended 2026-11-24): the
+    /// text node of `Page.texts` its `text` write writes, in the element
+    /// at `target`.
+    text_node: ?u32 = null,
+};
+
+/// A text of an element whose children mix elements and text holes (§8.2,
+/// amended 2026-11-24): a node the mount makes in the element at `parent`,
+/// before the element at `anchor` or at its end, holding `text`; a hole's
+/// (`hole`) is named, for its `text` write.
+const TextUse = struct {
+    parent: ?u32,
+    anchor: ?u32 = null,
+    text: []const u8,
+    hole: bool,
+    name: m.Name = undefined,
 };
 
 /// One event of the page, on an element.
@@ -1501,6 +1517,9 @@ const Page = struct {
     /// one has an event: the page then has its dispatcher.
     fors: std.ArrayList(ForUse) = .empty,
     row_events: bool = false,
+    /// The texts of elements that mix elements and text holes (§8.2,
+    /// amended 2026-11-24), in document order.
+    texts: std.ArrayList(TextUse) = .empty,
     /// The page's branch regions (§8.2, amended 2026-11-23), and the mount
     /// node's name, which a region at the mount stands in.
     regions: std.ArrayList(RegionUse) = .empty,
@@ -2105,8 +2124,51 @@ const Page = struct {
             out.children = try pg.textOf(target, ctx, children);
             return out;
         }
+        // Elements beside text holes (§8.2, amended 2026-11-24): each text
+        // a node the mount makes before the element after it, one per text
+        // or hole, as a row's are and as `browser-tea` keeps them; a hole's
+        // written by `text` in its own group.
+        const mixed = for (children) |child| {
+            if (tree.kind(child) == .hole and textHole(tree.hole(child).kind)) break true;
+        } else false;
+        if (mixed) {
+            if (pg.piece) return later(pg.cx, n, "a text hole beside an element in another module's markup");
+            if (pg.cx.build.prerender != .none) return later(pg.cx, n, "a text hole beside an element, on a page that prerenders");
+            if (parser.movesText(inner.parent)) return pg.cx.report(n, "the parser moves text written here out of the table");
+        }
+        // Each text of a mixed element, and the place in `out` of the node
+        // after it, whose element it is made before.
+        const Pending = struct { text: u32, at: usize };
+        var pending: std.ArrayList(Pending) = .empty;
         var out: std.ArrayList(Html) = .empty;
         for (children, 0..) |child, ci| {
+            if (mixed) switch (tree.kind(child)) {
+                .text => {
+                    try pending.append(pg.a(), .{ .text = @intCast(pg.texts.items.len), .at = out.items.len });
+                    try pg.texts.append(pg.a(), .{ .parent = target, .text = tree.string(tree.text(child).text), .hole = false });
+                    continue;
+                },
+                .hole => if (textHole(tree.hole(child).kind)) {
+                    const h = tree.hole(child);
+                    const hf = try pg.known(child, pg.cx.programHole(.{ .node = child }));
+                    try pending.append(pg.a(), .{ .text = @intCast(pg.texts.items.len), .at = out.items.len });
+                    if (hf.bake) |b| {
+                        try pg.texts.append(pg.a(), .{ .parent = target, .text = b, .hole = false });
+                        continue;
+                    }
+                    try pg.writes.append(pg.a(), .{
+                        .target = target,
+                        .ctx = ctx,
+                        .groups = try sorted(pg.a(), &.{hf.group}),
+                        .what = .{ .text = try pg.a().dupe(Part, &.{.{ .value = h.value }}) },
+                        .string = h.kind != .text_number,
+                        .text_node = @intCast(pg.texts.items.len),
+                    });
+                    try pg.texts.append(pg.a(), .{ .parent = target, .text = "", .hole = true });
+                    continue;
+                },
+                else => {},
+            };
             // A `For` beside other children: its rows stand before the
             // element after it, or at its parent's end.
             if (tree.kind(child) == .for_) {
@@ -2129,7 +2191,6 @@ const Page = struct {
             }
             if (tree.kind(child) == .hole) {
                 const h = tree.hole(child);
-                if (textHole(h.kind)) return limit(pg.cx, child, "`browser-inline` writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own");
                 if (h.kind != .html) return later(pg.cx, child, "a hole that is not text of a `String`, a `Char` or a number");
                 if (try pg.cx.programPiece(child)) |piece_facts| {
                     try out.append(pg.a(), try pg.pieceHole(child, piece_facts, ctx, inner));
@@ -2150,6 +2211,14 @@ const Page = struct {
                 continue;
             }
             try out.appendSlice(pg.a(), try pg.markup(child, inner, ctx, false));
+        }
+        // A text stands before the node after it, which must be an element
+        // of the unit's markup, or at the element's end.
+        for (pending.items) |x| {
+            if (x.at == out.items.len) continue;
+            const next = out.items[x.at];
+            if (next.kind != .element) return later(pg.cx, n, "a text hole beside markup that is not an element written in place");
+            pg.texts.items[x.text].anchor = next.target;
         }
         var element_ = base;
         element_.children = out.items;
@@ -2936,6 +3005,8 @@ const Page = struct {
             if (f.end != null) break true;
         } else for (pg.regions.items) |u| {
             if (u.end != null) break true;
+        } else for (pg.texts.items) |x| {
+            if (x.parent != null or x.anchor != null) break true;
         } else false;
         if (placed and !pg.hydrating) {
             // One element referred to is reached by its path from the top
@@ -2953,6 +3024,21 @@ const Page = struct {
                 pg.elements = try cx.fresh("elements");
                 try js.constant(body, pg.elements.?, try js.call(try js.member(try js.name(pg.node.?), "querySelectorAll"), &.{try js.string("*")}));
             }
+        }
+        // Each text of an element that mixes elements and text holes, made
+        // in document order once the elements are found, before any `For`,
+        // region or `Show` puts a node before the same element (§8.2,
+        // amended 2026-11-24).
+        for (pg.texts.items) |*x| {
+            const parent = try pg.ref(x.parent);
+            const before = if (x.anchor) |t| try pg.ref(t) else try js.literal(.null);
+            const made = try js.call(try js.name(try cx.runtime("rowText")), &.{ parent, before, try js.string(x.text) });
+            if (!x.hole) {
+                try js.expression(body, made);
+                continue;
+            }
+            x.name = try cx.fresh("text");
+            try js.constant(body, x.name, made);
         }
         // Each branch region's anchor and state, in document order, once
         // the elements are found (§8.2, amended 2026-11-23).
@@ -3679,7 +3765,18 @@ const Page = struct {
             if (only != null and only.? != t) return null;
             only = t;
         };
+        for (pg.texts.items) |x| for ([_]?u32{ x.parent, x.anchor }) |at| if (at) |t| {
+            if (only != null and only.? != t) return null;
+            only = t;
+        };
         return only;
+    }
+
+    /// The node write `w` writes: its text node (§8.2, amended 2026-11-24),
+    /// or its element.
+    fn writeNode(pg: *Page, w: Write) m.Error!m.Expr {
+        if (w.text_node) |i| return pg.cx.js.name(pg.texts.items[i].name);
+        return pg.ref(w.target);
     }
 
     /// The element at `target`: the top node, or its descendant by place.
@@ -4620,7 +4717,7 @@ const Page = struct {
             const w = pg.writes.items[wi];
             const ready = prepared[wi].?;
             const into = if (ready.selected != null) try js.block() else blk;
-            const node = try pg.ref(w.target);
+            const node = try pg.writeNode(w);
             switch (w.what) {
                 .event => |ei| {
                     try js.assign(into, try pg.eventBinding(ei), ready.value);
@@ -4744,7 +4841,7 @@ const Page = struct {
                     .region => unreachable,
                 }
                 try cx.rootValues(blk, pg.ctxs.items[ctx].root, own.items);
-                const node = try pg.ref(w.target);
+                const node = try pg.writeNode(w);
                 switch (w.what) {
                     .event, .region => unreachable,
                     .entry => |x| try js.expression(blk, try entryCall(cx, node, x, try cx.value(x.value))),

@@ -568,6 +568,11 @@ nodes, and the markers bound it (`getNextMarker`). A beni text hole is the whole
 and only a hidden arm writes one, a few bytes. That refusal is a limit of the compiler (class 4,
 §5 there), to be lifted; the slice that lifts it also gives the string form a marker around such a
 hole, as Solid's `<!--$-->` and `<!--/-->`, and amends this section.
+*Amended 2026-11-24 (#2650):* `browser-inline` compiles a text hole beside an element on a page
+that does not prerender (§8.2 there, amended 2026-11-24: each text a node the mount makes). On a
+page that prerenders it stays refused, as a limit of the compiler (class 1,
+`build/bad/prerender/TextBesideElement/`), until the string form writes such markers; so no text
+needs a marker yet.
 
 ### 6.4 When the page is not what the program would make
 
