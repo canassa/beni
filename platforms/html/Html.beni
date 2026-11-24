@@ -238,7 +238,8 @@ number v = Js.to v
 --| `onPointerUp` or `onPointerCancel`, and a different one for each finger
 --| on a touch screen. `-1` on an `onContextMenu` whose event has no
 --| pointer: one that no pointing device made, and each one in a browser
---| that dispatches it as a mouse event.
+--| that dispatches it as a mouse event. Do not use `-1` to find a menu
+--| that the keyboard asked for: Chrome gives that menu the mouse's number.
 pub pointerId : Pointer → Int
 pointerId p =
     v = Js.get (Js.from (pointerEvent p)) "pointerId"

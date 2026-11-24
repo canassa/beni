@@ -1784,19 +1784,28 @@ const Page = struct {
         return kinds.items;
     }
 
-    /// The kinds the capture script records: `eventKinds` but the pointer
-    /// events, whose payload is read while the event is dispatched — the
-    /// box of the element whose listener runs, its `currentTarget` — which
-    /// a delivery after the dispatch cannot give (`prerender.md` §6.5,
-    /// amended 2026-10-29). `contextmenu` has the pointer events'
-    /// extractor, and a delivery after the dispatch cannot stop the
-    /// browser's menu, so it is left out too (amended 2026-11-24, #2087).
+    /// Whether the capture script can record an event of this kind and
+    /// deliver it after the dispatch. It cannot for a kind whose payload
+    /// is read while the event is dispatched: the pointer events, whose
+    /// extractor reads the box of the element whose listener runs, its
+    /// `currentTarget`, which a delivery after the dispatch cannot give
+    /// (`prerender.md` §6.5, amended 2026-10-29). `contextmenu` has that
+    /// extractor too, and a delivery after the dispatch cannot stop the
+    /// browser's menu (amended 2026-11-24, #2087). The rule is by the
+    /// kind's name, because a piece of another module gives its kinds as
+    /// names: an event that takes that extractor under a new name needs a
+    /// line here.
+    fn recordable(kind: []const u8) bool {
+        if (std.mem.indexOf(u8, kind, "pointer") != null) return false;
+        return !std.mem.eql(u8, kind, "contextmenu");
+    }
+
+    /// The kinds the capture script records: `eventKinds` but those that
+    /// are not `recordable`.
     fn capturedKinds(pg: *Page) m.Error![]const []const u8 {
         var kinds: std.ArrayList([]const u8) = .empty;
         for (try pg.eventKinds()) |k| {
-            if (std.mem.indexOf(u8, k, "pointer") != null) continue;
-            if (std.mem.eql(u8, k, "contextmenu")) continue;
-            try kinds.append(pg.a(), k);
+            if (recordable(k)) try kinds.append(pg.a(), k);
         }
         return kinds.items;
     }
