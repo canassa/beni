@@ -2761,8 +2761,8 @@ there):* **the `fallback` is evaluated only while it is shown**, on `Nothing`, a
 of the `case` above is, whatever its form (markup written in place, `Html.text e`, a call). A
 `Debug.log` or a `Debug.todo` in it runs at no render that shows the body. The same holds for a
 `For`'s `fallback`, evaluated only at a render whose list is empty (§11.9). It is #459's rule for
-an arm (`browser-inline.md` §8.2); `browser-tea` keeps it for a fallback written in place and
-evaluates any other at every render, a listed difference (`browser/inline/FallbackShownOnly`).
+an arm (`browser-inline.md` §8.2); `browser-tea` keeps it for every form but `Html.text e`, a value
+its `view` builds and so evaluates at every render, a listed difference (`browser/inline/FallbackShownOnly`).
 
 ### 11.19 `class` and `style` lists
 
