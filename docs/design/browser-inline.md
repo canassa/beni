@@ -874,8 +874,9 @@ beni over `Js` in `Inline.beni`:
 - **An arm's statements** (*amended 2026-11-24, #2625, #966*). An arm of a branch region — of
   the page, of a unit (a branch in a row, an arm or a `Show`'s body), of a row whose top is a
   branch, or of a view helper whose body is the branch — may have `let`s no hole reads
-  (`Arm.statements`: `_ = e`, a `⊤` line, a `let` nothing reads). They run in the choice of the
-  arm: `programBranchChooseAll` (version 1.40) is `programBranchChoose` with the taken arm's
+  (`Arm.statements`: `_ = e`, a `⊤` line, a `let` nothing reads), an arm of `<></>` too, which has
+  no unit (an eager `if` with such an arm is a region). They run in the choice of the arm:
+  `programBranchChooseAll` (version 1.40) is `programBranchChoose` with the taken arm's
   statements evaluated where they are written among its other `let`s, so a `let` both a statement
   and a hole read is evaluated once, and one a root took is bound all the same (`let_force`). The
   choice runs at each pass of the region's entry, or of the unit's `set`, so the entry of a region
@@ -883,15 +884,19 @@ beni over `Js` in `Inline.beni`:
   in the read sets of every arm's statements (`programBranchStatementGroups`, version 1.40, the
   groups the write-set pass records for them as for a `view`'s statements). So a statement runs at
   every pass that writes what it reads, and at the mount; on `browser-tea`, which renders the
-  whole `view` per message, it runs at every render: a difference of when, not of what, as for a
-  `view`'s statements. A statement that throws (`Debug.todo`) stops the page as the arm is chosen,
+  whole `view` per message, it runs at every render, and not in a row or a helper call it skips
+  because its inputs are the same: a difference of when, not of what, as for a `view`'s
+  statements. A statement that throws (`Debug.todo`) stops the page as the arm is chosen,
   before anything of it is written. A choice that may have an effect stays refused (above), so
-  the branch's value evaluated again by a later pass has no effect of its own. A `let` a root took — an
-  arm's of a view helper's branch (§8.4) — is evaluated with the arm's values, after the choice,
-  so a statement written after it runs before it: `HelperBranchStatement`'s `Debug.todo` throws
-  before the line its `loud` logs, which `browser-tea` writes first (a difference of order). Pages
+  the branch's value evaluated again by a later pass has no effect of its own. A `let` a root
+  took — an arm's of a view helper's branch (§8.4) — is evaluated with the arm's values, after
+  the choice, so a statement written after it runs before it: `HelperBranchStatement`'s
+  `Debug.todo` throws before the line its `loud` logs, which `browser-tea` writes first (a
+  difference of order). Pages
   `browser/inline/ArmStatements` and `HelperBranchStatement` (checked against `browser-tea` for
-  the same source: the same DOM, fewer log lines); `build/bad/inline/RegionArmStatements/` and
+  the same source: the same DOM but for markers, and log lines that differ in number, not in
+  what they say), and `ArmStatementsEmpty` (the review of this slice: an arm of `<></>` lost its
+  statements, its `Debug.todo` never ran); `build/bad/inline/RegionArmStatements/` and
   `HelperBranchStatement/` are withdrawn. The golden `emit/release/inline/ArmStatements`.
 - **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
   markup type, and still compiles markup that a program holds in a name, passes or returns, when
