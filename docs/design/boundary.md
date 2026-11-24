@@ -8169,7 +8169,9 @@ pub sockets : Context msg → List Socket  -- every accepted socket still open, 
 pub socketsTagged : Context msg, String → List Socket
 
 pub alarmAt : Context msg, Int → ⊤       -- `setAlarm(ms since the epoch)`; replaces the one set; shared with the wake, (e.5)
-pub alarmIn : Context msg, Duration → ⊤  -- `alarmAt` of `Clock.now ⊤` plus the duration
+pub type AlarmError
+    = TooFar                             -- the time is past the last millisecond an `Int` holds, (e.5)
+pub alarmIn : Context msg, Duration → Result AlarmError ⊤  -- `alarmAt` of the host's `Date.now()` plus the duration, (e.5), amended 2026-11-24
 pub cancelAlarm : Context msg → ⊤        -- `deleteAlarm`, unless the wake holds the host alarm, (e.5)
 
 -- The socket operations that need the object ((g) has their meaning):
@@ -8378,6 +8380,31 @@ inside a handler queues it behind the events already waiting ((e.10)).
     would set, and two paths drive it ((k)). `/__beni/host-alarm` is the firing of the host
     alarm, and `/__beni/alarms` answers which alarm the host would hold — `none`, `program` or
     `wake` — and whether the program has a time.
+  ***Amended 2026-11-24 (#2022; the owner's decision of 2026-11-05 on #1988: a typed failure for
+  an unrepresentable deadline supplied from outside): `alarmIn` answers a `Result`.***
+  `alarmIn ctx d` is a deadline that the program supplies as a length: the host's time now plus
+  `d`. `L` is 9007199254740991, the last millisecond that an `Int` holds.
+  - **A time past `L` is `Err TooFar`.** When the time now plus `d` is more than `L`, no `Int`
+    holds the alarm's time, and `alarmIn` answers `Err TooFar`. Otherwise it is `alarmAt` of that
+    time and answers `Ok ⊤`. Before this amendment the sum had no bound, and `alarmIn` of the
+    longest duration gave `setAlarm` a number that is not an `Int`.
+  - **A failed `alarmIn` changes nothing.** The program's time, the table `beni_alarm` and the
+    host alarm stay as they were: an alarm that was set is still set.
+  - **The time now is the host's `Date.now()`**, not the fiber's clock slot. The signature list
+    said "`Clock.now ⊤`". The code read `Date.now()` from its first commit, and that is correct.
+    The host alarm fires on the host's clock. The wake and the test "the program's time has come"
+    read `Date.now()`. A virtual clock's reading means nothing to `setAlarm`. On the real clock
+    the two readings are the same. Under `Clock.run` only `Date.now()` is right.
+  - **The test comes before the sum** and stays in the range: a time now at or below 0 has room
+    for each duration, and above 0 the test is `d > L − now`.
+  - **`alarmAt` does not change.** Its time is an `Int` that the program holds, so it is
+    representable. The host takes each one: workerd accepted `alarmAt` of `L` and of −1 with 200
+    (*measured* in the review of #1999 under Miniflare, compatibility date 2026-05-18; #2022
+    records it). A time in the past fires at the next firing, as `workers/ObjectWake` shows with
+    `alarmAt ctx 0`.
+  - **Fixture.** `workers/ObjectAlarmTooFar`: `alarmIn` of the longest duration answers
+    `Err TooFar` and `/__beni/alarms` shows no program time; after an `alarmIn` of one hour the
+    same call answers `Err TooFar` again and the program's time is still set.
   Local workerd hibernates an idle object too: the review of #860 ran the
   probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
   on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold
