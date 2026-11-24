@@ -2,9 +2,19 @@
 <body>
   <main>
     <button id="bump">"bump"</button>
-    <div>"fb"</div>
+    <button id="toggle">"toggle"</button>
     <section>
       <p>"fb"</p>
+    </section>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section>
+      <b>"0"</b>
     </section>
   </main>
 </body>
@@ -12,14 +22,32 @@
 <body>
   <main>
     <button id="bump">"bump"</button>
-    <div>
-      <b>"1"</b>
-    </div>
+    <button id="toggle">"toggle"</button>
     <section>
       <b>"1"</b>
     </section>
   </main>
 </body>
--- throws click #bump
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section>
+      <b>"2"</b>
+    </section>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section>
+      <b>"3"</b>
+    </section>
+  </main>
+</body>
+-- throws click #toggle
 (threw: Error: TODO: fallback evaluated)
 (the DOM did not change)

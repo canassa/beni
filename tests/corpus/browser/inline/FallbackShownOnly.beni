@@ -1,0 +1,80 @@
+-- A fallback is evaluated only while it is shown (language.md §6's table
+-- and §11.18, amended 2026-11-24; browser-inline.md §8.2, *A `Show`*, and
+-- §9, *A `fallback`*): a `Debug.log` in a `Show`'s or a `For`'s fallback,
+-- written in place or as `Html.text e`, logs while the fallback is shown
+-- and at no pass that writes what it reads while the body or the rows are
+-- shown. The listed difference: `browser-tea` evaluates an `Html.text e`
+-- fallback, a value its `view` builds, at every render, so it logs the two
+-- `text` lines at every step, and before the lines of the fallbacks written
+-- in place, which it evaluates as it patches; those lines are the same on
+-- both, step by step.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Bump
+    | Toggle
+
+
+type alias Model =
+    n : Int
+    on : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | n = model.n + 1 }
+
+        Toggle →
+            { model | on = not model.on }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <section id="show">
+            <Show
+                when={if model.on then Just model.n else Nothing}
+                keyed
+                fallback={<p>{Debug.log "show element" model.n}</p>}
+            >
+                {λk → <b>{k}</b>}
+            </Show>
+        </section>
+        <section id="show-text">
+            <Show
+                when={if model.on then Just model.n else Nothing}
+                keyed
+                fallback={Html.text (Debug.log "show text" (String.fromInt model.n))}
+            >
+                {λk → <b>{k}</b>}
+            </Show>
+        </section>
+        <ul id="for">
+            <For
+                each={if model.on then [ model.n ] else []}
+                keyed={False}
+                fallback={<li>{Debug.log "for element" model.n}</li>}
+            >
+                {λk → <li>{k}</li>}
+            </For>
+        </ul>
+        <ul id="for-text">
+            <For
+                each={if model.on then [ model.n ] else []}
+                keyed={False}
+                fallback={Html.text (Debug.log "for text" (String.fromInt model.n))}
+            >
+                {λk → <li>{k}</li>}
+            </For>
+        </ul>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 0, on = False }, update = update, view = view }

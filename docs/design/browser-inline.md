@@ -794,10 +794,17 @@ beni over `Js` in `Inline.beni`:
     body or fallback is a limit of the compiler (class 1).
   - **One binding entry** in the `Show`'s read set — its `when`, its key function, its fallback
     and its body, which the write-set pass records as one edge (`write-sets.md`, *a `Show`'s
-    arms*) — evaluates the attributes as `language.md` §11.18 orders them: `when` once and the
-    fallback's values, whichever arm is taken (a `Debug.todo` in the fallback throws while the
-    body is shown, as on `browser-tea`); then, on `Just v`, the key, `f v` or `v` itself, once,
-    and every value of the body. The body is evaluated only when it is taken (#459), and all of
+    arms*) — evaluates the attributes as `language.md` §11.18 orders them: `when` once; then, on
+    `Just v`, the key, `f v` or `v` itself, once, and every value of the body; on `Nothing`, the
+    fallback's values. *Corrected 2026-11-24 (#2662):* the first text evaluated the fallback's
+    values whichever arm was taken and said a `Debug.todo` in it threw while the body was shown
+    "as on `browser-tea`"; `browser-tea` does not, for a fallback written in place, which is a
+    kind of its own there, patched only while it is shown. `language.md` §6 and §11.18 now say a
+    fallback is evaluated only while it is shown, #459's rule for an arm, as a `For`'s is (§9);
+    so a `Debug.log` or a `Debug.todo` in it runs at no pass that shows the body. An `Html.text
+    e` fallback is a value `browser-tea`'s `view` builds at every render, so there it is
+    evaluated at every render, a listed difference (`browser/inline/FallbackShownOnly`;
+    `ShowFallbackThrows` agrees with `browser-tea`). The body is evaluated only when it is taken (#459), and all of
     it before anything is shown, as a region's arm (*Evaluation order*). Then the runtime's
     `keyShown(state, k, key, make, set)`: arm `k` — 0 the fallback, 1 the body — shown as
     `armShown` shows it, and made afresh, the shown arm's node removed, when `key` is not `===` the
@@ -2239,10 +2246,13 @@ The simple form is S2c's row unit with none of S2d's edits:
   written by the `For`'s one binding entry, whose read set the write-set pass already gives the
   fallback's reads (`programHole` of the `For`): after `forRows`, while the list's `length` is
   0, the entry evaluates the fallback's values and the runtime's `armShown` shows it; otherwise
-  `armShown` removes it and nothing of it is evaluated. That is when `browser-tea` evaluates it — a
-  fallback is a kind of its own there, patched only while it is shown — and it is #459's rule for
-  an arm: a `Debug.todo` or a `Debug.log` in the fallback runs only while it is shown. (A `Show`'s
-  fallback is evaluated at every pass of its entry, §8.2; the two differ.) A `let` of the `view`
+  `armShown` removes it and nothing of it is evaluated. That is when `browser-tea` evaluates one written
+  in place — a fallback is a kind of its own there, patched only while it is shown — and it is
+  #459's rule for an arm: a `Debug.todo` or a `Debug.log` in the fallback runs only while it is
+  shown. *Corrected 2026-11-24 (#2662):* a `Show`'s fallback is now evaluated the same way
+  (§8.2), and `language.md` §6 and §11.18 say so for both; an `Html.text e` fallback, which
+  `browser-tea`'s `view` builds at every render, is evaluated there at every render, a listed
+  difference (`browser/inline/FallbackShownOnly`). A `let` of the `view`
   that only the fallback's markup reads is bound by the entry as any `let` its values read is
   (`Context.valueReadsLet` reads into markup written in place; before, such a `let` of a `Show`'s
   fallback was never bound). Every `set` of the shown fallback runs (rule 8). The

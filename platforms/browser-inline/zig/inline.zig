@@ -2646,7 +2646,8 @@ const Page = struct {
     /// A `Show`'s binding function (§8.2, amended 2026-11-23, *A `Show`*):
     /// the `view` entered, `when` evaluated once, and the arm it takes
     /// prepared — on `Just v`, the key and every value of the body with
-    /// `v` bound; on `Nothing`, the fallback's — before `keyShown` shows it.
+    /// `v` bound; on `Nothing` alone, the fallback's — before `keyShown`
+    /// shows it.
     fn writeShow(pg: *Page, blk: m.Block, w: Write, u: *const RegionUse) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
@@ -2670,10 +2671,6 @@ const Page = struct {
             c.* = try cx.fresh("capture");
             try js.constant(blk, c.*, try cx.value(row.captures.at(@intCast(k))));
         }
-        // The fallback, an attribute, evaluated at every pass whichever arm
-        // is taken, as `language.md` §11.18 orders a `Show`'s attributes:
-        // its values here, its `make` and `set` shown only on `Nothing`.
-        const fb_shown: [2]m.Expr = if (u.arms[0]) |fb| try pg.fallbackShown(blk, u.node, fb) else .{ try js.literal(.null), try js.literal(.null) };
         // On `Just v`: the key once, then the body's values.
         const then = try js.block();
         const payload = try cx.fresh("item");
@@ -2685,8 +2682,11 @@ const Page = struct {
         _ = try cx.rowValues(then, s.body, payload, null, captures);
         const body_shown = try pg.showArm(body);
         try js.expression(then, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(1), try js.name(key_name), body_shown[0], body_shown[1] }));
-        // On `Nothing`: the fallback, or nothing.
+        // On `Nothing`: the fallback, or nothing, its values evaluated only
+        // then, as a `For`'s are (`language.md` §11.18, amended 2026-11-24;
+        // #459's rule for an arm).
         const otherwise = try js.block();
+        const fb_shown: [2]m.Expr = if (u.arms[0]) |fb| try pg.fallbackShown(otherwise, u.node, fb) else .{ try js.literal(.null), try js.literal(.null) };
         try js.expression(otherwise, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(0), try js.literal(.undefined), fb_shown[0], fb_shown[1] }));
         try js.@"if"(blk, try cx.isJust(try js.name(chosen)), then, otherwise);
         pg.leave(entered);
