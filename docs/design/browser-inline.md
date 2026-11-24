@@ -2229,6 +2229,27 @@ The simple form is S2c's row unit with none of S2d's edits:
   or a `Show`*):* a `For` of the page followed by text, a hole or another `For` stands before an
   empty comment of its own and is compiled; `ForBeforeText/` is withdrawn. In a row it stays
   refused.
+- **A `fallback`** (*amended 2026-11-24, #2637, #966*; `language.md` §11.9: shown when the list
+  is empty). A `For` of the page with a `fallback` shows it in a branch region of its own (§8.2, *A
+  branch region*), made at the mount where the rows stand — before the element after the `For`,
+  before its comment, or at its element's end — so the rows and the fallback, which are never
+  shown together, share one place. The fallback is planned as a `Show`'s is (§8.2, *A `Show`*):
+  one element written in place, a unit with its holes and events; `Html.text e`, a text node; or
+  `<></>`, nothing; any other markup is a limit of the compiler (class 1, at the `For`). It is
+  written by the `For`'s one binding entry, whose read set the write-set pass already gives the
+  fallback's reads (`programHole` of the `For`): after `forRows`, while the list's `length` is
+  0, the entry evaluates the fallback's values and the runtime's `armShown` shows it; otherwise
+  `armShown` removes it and nothing of it is evaluated. That is when `browser-tea` evaluates it — a
+  fallback is a kind of its own there, patched only while it is shown — and it is #459's rule for
+  an arm: a `Debug.todo` or a `Debug.log` in the fallback runs only while it is shown. (A `Show`'s
+  fallback is evaluated at every pass of its entry, §8.2; the two differ.) A `let` of the `view`
+  that only the fallback's markup reads is bound by the entry as any `let` its values read is
+  (`Context.valueReadsLet` reads into markup written in place; before, such a `let` of a `Show`'s
+  fallback was never bound). Every `set` of the shown fallback runs (rule 8). The
+  interface asks `programShowFallback`, `programShowFallbackIsText` and `programShowFallbackText`
+  of a `For` as of a `Show` (version 1.37). What stays refused: a `fallback` on a `For` in a row or
+  an arm (`ForFallbackInRow/`, class 1). `ForFallback/` builds and is the page
+  `browser/inline/ForFallback`.
 - **A branch in a row** (*amended 2026-11-23, #2625, #966*). An `html` hole of a row whose value
   is an `if` or a `case` — or a call of a view helper whose body is one (§8.4, amended
   2026-11-23) — is a branch region of the row, as one in a region's arm is (§8.2, *A branch

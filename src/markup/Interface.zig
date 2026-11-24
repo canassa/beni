@@ -104,7 +104,10 @@ const std = @import("std");
 /// Version 1.36 adds `Context.programShowEffect`, `programShowFallbackIsText` and
 /// `programShowFallbackText`: a `Show`'s fallback written as `Html.text e`
 /// (`browser-inline.md` §8.2, amended 2026-11-23, *A `Show`*).
-pub const version: Version = .{ .major = 1, .minor = 36 };
+/// Version 1.37 asks `programShowFallback`, `programShowFallbackIsText` and
+/// `programShowFallbackText` of a `For`'s fallback as of a `Show`'s
+/// (`browser-inline.md` §9, amended 2026-11-24).
+pub const version: Version = .{ .major = 1, .minor = 37 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1890,13 +1893,15 @@ pub const Context = struct {
         return cx.vtable.program_branch_statements(cx.impl, block, node, k);
     }
 
-    /// 1.10: the markup root a `Show`'s fallback is, when it is markup
+    /// 1.10: the markup root a `Show`'s fallback is — since 1.37 a `For`'s
+    /// too (`browser-inline.md` §9, amended 2026-11-24) — when it is markup
     /// written there whose values can be evaluated apart; null otherwise.
     pub fn programShowFallback(cx: *Context, node: Node.Index) ?Root.Index {
         return cx.vtable.program_show_fallback(cx.impl, node);
     }
 
-    /// 1.36: whether a `Show`'s fallback is a call of the markup primitive
+    /// 1.36: whether a `Show`'s fallback (1.37: or a `For`'s) is a call of
+    /// the markup primitive
     /// `text` (`Html.text e`, `language.md` §11.13), whose argument
     /// `programShowFallbackText` evaluates.
     pub fn programShowFallbackIsText(cx: *Context, node: Node.Index) bool {
@@ -1910,7 +1915,8 @@ pub const Context = struct {
         return cx.vtable.program_show_effect(cx.impl, node);
     }
 
-    /// 1.36: the argument `e` of a `Show`'s fallback `Html.text e`
+    /// 1.36: the argument `e` of a `Show`'s fallback (1.37: or a `For`'s)
+    /// `Html.text e`
     /// (`programShowFallbackIsText`), evaluated into `block` where the
     /// `Show`'s root's values may be: the text the fallback shows. The
     /// fallback's own value is never evaluated, so no markup value is made.

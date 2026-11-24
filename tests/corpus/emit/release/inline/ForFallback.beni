@@ -1,0 +1,36 @@
+-- emit/release/inline: a `For` with a `fallback` (browser-inline.md §9,
+-- amended 2026-11-24): the fallback is a region made at the mount where the
+-- rows stand, shown by `armShown` while the list's `length` is 0. The page
+-- is `browser/inline/ForFallback`.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Clear
+
+
+update : Msg, List Int → List Int
+update msg items =
+    case msg of
+        Add →
+            List.range 1 (List.length items + 1)
+
+        Clear →
+            []
+
+
+view : List Int → Html Msg
+view items =
+    <main>
+        <button onClick={Add}>add</button>
+        <button onClick={Clear}>clear</button>
+        <ul>
+            <For each={items} keyed={λi → i} fallback={<li>none</li>}>{λi → <li>{i}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → [], update = update, view = view }

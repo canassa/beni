@@ -1,0 +1,9 @@
+# The fallback's event writes what its hole and the text fallback read.
+click #bump
+# A row comes: every fallback goes.
+click #add
+click #add
+# The list empties: every fallback shows again, with its current values.
+click #clear
+click #bump
+click #add

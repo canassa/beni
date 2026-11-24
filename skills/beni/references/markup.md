@@ -256,7 +256,7 @@ row runs again. A row's `Debug.log` thus logs one time for each row.
 - Elements, text, holes, branches, a `Show` or another `For` can stand after a `For`.
 - A row's event can send the row's key: `onClick={Remove row.id}`.
 
-These are still compiler limitations: `fallback`; text, a hole or a `For` after a `For` in a row; a `For`
+These are still compiler limitations, in a row: `fallback`, and text, a hole or a `For` after a `For`; a `For`
 beside other children of a control whose value changes; a markup hole that is no branch, a
 component or a `Show` in a row; a `For` in another module's markup; a `For` in a prerendered page;
 a `For` over a `Dict`.

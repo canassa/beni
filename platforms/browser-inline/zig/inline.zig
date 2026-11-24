@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 36 },
+    .targets = .{ .major = 1, .minor = 37 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -905,7 +905,18 @@ const Run = struct {
 /// element — or null when the rows are its parent's last children.
 /// `marker`: the comment of `Page.markers` they stand before instead
 /// (§8.2, amended 2026-11-24).
-const ForUse = struct { node: m.Node.Index, plan: *const RowPlan, end: ?u32, marker: ?u32 = null };
+/// `fallback`: its fallback's unit, null for none or `<></>`, shown in
+/// the region whose state is `fallback_state`, made at the mount in the
+/// element at `parent` where the rows stand (§9, amended 2026-11-24).
+const ForUse = struct {
+    node: m.Node.Index,
+    plan: *const RowPlan,
+    end: ?u32,
+    marker: ?u32 = null,
+    parent: ?u32 = null,
+    fallback: ?RegionUse.Arm = null,
+    fallback_state: m.Name = undefined,
+};
 
 /// A branch region of the page (§8.2, amended 2026-11-23): its hole —
 /// `none` for a `view` whose body is the branch — each arm's unit, null for
@@ -1080,12 +1091,14 @@ const RowBuild = struct {
     events: bool = false,
     stateful: bool = false,
 
-    /// `For` `n`'s row, planned; `scope` is its parent element's.
-    fn plan(pg: *Page, n: m.Node.Index, scope: parser.Scope) m.Error!*const RowPlan {
+    /// `For` `n`'s row, planned; `scope` is its parent element's. A
+    /// `fallback` is the page's alone (`page`): in a row or an arm it is
+    /// refused (§9, amended 2026-11-24).
+    fn plan(pg: *Page, n: m.Node.Index, scope: parser.Scope, page: bool) m.Error!*const RowPlan {
         const tree = pg.tree;
         const cx = pg.cx;
         const f = tree.for_(n);
-        if (f.fallback != null) return later(cx, n, "a `For` with a `fallback`");
+        if (f.fallback != null and !page) return later(cx, n, "a `For` with a `fallback` in a `For`'s row or an arm of a branch");
         const row = tree.row(f.row);
         if (row.kind != .markup) return later(cx, n, "a `For` whose row function is not a lambda whose body is one element written in place");
         const top = tree.root(row.body).node;
@@ -1142,7 +1155,7 @@ const RowBuild = struct {
         if (rows) {
             if (parser.content(name) != .normal) return later(cx, n, "the content of an element whose content the parser reads as text");
             if (b.under_control != 0) return later(cx, own_children[0], controlled_for);
-            const p = try plan(pg, own_children[0], scope.enter(name));
+            const p = try plan(pg, own_children[0], scope.enter(name), false);
             try b.ops.append(pg.a(), .{ .target = target, .what = .{ .rows = .{ .node = own_children[0], .plan = p, .end = null } } });
             b.events = b.events or p.events;
             b.stateful = b.stateful or p.stateful;
@@ -1199,7 +1212,7 @@ const RowBuild = struct {
             .for_ => {
                 if (b.under_control != 0) return later(cx, child, controlled_for);
                 const end = try forEnd(pg, e, children, ci, b.count);
-                const p = try plan(pg, child, inner);
+                const p = try plan(pg, child, inner, false);
                 try b.ops.append(pg.a(), .{ .target = target, .what = .{ .rows = .{ .node = child, .plan = p, .end = end } } });
                 b.events = b.events or p.events;
                 b.stateful = b.stateful or p.stateful;
@@ -1660,8 +1673,12 @@ const Page = struct {
         if (pg.piece) return later(pg.cx, n, "a `For` in another module's markup");
         if (pg.under_control != 0) return later(pg.cx, n, controlled_for);
         const facts = try pg.known(n, pg.cx.programHole(.{ .node = n }));
-        const p = try RowBuild.plan(pg, n, scope);
-        try pg.fors.append(pg.a(), .{ .node = n, .plan = p, .end = end });
+        const p = try RowBuild.plan(pg, n, scope, true);
+        // A `fallback`, shown while the list is empty, planned as a `Show`'s
+        // is (§9, amended 2026-11-24).
+        const fallback = if (pg.tree.for_(n).fallback == null) null else try pg.fallbackArm(n, scope, "a `For`");
+        if (fallback) |fb| pg.row_events = pg.row_events or fb.plan.events;
+        try pg.fors.append(pg.a(), .{ .node = n, .plan = p, .end = end, .parent = target, .fallback = fallback });
         pg.row_events = pg.row_events or p.events;
         try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .rows = @intCast(pg.fors.items.len - 1) } });
     }
@@ -1676,10 +1693,18 @@ const Page = struct {
         for (0..row.captures.len) |k| try out.append(pg.a(), row.captures.at(@intCast(k)));
     }
 
+    /// What a `For`'s write reads of its declaration: `forValues`, and its
+    /// fallback, whose own values are evaluated where it is shown, as a
+    /// `Show`'s are (§9, amended 2026-11-24).
+    fn forReads(pg: *Page, n: m.Node.Index, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        try pg.forValues(n, out);
+        if (pg.tree.for_(n).fallback) |fb| try out.append(pg.a(), fb);
+    }
+
     /// The call that syncs `For` `n`'s rows into `parent`, into `blk`, its
     /// values already evaluated there: `rows(parent, list, key, make, set)`,
     /// the key `undefined` by position, `null` by reference.
-    fn writeRows(pg: *Page, blk: m.Block, parent: m.Expr, end: m.Expr, n: m.Node.Index, p: *const RowPlan) m.Error!void {
+    fn writeRows(pg: *Page, blk: m.Block, parent: m.Expr, end: m.Expr, n: m.Node.Index, p: *const RowPlan) m.Error!m.Expr {
         const cx = pg.cx;
         const js = cx.js;
         const f = pg.tree.for_(n);
@@ -1696,7 +1721,12 @@ const Page = struct {
             c.* = try cx.fresh("capture");
             try js.constant(blk, c.*, try cx.value(row.captures.at(@intCast(k))));
         }
-        const each = try cx.value(f.each);
+        // The list, named once when a fallback reads its length too.
+        const each = if (f.fallback != null) each: {
+            const name = try cx.fresh("list");
+            try js.constant(blk, name, try cx.value(f.each));
+            break :each try js.name(name);
+        } else try cx.value(f.each);
 
         // The template, parsed once at the mount.
         const template = try cx.fresh("template");
@@ -1733,6 +1763,7 @@ const Page = struct {
             mk,
             try js.arrow(&.{ r, value_item, position }, st),
         }));
+        return each;
     }
 
     /// A row's `make` (§9, amended 2026-11-23): its node cloned from
@@ -1854,7 +1885,9 @@ const Page = struct {
                     const shown = if (x.number) try js.template(&.{.{ .expr = value }}) else value;
                     try js.expression(st, try js.call(try js.name(try cx.runtime("text")), &.{ try js.member(try js.name(r), try std.fmt.allocPrint(pg.a(), "t{d}", .{x.slot})), shown }));
                 },
-                .rows => |x| try pg.writeRows(st, at, if (x.end) |t| try js.index(try js.member(try js.name(r), "e"), try pg.num(t)) else try js.literal(.null), x.node, x.plan),
+                .rows => |x| {
+                    _ = try pg.writeRows(st, at, if (x.end) |t| try js.index(try js.member(try js.name(r), "e"), try pg.num(t)) else try js.literal(.null), x.node, x.plan);
+                },
                 .region => |x| {
                     const chosen = try js.name(pick.?);
                     try js.expression(st, try js.call(try js.name(try cx.runtime("armShown")), &.{
@@ -2562,18 +2595,7 @@ const Page = struct {
         const body_plan = try RowBuild.unit(pg, top, scope, false);
         // The fallback: none, one element or `<></>` written in place, or
         // `Html.text e`.
-        const fallback: ?RegionUse.Arm = if (s.fallback == null) null else if (cx.programShowFallback(n)) |r| fb: {
-            const fb_top = tree.root(r).node;
-            if (tree.kind(fb_top) == .fragment and tree.fragment(fb_top).children.len == 0) break :fb null;
-            if (tree.kind(fb_top) != .element) return later(cx, n, "a `Show` whose fallback is markup of more than one element");
-            break :fb .{ .plan = try RowBuild.unit(pg, fb_top, scope, false), .root = r };
-        } else if (cx.programShowFallbackIsText(n)) fb: {
-            if (parser.movesText(scope.parent)) return cx.report(n, "the parser moves text written here out of the table");
-            const p = try pg.a().create(RowPlan);
-            // A text node, its text written by `set` (`text`).
-            p.* = .{ .html = " ", .elements = false, .ops = &.{}, .events = false, .stateful = false };
-            break :fb .{ .plan = p, .root = row.body, .text = true };
-        } else return later(cx, n, "a `Show` whose fallback is markup held in data or chosen at run time");
+        const fallback: ?RegionUse.Arm = if (s.fallback == null) null else try pg.fallbackArm(n, scope, "a `Show`");
         const arms = try pg.a().alloc(?RegionUse.Arm, 2);
         arms[0] = fallback;
         arms[1] = .{ .plan = body_plan, .root = row.body, .body = true };
@@ -2583,6 +2605,30 @@ const Page = struct {
         const facts = try pg.known(n, cx.programHole(.{ .node = n }));
         try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null, .marker = if (place.marker) try pg.wantMarker(place.parent) else null });
         try pg.writes.append(pg.a(), .{ .target = place.parent, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .region = @intCast(pg.regions.items.len - 1) } });
+    }
+
+    /// The fallback of `Show` or `For` `n` (`what`), which has one, as an
+    /// arm: one element written in place, a unit; `Html.text e`, a text
+    /// node; or null for `<></>`. Any other is a limit of the compiler.
+    fn fallbackArm(pg: *Page, n: m.Node.Index, scope: parser.Scope, what: []const u8) m.Error!?RegionUse.Arm {
+        const cx = pg.cx;
+        const tree = pg.tree;
+        if (cx.programShowFallback(n)) |r| {
+            const fb_top = tree.root(r).node;
+            if (tree.kind(fb_top) == .fragment and tree.fragment(fb_top).children.len == 0) return null;
+            if (tree.kind(fb_top) != .element) return later(cx, n, try std.fmt.allocPrint(pg.a(), "{s} whose fallback is markup of more than one element", .{what}));
+            return .{ .plan = try RowBuild.unit(pg, fb_top, scope, false), .root = r };
+        }
+        if (cx.programShowFallbackIsText(n)) {
+            if (parser.movesText(scope.parent)) return cx.report(n, "the parser moves text written here out of the table");
+            const p = try pg.a().create(RowPlan);
+            // A text node, its text written by `set` (`text`).
+            p.* = .{ .html = " ", .elements = false, .ops = &.{}, .events = false, .stateful = false };
+            // `root` is unused for a text: the row's body stands in.
+            const body = if (tree.kind(n) == .show) tree.row(tree.show(n).body).body else tree.row(tree.for_(n).row).body;
+            return .{ .plan = p, .root = body, .text = true };
+        }
+        return later(cx, n, try std.fmt.allocPrint(pg.a(), "{s} whose fallback is markup held in data or chosen at run time", .{what}));
     }
 
     /// What a `Show` reads of its declaration: its `when`, its key
@@ -2627,27 +2673,7 @@ const Page = struct {
         // The fallback, an attribute, evaluated at every pass whichever arm
         // is taken, as `language.md` §11.18 orders a `Show`'s attributes:
         // its values here, its `make` and `set` shown only on `Nothing`.
-        const fb_shown: [2]m.Expr = if (u.arms[0]) |fb| shown: {
-            if (fb.text) {
-                const t = try cx.fresh("text");
-                try js.constant(blk, t, try cx.programShowFallbackText(blk, u.node));
-                const template = try cx.fresh("template");
-                try js.constant(pg.body, template, try js.call(try js.name(try cx.runtime("forTemplate")), &.{try js.string(fb.plan.html)}));
-                const make = try cx.fresh("make");
-                try js.constant(pg.body, make, try pg.makeRow(fb.plan, template));
-                const st = try js.block();
-                const made = try cx.fresh("row");
-                try js.expression(st, try js.call(try js.name(try cx.runtime("text")), &.{ try js.member(try js.name(made), "n"), try js.name(t) }));
-                break :shown .{ try js.name(make), try js.arrow(&.{made}, st) };
-            }
-            try cx.programNestedEnter(fb.root);
-            defer cx.programInlineLeave();
-            var values: std.ArrayList(m.Value.Index) = .empty;
-            try pg.unitValues(fb.plan, &values);
-            try pg.bindLets(blk, fb.root, values.items);
-            try cx.rootValues(blk, fb.root, values.items);
-            break :shown try pg.showArm(fb);
-        } else .{ try js.literal(.null), try js.literal(.null) };
+        const fb_shown: [2]m.Expr = if (u.arms[0]) |fb| try pg.fallbackShown(blk, u.node, fb) else .{ try js.literal(.null), try js.literal(.null) };
         // On `Just v`: the key once, then the body's values.
         const then = try js.block();
         const payload = try cx.fresh("item");
@@ -2664,6 +2690,33 @@ const Page = struct {
         try js.expression(otherwise, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(0), try js.literal(.undefined), fb_shown[0], fb_shown[1] }));
         try js.@"if"(blk, try cx.isJust(try js.name(chosen)), then, otherwise);
         pg.leave(entered);
+    }
+
+    /// The fallback `fb` of `Show` or `For` `node`, its values evaluated
+    /// into `blk` where `node` stands: its `make` and its `set` (§8.2, *A
+    /// `Show`*; §9, amended 2026-11-24).
+    fn fallbackShown(pg: *Page, blk: m.Block, node: m.Node.Index, fb: RegionUse.Arm) m.Error![2]m.Expr {
+        const cx = pg.cx;
+        const js = cx.js;
+        if (fb.text) {
+            const t = try cx.fresh("text");
+            try js.constant(blk, t, try cx.programShowFallbackText(blk, node));
+            const template = try cx.fresh("template");
+            try js.constant(pg.body, template, try js.call(try js.name(try cx.runtime("forTemplate")), &.{try js.string(fb.plan.html)}));
+            const make = try cx.fresh("make");
+            try js.constant(pg.body, make, try pg.makeRow(fb.plan, template));
+            const st = try js.block();
+            const made = try cx.fresh("row");
+            try js.expression(st, try js.call(try js.name(try cx.runtime("text")), &.{ try js.member(try js.name(made), "n"), try js.name(t) }));
+            return .{ try js.name(make), try js.arrow(&.{made}, st) };
+        }
+        try cx.programNestedEnter(fb.root);
+        defer cx.programInlineLeave();
+        var values: std.ArrayList(m.Value.Index) = .empty;
+        try pg.unitValues(fb.plan, &values);
+        try pg.bindLets(blk, fb.root, values.items);
+        try cx.rootValues(blk, fb.root, values.items);
+        return pg.showArm(fb);
     }
 
     /// A `Show`'s arm `arm`, its values evaluated already: its template,
@@ -3120,6 +3173,13 @@ const Page = struct {
             const before = if (u.marker) |i| try js.name(pg.markers.items[i].name) else if (u.end) |t| try pg.ref(t) else try js.literal(.null);
             try js.constant(body, u.state, try js.call(try js.name(try cx.runtime("region")), &.{ parent, before, try js.literal(if (u.at_mount) .true else .false) }));
         }
+        // Each `For`'s fallback, a region where its rows stand (§9, amended
+        // 2026-11-24): never shown beside a row, so the two share a place.
+        for (pg.fors.items) |*u| if (u.fallback != null) {
+            u.fallback_state = try cx.fresh("fallback");
+            const before = if (u.marker) |i| try js.name(pg.markers.items[i].name) else if (u.end) |t| try pg.ref(t) else try js.literal(.null);
+            try js.constant(body, u.fallback_state, try js.call(try js.name(try cx.runtime("region")), &.{ try pg.ref(u.parent), before, try js.literal(.false) }));
+        };
 
         // Each piece's elements, below its top element; a run's are found
         // as each of its roots is mounted.
@@ -4002,7 +4062,7 @@ const Page = struct {
             .observe => |n| try out.append(pg.a(), pg.tree.hole(n).value),
             .event => {},
             .entry => |x| try out.append(pg.a(), x.value),
-            .rows => |i| try pg.forValues(pg.fors.items[i].node, out),
+            .rows => |i| try pg.forReads(pg.fors.items[i].node, out),
             .region => |i| if (pg.regions.items[i].node != .none) try pg.regionReads(pg.regions.items[i].node, pg.regions.items[i].arms, out),
         }
     }
@@ -4451,7 +4511,10 @@ const Page = struct {
                     .text => {},
                 },
                 .event => {},
-                .rows => |i| try pg.forValues(pg.fors.items[i].node, values),
+                .rows => |i| {
+                    try pg.forValues(pg.fors.items[i].node, values);
+                    if (pg.tree.for_(pg.fors.items[i].node).fallback) |fb| try reads.append(pg.a(), fb);
+                },
                 .entry => |x| try values.append(pg.a(), x.value),
                 .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
                 .observe => |n| try reads.append(pg.a(), pg.tree.hole(n).value),
@@ -4940,7 +5003,22 @@ const Page = struct {
                 switch (w.what) {
                     .event, .region => unreachable,
                     .entry => |x| try js.expression(blk, try entryCall(cx, node, x, try cx.value(x.value))),
-                    .rows => |i| try pg.writeRows(blk, node, if (pg.fors.items[i].marker) |k| try js.name(pg.markers.items[k].name) else if (pg.fors.items[i].end) |t| try pg.ref(t) else try js.literal(.null), pg.fors.items[i].node, pg.fors.items[i].plan),
+                    .rows => |i| {
+                        const u = &pg.fors.items[i];
+                        const each = try pg.writeRows(blk, node, if (u.marker) |k| try js.name(pg.markers.items[k].name) else if (u.end) |t| try pg.ref(t) else try js.literal(.null), u.node, u.plan);
+                        // The fallback, shown while the list is empty, its
+                        // values evaluated only then, as `browser-tea`
+                        // evaluates them (§9, amended 2026-11-24; #459).
+                        if (u.fallback) |fb| {
+                            const empty = try js.binary(.strict_eq, try js.member(each, "length"), try js.number("0"));
+                            const then = try js.block();
+                            const shown = try pg.fallbackShown(then, u.node, fb);
+                            try js.expression(then, try js.call(try js.name(try cx.runtime("armShown")), &.{ try js.name(u.fallback_state), try pg.num(0), shown[0], shown[1] }));
+                            const otherwise = try js.block();
+                            try js.expression(otherwise, try js.call(try js.name(try cx.runtime("armShown")), &.{ try js.name(u.fallback_state), try pg.num(1), try js.literal(.null), try js.literal(.null) }));
+                            try js.@"if"(blk, empty, then, otherwise);
+                        }
+                    },
                     .text => |parts| {
                         const value = if (parts.len == 1 and parts[0] == .value)
                             try cx.value(parts[0].value)
