@@ -515,6 +515,11 @@ leaf_memo: std.AutoHashMapUnmanaged(LeafKey, LeafHit) = .empty,
 leaf_buf: std.ArrayList(Atom) = .empty,
 leaf_ks: std.ArrayList(u32) = .empty,
 leaf_nest: u32 = 0,
+/// Safe builds: how many checks that count no work are in work
+/// (`quiet`). A walk of leaves inside one tags no atom with a context
+/// (`meet`), since a meeting it would build is an entry of `ctxs` that a
+/// later step reads by index (kernel §9).
+quiet_n: u32 = 0,
 reach_seen: std.AutoHashMapUnmanaged(Val, void) = .empty,
 /// The part of each join that `project` made, by the join and the step:
 /// kept for the frame, since a value never changes once it is made.
@@ -1499,11 +1504,13 @@ fn quietParts(f: *const Frame) [quiet_parts.len]usize {
 }
 
 fn quiet(f: *Frame) Quiet {
+    f.quiet_n += 1;
     return .{ .m = f.m.quiet(), .failed = f.failed, .parts = f.quietParts() };
 }
 
 fn loud(f: *Frame, q: Quiet) void {
     f.m.loud(q.m);
+    f.quiet_n -= 1;
     f.failed = q.failed;
     const now = f.quietParts();
     inline for (quiet_parts, 0..) |name, i| if (now[i] != q.parts[i]) std.debug.panic("own3: a check that counts no work built {s} of the frame (kernel §9)", .{name});
@@ -1756,7 +1763,8 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
                 for (0..n.b) |ki| _ = try f.allLeaves(f.lists.items[n.a + ki], out);
             }
             try f.leafKeep(v, &.{}, true, out, start, false);
-            if (f.finished and !f.m.steps_over) {
+            // A check that counts no work keeps no copy (kernel §9).
+            if (f.finished and !f.m.steps_over and f.quiet_n == 0) {
                 const at: u32 = @intCast(f.whole_buf.items.len);
                 try f.whole_buf.appendSlice(f.gpa, out.items[start..]);
                 if (v >= f.whole_at.items.len) try f.whole_at.appendNTimes(f.gpa, .{ none, 0 }, f.nodes.items.len - f.whole_at.items.len);
@@ -2115,9 +2123,10 @@ fn leavesOwnWalk(f: *Frame, v: Val, ks: []const u32, out: *std.ArrayList(Atom)) 
                 if (try f.leavesSet(f.lists.items[n.a + 2 * ki], n.place, ks, out)) dup = true;
                 // What the arm holds, it holds on a run through the arm (kernel §6 rule 7).
                 // Found through an arm of a join inside this arm, it is on a
-                // run through both, and keeps both (`meet`).
+                // run through both, and keeps both (`meet`). A check that
+                // counts no work reads no context, and builds none (kernel §9).
                 const ctx = f.lists.items[n.a + 2 * ki + 1];
-                if (ctx != none) for (out.items[before..]) |*a| {
+                if (ctx != none and f.quiet_n == 0) for (out.items[before..]) |*a| {
                     if (a.root != 0) a.ctx = try f.meet(a.ctx, ctx);
                 };
             }
