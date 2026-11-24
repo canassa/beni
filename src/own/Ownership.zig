@@ -13995,8 +13995,17 @@ const Walker = struct {
             // of an enclosing frame is carried out to the closure made in
             // that frame and read there, once, for every closure it nests:
             // an inner closure is made when the outer one runs, which may be
-            // after a write of the field (#2617).
+            // after a write of the field (#2617). A local not bound yet is
+            // one its block binds after the lambda (only a lambda that is
+            // an item's value may name one, and only a call after that
+            // item may run it, `let_forward_reference`): read once just
+            // after that item, in `resolveLate`, as a local function's is;
+            // the lambda stays where it is and reads the temporary (#2658).
             for (w.frames.items[id].eager.items) |cap| {
+                if (cap.local < w.local_av.len and w.local_av[cap.local] == null) {
+                    if (cap.read_inst != none) try w.late_eager.append(w.a, .{ .cap = cap, .def = creation, .tok = tok });
+                    continue;
+                }
                 if (cap.local < w.local_frame.len and w.local_frame[cap.local] == w.frame) {
                     if (cap.read_inst != none) try w.publishRead(.{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .read_inst = cap.read_inst, .capture = creation }, none, creation, 0, none);
                     try w.uses.append(w.a, .{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = w.token(body), .record_read = true, .read_inst = cap.read_inst, .capture = creation });
