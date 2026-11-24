@@ -3124,8 +3124,15 @@ contents of a cell are locations, and that a call can change what a location of 
         there as a value of no code does (`flowUnknown`, row 6), handed to JavaScript too
         (`jsArgsRunOn`), and as a sibling it can (`valRunsOn`). A value of no cell (`v_none`)
         stays no function: a constructor used as a function is one, and it neither masks nor
-        lends. It is the pessimistic side: a top-level tuple of functions that never mask, run
-        within a call beside a hosting function, is refused.
+        lends. The same reading closed a hole of lists: a top-level value with no parameters whose
+        value is a function (`ctor = Pt`, `again = ctor`) read as no value at all, so a helper that
+        runs it on a list (`(apply [] k Lib.ctor).a`) answered nothing of the list, and a push of
+        `k` after it was accepted, which in place changed the answer read after
+        (`run/TopValueFunctionHandedLive`: `1,2 1,2` where the plain build prints `1,2 1`). As
+        code of no claim, the helper hands it the list, which escapes (§5 test 3). It is the
+        pessimistic side: a top-level tuple of functions that never mask, run within a call
+        beside a hosting function, is refused, and a top-level value that holds a function (a
+        decoder, `Sub.none`) answers `outside` where a function of it is read.
       - **Up.** A function whose contract has `hosts` is refused where it meets a use with
         `runsOnAt`, the default, or a holder that loses it and does not fork it: any of them can run
         it masked.

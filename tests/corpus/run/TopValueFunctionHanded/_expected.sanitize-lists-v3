@@ -1,0 +1,1 @@
+A top-level value of another module that is a constructor, handed to a helper that runs it on a list; each push writes a copy, accepted (ownership-v3-kernel.md §13 item 12, *A defect*, (d), #2674). Its live twin is TopValueFunctionHandedLive.

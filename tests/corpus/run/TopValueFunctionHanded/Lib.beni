@@ -1,0 +1,12 @@
+-- The second module: function values with no parameters, a constructor.
+pub type alias Pt =
+    xs : List Int
+    a : List Int
+
+
+pub ctor : List Int, List Int → Pt
+ctor = Pt
+
+
+pub again : List Int, List Int → Pt
+again = ctor
