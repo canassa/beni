@@ -1355,10 +1355,14 @@ const RUNON_FRAMES = {
   foldCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → foldArmsI h k', 'Task.sleep (Duration.millis 80)'],
   listCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → twoCallsI h λn → List.foldl [ k ] ⊤ λg _ → g n', 'Task.sleep (Duration.millis 80)'],
   modCap: () => ['h = forker', 'k = masker', '_ = Task.spawn λ⊤ → Hoster.twoCallsM h k', 'Task.sleep (Duration.millis 80)'],
+  // The lane's reviewer: the one that masks is kept in top-level data that holds no cell, a tuple
+  // handed with the forker to one call (`topTup`) or a `Maybe` beside it in a started closure (`topMaybe`).
+  topTup: () => ['case cfgT of', '    ( g, _ ) →', '        twoCallsI forker g', 'Task.sleep (Duration.millis 80)'],
+  topMaybe: () => ['h = forker', 'case cfgM of', '    Just g →', '        _ = Task.spawn λ⊤ → twoCallsI h g', '        ⊤', '', '    Nothing →', '        ⊤', 'Task.sleep (Duration.millis 80)'],
 };
 // The shapes whose `work` hosts: `Cmd.perform` would refuse them, so `init` starts `work` itself
 // (`Fn.starts` accepts a hosting function), and no `send` reaches it.
-const RUNON_STARTED = ['capFirst', 'capFirstLam', 'capFirstParam', 'sendLocal', 'sendAsp', 'sendParam', 'deferScope', 'hostThenMask', 'scopeHost', 'wrapOwn', 'twoCap', 'twoCapRev', 'twoCapDeep', 'twoCapParam', 'threeCap', 'mapCap', 'foldCap', 'listCap', 'modCap'];
+const RUNON_STARTED = ['capFirst', 'capFirstLam', 'capFirstParam', 'sendLocal', 'sendAsp', 'sendParam', 'deferScope', 'hostThenMask', 'scopeHost', 'wrapOwn', 'twoCap', 'twoCapRev', 'twoCapDeep', 'twoCapParam', 'threeCap', 'mapCap', 'foldCap', 'listCap', 'modCap', 'topTup', 'topMaybe'];
 const RUNON_HELD_DEFS = `
 
 stash : (⊤ → ⊤) → ⊤
@@ -1547,6 +1551,10 @@ wrapRunner g =
         h ⊤
         k 1
     Task.sleep (Duration.millis 80)`,
+  cfgT: `cfgT : (Int → ⊤) × Int
+cfgT = ( masker, 0 )`,
+  cfgM: `cfgM : Maybe (Int → ⊤)
+cfgM = Just masker`,
   noop: `noop : ⊤ → ⊤
 noop ⊤ = ⊤`,
   twoCallsI: `twoCallsI : (⊤ → ⊤), (Int → ⊤) → ⊤
@@ -1695,6 +1703,8 @@ const RUNON_WAYS = {
   foldCap: ['forker', 'masker', 'foldArmsI'],
   listCap: ['forker', 'masker', 'twoCallsI'],
   modCap: ['forker', 'masker'],
+  topTup: ['forker', 'masker', 'twoCallsI', 'cfgT'],
+  topMaybe: ['forker', 'masker', 'twoCallsI', 'cfgM'],
 };
 const RUNON_MODULES = ['evMod', 'evModKeep', 'modCap'];
 const RUNON_HELD = ['stashRead', 'stashWrite', 'dataRead', 'maskListRead', 'boxRead', 'wrapRead', 'memoRead', 'wrapHost', 'wrapHostLocal', 'wrapHostTwice', 'wrapHostLambda', 'wrapHostApplied', 'lendThenHost', 'twoCallsHost', 'listThenHost', 'capturedThenHost'];

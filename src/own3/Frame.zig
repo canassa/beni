@@ -4676,7 +4676,15 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             const place = try m.placeOfInst(inst);
             const layout = try m.loc.layoutOf(place);
             const es = m.loc.layoutEntries(layout);
-            if (es.len == 0) return v_none;
+            // A part that can be a function (`( masker, 0 )`, `Just masker`)
+            // is code the walk does not know, not no value: run, it can park
+            // the fiber masked or lend it (kernel §13 item 12, *A defect*,
+            // (d), *The ways in*, row 6; #2674).
+            const fn_below = blk: {
+                const h = m.places.holds(place);
+                break :blk h.closure or h.any or h.@"opaque";
+            };
+            if (es.len == 0) return if (fn_below) v_outside else v_none;
             const c = (try m.declContract(t)) orelse return v_outside;
             if (c.arity != 0) return v_outside;
             const cov = try m.loc.cover(c.layouts[0], layout);
@@ -4694,7 +4702,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             for (cov) |cr| if (topHolds(c, cr, every)) {
                 any = true;
             };
-            if (!any) return v_none;
+            if (!any) return if (fn_below) v_outside else v_none;
             const root = try f.newRoot(.local, place, inst);
             const ent0 = f.roots.items[root].ent;
             const start: u32 = @intCast(f.atoms.items.len);
@@ -11368,7 +11376,12 @@ fn jsArgsRunOn(f: *Frame, inst: u32, args: []const Inst.Index, vals: []const Val
     for (args, 0..) |a, k| {
         if (k >= vals.len or m.fnType(m.typeOfInst(a.int())) == null) continue;
         const v = vals[k];
-        if (v == v_none or v == v_outside) continue;
+        if (v == v_none) continue;
+        // A function value of no claim: code the walk does not know (#2674).
+        if (v == v_outside) {
+            try f.noteRunsOnWithin(inst, true);
+            continue;
+        }
         if (try f.codeOf(v)) |c| {
             if (c.contract.runs_on) try f.noteRunsOnWithin(inst, true);
             if (c.contract.hosts) try f.hostsWithin(inst);
@@ -11472,7 +11485,10 @@ fn siblingRunsOn(f: *Frame, use: *const Use) Error!bool {
 /// (`seen`: one that could has answered already), and each read is work
 /// (kernel §8): past the budget it can.
 fn valRunsOn(f: *Frame, v: Val, depth: u32, seen: *std.AutoHashMapUnmanaged(Val, void)) Error!bool {
-    if (v == v_none or v == v_outside) return false;
+    if (v == v_none) return false;
+    // A function value of no claim (a part of top-level data that holds
+    // no cell, `eval`): code the walk does not know, which can (#2674).
+    if (v == v_outside) return true;
     if (depth > max_sibling_depth) return true;
     if ((try seen.getOrPut(f.gpa, v)).found_existing) return false;
     if (f.charge(Check.call_units)) return true;

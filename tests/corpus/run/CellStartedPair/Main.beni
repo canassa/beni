@@ -194,6 +194,36 @@ evCap ⊤ =
     "evCap"
 
 
+-- A function that masks, kept in top-level data that holds no cell.
+cfgT : (Int → ⊤) × Int
+cfgT = ( Hoster.masker, 0 )
+
+
+cfgM : Maybe (Int → ⊤)
+cfgM = Just Hoster.masker
+
+
+topTup : ⊤ → String
+topTup ⊤ =
+    case cfgT of
+        ( g, _ ) →
+            twoCalls forker g
+    "topTup"
+
+
+topMaybe : ⊤ → String
+topMaybe ⊤ =
+    h = forker
+    case cfgM of
+        Just g →
+            t = Task.spawn λ⊤ → twoCalls h g
+            Task.join t
+
+        Nothing →
+            ⊤
+    "topMaybe"
+
+
 fiber : (⊤ → String) → String
 fiber g =
     t = Task.spawn g
@@ -215,4 +245,6 @@ main = Io.run λ⊤ →
         , fiber recordCap
         , fiber listCap
         , fiber evCap
+        , fiber topTup
+        , fiber topMaybe
         ]

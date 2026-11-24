@@ -10,3 +10,5 @@ foldCap
 recordCap
 listCap
 evCap
+topTup
+topMaybe

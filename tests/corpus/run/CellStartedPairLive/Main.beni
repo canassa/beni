@@ -5,7 +5,8 @@
 -- through a closure the fiber runs, a helper's two parameters, three
 -- functions to one helper, two functions run in a `List.map`, two arms of a
 -- fold, a helper of another module, a record of the two, a list that holds
--- the one that masks, and a method that masks. Each is refused where the
+-- the one that masks, a method that masks, and one that masks kept in
+-- top-level data that holds no cell. Each is refused where the
 -- fiber is forked, or where the function that hosts is handed on. On Node no
 -- throw happens here (ownership-v3-kernel.md §13 item 12, *A defect*, (d),
 -- *Up*; #2674).
@@ -197,6 +198,36 @@ evCap ⊤ =
     "evCap"
 
 
+-- A function that masks, kept in top-level data that holds no cell.
+cfgT : (Int → ⊤) × Int
+cfgT = ( Hoster.masker, 0 )
+
+
+cfgM : Maybe (Int → ⊤)
+cfgM = Just Hoster.masker
+
+
+topTup : ⊤ → String
+topTup ⊤ =
+    case cfgT of
+        ( g, _ ) →
+            twoCalls forker g
+    "topTup"
+
+
+topMaybe : ⊤ → String
+topMaybe ⊤ =
+    h = forker
+    case cfgM of
+        Just g →
+            t = Task.spawn λ⊤ → twoCalls h g
+            Task.join t
+
+        Nothing →
+            ⊤
+    "topMaybe"
+
+
 fiber : (⊤ → String) → String
 fiber g =
     t = Task.spawn g
@@ -218,4 +249,6 @@ main = Io.run λ⊤ →
         , fiber recordCap
         , fiber listCap
         , fiber evCap
+        , fiber topTup
+        , fiber topMaybe
         ]
