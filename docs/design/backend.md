@@ -6137,6 +6137,18 @@ function, an import, a label, a loop's or a `catch`'s binding). One that does no
 `internal` diagnostic naming it. Fixture: `run/ClosureNamesLocalAfterSuspension`'s release pass,
 which stops at build with the split put back as it was.
 
+*Amended 2026-11-24 (#2672): a local no place declares is refused in every build.* The check
+above asks only about a name the declaration declares somewhere. A local it writes and never
+declares at all was still given a spelling, and `browser-inline`'s named row path once emitted
+one (`w$18`, a `let` of the row function left unbound): the development build threw
+`ReferenceError` at load, the release build showed `[object Object]`. Now `Rename.enter` refuses
+such a name in every build, not only a safety one, since the test is one stamp per local: the
+build stops with the same `internal` diagnostic, so a release build never turns a
+`ReferenceError` into a wrong page. Proof: with the lowering's fix of #2673 reverted,
+`browser/inline/NamedRows` fails its development run and its `--release` build stops naming `w`;
+the unit test *a local the declaration reads and never declares is refused* pins the rule, since
+no beni program reaches it now.
+
 #### Item 3 â compact printing
 
 One boolean on `Print.Printer`, threaded to the places that push whitespace â esbuild does it in 35
