@@ -2269,12 +2269,33 @@ The simple form is S2c's row unit with none of S2d's edits:
   (`programBranchChoose`, inside the helper's call for a helper, its arguments values of the row)
   and prepares it with the row's values bound, before any of the row is written; then each write,
   and `armShown` for the region. So the branch is chosen at every `set` — every write of what the
-  `For` reads — and its arm made afresh only when the arm changes. A row whose top is a branch, and
-  every other limit of a region's (an arm of more than one node, a choice that may have an
-  effect, a region followed by text), stay class 1 (`build/bad/inline/Region*/`,
-  `RowBranchBeforeText/`). Pages `browser/inline/RowBranchCase`, and `browser/tea/RowBranch`
+  `For` reads — and its arm made afresh only when the arm changes. Every other limit of a
+  region's (an arm of more than one node, a choice that may have an effect, a region followed
+  by text) stays class 1 (`build/bad/inline/Region*/`,
+  `RowBranchBeforeText/`); a row whose top is a branch is compiled since 2026-11-24 (below). Pages `browser/inline/RowBranchCase`, and `browser/tea/RowBranch`
   copied beside it; `browser/tea/TodoMVC` now passes its rows and stops at a text hole beside an
   element (§8.7).
+- **A row whose top is a branch** (*amended 2026-11-24, #2637, #966*). A row function that is a
+  lambda whose body, past its `let`s, is an `if` or a `case` (`EmptyMarkup`'s `λn → if … then
+  <></> else <li>…</li>`) is a row whose node is the arm it shows: each arm one element written in
+  place, a call of a view helper of one element (`Arm.What.call`), or `<></>`, planned as a
+  region's arms are (§8.2, *A branch region*), its own branches regions of the arm. The
+  interface asks `programBranch` and the `programBranch*` calls of the `For` itself (version
+  1.38): `Lower` gives the lambda's body as the branch, lowered where the row's parameters are
+  bound. A row is made by the runtime's `emptyRow` — its node an empty comment — and its `set`
+  binds the item and the position (`cx.rowValuesOf`, no value of its own), chooses the arm with
+  them (`programBranchChoose`), prepares it, and hands `rowArm(row, k, make, set)` the arm's
+  number, `make` and `set`: when the arm is not the one the row shows, `make` gives the new arm's
+  row (none for `<></>`: another empty comment, the node `browser-tea` keeps for empty markup),
+  its node takes the place of the old one in the page with `replaceWith`, which does nothing to a
+  row not yet placed, and becomes the row's `n`, which `forRows` moves, focuses and removes. Then
+  `set` runs, kept arm or new (rule 8). So the rows of `<></>` move with the others and go with
+  them, as on `browser-tea`, and the transcripts agree (`browser/inline/RowTopBranch`). What stays
+  refused (class 1, at the `For`): an arm of more than one node or of a value (`not_when`,
+  `build/bad/inline/RowTopBranchFragment/`), an arm with `let`s no hole reads, a choice that may
+  have an effect, a row whose body is a call of a helper whose body is the branch, and a named row
+  function (`ForRowFunction/`). Pages `browser/tea/EmptyMarkup` and `WholeFor` build and are
+  copied to `browser/inline/`, each with its listed differences of nodes.
 - **`Dict`.** A `For` over a `Dict` waits for S2b (§9.9): the checker refuses it today (its `each`
   must be a `List a`), and `core/Dict` is still ordered by key, not by insertion, until #961.
 - **Dependencies.** The simple form edits no list in place and reads none by identity, so S2c's

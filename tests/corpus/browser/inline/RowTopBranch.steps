@@ -1,0 +1,13 @@
+# A row turns to its other arm in place, with its event wired.
+click #on1
+click #off1
+# The rows move with whichever node they show, the empty one too.
+click #reverse
+# A row turns to the empty arm's sibling, and back, after the move.
+click #off2
+click #bump
+click #on4
+# A row leaves, with its node; a new one comes.
+click #drop
+click #add
+click #on5

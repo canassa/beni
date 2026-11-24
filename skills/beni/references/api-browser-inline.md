@@ -51,6 +51,7 @@ module Inline
   value commands : Cmd V, V → ⊤  -- impure
   value decoded : Schema e d, V → V  -- impure
   value deliver : V → ⊤  -- impure
+  value emptyRow : ⊤ → V  -- impure
   value entry : V, V → V  -- impure
   value escape : V → V  -- impure
   value escapeAttribute : V → V  -- impure
@@ -90,6 +91,7 @@ module Inline
   value root : V → V  -- impure
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure
+  value rowArm : V, V, V, V → ⊤  -- impure
   value rowText : V, V, V → V  -- impure
   value run : V → ⊤  -- impure
   value safeUrl : V → V  -- impure
