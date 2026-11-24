@@ -1330,7 +1330,7 @@ const RowBuild = struct {
                 try b.ops.append(pg.a(), .{ .target = target, .what = .{ .rows = .{ .node = child, .plan = p, .end = end, .fallback = try b.fallback(child, inner) } } });
                 b.events = b.events or p.events;
                 if (before_marker) b.marker_wanted = b.ops.items.len - 1;
-                try b.placeMarker(target, &out, &pending);
+                try b.placeMarker(target, child, name, children, &out, &pending);
                 b.stateful = b.stateful or p.stateful;
             },
             .text => {
@@ -1355,7 +1355,7 @@ const RowBuild = struct {
                 if (!textHole(h.kind)) {
                     if (!b.arm) return later(cx, child, "a hole of markup in a `For` row");
                     try b.region(child, target, children, ci, inner);
-                    try b.placeMarker(target, &out, &pending);
+                    try b.placeMarker(target, child, name, children, &out, &pending);
                     continue;
                 }
                 try pending.append(pg.a(), b.ops.items.len);
@@ -1376,10 +1376,16 @@ const RowBuild = struct {
     /// in the template, as the child the parser makes next (§9, amended
     /// 2026-11-24). A text made before it — `pending` — is made before the
     /// comment, so the op's nodes stand between the two, as written.
-    fn placeMarker(b: *RowBuild, target: ?u32, out: *std.ArrayList(Html), pending: *std.ArrayList(usize)) m.Error!void {
+    fn placeMarker(b: *RowBuild, target: ?u32, at: m.Node.Index, name: []const u8, children: []const m.Node.Index, out: *std.ArrayList(Html), pending: *std.ArrayList(usize)) m.Error!void {
         const pg = b.pg;
         const i = b.marker_wanted orelse return;
         b.marker_wanted = null;
+        // The parser drops a newline right after a `<pre>` or a `<listing>`
+        // start tag, so a text that begins with one would not be the node
+        // the comment's place counts (the review of this slice: a
+        // `TypeError` in Chrome, which happy-dom does not show).
+        if ((std.mem.eql(u8, name, "pre") or std.mem.eql(u8, name, "listing")) and children.len != 0 and pg.tree.kind(children[0]) == .text and std.mem.startsWith(u8, pg.tree.string(pg.tree.text(children[0]).text), "\n"))
+            return later(pg.cx, at, "a `For` or a branch followed by text in a `pre` whose first text begins with a newline");
         const k: u32 = @intCast(b.markers.items.len);
         try b.markers.append(pg.a(), .{ .parent = target, .index = domIndex(out.items) });
         try out.append(pg.a(), .{ .kind = .marker, .name = "" });
