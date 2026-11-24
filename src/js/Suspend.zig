@@ -698,6 +698,7 @@ pub const Pass = struct {
                 // A `Js.apply`'s call keeps its mark (`JsIr.Node.host`): §9
                 // item 6 reads it on the copy as on the original.
                 if (t == .call and p.hostOf(n)) p.b.markHost(copy);
+                if (t == .call and p.b.nodes.items(.stores)[n.int()]) p.b.markStores(copy);
                 return copy;
             },
             .object, .array, .template, .sequence => {

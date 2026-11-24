@@ -86,6 +86,12 @@ pub const Table = struct {
         return if (lo < t.demands.len and t.demands[lo].inst == inst) t.demands[lo] else null;
     }
 
+    /// Whether the checker accepted a write in place at `inst`: a record
+    /// update, or a call whose callee writes a record argument (§31.7).
+    pub fn writesAt(t: Table, inst: Bir.Inst.Index) bool {
+        return t.accepted(inst.int()) != null;
+    }
+
     pub fn name(t: Table, offset: u32) []const u8 {
         return std.mem.sliceTo(t.names[offset..], 0);
     }

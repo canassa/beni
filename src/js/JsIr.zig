@@ -113,6 +113,13 @@ pub const Node = struct {
     /// Printed the same; a copy of the node keeps it (`Spec`, and
     /// `Suspend`'s loop-mode copy of a tail-call loop's rest).
     host: bool = false,
+    /// `call` only: the checker accepted a write of a record argument at it
+    /// (`ownership-checker.md` §31.7), or its function is not known where
+    /// it is written (a parameter, a field): the callee may write a record
+    /// in place, so the call is a store for the optimiser barrier (§31.10, amended
+    /// 2026-11-24) and `holdsStore` answers true for it. Printed the same;
+    /// a copy of the node keeps it, as it keeps `host`.
+    stores: bool = false,
 
     /// Meaning depends on `tag`; see `Tag`. Unused halves are zero.
     pub const Data = struct {
@@ -749,6 +756,11 @@ pub inline fn host(ir: *const JsIr, node: Node.Index) bool {
     return ir.nodes.items(.host)[node.int()];
 }
 
+/// Whether `node` is a `call` that writes a record in place (`Node.stores`).
+pub inline fn stores(ir: *const JsIr, node: Node.Index) bool {
+    return ir.nodes.items(.stores)[node.int()];
+}
+
 pub inline fn name(ir: *const JsIr, index: NameIndex) Name {
     return ir.names[index.int()];
 }
@@ -976,6 +988,12 @@ pub fn holdsStore(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.In
         }.idx;
         switch (ir.tag(node)) {
             .assign => return true,
+            // A call whose callee writes a record in place is the write
+            // (§31.10, amended 2026-11-24): its operands are evaluated too.
+            .call => {
+                if (ir.stores(node)) return true;
+                try ir.pushOperands(gpa, stack, node);
+            },
             // A function made here runs elsewhere.
             .arrow, .func_decl, .gen_decl, .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
             .const_decl => try pushOperand(gpa, stack, at(d.rhs)),
@@ -1454,6 +1472,7 @@ pub const Builder = struct {
     pub fn addNode(b: *Builder, node: Node) Allocator.Error!Node.Index {
         const index = try b.addParts(node.tag, node.pos, node.data.lhs, node.data.rhs);
         if (node.host) b.markHost(index);
+        if (node.stores) b.markStores(index);
         return index;
     }
 
@@ -1462,6 +1481,13 @@ pub const Builder = struct {
         std.debug.assert(b.tagOf(node) == .call);
         const hosts: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.host)]);
         hosts[node.int()] = true;
+    }
+
+    /// Mark a `call` as one that writes a record in place (`Node.stores`).
+    pub fn markStores(b: *Builder, node: Node.Index) void {
+        std.debug.assert(b.tagOf(node) == .call);
+        const marks: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.stores)]);
+        marks[node.int()] = true;
     }
 
     /// `addNode` from the node's fields, with no `Node` built on the way.
@@ -1481,6 +1507,8 @@ pub const Builder = struct {
         positions[index] = ownPos(node_pos);
         datas[index] = .{ .lhs = lhs, .rhs = rhs };
         hosts[index] = false;
+        const marks: [*]bool = @ptrCast(b.cols.ptrs[@backingInt(NodeList.Field.stores)]);
+        marks[index] = false;
         return @fromBackingInt(@intCast(index));
     }
 

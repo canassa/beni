@@ -4228,7 +4228,46 @@ pub const Lowerer = struct {
     /// A call that may suspend, in a suspendable function: bound to a
     /// temporary behind a marker (§16.3), which `Suspend` turns into the
     /// continuation of everything lowered after it into `out`.
+    /// Whether the function call `inst` runs is not known where it is
+    /// written: a parameter, a pattern's variable, a field, an evidence
+    /// parameter. Whole-program specialisation writes a callee's body where
+    /// it is called, with the arguments in its parameters' places, and the
+    /// call may then run a function that writes a record in place: it is
+    /// marked a store wherever it is copied (`ownership-checker.md` §31.10,
+    /// amended 2026-11-24). Its own module need not write in place: a
+    /// callee of core may be written into a module that does.
+    fn calleeUnknown(l: *Lowerer, inst: Inst.Index) bool {
+        switch (l.bir.instTag(inst)) {
+            .call => {
+                const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
+                switch (l.bir.instTag(callee)) {
+                    .local => {
+                        const index = l.decl_index orelse return true;
+                        const local = l.bir.decls[index].locals_start + l.bir.instData(callee).lhs;
+                        if (local >= l.bir.locals.len) return true;
+                        return l.bir.locals[local].kind != .let;
+                    },
+                    .top, .ext_value, .ctor, .ext_ctor, .lambda => return false,
+                    else => return true,
+                }
+            },
+            .method_call, .type_dispatch => {
+                const site = l.in.dispatch.siteOf(inst) orelse return true;
+                const callee = site.callee.unwrap() orelse return true;
+                return switch (l.in.dispatch.term(callee)) {
+                    .param, .field => true,
+                    else => false,
+                };
+            },
+            else => return false,
+        }
+    }
+
     fn suspension(l: *Lowerer, out: *StmtList, inst: Inst.Index, value: Node.Index) !Node.Index {
+        // A call whose callee writes a record argument in place is a store
+        // (`ownership-checker.md` §31.10, amended 2026-11-24): every call
+        // lowering hands its call node through here.
+        if (l.b.tagOf(value) == .call and ((l.in.ownership.clean and l.in.ownership.writesAt(inst)) or l.calleeUnknown(inst))) l.b.markStores(value);
         if (!l.suspendable) return value;
         if (!l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return value;
         const p = l.pos(inst);

@@ -2794,6 +2794,9 @@ tests/corpus/browser/tea/ApiLogin.beni ApiLogin 111:5 #0 :: entry ApiLogin.updat
 tests/corpus/browser/tea/ArmLetOnce.beni ArmLetOnce 52:5 #0 :: entry ArmLetOnce.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/ArmLetOnce.beni ArmLetOnce 58:5 #0 :: entry ArmLetOnce.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/MessageDeepRecordClosure.beni MessageDeepRecordClosure 47:8 #0 :: entry MessageDeepRecordClosure.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ReleaseCalleeWrite Main 121:5 #0 :: entry Main.update model.lines :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ReleaseCalleeWrite Main 93:15 #0 :: value Main.said :: accepted :: absent  v2 names the write by the call that hands the function on (§2.11.3); v1 by the function value
+tests/corpus/browser/inline/ReleaseCalleeWrite Main 96:15 #0 :: value Main.said :: accepted :: absent  v2 names the write by the call that hands the function on (§2.11.3); v1 by the function value
 tests/corpus/browser/inline/MessageRecordClosure.beni MessageRecordClosure 58:8 #0 :: entry MessageRecordClosure.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/BatchMapOldValue.beni BatchMapOldValue 113:5 #0 :: entry BatchMapOldValue.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/RespondSettlesEachChunk.beni RespondSettlesEachChunk 43:17 #0 :: send <Finished …> :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

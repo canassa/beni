@@ -1,0 +1,20 @@
+-- The model's type, and helpers that write it in place from another
+-- module: `noted` writes through `note`.
+
+pub type alias Model =
+    lines : List String
+    count : Int
+
+
+pub note : Model, String → Model
+note model line = { model | lines = List.push model.lines line }
+
+
+-- Two calls deep: `noted` writes only through `note`.
+pub noted : Model, String → Model
+noted model line = note (note model line) "!"
+
+
+-- A writer handed in: the call that writes is through a parameter.
+pub apply : (Model, String → Model), Model, String → Model
+apply f model line = f model line

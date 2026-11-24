@@ -5739,6 +5739,9 @@ day, and it is decided by lowering, not guessed by this pass:
   `Node.done` still pins nothing), a lambda, and a reference to a value. `Debug.log` and
   `Debug.todo` are `foreign impure` and are kept like any other impure call â one rule, no special
   case, and `run/ReleaseDeadDebug` no longer needs a `.release-expected`.
+  *Amended 2026-11-24 (#2642):* a pure call that writes a record in place is not droppable. The
+  checker accepted the write at the call, and the call is a store (`ownership-checker.md` §31.10,
+  *a call that writes is a store*). It is never dropped and moves past names and literals alone.
 - **One known gap, recorded rather than closed**: reading a top-level value with a `where` clause
   and no parameters runs its initialiser at the first use that needs it (`language.md` Â§6's table).
   A dropped binding whose right-hand side is only such a read moves that first run to the next

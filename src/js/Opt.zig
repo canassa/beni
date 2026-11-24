@@ -17,6 +17,10 @@
 //!     pure` is still droppable, so `Node.done` pins nothing; the
 //!     alternative, a "does the initialiser call a `foreign`?" test, is the
 //!     `sideEffects: false` guesswork §9's purity paragraph exists to replace.
+//!     The checker's second fact is the store: a record written in place,
+//!     where it stands or inside a callee (`JsIr.Node.stores`), is never
+//!     dropped and moves past names and literals alone (`JsIr.holdsStore`,
+//!     `ownership-checker.md` §31.10).
 //!   - **Exactly one use: the binding is inlined**, under §9's five
 //!     conditions, which `inlinable` and `findUse` below implement one for
 //!     one. The wider licence — any initialiser, use on the very next
