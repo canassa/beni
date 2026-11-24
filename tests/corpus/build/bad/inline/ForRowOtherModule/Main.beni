@@ -1,0 +1,14 @@
+-- A `For` whose row function is another module's: that module's markup in a
+-- row is not compiled yet (browser-inline.md §9, amended 2026-11-24), class
+-- 1 (§5).
+import Html exposing (Html)
+import Rows
+import Tea
+
+
+view : List String → Html ⊤
+view items = <ul><For each={items}>{Rows.row}</For></ul>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → [ "a" ], update = λ_ m → m, view = view }

@@ -1,0 +1,5 @@
+import Html exposing (Html)
+
+
+pub row : String → Html msg
+row s = <li>{s}</li>

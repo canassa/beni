@@ -18345,6 +18345,21 @@ pub const Lowerer = struct {
                 }
                 return chain;
             },
+            // A `For` or a `Show` whose row function is a function of the
+            // program's module, named (version 1.39, `browser-inline.md` §9,
+            // amended 2026-11-24): the call of that function with the item
+            // (and the position), entered as a view helper's call is. The
+            // write-set pass applies the row function on the path the `For`
+            // stands on, so the call adds no step to it.
+            .for_, .show => {
+                const row_index = if (tree.kind(node) == .for_) tree.for_(node).row else tree.show(node).body;
+                if (tree.row(row_index).kind != .function) return null;
+                const f = st.built.rows[@backingInt(row_index)].function;
+                if (l.bir.instTag(f) != .top and l.bir.instTag(f) != .ext_value) return null;
+                var chain = l.chainOfRef(f, &.{}, &.{}, true);
+                chain.nested = true;
+                return chain;
+            },
             else => return null,
         }
     }
@@ -18424,8 +18439,10 @@ pub const Lowerer = struct {
             // row's values bind, is an `if` or a `case` (version 1.38,
             // `browser-inline.md` §9, amended 2026-11-24): the row's top is
             // the branch, chosen with the row's parameters bound.
-            if (tree.kind(node) == .for_) {
-                const row_index = tree.for_(node).row;
+            // A `Show` whose body is such a lambda (version 1.39): the body's
+            // top is the branch, chosen with `v` bound.
+            if (tree.kind(node) == .for_ or tree.kind(node) == .show) {
+                const row_index = if (tree.kind(node) == .for_) tree.for_(node).row else tree.show(node).body;
                 if (tree.row(row_index).kind != .lambda) return null;
                 const body = st.built.rows[@backingInt(row_index)].body.unwrap() orelse return null;
                 // Its own `let`s run as the branch is chosen, as a hole's do.

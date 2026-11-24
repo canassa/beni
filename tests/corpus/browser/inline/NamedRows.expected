@@ -1,0 +1,943 @@
+-- load
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"0"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="">
+      </li>
+      <li>
+        <button id="pick2">"2"</button>
+        <input id="in2" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 1"</li>
+      <li>"1: 2"</li>
+      <li>"2: 3"</li>
+      <li>"3: 4"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="even">"2"</li>
+      <!---->
+      <li class="even">"4"</li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- click #pick2
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"2"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="">
+      </li>
+      <li>
+        <button id="pick2">"2"</button>
+        <input id="in2" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 1"</li>
+      <li>"1: 2"</li>
+      <li>"2: 3"</li>
+      <li>"3: 4"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="even">"2"</li>
+      <!---->
+      <li class="even">"4"</li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- click #odd1
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"1"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="">
+      </li>
+      <li>
+        <button id="pick2">"2"</button>
+        <input id="in2" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 1"</li>
+      <li>"1: 2"</li>
+      <li>"2: 3"</li>
+      <li>"3: 4"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="even">"2"</li>
+      <!---->
+      <li class="even">"4"</li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- set #in1 "one"
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"1"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick2">"2"</button>
+        <input id="in2" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 1"</li>
+      <li>"1: 2"</li>
+      <li>"2: 3"</li>
+      <li>"3: 4"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="even">"2"</li>
+      <!---->
+      <li class="even">"4"</li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"1"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick2">"2"</button>
+        <input id="in2" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 2"</li>
+      <li>"3: 1"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="even">"2"</li>
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- click #pick1
+(the DOM did not change)
+-- click #drop
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"1"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"1"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"1"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- click #odd5
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>
+-- click #one
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <em>
+        <input id="kept" .value="">
+        "1"
+      </em>
+    </div>
+    <div id="shownamed">
+      <p id="named">"named 1"</p>
+    </div>
+  </main>
+</body>
+-- set #kept "typed"
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <em>
+        <input id="kept" .value="typed">
+        "1"
+      </em>
+    </div>
+    <div id="shownamed">
+      <p id="named">"named 1"</p>
+    </div>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <b>"two 1"</b>
+    </div>
+    <div id="shownamed">
+      <p id="named">"named 1"</p>
+    </div>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <em>
+        <input id="kept" .value="">
+        "1"
+      </em>
+    </div>
+    <div id="shownamed">
+      <p id="named">"named 1"</p>
+    </div>
+  </main>
+</body>
+-- set #kept "again"
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <em>
+        <input id="kept" .value="again">
+        "1"
+      </em>
+    </div>
+    <div id="shownamed">
+      <p id="named">"named 1"</p>
+    </div>
+  </main>
+</body>
+-- click #two
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <em>
+        <input id="kept" .value="">
+        "2"
+      </em>
+    </div>
+    <div id="shownamed">
+      <p id="named">"named 2"</p>
+    </div>
+  </main>
+</body>
+-- click #one
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <em>
+        <input id="kept" .value="">
+        "1"
+      </em>
+    </div>
+    <div id="shownamed">
+      <p id="named">"named 1"</p>
+    </div>
+  </main>
+</body>
+-- click #none
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <button id="one">"one"</button>
+    <button id="two">"two"</button>
+    <button id="none">"none"</button>
+    <p id="picked">"5"</p>
+    <ul id="keyed">
+      <li>
+        <button id="pick4">"4"</button>
+        <input id="in4" .value="">
+      </li>
+      <li>
+        <button id="pick3">"3"</button>
+        <input id="in3" .value="">
+      </li>
+      <li>
+        <button id="pick1">"1"</button>
+        <input id="in1" .value="one">
+      </li>
+      <li>
+        <button id="pick5">"5"</button>
+        <input id="in5" .value="">
+      </li>
+      <li>
+        <button id="pick6">"6"</button>
+        <input id="in6" .value="">
+      </li>
+    </ul>
+    <ol id="placed">
+      <li>"0: 4"</li>
+      <li>"1: 3"</li>
+      <li>"2: 1"</li>
+      <li>"3: 5"</li>
+      <li>"4: 6"</li>
+    </ol>
+    <ul id="chosen">
+      <li class="even">"4"</li>
+      <!---->
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+      <li class="even">"6"</li>
+    </ul>
+    <div id="show">
+      <i>"nothing"</i>
+    </div>
+    <div id="shownamed"></div>
+  </main>
+</body>

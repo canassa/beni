@@ -1,17 +1,15 @@
--- A `For` whose row function is a named function, not a lambda whose body
--- is one element: the simple form (browser-inline.md §9, amended
--- 2026-11-23) writes a row in place only, class 1 (§5).
+-- A `For` whose row function is a local, not a lambda written in place or
+-- a function of the program's own module: the lowering cannot see which
+-- markup a row is (browser-inline.md §9, amended 2026-11-24), class 1 (§5).
 import Browser
 import Html exposing (Html)
 import Tea
 
 
-row : String → Html ⊤
-row s = <li>{s}</li>
-
-
 view : List String → Html ⊤
-view items = <ul><For each={items}>{row}</For></ul>
+view items =
+    row = λs → <li>{String.toUpper s}</li>
+    <ul><For each={items}>{row}</For></ul>
 
 
 main : Browser.Program

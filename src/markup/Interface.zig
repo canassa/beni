@@ -110,7 +110,14 @@ const std = @import("std");
 /// Version 1.38 asks `programBranch` and the `programBranch*` calls of a
 /// `For` whose row is a lambda whose body is an `if` or a `case`: the row's
 /// top is that branch (`browser-inline.md` §9, amended 2026-11-24).
-pub const version: Version = .{ .major = 1, .minor = 38 };
+/// Version 1.39 asks `programCallee`, `programInlineEnter` and
+/// `programInlineLeave` of a `For` or a `Show` whose row function is a
+/// named function of the program's module — the call of it with the item,
+/// which adds no step to the call path — and `programBranch` and the
+/// `programBranch*` calls of a `Show` whose body is a lambda whose body is
+/// an `if` or a `case` (`browser-inline.md` §9 and §8.2, amended
+/// 2026-11-24).
+pub const version: Version = .{ .major = 1, .minor = 39 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of

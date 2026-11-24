@@ -2952,6 +2952,8 @@ tests/corpus/browser/tea/WebSocketLifetime.beni WebSocketLifetime 68:5 #0 :: ent
 tests/corpus/browser/tea/WholeFor.beni WholeFor 68:5 #0 :: entry WholeFor.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/RowTopBranch.beni RowTopBranch 101:5 #0 :: entry RowTopBranch.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/browser/inline/WholeFor.beni WholeFor 74:5 #0 :: entry WholeFor.update model.items :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/ApiItems.beni ApiItems 91:5 #0 :: entry ApiItems.update model.log :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
+tests/corpus/browser/inline/NamedRows.beni NamedRows 109:5 #0 :: entry NamedRows.update model.rows :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/ownership/Conduit [browser-tea+everywhere] Home 135:9 #0 :: send <CompletedFeedLoad …> :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/ownership/Conduit [browser-tea+everywhere] Main 257:5 #0 :: entry Main.update model#Article.0.errors :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none
 tests/corpus/ownership/Conduit [browser-tea+everywhere] Main 257:5 #0 :: entry Main.update model#Home.0.feed#Loaded.0#Model.0.errors :: accepted :: absent  v1's entry and send demands: initialization transfer is S7, v2 makes none

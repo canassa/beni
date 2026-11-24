@@ -1,0 +1,22 @@
+# A named row's event sends its row's item.
+click #pick2
+click #odd1
+# Typed text stays with its row as the rows move.
+set #in1 "one"
+click #reverse
+click #pick1
+# A row leaves with its node; a new one comes, of the other arm.
+click #drop
+click #add
+click #add
+click #odd5
+# The `Show`'s body: an arm chosen with `v`, then the other in place.
+click #one
+set #kept "typed"
+click #bump
+click #bump
+set #kept "again"
+# Its key changes: remounted, the text thrown away.
+click #two
+click #one
+click #none

@@ -1,0 +1,128 @@
+-- A `For`'s `fallback` in a `For`'s row, in a branch's arm and in a
+-- `Show`'s body (browser-inline.md §9, amended 2026-11-24): a region of
+-- the unit where the rows stand, shown while the list is empty, its values
+-- evaluated only then — the `Debug.log` in a fallback logs only while it is
+-- shown. Its pages are `browser-tea`'s for the same source; its logs differ in
+-- when, a listed difference: every row's `set` runs at each write of what the
+-- `For` reads (§9), so a row's shown fallback logs again when another row
+-- changes, where `browser-tea` skips the row whose item is the same object.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Clear Int
+    | Fill Int
+    | Flip
+    | Bump
+
+
+type alias Group =
+    id : Int
+    items : List String
+
+
+type alias Model =
+    groups : List Group
+    open : Bool
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Clear id →
+            { model
+                | groups = List.map model.groups λg → if g.id == id then { g | items = [] } else g
+            }
+
+        Fill id →
+            { model
+                | groups =
+                    List.map model.groups λg →
+                        if g.id == id then { g | items = [ "x", "y" ] } else g
+            }
+
+        Flip →
+            { model | open = not model.open }
+
+        Bump →
+            { model | n = model.n + 1 }
+
+
+openList : Model → Html Msg
+openList model =
+    <ul>
+        <For
+            each={List.filter model.groups λg → List.length g.items > 0}
+            keyed={.id}
+            fallback={<li>{"all empty ${String.fromInt model.n}"}</li>}
+        >
+            {λg → <li>{g.id}</li>}
+        </For>
+    </ul>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="bump" onClick={Bump}>bump</button>
+        <ul id="groups">
+            <For each={model.groups} keyed={.id}>
+                {λg →
+                    <li>
+                        <button id="clear${String.fromInt g.id}" onClick={Clear g.id}>clear</button>
+                        <button id="fill${String.fromInt g.id}" onClick={Fill g.id}>fill</button>
+                        <ol>
+                            <For
+                                each={g.items}
+                                keyed={False}
+                                fallback={<li class="none">{Debug.log "empty" "none ${String.fromInt g.id}/${String.fromInt model.n}"}</li>}
+                            >
+                                {λs → <li>{s}</li>}
+                            </For>
+                        </ol>
+                        <p>
+                            <For each={g.items} keyed={False} fallback={Html.text "nothing"}>
+                                {λs → <b>{s}</b>}
+                            </For>
+                            <i>end</i>
+                        </p>
+                    </li>
+                }
+            </For>
+        </ul>
+        <div id="arm">
+            {if model.open then
+                openList model
+             else
+                <p>closed</p>
+            }
+        </div>
+        <div id="show">
+            <Show when={List.head model.groups} keyed={.id}>
+                {λg →
+                    <ul>
+                        <For each={g.items} keyed={False} fallback={<li>{"first empty"}</li>}>
+                            {λs → <li>{s}</li>}
+                        </For>
+                    </ul>
+                }
+            </Show>
+        </div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { groups = [ { id = 1, items = [ "a" ] }, { id = 2, items = [] } ]
+                , open = False
+                , n = 0
+                }
+        , update = update
+        , view = view
+        }

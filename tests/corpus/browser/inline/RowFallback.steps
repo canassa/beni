@@ -1,0 +1,14 @@
+# A row's fallback shows while its list is empty, and goes when it fills.
+click #clear1
+click #fill2
+# A write the fallback reads, while it shows and while it does not.
+click #bump
+click #fill1
+click #bump
+# A fallback in a branch's arm.
+click #flip
+click #clear1
+click #clear2
+click #bump
+click #fill2
+click #flip
