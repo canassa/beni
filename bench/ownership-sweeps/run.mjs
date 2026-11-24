@@ -101,6 +101,10 @@ async function judge(prog) {
       const where = checked.out.match(/^-- [A-Z ]+ -+ (\S+:\d+:\d+)/m)?.[1] ?? '';
       return `REFUSED ${code} ${where}`.trim();
     }
+    // A log line's `timestamp=` and each span's `label=Nms` are the clock's, not the program's: the two
+    // fields of a `logfmt` line (`core/Log.beni`) are set aside, and nothing else of it.
+    const clock = (line) => !/^timestamp=\S+ level=/.test(line) ? line
+      : line.replace(/^timestamp=\S+ /, '').replace(/ ([^\s=]+)=\d+ms(?=\s|$)/g, ' $1=<ms>');
     // A run that fails prints where it failed: a location in its own build (which differs between two
     // builds), the source line there and a caret, then the stack. The output of two failing runs is
     // compared without them, and without a log line's time.
@@ -110,22 +114,26 @@ async function judge(prog) {
       for (let i = 0; i < lines.length; i++) {
         if (/^file:\/\/\S+:\d+$/.test(lines[i])) { i += 2; continue; }
         if (/^\s*at /.test(lines[i]) || lines[i].trim() === '') continue;
-        kept.push(lines[i].replace(/timestamp=\S+ /g, '').split(tmp).join('<tmp>'));
+        kept.push(clock(lines[i]).split(tmp).join('<tmp>'));
       }
       return kept.join('\n');
     };
+    // The error a failed run ended with: its class and message, the stack and the location set aside.
+    const errorOf = (text) => text.match(/^(?:Uncaught )?([A-Za-z]*Error): (.*)$/m)?.slice(1).join(': ') ?? null;
     const verdict = async (out, oracle = plainRun) => {
       const r = await exec(out);
       if (r.timedOut) return 'TIMEOUT';
       // Both fail (a defect): what the program printed before it stopped is still judged (#2605). A
       // trap of the sanitiser is a trap; else the outputs must agree, BOTHFAIL when they do.
       if (r.code !== 0 && oracle.code !== 0) {
-        if (r.out.includes('_sanitize.mjs') && !oracle.out.includes('_sanitize.mjs')) return `TRAP ${r.out.split('\n').find((l) => /stale|sanit|identity|Error/.test(l))?.slice(0, 100) ?? ''}`.trim();
+        // The plain build throws the same error (the program's own defect, whose stack the sanitiser
+        // only happens to be on): BOTHFAIL, not a trap.
+        const same = errorOf(r.out) !== null && errorOf(r.out) === errorOf(oracle.out);
+        if (r.out.includes('_sanitize.mjs') && !same) return `TRAP ${r.out.split('\n').find((l) => /stale|sanit|identity|Error/.test(l))?.slice(0, 100) ?? ''}`.trim();
         return norm(r.out) === norm(oracle.out) ? 'BOTHFAIL' : 'DIFF';
       }
       if (r.code !== 0) return `TRAP ${r.out.split('\n').find((l) => /stale|sanit|identity|Error/.test(l))?.slice(0, 100) ?? ''}`.trim();
-      // A log line's time is the clock's, not the program's.
-      const stamp = (text) => text.replace(/timestamp=\S+ /g, '');
+      const stamp = (text) => text.split('\n').map(clock).join('\n');
       return stamp(r.out) === stamp(oracle.out) ? 'SAME' : 'DIFF';
     };
     const first = await verdict('s');
