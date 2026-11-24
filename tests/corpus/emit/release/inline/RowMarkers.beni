@@ -1,0 +1,39 @@
+-- emit/release/inline: a branch region and a `For` in a `For`'s row, each
+-- followed by text (browser-inline.md §9, amended 2026-11-24): the row's
+-- template holds an empty comment, `<!>`, after each, which `make` finds by
+-- its place among its parent's children before it makes any text; the
+-- region's state and the `For`'s rows stand before it. The page is
+-- `browser/inline/RowMarkers`.
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    on : Bool
+    parts : List String
+
+
+view : List Row → Html ⊤
+view rows =
+    <ul>
+        <For each={rows} keyed={.id}>
+            {λr →
+                <li>
+                    {r.id}
+                    {if r.on then <b>on</b> else <i>off</i>}
+                    after
+                    <p><For each={r.parts} keyed={False}>{λs → <s>{s}</s>}</For>end</p>
+                </li>
+            }
+        </For>
+    </ul>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → [ { id = 1, on = False, parts = [ "a" ] } ]
+        , update = λ_ m → m
+        , view = view
+        }

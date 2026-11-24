@@ -854,6 +854,19 @@ beni over `Js` in `Inline.beni`:
   comment is written yet; one inside a control whose value changes. `ForBeforeText/`,
   `ShowBeforeText/`, `RegionBeforeText/` and `HelperBranchBeforeText/` build and are withdrawn;
   the page is `browser/inline/MarkerPlaces`.
+  *Amended 2026-11-24 (#2625, #966): in a unit too.* A `For` or a branch region in a `For`'s row,
+  in a region's arm or in a `Show`'s body, followed by anything but an element, stands before an
+  empty comment of its own in the unit's template (`RowPlan.markers`), `<!>` as on the page.
+  `make` finds each once, as child `k` of its element (`childNodes[k]`, a run of texts one node,
+  counted over the template's children: a text that `make` makes is not one), before it makes
+  any text; a text before the comment is made before it (`anchor_marker`), one after it before
+  the next element or at the end, so the order is the source's whichever arm shows and however
+  many rows the inner `For` has. A region's state is made before the comment; a `For`'s comment
+  is kept as the row's `c<k>`, before which its `set` puts the rows and its fallback's region.
+  A unit with no such shape builds to the same bytes. What stays refused: a `Show` in a unit (as
+  before), and one inside a control whose value changes. `RowBranchBeforeText/` builds and is
+  withdrawn; the page is `browser/inline/RowMarkers` (checked against `browser-tea` for the same
+  source, its comments apart), the golden `emit/release/inline/RowMarkers`.
 - **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
   markup type, and still compiles markup that a program holds in a name, passes or returns, when
   the compiler can see which root the name stands for. Such a name is a **name for a markup
@@ -2244,7 +2257,7 @@ The simple form is S2c's row unit with none of S2d's edits:
   the simple form does not apply them. *Amended 2026-11-24 (§8.2, *What follows a `For`, a region
   or a `Show`*):* a `For` of the page followed by text, a hole or another `For` stands before an
   empty comment of its own and is compiled; `ForBeforeText/` is withdrawn. In a row it stays
-  refused.
+  refused. *Amended 2026-11-24 (§8.2, *in a unit too*):* in a row too.
 - **A `fallback`** (*amended 2026-11-24, #2637, #966*; `language.md` §11.9: shown when the list
   is empty). A `For` of the page with a `fallback` shows it in a branch region of its own (§8.2, *A
   branch region*), made at the mount where the rows stand — before the element after the `For`,
@@ -2282,7 +2295,7 @@ The simple form is S2c's row unit with none of S2d's edits:
   `For` reads — and its arm made afresh only when the arm changes. Every other limit of a
   region's (an arm of more than one node, a choice that may have an effect, a region followed
   by text) stays class 1 (`build/bad/inline/Region*/`,
-  `RowBranchBeforeText/`); a row whose top is a branch is compiled since 2026-11-24 (below). Pages `browser/inline/RowBranchCase`, and `browser/tea/RowBranch`
+  `RowBranchBeforeText/`, compiled since 2026-11-24, §8.2, *in a unit too*); a row whose top is a branch is compiled since 2026-11-24 (below). Pages `browser/inline/RowBranchCase`, and `browser/tea/RowBranch`
   copied beside it; `browser/tea/TodoMVC` now passes its rows and stops at a text hole beside an
   element (§8.7).
 - **A row whose top is a branch** (*amended 2026-11-24, #2637, #966*). A row function that is a

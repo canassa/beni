@@ -1,0 +1,557 @@
+-- load
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <!---->
+          "0 parts"
+        </p>
+        <p>
+          <!---->
+          "end"
+          <u>"empty"</u>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <b>"on"</b>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <b>"yes"</b>
+          <!---->
+          "1 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <p>"shut"</p>
+    </div>
+  </main>
+</body>
+-- click #flip1
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <b>"on"</b>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <b>"yes"</b>
+          <!---->
+          "0 parts"
+        </p>
+        <p>
+          <!---->
+          "end"
+          <u>"empty"</u>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <b>"on"</b>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <b>"yes"</b>
+          <!---->
+          "1 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <p>"shut"</p>
+    </div>
+  </main>
+</body>
+-- click #flip2
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <b>"on"</b>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <b>"yes"</b>
+          <!---->
+          "0 parts"
+        </p>
+        <p>
+          <!---->
+          "end"
+          <u>"empty"</u>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <!---->
+          "1 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <p>"shut"</p>
+    </div>
+  </main>
+</body>
+-- click #grow1
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <b>"on"</b>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <b>"yes"</b>
+          <!---->
+          "1 parts"
+        </p>
+        <p>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <!---->
+          "1 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <p>"shut"</p>
+    </div>
+  </main>
+</body>
+-- click #grow1
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <b>"on"</b>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <b>"yes"</b>
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"p"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"p"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <!---->
+          "1 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <p>"shut"</p>
+    </div>
+  </main>
+</body>
+-- click #grow2
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <b>"on"</b>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <b>"yes"</b>
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"p"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"p"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <p>"shut"</p>
+    </div>
+  </main>
+</body>
+-- click #flip1
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"p"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"p"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <p>"shut"</p>
+    </div>
+  </main>
+</body>
+-- click #open
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"p"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"p"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <section>
+        <b>"1"</b>
+        <!---->
+        "tail"
+      </section>
+    </div>
+  </main>
+</body>
+-- click #open
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <ul>
+      <li>
+        <button id="flip1">"flip"</button>
+        <button id="grow1">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"1"</em>
+          "1"
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"p"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"p"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+      <li>
+        <button id="flip2">"flip"</button>
+        <button id="grow2">"grow"</button>
+        <p>
+          "before"
+          <i>"off"</i>
+          <!---->
+          "after"
+        </p>
+        <p>
+          <em>"2"</em>
+          "2"
+          <!---->
+          "2 parts"
+        </p>
+        <p>
+          <s>"a"</s>
+          <s>"p"</s>
+          <!---->
+          "end"
+          <q>"a"</q>
+          <q>"p"</q>
+          <!---->
+          "last"
+        </p>
+      </li>
+    </ul>
+    <div>
+      <p>"shut"</p>
+    </div>
+  </main>
+</body>
