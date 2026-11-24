@@ -1,0 +1,47 @@
+--! A counter whose buttons send a constructor alone, a constructor applied
+--! to a value of the model, and the message a function of the event makes.
+
+import Html exposing (Event, Html)
+
+
+pub type alias Model =
+    count : Int
+    step : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = 3, step = 2 }
+
+
+pub type Msg
+    = Inc
+    | Add Int
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+        Add n →
+            { model | count = model.count + n }
+
+
+back : Event → Msg
+back _ = Add (0 - 1)
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="counter">
+        <output>{model.count}</output>
+        <button data-role="inc" onClick={Inc}>+1</button>
+        <button data-role="add" onClick={Add model.step}>+step</button>
+        <button data-role="back" onClick={back}>-1</button>
+        {if model.count ≥ 6 then
+            <button data-role="reset" onClick={Add (0 - model.count)}>reset</button>
+         else
+            <></>
+        }
+    </section>

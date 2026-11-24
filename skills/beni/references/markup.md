@@ -72,8 +72,8 @@ message. Which one is decided by the handler's type.
   then return the message. `Html.key event`, `Html.targetValue event` and `Html.targetChecked event`
   read it. These two give `Maybe String` and `Maybe Bool`: `Nothing` on a `<div>`, for example.
 - A handler must not wait. It returns a message and does nothing else.
-- On `browser-inline`, a handler in the program's own markup can be any function or message
-  value. In another module's markup, it must be a constructor that takes the payload or nothing.
+- On `browser-inline`, a handler can be any function or message value. In another module's
+  markup, a handler that is not a constructor alone must not read a `let` of that module's `view`.
 
 ```beni platform=html
 import Html exposing (Html)

@@ -1,8 +1,10 @@
--- `Pages.view`'s button sends `Go 1`, a constructor applied to a constant.
--- Another module's events are wired by that module's piece, which hands
--- the handler a constructor's fields from the event alone
--- (docs/design/browser-inline.md §8.4): a limit of the compiler, class 4
--- (§5), reported at the event.
+-- `Pages.view`'s button sends `Go target`, and `target` is a `let` of that
+-- `view`. An event of another module's markup whose handler value is not one
+-- constructor goes through the dispatcher, its value read at the event
+-- (docs/design/browser-inline.md §8.4, amended 2026-11-24). A `let` such a
+-- value reads is a memo node, as in the program's own `view` (§8.2), and
+-- another module's markup has none yet: a limit of the compiler, class 4
+-- (§5), reported at the event, never the `let` computed again at the event.
 import Browser
 import Html exposing (Html)
 import Pages

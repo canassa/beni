@@ -17585,6 +17585,26 @@ pub const Lowerer = struct {
         return value;
     }
 
+    /// `cx.programPieceWrap`: `msg` under the constructor of each map around
+    /// hole `node`, the innermost first; null when a map is not a
+    /// constructor of one field.
+    fn programPieceWrap(l: *Lowerer, node: beni_markup.Node.Index, msg: Node.Index) Allocator.Error!?Node.Index {
+        const p = l.mk.?.pos;
+        const found = l.holePiece(node) orelse return null;
+        var value = msg;
+        var k = found.chain.maps.len;
+        while (k > 0) {
+            k -= 1;
+            // A constructor alone, which `ctorShaped` gives only for one of
+            // one field (`pieceLayers`' rule).
+            const shape = l.ctorShaped(found.chain.maps[k]) orelse return null;
+            if (shape.args.len != 0) return null;
+            const rt = l.ctorRepOf(shape.ctor) orelse return null;
+            value = try l.ctorValue(rt[0], rt[1], &.{value}, p);
+        }
+        return value;
+    }
+
     /// The interface row of this module's constructor `index`, by name.
     fn ownCtorRow(l: *Lowerer, index: u32) u32 {
         if (l.in.module.int() >= l.in.interfaces.len or index >= l.bir.ctors.len) return Direct.Ctor.none;
@@ -21627,6 +21647,11 @@ const markup_vtable: beni_markup.VTable = struct {
         return expr(try lowerer(impl).programPieceMessage(n, ctor, key, @ptrCast(fields)));
     }
 
+    fn programPieceWrap(impl: *anyopaque, n: M.Node.Index, msg: M.Expr) E!?M.Expr {
+        const wrapped = (try lowerer(impl).programPieceWrap(n, node(msg))) orelse return null;
+        return expr(wrapped);
+    }
+
     fn programMessageFields(impl: *anyopaque, into: M.Block, v: M.Value.Index, payload: ?M.Expr) E!M.Program.Message {
         const l = lowerer(impl);
         var stmts: StmtList = .empty;
@@ -22103,6 +22128,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .piece_view_enter = pieceViewEnter,
         .program_piece_key = programPieceKey,
         .program_piece_message = programPieceMessage,
+        .program_piece_wrap = programPieceWrap,
         .program_dispatch = programDispatch,
         .reaches_debug = reachesDebug,
         .program_list = programList,

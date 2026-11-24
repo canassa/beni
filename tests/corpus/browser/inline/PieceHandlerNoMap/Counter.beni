@@ -1,0 +1,45 @@
+--! A counter whose `Inc` is sent by a constructor alone and by a function
+--! of the event, and whose `Add` is a constructor applied to a value of
+--! the model.
+
+import Html exposing (Event, Html)
+
+
+pub type alias Model =
+    count : Int
+    step : Int
+
+
+pub type Msg
+    = Inc
+    | Add Int
+    | Faster
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+        Add n →
+            { model | count = model.count + n }
+
+        Faster →
+            { model | step = model.step * 2 }
+
+
+pick : Event → Msg
+pick _ = Inc
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <button id="inc" onClick={Inc}>inc</button>
+        <button id="pick" onClick={pick}>pick</button>
+        <button id="add" onClick={Add model.step}>add</button>
+        <button id="faster" onClick={Faster}>faster</button>
+        <output id="count">{String.fromInt model.count}</output>
+        <output id="step">{String.fromInt model.step}</output>
+    </section>

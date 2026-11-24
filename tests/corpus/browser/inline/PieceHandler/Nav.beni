@@ -1,0 +1,82 @@
+--! A widget whose events have each kind of handler value: a function of
+--! the event that prevents its default, a constructor alone, a constructor
+--! applied to a constant and to a value of the model, a lambda of an
+--! input's text, a handler in an arm of an `if`, and a lambda on a form's
+--! `onSubmit`, an event that declares `preventDefault`. The input's lambda
+--! sends `Handled` for a text of more than three characters, whose arm
+--! leaves the text as it was: the control then shows the model's text
+--! again.
+
+import Html exposing (Event, Html)
+
+
+pub type alias Model =
+    page : Int
+    text : String
+    handled : Int
+    open : Bool
+
+
+pub init : ⊤ → Model
+init ⊤ = { page = 1, text = "", handled = 0, open = False }
+
+
+pub type Msg
+    = Handled
+    | Next
+    | Go Int
+    | Typed String
+    | Toggle
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Handled →
+            { model | handled = model.handled + 1 }
+
+        Next →
+            { model | page = model.page + 1 }
+
+        Go n →
+            { model | page = n }
+
+        Typed text →
+            { model | text = text }
+
+        Toggle →
+            { model | open = not model.open }
+
+
+handle : Event → Msg
+handle event =
+    Html.preventDefault event
+    Handled
+
+
+pub view : Model → Html Msg
+view model =
+    <nav>
+        <a id="handled" href="/h" onClick={handle}>handled</a>
+        <a id="plain" href="/p">plain</a>
+        <button id="next" onClick={Next}>next</button>
+        <button id="first" onClick={Go 1}>first</button>
+        <button id="twice" onClick={Go (model.page * 2)}>twice</button>
+        <input
+            id="shout"
+            value={model.text}
+            onInput={λtext → if String.length text > 3 then Handled else Typed (String.toUpper text)}
+        />
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        {if model.open then
+            <button id="jump" onClick={Go (model.page + 10)}>jump</button>
+         else
+            <></>
+        }
+        <form id="form" onSubmit={λ_ → Go (model.page + 100)}>
+            <button id="submit">submit</button>
+        </form>
+        <output id="page">{String.fromInt model.page}</output>
+        <output id="text">{model.text}</output>
+        <output id="handled">{String.fromInt model.handled}</output>
+    </nav>

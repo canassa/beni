@@ -1,4 +1,4 @@
---! A pager whose buttons send a page number.
+--! A pager whose button sends the next page number, a `let` of its view.
 
 import Html exposing (Html)
 
@@ -24,7 +24,8 @@ update msg model =
 
 pub view : Model → Html Msg
 view model =
+    target = Debug.log "target" (model.page + 1)
     <nav>
         <output>{model.page}</output>
-        <button onClick={Go 1}>First</button>
+        <button onClick={Go target}>Next</button>
     </nav>

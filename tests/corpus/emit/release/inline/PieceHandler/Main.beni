@@ -1,0 +1,49 @@
+-- An event of another module's markup whose handler value is not one
+-- constructor (docs/design/browser-inline.md §8.4, amended 2026-11-24):
+-- `Pages.view`'s link has a function of the event as its handler, and its
+-- second button sends `Go 1`. The root's factory takes `send` after its
+-- handler for `Next`, and wires each such event `on(E[n], send, type,
+-- make)`, where `make` gives the message of `Pages.Msg`. The program hands
+-- `send` its dispatcher behind `PagesMsg`, and so has a named handler for
+-- each key. `Next`, the constructor alone, keeps the handler it had.
+import Browser
+import Html exposing (Html)
+import Pages
+import Tea
+
+
+type alias Model =
+    pages : Pages.Model
+    seen : Int
+
+
+type Msg
+    = PagesMsg Pages.Msg
+    | Seen
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        PagesMsg sub →
+            { model | pages = Pages.update sub model.pages }
+
+        Seen →
+            { model | seen = model.seen + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {Html.map (Pages.view model.pages) PagesMsg}
+        <button onClick={Seen}>{model.seen}</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { pages = Pages.init ⊤, seen = 0 }, update = update, view = view }
+        )
+        "root"
