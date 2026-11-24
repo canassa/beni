@@ -864,7 +864,10 @@ beni over `Js` in `Inline.beni`:
   many rows the inner `For` has. A region's state is made before the comment; a `For`'s comment
   is kept as the row's `c<k>`, before which its `set` puts the rows and its fallback's region.
   A unit with no such shape builds to the same bytes. What stays refused: a `Show` in a unit (as
-  before), and one inside a control whose value changes. `RowBranchBeforeText/` builds and is
+  before); one inside a control whose value changes; and one in a `pre` or a `listing` whose first
+  text begins with a newline, which the parser drops, so the comment would not be where its place
+  says (`RowMarkerPre/`; the review of this slice: a `TypeError` in Chrome, which happy-dom, keeping
+  the newline, does not show). `RowBranchBeforeText/` builds and is
   withdrawn; the page is `browser/inline/RowMarkers` (checked against `browser-tea` for the same
   source, its comments apart), the golden `emit/release/inline/RowMarkers`.
 - **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
@@ -2084,7 +2087,8 @@ whose arm calls a helper or has `let`s a hole reads, is a branch region, and `Wh
 page `browser/inline/RegionEmptyArm`. What a region refuses is §8.2's list, in
 `RowBranchBeforeText/` (*amended 2026-11-23:* it was `RegionInRow/`, which §9 now compiles),
 `RegionSelectorEffect/`, `RegionBeforeText/`, `RegionInEagerArm/`,
-`RegionArmStatements/` and `build/bad/prerender/ViewBranch/`.
+`RegionArmStatements/` and `build/bad/prerender/ViewBranch/`. *Amended 2026-11-24 (§8.2, *in a unit
+too*):* `RowBranchBeforeText/` builds and is withdrawn, as `RegionBeforeText/` was.
 
 *Amended 2026-11-23 (§8.2, *A class or style list, …*, #2499, #2635):* the row *an attribute
 that changes and is not a DOM property* now holds only for a value that is not a `String` or a

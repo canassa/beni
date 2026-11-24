@@ -1805,7 +1805,9 @@ pub const Context = struct {
     /// 1.9, inside `Lowering.program` only: what an `html` hole or a
     /// component node of markup the program writes calls, when the
     /// lowering may write it in place (`Program.Callee`); null when the
-    /// node is not a call.
+    /// node is not a call. 1.39: also of a `For` or a `Show` whose row
+    /// function is a named function: the call of it with the item, which
+    /// `programInlineEnter` enters adding no step to the call path.
     pub fn programCallee(cx: *Context, node: Node.Index) ?Program.Callee {
         return cx.vtable.program_callee(cx.impl, node);
     }
