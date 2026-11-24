@@ -1,0 +1,22 @@
+-- The safe twin of `TodoArmAliasLive`: one arm of `pick` is `Debug.todo`,
+-- which never answers, so its result holds no cell (`Js.throw` is `fresh
+-- hollow a`, `ownership-v3-kernel.md` §6 rule 10, *A call that never
+-- answers*), and the other arm answers the list once. v3 accepts the push in
+-- place.
+import List
+import Node exposing (Program)
+import String
+
+
+pick : Int, List Int → List Int × List Int
+pick n xs = if n == 0 then Debug.todo "no" else ( xs, [ 5 ] )
+
+
+run : List Int → String
+run xs =
+    ( a, b ) = pick 1 xs
+    String.join (List.map (List.append (List.push a 9) b) String.fromInt) ","
+
+
+main : Program
+main = Node.printLines [ run [ 1, 2 ] ]
