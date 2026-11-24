@@ -2414,7 +2414,13 @@ elements are its values.
      more than once, a holder that loses it) publishes `single`. A captured cell
      that the function answers is then at one place of the owner's answer for each call, whatever
      made it (`answerSrcs`): the owner's answer holds what the function answers where its own walk
-     put it, and its walk derived `twice` there. A caller that holds two such answers holds two
+     put it, and its walk derived `twice` there. The function's own walk reads each capture as a
+     parameter apart from the others, which its caller does not promise: two captures can be one
+     list (`ys = xs`, then `λ⊤ → [ xs, ys ]`), and a capture can be what the holder hands a
+     parameter. So the caller compares the atoms of such a capture with those of every other source
+     of the location, and of the capture with itself, and where they can be one cell the location
+     is `twice`, as before. *The first review of #2657 found six programs where two names of one
+     list were captured and written in place twice; they are refused, `run/CallbackRunTwoNamesLive`.* A caller that holds two such answers holds two
      answers of the owner, whose atoms it compares (§4.4). A cell's row keeps its own `once`
      (§13 item 2): what a cell keeps outlives the call, so a capture from outside the run is still
      at two places of the contents.

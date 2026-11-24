@@ -13312,96 +13312,134 @@ fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u3
     const m = f.m;
     const fnc = use.fnc;
     const lc = code.contract;
-    for (lc.res[k]) |ls| switch (ls.kind) {
-        // A cell the function made: one root at this holder for its name (kernel §4.2).
-        .fresh => try f.freshAtom(use.key, code.id(), f.m.isDraft(lc), ls.a, ls.e != 0, use.site.inst, &f.atoms),
-        .outside => try f.atoms.append(f.gpa, outside_atom),
-        .twice => st.twice = true,
-        .answer => {
-            // The answer of a function that the known function captured:
-            // that function is in a location of this one.
-            if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps or ls.a >= lc.arity) {
-                try f.lostAnswer(use, st);
-                continue;
-            }
-            const lf = lc.fns[ls.a] orelse {
-                try f.lostAnswer(use, st);
-                continue;
-            };
-            const inner = try f.innerUse(code, ls.a, lf, use);
-            const outer = st.suffix;
-            const outer_whole = st.whole;
-            st.suffix = &.{};
-            st.whole = true;
-            try f.answerOf(try f.capVal(code, ls.a - code.own_params), &inner, ls.e, st, depth + 1);
-            st.suffix = outer;
-            st.whole = outer_whole;
-        },
-        .param => {
-            if (ls.a >= code.own_params) {
-                // A captured value in the answer: each run answers the
-                // same cell, so two runs can answer one cell. The answer
-                // holds it. A holder that runs the function once in the call
-                // (`Fn.once`) answers a cell this frame made in its run once:
-                // another run of this frame makes another (kernel §13 item 2).
-                // A walked holder that runs it at most once and hands it on
-                // to nothing (`Fn.single`) answers it at one place of its
-                // own answer for each call, whatever made it (kernel §12
-                // item 8).
-                if (ls.a - code.own_params < code.ncaps) {
-                    const at = f.atoms.items.len;
-                    _ = try f.argLeaves(try f.capVal(code, ls.a - code.own_params), lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
-                    const own_run = fnc.single or fnc.once and for (f.atoms.items[at..]) |a| {
-                        const rk = f.roots.items[a.root].kind;
-                        if (rk != .local and rk != .fresh) break false;
-                    } else true;
-                    if (!own_run) st.twice = true;
-                } else {
-                    st.twice = true;
+    // The atoms of each source, and whether it is a capture that a holder
+    // which runs the function once (`Fn.single`) answers at one place: such
+    // a capture is one cell at two places where another source of the
+    // location can be that cell (two captures of one list, a capture and
+    // what the holder hands a parameter), which the function's own walk,
+    // reading each capture as a parameter apart from the others, does not
+    // see (kernel §12 item 8).
+    var parts: std.ArrayList(struct { start: usize, end: usize, single: bool }) = .empty;
+    defer parts.deinit(f.gpa);
+    var part_start: usize = f.atoms.items.len;
+    var part_single = false;
+    for (lc.res[k], 0..) |ls, li| {
+        if (li != 0) try parts.append(f.gpa, .{ .start = part_start, .end = f.atoms.items.len, .single = part_single });
+        part_start = f.atoms.items.len;
+        part_single = false;
+        switch (ls.kind) {
+            // A cell the function made: one root at this holder for its name (kernel §4.2).
+            .fresh => try f.freshAtom(use.key, code.id(), f.m.isDraft(lc), ls.a, ls.e != 0, use.site.inst, &f.atoms),
+            .outside => try f.atoms.append(f.gpa, outside_atom),
+            .twice => st.twice = true,
+            .answer => {
+                // The answer of a function that the known function captured:
+                // that function is in a location of this one.
+                if (ls.a < code.own_params or ls.a - code.own_params >= code.ncaps or ls.a >= lc.arity) {
                     try f.lostAnswer(use, st);
+                    continue;
                 }
-                continue;
-            }
-            // What the holder hands that parameter.
-            var slots: std.ArrayList(Slot) = .empty;
-            defer slots.deinit(f.gpa);
-            // The answer entry is at the result entry's location, or
-            // below it: the parameter's cells at the same place.
-            var rel: ?[]const u64 = null;
-            const kloc = m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc;
-            if (ae) |ae_| {
-                const aloc = m.loc.layoutEntries(fnc.layouts[fnc.arity])[ae_].loc;
-                if (cv < Loc.all and m.loc.isPrefix(kloc, aloc)) {
-                    try f.suffixOf(aloc, kloc, psuffix);
-                    rel = try f.gpa.dupe(u64, psuffix.items);
-                }
-            }
-            if (!try f.slotsOf(use, ls.a, lc.layouts[ls.a], ls.e, rel, &slots)) {
-                try f.lostAnswer(use, st);
-                continue;
-            }
-            var sink: FlatSink = .{ .st = st, .depth = depth };
-            const wide = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].kind.wide();
-            for (slots.items) |slot| {
-                // The holder can hand one cell to two calls: two answers can be that cell.
-                if (!slot.free) st.twice = true;
-                // The part of what is handed that the function's parameter entry is.
-                const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, psuffix);
-                // The parameter's entry is at that part, or below it: what is
-                // handed at that place, not every cell below it (kernel §13 item 2).
-                const exact = fnc.once and !wide and slot.fe != none and blk: {
-                    const floc = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc;
-                    const uloc = m.loc.layoutEntries(fnc.layouts[ls.a])[slot.fe].loc;
-                    break :blk uloc == floc or m.loc.isPrefix(uloc, floc);
+                const lf = lc.fns[ls.a] orelse {
+                    try f.lostAnswer(use, st);
+                    continue;
                 };
-                for (slot.srcs) |ss| {
-                    f.resolve_exact = exact;
-                    defer f.resolve_exact = false;
-                    try f.resolve(use, ss, part, wide, &sink, 0);
+                const inner = try f.innerUse(code, ls.a, lf, use);
+                const outer = st.suffix;
+                const outer_whole = st.whole;
+                st.suffix = &.{};
+                st.whole = true;
+                try f.answerOf(try f.capVal(code, ls.a - code.own_params), &inner, ls.e, st, depth + 1);
+                st.suffix = outer;
+                st.whole = outer_whole;
+            },
+            .param => {
+                if (ls.a >= code.own_params) {
+                    // A captured value in the answer: each run answers the
+                    // same cell, so two runs can answer one cell. The answer
+                    // holds it. A holder that runs the function once in the call
+                    // (`Fn.once`) answers a cell this frame made in its run once:
+                    // another run of this frame makes another (kernel §13 item 2).
+                    // A walked holder that runs it at most once and hands it on
+                    // to nothing (`Fn.single`) answers it at one place of its
+                    // own answer for each call, whatever made it (kernel §12
+                    // item 8).
+                    if (ls.a - code.own_params < code.ncaps) {
+                        const at = f.atoms.items.len;
+                        const cap_dup = try f.argLeaves(try f.capVal(code, ls.a - code.own_params), lc.layouts[ls.a], ls.e, &.{}, false, &f.atoms);
+                        const own_run = fnc.once and for (f.atoms.items[at..]) |a| {
+                            const rk = f.roots.items[a.root].kind;
+                            if (rk != .local and rk != .fresh) break false;
+                        } else true;
+                        if (own_run) {} else if (fnc.single) {
+                            // At one place for each call, unless the capture
+                            // holds one cell twice there or another source is it.
+                            part_single = true;
+                            if (cap_dup) st.twice = true;
+                        } else st.twice = true;
+                    } else {
+                        st.twice = true;
+                        try f.lostAnswer(use, st);
+                    }
+                    continue;
                 }
+                // What the holder hands that parameter.
+                var slots: std.ArrayList(Slot) = .empty;
+                defer slots.deinit(f.gpa);
+                // The answer entry is at the result entry's location, or
+                // below it: the parameter's cells at the same place.
+                var rel: ?[]const u64 = null;
+                const kloc = m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc;
+                if (ae) |ae_| {
+                    const aloc = m.loc.layoutEntries(fnc.layouts[fnc.arity])[ae_].loc;
+                    if (cv < Loc.all and m.loc.isPrefix(kloc, aloc)) {
+                        try f.suffixOf(aloc, kloc, psuffix);
+                        rel = try f.gpa.dupe(u64, psuffix.items);
+                    }
+                }
+                if (!try f.slotsOf(use, ls.a, lc.layouts[ls.a], ls.e, rel, &slots)) {
+                    try f.lostAnswer(use, st);
+                    continue;
+                }
+                var sink: FlatSink = .{ .st = st, .depth = depth };
+                const wide = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].kind.wide();
+                for (slots.items) |slot| {
+                    // The holder can hand one cell to two calls: two answers can be that cell.
+                    if (!slot.free) st.twice = true;
+                    // The part of what is handed that the function's parameter entry is.
+                    const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, psuffix);
+                    // The parameter's entry is at that part, or below it: what is
+                    // handed at that place, not every cell below it (kernel §13 item 2).
+                    const exact = fnc.once and !wide and slot.fe != none and blk: {
+                        const floc = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc;
+                        const uloc = m.loc.layoutEntries(fnc.layouts[ls.a])[slot.fe].loc;
+                        break :blk uloc == floc or m.loc.isPrefix(uloc, floc);
+                    };
+                    for (slot.srcs) |ss| {
+                        f.resolve_exact = exact;
+                        defer f.resolve_exact = false;
+                        try f.resolve(use, ss, part, wide, &sink, 0);
+                    }
+                }
+            },
+        }
+    }
+    if (lc.res[k].len != 0) try parts.append(f.gpa, .{ .start = part_start, .end = f.atoms.items.len, .single = part_single });
+    const n = f.atoms.items.len;
+    for (parts.items, 0..) |x, i| {
+        if (!x.single) continue;
+        for (parts.items, 0..) |y, j| {
+            if (i == j) continue;
+            // Each pair is work (kernel §8); past the budget the two share a cell.
+            if (f.charge(1)) {
+                st.twice = true;
+                return;
             }
-        },
-    };
+            if (f.dupOverlap(f.atoms.items[@min(x.start, n)..@min(x.end, n)], f.atoms.items[@min(y.start, n)..@min(y.end, n)])) {
+                st.twice = true;
+                return;
+            }
+        }
+    }
 }
 
 /// Each cell that the answer of the function value `v`, in the location of `use`, can hold escapes at the use's site.

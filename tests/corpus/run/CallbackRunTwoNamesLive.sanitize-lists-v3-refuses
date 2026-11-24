@@ -1,0 +1,2 @@
+# hold runs its function once, but the function captures one list under two names: the push of each element is refused (ownership-v3-kernel.md §12 item 8).
+24:12 list_still_used call
