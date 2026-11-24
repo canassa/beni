@@ -969,6 +969,12 @@ const RowPlan = struct {
     /// unit, null for `<></>` or an arm no value takes; `html` and `ops` are
     /// then empty, and the row's node is the shown arm's.
     branch: ?[]const ?RegionUse.Arm = null,
+    /// The empty comments of the unit's template (§8.2 and §9, amended
+    /// 2026-11-24, *What follows a `For`, a region or a `Show`*): each a
+    /// child of the element at `parent` (null: the top element), found by
+    /// `make` before it makes any text; a `For`, a region or a text stands
+    /// before the one its op names (`marker`, `anchor_marker`).
+    markers: []const RowMarker = &.{},
     /// A row function that is a named function of the program's module
     /// (§9, amended 2026-11-24): its `set` enters the call of it with the
     /// item and the position (`programInlineEnter` of the `For` or the
@@ -998,7 +1004,7 @@ const RowOp = struct {
         /// holes: `make` creates it, before the element child `anchor`
         /// (null: at the end), and `set` writes a hole's, kept as the row's
         /// `t<slot>`. `value` null: a constant text, `text`.
-        child_text: struct { anchor: ?u32, slot: u32, value: ?m.Value.Index, text: []const u8, number: bool },
+        child_text: struct { anchor: ?u32, slot: u32, value: ?m.Value.Index, text: []const u8, number: bool, anchor_marker: ?u32 = null },
         /// An event: `set` keeps its handler value in the row's `h<slot>`,
         /// which the listener `make` wired reads at the event.
         event: struct { item: m.Item, index: u32, slot: u32 },
@@ -1006,16 +1012,20 @@ const RowOp = struct {
         /// Its `fallback` (§9, amended 2026-11-24), unless none or `<></>`:
         /// its unit, shown while the list is empty in a region where the
         /// rows stand, whose state `make` keeps as the row's `g<slot>`.
-        rows: struct { node: m.Node.Index, plan: *const RowPlan, end: ?u32, fallback: ?RowFallback = null },
+        rows: struct { node: m.Node.Index, plan: *const RowPlan, end: ?u32, fallback: ?RowFallback = null, marker: ?u32 = null },
         /// A branch region in the element, before the element at `end` or
         /// at its end (§8.2, amended 2026-11-23): `make` keeps its state as
         /// the row's `g<slot>`, and `set` shows the arm its preparation
         /// chose.
-        region: struct { node: m.Node.Index, arms: []const ?RegionUse.Arm, end: ?u32, slot: u32, helper: bool = false },
+        region: struct { node: m.Node.Index, arms: []const ?RegionUse.Arm, end: ?u32, slot: u32, helper: bool = false, marker: ?u32 = null },
     },
 };
 
 const RowFallback = struct { arm: RegionUse.Arm, slot: u32 };
+
+/// An empty comment of a unit's template, child `index` of the element at
+/// `parent` as the parser makes its children (`domIndex`).
+const RowMarker = struct { parent: ?u32, index: u32 };
 
 /// Where the rows of the `For` at `children[i]` stand, in element `e`:
 /// before the element after it, whose place is `next` — the place the
@@ -1106,6 +1116,11 @@ const RowBuild = struct {
     slots: u32 = 0,
     texts: u32 = 0,
     regions: u32 = 0,
+    markers: std.ArrayList(RowMarker) = .empty,
+    /// The op of a `For` or a region just planned stands before a comment
+    /// the element's walk writes after it, since what follows is not an
+    /// element (`RowBuild.placeMarker`).
+    marker_wanted: ?usize = null,
     /// The unit is an arm of a branch region, not a `For`'s row: a branch
     /// in it is a region of its own (§8.2, amended 2026-11-23).
     arm: bool = false,
@@ -1219,7 +1234,7 @@ const RowBuild = struct {
             }
         } else false;
         const p = try pg.a().create(RowPlan);
-        p.* = .{ .html = out.items, .elements = elements, .ops = b.ops.items, .events = b.events, .stateful = b.stateful };
+        p.* = .{ .html = out.items, .elements = elements, .ops = b.ops.items, .events = b.events, .stateful = b.stateful, .markers = b.markers.items };
         return p;
     }
 
@@ -1306,10 +1321,16 @@ const RowBuild = struct {
         for (children, 0..) |child, ci| switch (tree.kind(child)) {
             .for_ => {
                 if (b.under_control != 0) return later(cx, child, controlled_for);
-                const end = try forEnd(pg, e, children, ci, b.count);
+                // Before the element after it, at the end, or before an empty
+                // comment of its own when anything else follows (§9, amended
+                // 2026-11-24); `forEnd` refuses one beside a control's value.
+                const before_marker = ci + 1 != children.len and tree.kind(children[ci + 1]) != .element;
+                const end = try forEnd(pg, e, if (before_marker) children[0 .. ci + 1] else children, ci, b.count);
                 const p = try plan(pg, child, inner);
                 try b.ops.append(pg.a(), .{ .target = target, .what = .{ .rows = .{ .node = child, .plan = p, .end = end, .fallback = try b.fallback(child, inner) } } });
                 b.events = b.events or p.events;
+                if (before_marker) b.marker_wanted = b.ops.items.len - 1;
+                try b.placeMarker(target, &out, &pending);
                 b.stateful = b.stateful or p.stateful;
             },
             .text => {
@@ -1334,6 +1355,7 @@ const RowBuild = struct {
                 if (!textHole(h.kind)) {
                     if (!b.arm) return later(cx, child, "a hole of markup in a `For` row");
                     try b.region(child, target, children, ci, inner);
+                    try b.placeMarker(target, &out, &pending);
                     continue;
                 }
                 try pending.append(pg.a(), b.ops.items.len);
@@ -1347,6 +1369,27 @@ const RowBuild = struct {
         var el = base;
         el.children = out.items;
         return el;
+    }
+
+    /// The comment the op just planned stands before, if it wants one,
+    /// written after `out`, the children of the element at `target` so far
+    /// in the template, as the child the parser makes next (§9, amended
+    /// 2026-11-24). A text made before it — `pending` — is made before the
+    /// comment, so the op's nodes stand between the two, as written.
+    fn placeMarker(b: *RowBuild, target: ?u32, out: *std.ArrayList(Html), pending: *std.ArrayList(usize)) m.Error!void {
+        const pg = b.pg;
+        const i = b.marker_wanted orelse return;
+        b.marker_wanted = null;
+        const k: u32 = @intCast(b.markers.items.len);
+        try b.markers.append(pg.a(), .{ .parent = target, .index = domIndex(out.items) });
+        try out.append(pg.a(), .{ .kind = .marker, .name = "" });
+        switch (b.ops.items[i].what) {
+            .rows => |*x| x.marker = k,
+            .region => |*x| x.marker = k,
+            else => unreachable,
+        }
+        for (pending.items) |pi| b.ops.items[pi].what.child_text.anchor_marker = k;
+        pending.clearRetainingCapacity();
     }
 
     /// The `fallback` of `For` `n` in this unit (§9, amended 2026-11-24),
@@ -1390,12 +1433,11 @@ const RowBuild = struct {
         defer if (helper) cx.programInlineLeave();
         if (b.under_control != 0) return later(cx, n, "a branch inside a control whose value changes");
         if (br.selector_effect) return later(cx, n, "a branch whose choice of arm may have an effect, which `browser-tea` evaluates at every render,");
-        const end: ?u32 = if (ci + 1 == children.len)
-            null
-        else if (tree.kind(children[ci + 1]) == .element)
-            b.count
-        else
-            return later(cx, n, "a branch followed by text, a hole or a `For` in its element");
+        // Before the element after it, at its element's end, or before an
+        // empty comment of its own when anything else follows it (§9,
+        // amended 2026-11-24).
+        const before_marker = ci + 1 != children.len and tree.kind(children[ci + 1]) != .element;
+        const end: ?u32 = if (ci + 1 == children.len or before_marker) null else b.count;
         const arms = try pg.a().alloc(?RegionUse.Arm, br.arms.len);
         var any = false;
         for (br.arms, arms, 0..) |arm, *out, k| {
@@ -1421,6 +1463,7 @@ const RowBuild = struct {
         }
         if (!any) return later(cx, n, not_when);
         try b.ops.append(pg.a(), .{ .target = target, .what = .{ .region = .{ .node = n, .arms = arms, .end = end, .slot = b.regions, .helper = helper } } });
+        if (before_marker) b.marker_wanted = b.ops.items.len - 1;
         b.regions += 1;
     }
 
@@ -1955,12 +1998,26 @@ const Page = struct {
         var props: std.ArrayList(m.Property) = .empty;
         try props.append(pg.a(), .{ .key = "n", .value = try js.name(node) });
         if (elements) |e| try props.append(pg.a(), .{ .key = "e", .value = try js.name(e) });
+        // Each comment a `For` or a region stands before, found by its place
+        // among its parent's children as the parser made them, before any
+        // text is made (§9, amended 2026-11-24); a `For`'s is kept as the
+        // row's `c<k>`, which its `set` puts the rows before.
+        const markers = try pg.a().alloc(m.Name, p.markers.len);
+        for (p.markers, markers, 0..) |x, *name, k| {
+            name.* = try cx.fresh("marker");
+            const parent_el = if (x.parent) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.name(node);
+            try js.constant(mk, name.*, try js.index(try js.member(parent_el, "childNodes"), try pg.num(x.index)));
+            const kept = for (p.ops) |op| {
+                if (op.what == .rows and op.what.rows.marker == @as(u32, @intCast(k))) break true;
+            } else false;
+            if (kept) try props.append(pg.a(), .{ .key = try std.fmt.allocPrint(pg.a(), "c{d}", .{k}), .value = try js.name(name.*) });
+        }
         // The texts of an element that mixes elements and text holes, each
         // made before the element after it; a hole's kept for `set`.
         for (p.ops) |op| if (op.what == .child_text) {
             const ct = op.what.child_text;
             const parent_el = if (op.target) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.name(node);
-            const anchor = if (ct.anchor) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.literal(.null);
+            const anchor = if (ct.anchor_marker) |k| try js.name(markers[k]) else if (ct.anchor) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.literal(.null);
             const made_text = try js.call(try js.name(try cx.runtime("rowText")), &.{ parent_el, anchor, try js.string(ct.text) });
             if (ct.value == null) {
                 try js.expression(mk, made_text);
@@ -1975,7 +2032,7 @@ const Page = struct {
         for (p.ops) |op| if (op.what == .region) {
             const x = op.what.region;
             const parent_el = if (op.target) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.name(node);
-            const end_el = if (x.end) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.literal(.null);
+            const end_el = if (x.marker) |k| try js.name(markers[k]) else if (x.end) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.literal(.null);
             try props.append(pg.a(), .{ .key = try std.fmt.allocPrint(pg.a(), "g{d}", .{x.slot}), .value = try js.call(try js.name(try cx.runtime("region")), &.{ parent_el, end_el, try js.literal(.false) }) });
         };
         // Each `For`'s fallback's state, where its rows stand (§9, amended
@@ -1983,7 +2040,7 @@ const Page = struct {
         for (p.ops) |op| if (op.what == .rows) if (op.what.rows.fallback) |fb| {
             const x = op.what.rows;
             const parent_el = if (op.target) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.name(node);
-            const end_el = if (x.end) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.literal(.null);
+            const end_el = if (x.marker) |k| try js.name(markers[k]) else if (x.end) |t| try js.index(try js.name(elements.?), try pg.num(t)) else try js.literal(.null);
             try props.append(pg.a(), .{ .key = try std.fmt.allocPrint(pg.a(), "g{d}", .{fb.slot}), .value = try js.call(try js.name(try cx.runtime("region")), &.{ parent_el, end_el, try js.literal(.false) }) });
         };
         try js.constant(mk, made, try js.object(props.items));
@@ -2064,7 +2121,8 @@ const Page = struct {
                     try js.expression(st, try js.call(try js.name(try cx.runtime("text")), &.{ try js.member(try js.name(r), try std.fmt.allocPrint(pg.a(), "t{d}", .{x.slot})), shown }));
                 },
                 .rows => |x| {
-                    const each = try pg.writeRows(st, at, if (x.end) |t| try js.index(try js.member(try js.name(r), "e"), try pg.num(t)) else try js.literal(.null), x.node, x.plan);
+                    const end = if (x.marker) |k| try js.member(try js.name(r), try std.fmt.allocPrint(pg.a(), "c{d}", .{k})) else if (x.end) |t| try js.index(try js.member(try js.name(r), "e"), try pg.num(t)) else try js.literal(.null);
+                    const each = try pg.writeRows(st, at, end, x.node, x.plan);
                     // The fallback, shown while the list is empty, its
                     // values evaluated only then, as the page's (§9,
                     // amended 2026-11-24; #459).

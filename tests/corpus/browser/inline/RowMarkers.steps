@@ -1,0 +1,11 @@
+# A region turns arm between two texts.
+click #flip1
+click #flip2
+# The inner rows grow between their texts.
+click #grow1
+click #grow1
+click #grow2
+click #flip1
+# A region in an arm, before text.
+click #open
+click #open

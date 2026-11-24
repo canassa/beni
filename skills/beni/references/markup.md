@@ -242,7 +242,7 @@ and when a value that it reads changes. A pattern `let` must be pure and total.
 
 The body of `view`, a hole, or a helper body that a hole calls can be an `if` or a `case` of arms
 that are one element, `<></>` or a one-element helper call. Limits: a choice with an effect, an unused
-arm `let`, a `let` before a helper's branch, a branch in an eager arm, and text after it in a row.
+arm `let`, a `let` before a helper's branch, and a branch in an eager arm.
 A `Show` among the children of an element compiles: a body as a `For`'s row function below, and a fallback of one element or `Html.text`. A text hole can stand beside elements, `<p><b>{n}</b> left</p>`, except on a page that prerenders.
 
 ## `For` on `browser-inline`
@@ -253,10 +253,10 @@ made to agree with the list by key: a row keeps its node while its key stays. Th
 row runs again. A row's `Debug.log` thus logs one time for each row.
 
 - The row function is a lambda, or a function of the module, whose body is one element, or an `if` or a `case` whose arms are each one element or `<></>`. An `if` or a `case` in it is chosen at each `set`. A `fallback` shows while the list is empty, in a row too.
-- Elements, text, holes, branches, a `Show` or another `For` can stand after a `For`.
+- Elements, text, holes, branches, a `Show` or another `For` can stand after a `For`, and in a row text can stand after a `For` or a branch.
 - A row's event can send the row's key: `onClick={Remove row.id}`.
 
-These are still compiler limitations: another module's function as a row function; in a row, text, a hole or a `For` after a `For`; a `For`
+These are still compiler limitations: another module's function as a row function; a `For`
 beside other children of a control whose value changes; a markup hole that is no branch, a
 component or a `Show` in a row; a `For` in another module's markup; a `For` in a prerendered page;
 a `For` over a `Dict`.
