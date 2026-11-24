@@ -7229,6 +7229,15 @@ and their later additions. No cause is new: a record demand is rejected for the 
   withdrawn: a call after a write read the new value (`x1` where value semantics prints `x0`), and a holder
   bound after the function was read before it existed, a `ReferenceError` (#2617's placement).
   `run/RecordReadLocalFunction`, `browser/inline/RecordReadLocalFunction`.
+  *Amended 2026-11-24 (#2658): a lambda made before the record it reads.* A lambda that is the value of an item
+  of a block may read a local that a later item of the same block binds; nothing may name the lambda between the
+  two items, since naming it may call it (`let_forward_reference`), so it runs only after that later item. Its
+  creation is before the record exists, so the read is not made there: it is made **just after the item that
+  binds the record**, the same placement as a local function's (§31.10), and the lambda stays where it is and
+  reads that temporary, which JavaScript lets a closure name before its `const` is reached. The same holds for a
+  closure, or a local function, inside such a lambda: its read is carried out to the lambda, as above, and placed
+  there. Reading at the creation was a `ReferenceError` under records in place. `run/RecordReadLambdaBoundAfter`,
+  `browser/inline/RecordReadLambdaBoundAfter`.
 - **A send gives up every cell its payload holds** (§23.2, `bit_d`). Record objects are among those cells now, so
   `send (Saved model.form)` from a body whose arm keeps `model` is `later-use` at the send, as a list is.
 - **A command, a subscription or a view handler that keeps a closure** escapes what the closure holds (§31.4
@@ -7519,7 +7528,7 @@ record demand names its instruction and written fields; each hoist names its hol
 instruction or record-pattern binding to rewrite, the prefix through the written field, and its
 placement. Captured paths additionally name the closure creation at which they are read eagerly.
 A placement says either before an instruction or after an update's operands and before its stores,
-or (*amended 2026-11-24*, §31.6) after a `let` item, for a local function's read of what the item binds;
+or (*amended 2026-11-24*, §31.6) after a `let` item, for a local function's or a lambda's read of what the item binds;
 a call's hoists go before the call. A write in a branch with reads after the join uses the enclosing
 statement before the branch. Two writes that invalidate the same read retain the first placement.
 A bad or unknown table format is a cache miss. The table is implementation information, outside the
@@ -7915,7 +7924,8 @@ update's own result, or through anything bound after `D`, names the new version 
 
 For a capture of a field path, `P` is the closure's creation (§31.6): of the outermost closure made in the holder's frame, when closures nest. For a
 read in a local function made in the holder's frame, it is the block's entry or just after the item that binds
-the holder (§31.6, amended 2026-11-24). For a write made by a callee (§31.7), it is
+the holder (§31.6, amended 2026-11-24); for a lambda made before the item that binds the holder, just after
+that item (§31.6, amended 2026-11-24, #2658). For a write made by a callee (§31.7), it is
 before the call.
 
 **Soundness.** The argument is the thesis's (§6.3, versions and stale references), with one step for the hoist:

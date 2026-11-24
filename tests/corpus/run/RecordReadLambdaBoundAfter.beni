@@ -1,0 +1,138 @@
+-- run: a lambda made before the record it reads, in the same block, and a
+-- record update that then writes the field in place (#2658;
+-- ownership-checker.md §31.6, amended 2026-11-24). The lambda stays where
+-- it is; its read of the field is made just after the item that binds the
+-- record, and the lambda reads that temporary. Nothing may call the lambda
+-- before that item (`let_forward_reference`). Every call reads the value
+-- the record had: called once, twice, by `List.map`, kept in a record and
+-- a list made after the record, a lambda it returns, a local function in
+-- it, a lambda that calls it, a lambda in a lambda, after a sleep, and with
+-- a callback that may suspend (its `$s` twin). Its answers are the
+-- spreads'; `.in-place` builds it again with its records written in place.
+import Io
+import Node exposing (Program)
+
+
+type alias P =
+    n : Int
+    tag : String
+
+
+type alias H =
+    f : ⊤ → String
+
+
+plainLam : Int → String
+plainLam k =
+    a = λ⊤ → String.fromInt p.n
+    p = { n = k, tag = "t" }
+    q = { p | n = p.n + 1 }
+    a ⊤ ++ " " ++ String.fromInt q.n
+
+
+twice : Int → String
+twice k =
+    a = λs → s ++ String.fromInt p.n
+    p = { n = k, tag = "t" }
+    x = a "a"
+    q = { p | n = p.n + 1 }
+    x ++ " " ++ a "b" ++ " " ++ String.fromInt q.n
+
+
+mapped : Int → String
+mapped k =
+    a = λs → s ++ String.fromInt p.n ++ p.tag
+    p = { n = k, tag = "old" }
+    q = { p | n = p.n + 1, tag = "new" }
+    String.join (List.map [ "a", "b" ] a) "," ++ " " ++ String.fromInt q.n ++ q.tag
+
+
+stored : Int → String
+stored k =
+    a = λ⊤ → String.fromInt p.n
+    p = { n = k, tag = "t" }
+    m = { f = a }
+    l = [ a, a ]
+    q = { p | n = p.n + 1, tag = "u" }
+    m.f ⊤ ++ String.join (List.map l λg → g ⊤) "" ++ " " ++ String.fromInt q.n
+
+
+nested : Int → String
+nested k =
+    a = λ⊤ → λ⊤ → String.fromInt p.n
+    p = { n = k, tag = "t" }
+    b = a ⊤
+    q = { p | n = p.n + 1 }
+    b ⊤ ++ (a ⊤) ⊤ ++ " " ++ String.fromInt q.n
+
+
+localInLam : Int → String
+localInLam k =
+    a =
+        λ⊤ →
+            g s = s ++ String.fromInt p.n
+            g "x"
+    p = { n = k, tag = "t" }
+    q = { p | n = p.n + 1 }
+    a ⊤ ++ " " ++ String.fromInt q.n
+
+
+deferred : Int → String
+deferred k =
+    a = λ⊤ → String.fromInt p.n
+    b = λ⊤ → a ⊤ ++ "!"
+    p = { n = k, tag = "t" }
+    q = { p | n = p.n + 1 }
+    b ⊤ ++ " " ++ String.fromInt q.n
+
+
+innerFrame : Int → String
+innerFrame k =
+    f =
+        λs →
+            x = λ⊤ → s ++ String.fromInt p.n
+            x ⊤
+    p = { n = k, tag = "t" }
+    q = { p | n = p.n + 1 }
+    f "x" ++ " " ++ String.fromInt q.n
+
+
+slept : Int → String
+slept k =
+    Io.sleep 1
+    a = λ⊤ → String.fromInt p.n
+    p = { n = k, tag = "t" }
+    Io.sleep 1
+    q = { p | n = p.n + 1 }
+    Io.sleep 1
+    a ⊤ ++ " " ++ String.fromInt q.n
+
+
+withCallback : (Int → Int), Int → String
+withCallback cb k =
+    a = λ⊤ → String.fromInt (cb p.n)
+    p = { n = k, tag = "t" }
+    q = { p | n = p.n + 1 }
+    a ⊤ ++ " " ++ String.fromInt q.n
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ plainLam 0
+        , twice 0
+        , mapped 0
+        , stored 0
+        , nested 0
+        , localInLam 0
+        , deferred 0
+        , innerFrame 0
+        , slept 0
+        , withCallback (λi → i) 0
+        , withCallback
+            (λi →
+                Io.sleep 1
+                i
+            )
+            0
+        ]

@@ -1485,6 +1485,10 @@ pub const Lowerer = struct {
     /// Raised for each top-level lowering of a declaration: a temporary
     /// bound in another lowering is not this one's.
     hoist_gen: u32 = 0,
+    /// Temporaries a lambda's body named before the item that binds them
+    /// was lowered (`hoistedRead`, #2658), in this lowering: each must be
+    /// bound by its placement before the lowering ends.
+    hoist_pending: u32 = 0,
     /// Each read row's group: the row that stands for its source read.
     hoist_groups: []const u32 = &.{},
     /// The values of `let`s `directReachesDebug` found reach no `Debug`.
@@ -1704,6 +1708,9 @@ pub const Lowerer = struct {
         l.next_tag = 1;
         // A hoisted read's temporary is named in this numbering, and so
         // belongs to the lowering it was bound in (§31.14).
+        if (std.debug.runtime_safety and l.hoist_pending != 0)
+            std.debug.panic("ownership: a lambda reads a temporary that its block never binds ({d} left)", .{l.hoist_pending});
+        l.hoist_pending = 0;
         l.hoist_gen +%= 1;
     }
 
@@ -6834,7 +6841,9 @@ pub const Lowerer = struct {
 
     /// What stands for one read in the lowering under way: the row that
     /// bound it, its temporary, and the lowering that bound it.
-    const HoistLive = struct { row: u32, name: JsIr.NameIndex, gen: u32 };
+    /// `pending`: named by a lambda's body (`hoistedRead`) and not bound
+    /// yet; its placement binds that name (#2658).
+    const HoistLive = struct { row: u32, name: JsIr.NameIndex, gen: u32, pending: bool = false };
 
     const hoist_binding_key: u64 = 1 << 63;
 
@@ -6905,10 +6914,13 @@ pub const Lowerer = struct {
             const r = t.reads[ri];
             const g = l.hoist_groups[ri];
             const was = l.hoist_live[g];
+            const pending = was.gen == l.hoist_gen and was.pending;
             if (was.gen == l.hoist_gen and was.row != ri) continue;
             if (std.debug.runtime_safety) std.debug.assert(l.decl_index == r.decl);
             const value = try l.hoistValue(r, p);
-            const n = try l.fresh(l.well.temp);
+            // A name the lambda's body already reads (#2658) is the one bound.
+            if (pending) l.hoist_pending -= 1;
+            const n = if (pending) was.name else try l.fresh(l.well.temp);
             try l.constDecl(out, n, value, p);
             l.hoist_live[g] = .{ .row = ri, .name = n, .gen = l.hoist_gen };
         }
@@ -6993,6 +7005,24 @@ pub const Lowerer = struct {
         };
         for (rows.items) |ri| {
             const live = l.hoist_live[l.hoist_groups[ri]];
+            // A lambda made before the item that binds the record it reads
+            // reads the temporary bound just after that item (§31.6, amended
+            // 2026-11-24, #2658): its body names it first, and `placeHoists`
+            // binds that name there. Nothing runs the lambda before that
+            // item (`let_forward_reference`), so the name is never read in
+            // its dead zone. Any other read before its placement panics.
+            // The lambda's item is lowered before the record's, so a row
+            // already bound (not pending) was bound by an earlier copy of
+            // the block (an arm lowered twice, `browser-inline`): this copy
+            // names a temporary of its own, which its own placement binds.
+            if (!(live.gen == l.hoist_gen and live.pending) and t.reads[ri].phase == 2 and t.reads[ri].capture < l.bir.insts.len and
+                l.bir.instTag(@fromBackingInt(t.reads[ri].capture)) == .lambda)
+            {
+                const n = try l.fresh(l.well.temp);
+                l.hoist_live[l.hoist_groups[ri]] = .{ .row = ri, .name = n, .gen = l.hoist_gen, .pending = true };
+                l.hoist_pending += 1;
+                return try l.ident(n, p);
+            }
             if (live.gen != l.hoist_gen) std.debug.panic("ownership: a hoisted record read is lowered before its placement (read row {d})", .{ri});
             if (live.row == ri) return try l.ident(live.name, p);
             if (t.reads[live.row].prefix_len >= t.reads[ri].prefix_len)
