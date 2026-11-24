@@ -1937,10 +1937,12 @@ markup is (§8.3, amended 2026-11-05), with the work split between the two modul
   `PieceHandlerMoved` (a sandbox: a key the root handles itself and the dispatcher's handler of
   the same key, their clicks mixed), `PieceHandlerNoMap` (no `Html.map`: `send` is the
   dispatcher), `PieceHandlerTwoMaps` (two maps: `Wrapped (CounterMsg msg)`),
-  `PieceHandlerHelper` (the event in a view helper's call whose argument is pure) and
-  `PieceHandlerRun` (such a root beside a run of two roots, called on its own). Each transcript
-  is `browser-tea`'s of the same source, but for the placeholders the headers of `PieceHandler`
-  and `PieceHandlerRun` name. `browser/prerender/PieceHandler` is such a root on a page the client takes
+  `PieceHandlerHelper` (the event in a view helper's call whose argument is pure),
+  `PieceHandlerRun` (such a root beside a run of two roots, called on its own), and
+  `PieceHandlerReplaced` and `PieceHandlerCell` (`make` reads the model after the program
+  replaced the root's record, or its whole model: through the model's object, or its cell). Each
+  transcript is `browser-tea`'s of the same source, but for the placeholders the headers of
+  `PieceHandler` and `PieceHandlerRun` name. `browser/prerender/PieceHandler` is such a root on a page the client takes
   over, wired through `onTaken` as its other events are (`prerender.md` §6.5).
   `emit/release/inline/PieceHandler` pins the shape: the root's listeners `l(a[2],d,undefined,
   ()=>({$:1,a:1}))`, and the program's `send`, `a=>{w({a:a})}`, around its dispatcher `w`.

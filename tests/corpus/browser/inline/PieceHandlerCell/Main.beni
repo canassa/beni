@@ -1,0 +1,44 @@
+-- An event of another module's markup whose message is made from the
+-- model at the event, when the program replaces its whole model
+-- (browser-inline.md §8.4, amended 2026-10-23 and 2026-11-24, #2063).
+-- `Reset` gives a new model record, so the program holds its model in a
+-- cell and hands the root the cell. `make` reads `model.cups` through it:
+-- after `Reset`, `double` and `plus ten` start from 3, not from the model
+-- the root saw at the mount. The transcript is `browser-tea`'s.
+import Html exposing (Html)
+import Tea
+import W1
+
+
+type alias Model =
+    w1 : W1.Model
+    note : String
+
+
+type Msg
+    = W1Msg W1.Msg
+    | Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        Reset →
+            { w1 = { cups = 3 }, note = model.note }
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { w1 = { cups = 1 }, note = "n" }
+        , update = update
+        , view =
+            λmodel →
+                <main>
+                    {Html.map (W1.view model.w1) W1Msg}
+                    <button id="reset" onClick={Reset}>reset</button>
+                </main>
+        }
