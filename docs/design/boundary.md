@@ -6169,9 +6169,13 @@ dispatches a `MouseEvent`, the form of a browser before the versions above
 (`tests/corpus/README.md`). `browser/tea/PointerButtons` pins the two readers on a down, a move and
 an up; a menu at the point in the handler's element, with a child of that element as the target; an
 element that cancels the browser's menu and one that does not; and `pointerId` -1, `pointerType`
-`""` and `isPrimary` `False` on the `MouseEvent` form. `browser/dom/PointerButtons` pins the same
-under `browser`, with a handler on a disabled control and nested handlers. `browser/inline/
-PointerButtons` pins the same under `browser-inline`. `browser/prerender/EarlyMenu` pins that the
+`""` and `isPrimary` `False` on the `MouseEvent` form. `browser/inline/PointerButtons` is the same
+page under `browser-inline`, with the same transcript. `browser/dom/PointerButtons` pins, under
+`browser`: the two readers on a down; nested `onContextMenu` handlers, where the outer one reads a
+point in its own box; a handler on a disabled control, which does not run; a row added later; an
+element that does not cancel the browser's menu; and `pointerId` -1 on the `MouseEvent` form.
+`check/bad/markup/UntypedContextMenu` pins that a quoted `"oncontextmenu"` is still
+`untyped_event_attribute`, and that its hint now names `onContextMenu`. `browser/prerender/EarlyMenu` pins that the
 capture script of a page with a click handler does not record a `contextmenu`, and that the click
 after it is delivered. `browser/prerender/EarlyMenuOnly` pins that a page whose only listeners are
 a pointer event's and `onContextMenu`'s gets no capture script.
