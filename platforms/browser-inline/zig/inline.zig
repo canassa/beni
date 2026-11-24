@@ -217,7 +217,9 @@ const not_when = "markup held in data or chosen at run time, or a branch whose a
 /// before the element after its hole (`next`) or at the end; or why a
 /// region cannot stand there.
 const RegionAt = union(enum) {
-    at: struct { parent: ?u32, at_mount: bool, next: bool },
+    /// `marker`: before a comment of its own, made where it stands, since
+    /// what follows it is not an element (§8.2, amended 2026-11-24).
+    at: struct { parent: ?u32, at_mount: bool, next: bool, marker: bool = false },
     refused: []const u8,
 };
 
@@ -675,7 +677,7 @@ fn rebuilt(scope: parser.Scope, nodes: []const Html) ?[]const u8 {
             if (parser.misnested(scope, x.name)) |why| return why;
             if (!x.void) if (rebuilt(scope.enter(x.name), x.children)) |why| return why;
         },
-        .piece => {},
+        .piece, .marker => {},
     };
     return null;
 }
@@ -684,7 +686,10 @@ fn rebuilt(scope: parser.Scope, nodes: []const Html) ?[]const u8 {
 const Html = struct {
     /// `piece`: another module's root, its markup the piece `piece` of the
     /// page names, written in its place; `name` is its top element's.
-    kind: enum { element, text, piece },
+    /// `marker`: an empty comment the mount finds, `Page.markers`' entry
+    /// `piece`, which a `For`, a region or a `Show` followed by anything
+    /// but an element stands before (§8.2, amended 2026-11-24).
+    kind: enum { element, text, piece, marker },
     piece: u32 = 0,
     /// The element's name, or the text, escaped.
     name: []const u8,
@@ -812,10 +817,40 @@ const Write = struct {
 const TextUse = struct {
     parent: ?u32,
     anchor: ?u32 = null,
+    /// The comment of `Page.markers` it is made before instead (§8.2,
+    /// amended 2026-11-24).
+    anchor_marker: ?u32 = null,
     text: []const u8,
     hole: bool,
     name: m.Name = undefined,
 };
+
+/// An empty comment of the markup (`Html.marker`), child `index` of the
+/// element at `parent` as the parser makes its children — a run of texts
+/// one node — which a `For`, a region or a `Show` followed by anything but
+/// an element stands before (§8.2, amended 2026-11-24); found by the mount.
+const Marker = struct {
+    parent: ?u32,
+    index: u32 = 0,
+    name: m.Name = undefined,
+};
+
+/// The place among its parent's child nodes, as the parser makes them, of
+/// a node written after `nodes`: a run of texts is one node.
+fn domIndex(nodes: []const Html) u32 {
+    var k: u32 = 0;
+    var text = false;
+    for (nodes) |x| {
+        if (x.kind == .text) {
+            if (!text) k += 1;
+            text = true;
+        } else {
+            k += 1;
+            text = false;
+        }
+    }
+    return k;
+}
 
 /// One event of the page, on an element.
 const Event = struct {
@@ -868,7 +903,9 @@ const Run = struct {
 /// A `For` of the page: its node and its row, planned.
 /// `end`: the element its rows stand before — its next sibling, a plain
 /// element — or null when the rows are its parent's last children.
-const ForUse = struct { node: m.Node.Index, plan: *const RowPlan, end: ?u32 };
+/// `marker`: the comment of `Page.markers` they stand before instead
+/// (§8.2, amended 2026-11-24).
+const ForUse = struct { node: m.Node.Index, plan: *const RowPlan, end: ?u32, marker: ?u32 = null };
 
 /// A branch region of the page (§8.2, amended 2026-11-23): its hole —
 /// `none` for a `view` whose body is the branch — each arm's unit, null for
@@ -881,6 +918,9 @@ const RegionUse = struct {
     parent: ?u32,
     at_mount: bool,
     end: ?u32,
+    /// The comment of `Page.markers` it stands before instead (§8.2,
+    /// amended 2026-11-24).
+    marker: ?u32 = null,
     /// The name of its state, made at the mount.
     state: m.Name = undefined,
 
@@ -1406,7 +1446,7 @@ const Layout = struct {
     /// whose top element is at index `base`: the program's, or a piece's.
     fn walk(l: *Layout, nodes: []const Html, parent: u32, base: u32, arm_at: []const bool, pieces: []const PieceUse) m.Error!void {
         for (nodes) |n| switch (n.kind) {
-            .text => {},
+            .text, .marker => {},
             .element => {
                 const at: u32 = @intCast(l.names.items.len);
                 std.debug.assert(base + n.target.? + 1 == at);
@@ -1442,7 +1482,7 @@ const Place = struct { parent: ?u32, at: u32 };
 fn placesOf(nodes: []const Html, parent: ?u32, count: *u32, pieces: []const PieceUse, places: []?Place) bool {
     var at: u32 = 0;
     for (nodes) |n| switch (n.kind) {
-        .text => {},
+        .text, .marker => {},
         .element => {
             const t = count.*;
             count.* += 1;
@@ -1520,6 +1560,12 @@ const Page = struct {
     /// The texts of elements that mix elements and text holes (§8.2,
     /// amended 2026-11-24), in document order.
     texts: std.ArrayList(TextUse) = .empty,
+    /// The comments a `For`, a region or a `Show` followed by anything but
+    /// an element stands before (§8.2, amended 2026-11-24), in document
+    /// order; and the one a `For`, a region or a `Show` just placed asks
+    /// its element to write after it.
+    markers: std.ArrayList(Marker) = .empty,
+    marker_wanted: ?u32 = null,
     /// The page's branch regions (§8.2, amended 2026-11-23), and the mount
     /// node's name, which a region at the mount stands in.
     regions: std.ArrayList(RegionUse) = .empty,
@@ -2169,10 +2215,25 @@ const Page = struct {
                 },
                 else => {},
             };
+            // What follows a `For`, a region or a `Show`: an element, which
+            // it stands before; nothing, and it stands at the element's end;
+            // or anything else, and it stands before a comment of its own,
+            // written in its place (§8.2, amended 2026-11-24).
+            const at_end = ci + 1 == children.len;
+            const before_element = !at_end and tree.kind(children[ci + 1]) == .element;
+            const place: RegionAt = .{ .at = .{ .parent = target, .at_mount = false, .next = before_element, .marker = !at_end and !before_element } };
             // A `For` beside other children: its rows stand before the
-            // element after it, or at its parent's end.
+            // element after it, before its comment, or at its parent's end.
             if (tree.kind(child) == .for_) {
-                try pg.forChild(child, target, ctx, inner, try forEnd(pg, e, children, ci, pg.count));
+                const end = if (before_element or at_end) try forEnd(pg, e, children, ci, pg.count) else end: {
+                    _ = try forEnd(pg, e, children[0 .. ci + 1], ci, pg.count);
+                    break :end null;
+                };
+                try pg.forChild(child, target, ctx, inner, end);
+                if (!at_end and !before_element) {
+                    pg.fors.items[pg.fors.items.len - 1].marker = try pg.wantMarker(target);
+                }
+                try pg.placeMarker(&out);
                 continue;
             }
             // A `Show`: a branch region of two arms, where a region would
@@ -2180,13 +2241,10 @@ const Page = struct {
             if (tree.kind(child) == .show) {
                 const at: RegionAt = if (pg.under_control != 0)
                     .{ .refused = "a `Show` inside a control whose value changes" }
-                else if (ci + 1 == children.len)
-                    .{ .at = .{ .parent = target, .at_mount = false, .next = false } }
-                else if (tree.kind(children[ci + 1]) == .element)
-                    .{ .at = .{ .parent = target, .at_mount = false, .next = true } }
                 else
-                    .{ .refused = "a `Show` followed by text, a hole, a `For` or another `Show` in its element" };
+                    place;
                 try pg.show(child, ctx, at, inner);
+                try pg.placeMarker(&out);
                 continue;
             }
             if (tree.kind(child) == .hole) {
@@ -2197,28 +2255,32 @@ const Page = struct {
                     continue;
                 }
                 // Where a branch region would stand: before the element after
-                // the hole, or at the element's end (§8.2, amended 2026-11-23).
+                // the hole, before its comment, or at the element's end (§8.2,
+                // amended 2026-11-23 and 2026-11-24).
                 const at: RegionAt = if (pg.under_control != 0)
                     .{ .refused = "a branch whose arms read what it binds, inside a control whose value changes" }
-                else if (ci + 1 == children.len)
-                    .{ .at = .{ .parent = target, .at_mount = false, .next = false } }
-                else if (tree.kind(children[ci + 1]) == .element)
-                    .{ .at = .{ .parent = target, .at_mount = false, .next = true } }
                 else
-                    .{ .refused = "a branch whose arms read what it binds, followed by text, a hole or a `For` in its element" };
-                if (try pg.helper(child, inner, ctx, &out, at)) continue;
+                    place;
+                if (try pg.helper(child, inner, ctx, &out, at)) {
+                    try pg.placeMarker(&out);
+                    continue;
+                }
                 try pg.when(child, inner, ctx, &out, at, null);
+                try pg.placeMarker(&out);
                 continue;
             }
             try out.appendSlice(pg.a(), try pg.markup(child, inner, ctx, false));
         }
         // A text stands before the node after it, which must be an element
-        // of the unit's markup, or at the element's end.
+        // of the unit's markup or a comment, or at the element's end.
         for (pending.items) |x| {
             if (x.at == out.items.len) continue;
             const next = out.items[x.at];
-            if (next.kind != .element) return later(pg.cx, n, "a text hole beside markup that is not an element written in place");
-            pg.texts.items[x.text].anchor = next.target;
+            switch (next.kind) {
+                .element => pg.texts.items[x.text].anchor = next.target,
+                .marker => pg.texts.items[x.text].anchor_marker = next.piece,
+                else => return later(pg.cx, n, "a text hole beside markup that is not an element written in place"),
+            }
         }
         var element_ = base;
         element_.children = out.items;
@@ -2471,7 +2533,7 @@ const Page = struct {
         if (!any) return pg.regionLater(n, not_when);
         const facts = known_facts orelse cx.programHole(.{ .node = n });
         if (facts.group == std.math.maxInt(u32)) return pg.regionLimit(n, "the write-set pass did not reach this branch on the `view`'s call path, so `browser-inline` cannot say which messages change it");
-        try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null });
+        try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null, .marker = if (place.marker) try pg.wantMarker(place.parent) else null });
         try pg.writes.append(pg.a(), .{ .target = place.parent, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .region = @intCast(pg.regions.items.len - 1) } });
     }
 
@@ -2519,7 +2581,7 @@ const Page = struct {
             pg.row_events = pg.row_events or arm.plan.events;
         };
         const facts = try pg.known(n, cx.programHole(.{ .node = n }));
-        try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null });
+        try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null, .marker = if (place.marker) try pg.wantMarker(place.parent) else null });
         try pg.writes.append(pg.a(), .{ .target = place.parent, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .region = @intCast(pg.regions.items.len - 1) } });
     }
 
@@ -3007,6 +3069,8 @@ const Page = struct {
             if (u.end != null) break true;
         } else for (pg.texts.items) |x| {
             if (x.parent != null or x.anchor != null) break true;
+        } else for (pg.markers.items) |x| {
+            if (x.parent != null) break true;
         } else false;
         if (placed and !pg.hydrating) {
             // One element referred to is reached by its path from the top
@@ -3025,13 +3089,20 @@ const Page = struct {
                 try js.constant(body, pg.elements.?, try js.call(try js.member(try js.name(pg.node.?), "querySelectorAll"), &.{try js.string("*")}));
             }
         }
+        // Each comment a `For`, a region or a `Show` stands before, found
+        // by its place among its parent's children as the parser made them,
+        // before any text below is made (§8.2, amended 2026-11-24).
+        for (pg.markers.items) |*x| {
+            x.name = try cx.fresh("marker");
+            try js.constant(body, x.name, try js.index(try js.member(try pg.ref(x.parent), "childNodes"), try pg.num(x.index)));
+        }
         // Each text of an element that mixes elements and text holes, made
         // in document order once the elements are found, before any `For`,
         // region or `Show` puts a node before the same element (§8.2,
         // amended 2026-11-24).
         for (pg.texts.items) |*x| {
             const parent = try pg.ref(x.parent);
-            const before = if (x.anchor) |t| try pg.ref(t) else try js.literal(.null);
+            const before = if (x.anchor_marker) |k| try js.name(pg.markers.items[k].name) else if (x.anchor) |t| try pg.ref(t) else try js.literal(.null);
             const made = try js.call(try js.name(try cx.runtime("rowText")), &.{ parent, before, try js.string(x.text) });
             if (!x.hole) {
                 try js.expression(body, made);
@@ -3046,7 +3117,7 @@ const Page = struct {
         for (pg.regions.items) |*u| {
             u.state = try cx.fresh("region");
             const parent = if (u.at_mount) try js.name(at) else try pg.ref(u.parent);
-            const before = if (u.end) |t| try pg.ref(t) else try js.literal(.null);
+            const before = if (u.marker) |i| try js.name(pg.markers.items[i].name) else if (u.end) |t| try pg.ref(t) else try js.literal(.null);
             try js.constant(body, u.state, try js.call(try js.name(try cx.runtime("region")), &.{ parent, before, try js.literal(if (u.at_mount) .true else .false) }));
         }
 
@@ -3769,7 +3840,31 @@ const Page = struct {
             if (only != null and only.? != t) return null;
             only = t;
         };
+        for (pg.markers.items) |x| if (x.parent) |t| {
+            if (only != null and only.? != t) return null;
+            only = t;
+        };
         return only;
+    }
+
+    /// A comment in the element at `parent` for the `For`, region or `Show`
+    /// being placed to stand before (§8.2, amended 2026-11-24): its index
+    /// in `markers`, written by `placeMarker` once that element's children
+    /// so far are known.
+    fn wantMarker(pg: *Page, parent: ?u32) m.Error!u32 {
+        std.debug.assert(pg.marker_wanted == null);
+        try pg.markers.append(pg.a(), .{ .parent = parent });
+        pg.marker_wanted = @intCast(pg.markers.items.len - 1);
+        return pg.marker_wanted.?;
+    }
+
+    /// The comment `wantMarker` asked for, if any, written after `out`, the
+    /// children of its element so far, as the child the parser makes next.
+    fn placeMarker(pg: *Page, out: *std.ArrayList(Html)) m.Error!void {
+        const i = pg.marker_wanted orelse return;
+        pg.marker_wanted = null;
+        pg.markers.items[i].index = domIndex(out.items);
+        try out.append(pg.a(), .{ .kind = .marker, .piece = i, .name = "" });
     }
 
     /// The node write `w` writes: its text node (§8.2, amended 2026-11-24),
@@ -4845,7 +4940,7 @@ const Page = struct {
                 switch (w.what) {
                     .event, .region => unreachable,
                     .entry => |x| try js.expression(blk, try entryCall(cx, node, x, try cx.value(x.value))),
-                    .rows => |i| try pg.writeRows(blk, node, if (pg.fors.items[i].end) |t| try pg.ref(t) else try js.literal(.null), pg.fors.items[i].node, pg.fors.items[i].plan),
+                    .rows => |i| try pg.writeRows(blk, node, if (pg.fors.items[i].marker) |k| try js.name(pg.markers.items[k].name) else if (pg.fors.items[i].end) |t| try pg.ref(t) else try js.literal(.null), pg.fors.items[i].node, pg.fors.items[i].plan),
                     .text => |parts| {
                         const value = if (parts.len == 1 and parts[0] == .value)
                             try cx.value(parts[0].value)
@@ -5297,6 +5392,7 @@ const Render = struct {
     fn node(r: *Render, blk: m.Block, n: Html, c: u32) m.Error!void {
         switch (n.kind) {
             .text => try r.text(n.name),
+            .marker => try r.text("<!>"),
             .element => try r.element(blk, n, c),
             .piece => try r.piece(blk, n),
         }
@@ -5686,6 +5782,9 @@ fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const H
         const next: ?Html = if (i + 1 < nodes.len) nodes[i + 1] else null;
         switch (n.kind) {
             .text => try out.appendSlice(a, n.name),
+            // An empty comment, as dom-expressions writes one (§8.2, amended
+            // 2026-11-24): the parser keeps it in place, between texts.
+            .marker => try out.appendSlice(a, "<!>"),
             // A mark the mount replaces with the piece's string: the piece
             // writes every end tag of its own, so nothing of it is open.
             .piece => try out.print(a, "\x00{d}\x00", .{n.piece}),

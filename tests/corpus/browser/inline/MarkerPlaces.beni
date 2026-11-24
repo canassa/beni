@@ -1,0 +1,106 @@
+-- A `For`, a branch region and a `Show` followed by anything but an element
+-- (docs/design/browser-inline.md §8.2, amended 2026-11-24): each stands
+-- before an empty comment of its own, written in its place in the markup,
+-- so text, a hole, another `For`, region or `Show` may follow it. Rows, arms
+-- and bodies made and removed in every order keep their places: a `For`
+-- before text and before another `For`, a `Show` before a `Show` and before
+-- text, a region before text and before a text hole, a helper whose body is
+-- a branch before text, and a text hole before a comment. Its transcript is
+-- `browser-tea`'s for the same source but for the empty comments the two
+-- keep, in other places, as markers.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = More
+    | Less
+    | Flip
+    | Name
+
+
+type alias Model =
+    n : Int
+    on : Bool
+    name : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        More →
+            { model | n = model.n + 1 }
+
+        Less →
+            { model | n = if model.n > 0 then model.n - 1 else 0 }
+
+        Flip →
+            { model | on = not model.on }
+
+        Name →
+            { model | name = model.name ++ "!" }
+
+
+badge : Maybe String → Html msg
+badge shown =
+    case shown of
+        Just s →
+            <b>{s}</b>
+
+        Nothing →
+            <i>off</i>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="more" onClick={More}>more</button>
+        <button id="less" onClick={Less}>less</button>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="name" onClick={Name}>name</button>
+        <p id="fors">
+            <For each={List.range 1 model.n} keyed={λi → i}>{λi → <b>{i}</b>}</For>
+            then
+            <For each={List.range 1 model.n} keyed={False}>{λi → <i>{i}</i>}</For>
+            <For each={List.range 1 model.n} keyed={λi → i}>{λi → <u>{i}</u>}</For>
+            end
+        </p>
+        <div id="shows">
+            <Show when={if model.on then Just model.n else Nothing} keyed fallback={<s>none</s>}>
+                {λk → <em>{k}</em>}
+            </Show>
+            <Show when={if model.n > 1 then Just model.name else Nothing} keyed>
+                {λs → <strong>{s}</strong>}
+            </Show>
+            after {model.name}
+        </div>
+        <p id="regions">
+            {case List.head (List.range 1 model.n) of
+                Just k →
+                    <b>{k}</b>
+
+                Nothing →
+                    <i>empty</i>
+            }
+            mid
+            {case String.toUpper model.name of
+                "ANN" →
+                    <em>first</em>
+
+                other →
+                    <s>{other}</s>
+            }
+            {model.name}
+            {badge (if model.on then Just model.name else Nothing)}
+            tail
+        </p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { n = 0, on = False, name = "ann" }
+        , update = update
+        , view = view
+        }

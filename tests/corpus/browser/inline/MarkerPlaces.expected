@@ -1,0 +1,384 @@
+-- load
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <!---->
+      "then"
+      <!---->
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <s>"none"</s>
+      <!---->
+      <!---->
+      "after "
+      "ann"
+    </div>
+    <p id="regions">
+      <i>"empty"</i>
+      <!---->
+      "mid"
+      <em>"first"</em>
+      <!---->
+      "ann"
+      <i>"off"</i>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #more
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <b>"1"</b>
+      <!---->
+      "then"
+      <i>"1"</i>
+      <!---->
+      <u>"1"</u>
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <s>"none"</s>
+      <!---->
+      <!---->
+      "after "
+      "ann"
+    </div>
+    <p id="regions">
+      <b>"1"</b>
+      <!---->
+      "mid"
+      <em>"first"</em>
+      <!---->
+      "ann"
+      <i>"off"</i>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #more
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <b>"1"</b>
+      <b>"2"</b>
+      <!---->
+      "then"
+      <i>"1"</i>
+      <i>"2"</i>
+      <!---->
+      <u>"1"</u>
+      <u>"2"</u>
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <s>"none"</s>
+      <!---->
+      <strong>"ann"</strong>
+      <!---->
+      "after "
+      "ann"
+    </div>
+    <p id="regions">
+      <b>"1"</b>
+      <!---->
+      "mid"
+      <em>"first"</em>
+      <!---->
+      "ann"
+      <i>"off"</i>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <b>"1"</b>
+      <b>"2"</b>
+      <!---->
+      "then"
+      <i>"1"</i>
+      <i>"2"</i>
+      <!---->
+      <u>"1"</u>
+      <u>"2"</u>
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <em>"2"</em>
+      <!---->
+      <strong>"ann"</strong>
+      <!---->
+      "after "
+      "ann"
+    </div>
+    <p id="regions">
+      <b>"1"</b>
+      <!---->
+      "mid"
+      <em>"first"</em>
+      <!---->
+      "ann"
+      <b>"ann"</b>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #name
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <b>"1"</b>
+      <b>"2"</b>
+      <!---->
+      "then"
+      <i>"1"</i>
+      <i>"2"</i>
+      <!---->
+      <u>"1"</u>
+      <u>"2"</u>
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <em>"2"</em>
+      <!---->
+      <strong>"ann!"</strong>
+      <!---->
+      "after "
+      "ann!"
+    </div>
+    <p id="regions">
+      <b>"1"</b>
+      <!---->
+      "mid"
+      <s>"ANN!"</s>
+      <!---->
+      "ann!"
+      <b>"ann!"</b>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #more
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <b>"1"</b>
+      <b>"2"</b>
+      <b>"3"</b>
+      <!---->
+      "then"
+      <i>"1"</i>
+      <i>"2"</i>
+      <i>"3"</i>
+      <!---->
+      <u>"1"</u>
+      <u>"2"</u>
+      <u>"3"</u>
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <em>"3"</em>
+      <!---->
+      <strong>"ann!"</strong>
+      <!---->
+      "after "
+      "ann!"
+    </div>
+    <p id="regions">
+      <b>"1"</b>
+      <!---->
+      "mid"
+      <s>"ANN!"</s>
+      <!---->
+      "ann!"
+      <b>"ann!"</b>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #less
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <b>"1"</b>
+      <b>"2"</b>
+      <!---->
+      "then"
+      <i>"1"</i>
+      <i>"2"</i>
+      <!---->
+      <u>"1"</u>
+      <u>"2"</u>
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <em>"2"</em>
+      <!---->
+      <strong>"ann!"</strong>
+      <!---->
+      "after "
+      "ann!"
+    </div>
+    <p id="regions">
+      <b>"1"</b>
+      <!---->
+      "mid"
+      <s>"ANN!"</s>
+      <!---->
+      "ann!"
+      <b>"ann!"</b>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #less
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <b>"1"</b>
+      <!---->
+      "then"
+      <i>"1"</i>
+      <!---->
+      <u>"1"</u>
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <em>"1"</em>
+      <!---->
+      <!---->
+      "after "
+      "ann!"
+    </div>
+    <p id="regions">
+      <b>"1"</b>
+      <!---->
+      "mid"
+      <s>"ANN!"</s>
+      <!---->
+      "ann!"
+      <b>"ann!"</b>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #less
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <!---->
+      "then"
+      <!---->
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <em>"0"</em>
+      <!---->
+      <!---->
+      "after "
+      "ann!"
+    </div>
+    <p id="regions">
+      <i>"empty"</i>
+      <!---->
+      "mid"
+      <s>"ANN!"</s>
+      <!---->
+      "ann!"
+      <b>"ann!"</b>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="more">"more"</button>
+    <button id="less">"less"</button>
+    <button id="flip">"flip"</button>
+    <button id="name">"name"</button>
+    <p id="fors">
+      <!---->
+      "then"
+      <!---->
+      <!---->
+      "end"
+    </p>
+    <div id="shows">
+      <s>"none"</s>
+      <!---->
+      <!---->
+      "after "
+      "ann!"
+    </div>
+    <p id="regions">
+      <i>"empty"</i>
+      <!---->
+      "mid"
+      <s>"ANN!"</s>
+      <!---->
+      "ann!"
+      <i>"off"</i>
+      <!---->
+      "tail"
+    </p>
+  </main>
+</body>
