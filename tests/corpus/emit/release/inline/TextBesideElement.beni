@@ -1,0 +1,28 @@
+-- emit/release/inline: a text hole beside an element (browser-inline.md
+-- §8.2, amended 2026-11-24), TodoMVC's footer count. Each text is a node the
+-- mount makes with `rowText` before the element after it or at the end; the
+-- hole's is written by `text`. The page is `browser/inline/TextBesideElement`.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+
+
+update : Msg, Int → Int
+update _ n = n + 1
+
+
+view : Int → Html Msg
+view n =
+    <footer>
+        <span>
+            <strong>{n}</strong>{if n == 1 then " item left" else " items left"}
+        </span>
+        <button onClick={Add}>add</button>
+    </footer>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 1, update = update, view = view }

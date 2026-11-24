@@ -534,6 +534,26 @@ beni over `Js` in `Inline.beni`:
 - **A text hole** is `text` on its element. An element whose children are texts and text holes —
   *mixed text* — is one binding writing its whole text as a template. A hole of `String`, `Char` or
   a number only; a text hole beside an element is a limit of the compiler (§8.7).
+  *Amended 2026-11-24 (#2650, #966): a text hole beside an element is compiled.* An element of
+  the unit's markup whose children mix elements with texts and text holes — `<strong>{n}</strong>
+  {if n == 1 then " item" else " items"}`, as TodoMVC's footer writes it — keeps **each text a
+  node of its own**, as a `For`'s row does (§9, amended 2026-11-23) and as `browser-tea` keeps
+  them: none of its texts is in the markup, where the parser would merge the texts on either side
+  of a hole into one node, and the mount makes each, in document order, with the runtime's
+  `rowText(parent, before, text)`, before the element after it or at the element's end. A
+  constant text, and a hole `init` bakes, is made holding its text and never written again; any
+  other hole's node is named, and its binding is `text` on that node, in the hole's own group
+  (`programHole`), evaluated as any text hole's value is (*Evaluation order*). The texts are made
+  once the elements are found and before the first pass, so a `For`'s rows, a region's arm or a
+  `Show` that stands before the same element is put after a text that comes before it in the
+  source; a text after a `For`, a region or a `Show` stays refused, as before (their own rules).
+  An element whose children are texts and text holes only is still one binding of its whole
+  text. Nothing is compared but what `text` compares with the node (rule 8). What stays refused
+  (class 1, at the element): such an element in another module's markup (§8.4), on a page that
+  prerenders (the string form and the takeover have no node per text: `build/bad/prerender/
+  TextBesideElement/`), and a text before markup that is not an element written in place (another
+  module's markup). Pages: `browser/inline/TextBesideElement`, and `browser/tea/TodoMVC` and
+  `TodoRouting` copied beside it.
 - **An attribute** whose value changes is `prop`; a constant one, and one `init` bakes, is in the
   markup. An attribute that is not a DOM property and whose value changes, a URL, raw HTML, and a
   class or style list that changes are limits of the compiler (*amended 2026-11-23:* all but raw
@@ -2025,6 +2045,12 @@ element: a class or style list held as a value (`ClassListValue/`, `StyleListVal
 whose names repeat, are empty or (a class's) hold whitespace (`ClassListNames/`), and a style
 list whose value changes on a page that prerenders (`build/bad/prerender/StyleList/`).
 `StringClassList/`, whose list was constant, compiles and is withdrawn.
+
+*Amended 2026-11-24 (§8.2, *A text hole*, #2650):* the row *a text hole beside an element* is
+withdrawn: such an element is compiled, each text a node of its own. Its class-1 rows in its place,
+at the element: such an element on a page that prerenders (`TextBesideElement/` moved to
+`build/bad/prerender/`), in another module's markup, and a text before markup that is not an
+element written in place.
 
 *Amended 2026-10-25 (S2's design pass):* the keyed `For` row above is replaced, from S2, by §9.6's
 rows; `ResearchListWidget/` moves to `ListRowsById/` with the class 3 text when S2's refusals land.
