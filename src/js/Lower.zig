@@ -1467,6 +1467,10 @@ pub const Lowerer = struct {
     /// The `let`s that lowering leaves out: an arm's statements, outside
     /// the mount of its markup.
     let_skip: []const Inst.Index = &.{},
+    /// The `let`s lowering binds although a markup root took them: the
+    /// statements of a branch's arms that `programBranchChooseAll` runs in
+    /// the choice (1.40), which no root value reads and so no root binds.
+    let_force: []const Inst.Index = &.{},
     /// §31.10, R6: the module's hoisted reads, indexed once its table is
     /// clean (`hoistsReady`). `hoist_at` lists the reads a placement binds,
     /// by `(instruction, phase)`; `hoist_prefix` the read each rewritten
@@ -12290,7 +12294,7 @@ pub const Lowerer = struct {
                 .let_def => {
                     // A `let` only a grouped root reads is that root's to
                     // evaluate (`boundary.md` §9.4.6, 1.5, `Root.lets`).
-                    if (l.markupMovedLet(def)) return;
+                    if (l.markupMovedLet(def) and std.mem.indexOfScalar(Inst.Index, l.let_force, def) == null) return;
                     // A name for a markup root is evaluated nowhere: the
                     // holes that read it enter the root (*A markup value*),
                     // and any other read is refused where it is lowered.
@@ -18941,12 +18945,19 @@ pub const Lowerer = struct {
     /// scrutinee, the decision and the taken arm's `let`s but those that are
     /// statements — as `[j, …]`: the arm taken and what binds its values
     /// (`ArmOverride.Mode.choose`).
-    fn directBranchChoose(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index) Allocator.Error!Node.Index {
+    fn directBranchChoose(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index, statements: bool) Allocator.Error!Node.Index {
         const p = l.mk.?.pos;
         const arms = try l.branchArms(node) orelse return l.nullNode(p);
         const ov: ArmOverride = .{ .arms = arms, .mode = .choose };
         var skip: std.ArrayList(Inst.Index) = .empty;
-        if (!arms.document) for (arms.bodies) |b| try skip.appendSlice(l.scratch, l.armStatements(b));
+        // A document's statements, and with `statements` (1.40) any arm's,
+        // run in the choice, among the arm's other `let`s.
+        if (!arms.document and !statements) for (arms.bodies) |b| try skip.appendSlice(l.scratch, l.armStatements(b));
+        var force: std.ArrayList(Inst.Index) = .empty;
+        if (statements) for (arms.bodies) |b| try force.appendSlice(l.scratch, l.armStatements(b));
+        const saved_force = l.let_force;
+        defer l.let_force = saved_force;
+        l.let_force = force.items;
         if (node != .none and l.parametricMarkup()) {
             try l.mk.?.blocks.append(l.scratch, .empty);
             const nested: beni_markup.Block = @fromBackingInt(@intCast(l.mk.?.blocks.items.len - 1));
@@ -20049,6 +20060,33 @@ pub const Lowerer = struct {
             } else return null;
         }
         return out;
+    }
+
+    /// `cx.programBranchStatementGroups`: the group the write-set pass
+    /// recorded for each statement of each arm of branch `node`, on the
+    /// current call path, or null when one is missing.
+    fn directBranchStatementGroups(l: *Lowerer, node: beni_markup.Node.Index) ?[]const u32 {
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        const arms = (l.branchArms(node) catch return null) orelse return null;
+        var out: std.ArrayList(u32) = .empty;
+        const module = l.in.module.int();
+        // A hole's value is walked on the path its token extends: a
+        // `view`'s body, a helper's branch and the row of a `For` or a
+        // `Show` (whose body the pass walks on the path it stands on) add
+        // none.
+        var path: std.ArrayList(u64) = .empty;
+        path.appendSlice(l.scratch, l.inline_path.items) catch return null;
+        const row = node != .none and (l.mk.?.built.tree.kind(node) == .for_ or l.mk.?.built.tree.kind(node) == .show);
+        if (node != .none and !arms.helper and !row) path.append(l.scratch, (@as(u64, module) << 32) | l.mk.?.built.node_tokens[@backingInt(node)]) catch return null;
+        for (arms.bodies) |body| for (l.armStatements(body)) |def| {
+            const value: u32 = l.bir.instData(def).rhs;
+            const g = for (d.lets) |*x| {
+                if (x.module == module and x.inst == value and std.mem.eql(u64, x.path, path.items)) break x.group;
+            } else return null;
+            out.append(l.scratch, g) catch return null;
+        };
+        return out.items;
     }
 
     fn directViewLeave(l: *Lowerer) void {
@@ -21664,7 +21702,11 @@ const markup_vtable: beni_markup.VTable = struct {
     }
 
     fn programBranchChoose(impl: *anyopaque, into: M.Block, n: M.Node.Index) E!M.Expr {
-        return expr(try lowerer(impl).directBranchChoose(into, n));
+        return expr(try lowerer(impl).directBranchChoose(into, n, false));
+    }
+
+    fn programBranchChooseAll(impl: *anyopaque, into: M.Block, n: M.Node.Index) E!M.Expr {
+        return expr(try lowerer(impl).directBranchChoose(into, n, true));
     }
 
     fn programBranchBind(impl: *anyopaque, into: M.Block, n: M.Node.Index, k: u32, from: M.Expr, made: bool) E!void {
@@ -21709,6 +21751,10 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn programViewStatementGroups(impl: *anyopaque) ?[]const u32 {
         return lowerer(impl).directViewStatementGroups();
+    }
+
+    fn programBranchStatementGroups(impl: *anyopaque, n: M.Node.Index) ?[]const u32 {
+        return lowerer(impl).directBranchStatementGroups(n);
     }
 
     fn programSubscriptions(impl: *anyopaque) M.Program.Subscriptions {
@@ -22073,6 +22119,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_branch_enter = programBranchEnter,
         .program_branch_value = programBranchValue,
         .program_branch_choose = programBranchChoose,
+        .program_branch_choose_all = programBranchChooseAll,
         .program_branch_bind = programBranchBind,
         .program_branch_statements = programBranchStatements,
         .program_show_fallback = programShowFallback,
@@ -22084,6 +22131,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_view_statements = programViewStatements,
         .program_let = programLet,
         .program_view_statement_groups = programViewStatementGroups,
+        .program_branch_statement_groups = programBranchStatementGroups,
         .program_subscriptions = programSubscriptions,
         .program_subscription_start = programSubscriptionStart,
         .program_subscription_message = programSubscriptionMessage,
