@@ -3,7 +3,7 @@
 -- `<></>` — chosen with the row's item and position at every `set`. Keyed
 -- rows change arm in place, move with whichever node they show, and go
 -- with it; an arm's event sends the message its row last kept, and a
--- position-keyed `case` row reads its position. Its transcript is
+-- position-keyed `case` row reads its position through a `let`. Its transcript is
 -- `browser-tea`'s for the same source.
 import Html exposing (Html)
 import Tea
@@ -79,7 +79,8 @@ view model =
         <ol id="position">
             <For each={model.rows} keyed={False}>
                 {λr i →
-                    case Int.mod (i + model.n) 3 of
+                    turn = Int.mod (i + model.n) 3
+                    case turn of
                         0 →
                             <li>{"zero ${String.fromInt r}"}</li>
 

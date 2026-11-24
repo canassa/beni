@@ -18428,7 +18428,10 @@ pub const Lowerer = struct {
                 const row_index = tree.for_(node).row;
                 if (tree.row(row_index).kind != .lambda) return null;
                 const body = st.built.rows[@backingInt(row_index)].body.unwrap() orelse return null;
-                if (l.bir.instTag(body) != .case) return null;
+                // Its own `let`s run as the branch is chosen, as a hole's do.
+                var past = body;
+                while (l.bir.instTag(past) == .let) past = @fromBackingInt(@intCast(l.bir.instData(past).rhs));
+                if (l.bir.instTag(past) != .case) return null;
                 break :blk body;
             }
             if (tree.kind(node) != .hole) return null;
