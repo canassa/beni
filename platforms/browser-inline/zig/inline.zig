@@ -1110,7 +1110,7 @@ const RowBuild = struct {
         if (f.fallback != null and !page) return later(cx, n, "a `For` with a `fallback` in a `For`'s row or an arm of a branch");
         const row = tree.row(f.row);
         if (row.kind == .lambda) if (cx.programBranch(n)) |br| return branchRow(pg, n, br, scope);
-        if (row.kind != .markup) return later(cx, n, "a `For` whose row function is not a lambda whose body is one element written in place");
+        if (row.kind != .markup) return later(cx, n, "a `For` whose row function is not a lambda whose body is one element written in place, or an `if` or a `case` whose arms are each one element or `<></>`,");
         const top = tree.root(row.body).node;
         if (tree.kind(top) != .element) return later(cx, top, "a `For` row that is not one element");
         return unit(pg, top, scope, true);
