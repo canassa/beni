@@ -1,0 +1,174 @@
+-- run: a closure made before a local of its block that is bound after a
+-- suspension point of that block (#2663; transparent-effects-proposal.md
+-- §16.3, amended 2026-11-24). The split puts the rest of the block in a
+-- continuation; the local is declared with `let` in front of the split and
+-- assigned where its `const` stood, so the closure reads it. Shapes: a
+-- statement between the two, a callee that suspends while it builds the
+-- value, two suspensions, a suspension in a `case` arm (a join), a closure called twice, by `List.map`, kept in a record, a
+-- closure that returns one, a local function instead of a lambda, a lambda
+-- that names a local function the rest declares, a nested block, a loop
+-- (the fast path and the slow copy), a bind, and a callback that may
+-- suspend (its `$s` twin). `.in-place` builds it again with its records
+-- written in place.
+import Io
+import Node exposing (Program)
+
+
+type alias P =
+    n : Int
+    tag : String
+
+
+type alias H =
+    f : ⊤ → String
+
+
+slept : Int → String
+slept k =
+    a = λ⊤ → String.fromInt p.n
+    Io.sleep 1
+    p = { n = k, tag = "t" }
+    a ⊤
+
+
+mk : Int → P
+mk k =
+    Io.sleep 1
+    { n = k, tag = "t" }
+
+
+sleptItem : Int → String
+sleptItem k =
+    a = λ⊤ → String.fromInt p.n
+    p = mk k
+    q = { p | n = p.n + 1 }
+    a ⊤ ++ " " ++ String.fromInt q.n
+
+
+twoSleeps : Int → String
+twoSleeps k =
+    a = λ⊤ → String.fromInt p.n ++ String.fromInt r.n
+    Io.sleep 1
+    p = mk k
+    Io.sleep 1
+    r = mk (k + 5)
+    a ⊤
+
+
+calls : Int → String
+calls k =
+    a = λs → s ++ String.fromInt p.n
+    Io.sleep 1
+    p = mk k
+    x = a "a"
+    Io.sleep 1
+    y = a "b"
+    m = { f = λ⊤ → a "c" }
+    x ++ y ++ String.join (List.map [ "d", "e" ] a) "" ++ m.f ⊤
+
+
+returnsOne : Int → String
+returnsOne k =
+    a = λ⊤ → λ⊤ → String.fromInt p.n
+    Io.sleep 1
+    p = mk k
+    (a ⊤) ⊤
+
+
+localFunction : Int → String
+localFunction k =
+    g s = s ++ String.fromInt p.n
+    Io.sleep 1
+    p = mk k
+    g "g"
+
+
+namesLaterFunction : Int → String
+namesLaterFunction k =
+    a = λ⊤ → h "h"
+    Io.sleep 1
+    h s = s ++ String.fromInt p.n
+    p = mk k
+    a ⊤
+
+
+inCase : Bool, Int → String
+inCase c k =
+    a = λ⊤ → String.fromInt p.n
+    x =
+        if c then
+            Io.sleep 1
+            1
+        else
+            2
+    p = { n = k + x, tag = "t" }
+    a ⊤
+
+
+nestedBlock : Int → String
+nestedBlock k =
+    a =
+        λs →
+            b = λ⊤ → String.fromInt p.n
+            s ++ b ⊤
+    Io.sleep 1
+    p = mk k
+    a "n"
+
+
+loop : Int, Int, String → String
+loop i k acc =
+    if i == 0 then
+        acc
+    else
+        a = λ⊤ → String.fromInt p.n
+        Io.sleep 1
+        p = { n = k + i, tag = "t" }
+        loop (i - 1) k (acc ++ a ⊤)
+
+
+withK : Int, (Int → String) → String
+withK x k = k x
+
+
+bound : Int → String
+bound k =
+    x ← withK k
+    a = λ⊤ → String.fromInt p.n
+    Io.sleep 1
+    p = { n = x, tag = "t" }
+    a ⊤
+
+
+withCallback : (Int → Int), Int → String
+withCallback cb k =
+    a = λ⊤ → String.fromInt p.n
+    p = { n = cb k, tag = "t" }
+    q = { p | n = p.n + 1 }
+    a ⊤ ++ " " ++ String.fromInt q.n
+
+
+sleepy : Int → Int
+sleepy n =
+    Io.sleep 1
+    n
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ slept 0
+        , sleptItem 0
+        , twoSleeps 0
+        , calls 0
+        , returnsOne 0
+        , localFunction 0
+        , namesLaterFunction 0
+        , inCase True 0
+        , inCase False 0
+        , nestedBlock 0
+        , loop 3 0 ""
+        , bound 0
+        , withCallback (λn → n) 0
+        , withCallback sleepy 0
+        ]

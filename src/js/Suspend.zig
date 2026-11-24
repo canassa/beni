@@ -296,8 +296,8 @@ pub const Pass = struct {
                             try out.append(p.scratch, try p.ret(call_node, at));
                             return out.items;
                         }
-                        try p.liftFunctions(list[0..i], call_node, rest, &out);
-                        const body = try p.rewrite(try p.withoutLifted(rest, out.items), .closure);
+                        const moved = try p.hoistNamed(list[0..i], &.{call_node}, rest, &out);
+                        const body = try p.rewrite(moved, .closure);
                         const k = try p.arrow(&.{temp}, body, at);
                         const then = try p.call(try p.ident(p.names.and_then, at), &.{ call_node, k }, at);
                         try out.append(p.scratch, try p.ret(then, at));
@@ -306,8 +306,9 @@ pub const Pass = struct {
                     .loop => {
                         // The fast path goes on in place; the slow path's
                         // continuation is a copy that re-enters the loop.
+                        const moved = try p.hoistNamed(list[0..i], &.{call_node}, rest, &out);
                         try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(temp), call_node.int()));
-                        const slow_rest = try p.cloneList(rest);
+                        const slow_rest = try p.cloneList(moved);
                         const slow = try p.rewrite(slow_rest, .closure);
                         const k = try p.arrow(&.{temp}, slow, at);
                         const parked = try p.call(try p.ident(p.names.is_waiting, at), &.{try p.ident(temp, at)}, at);
@@ -322,7 +323,7 @@ pub const Pass = struct {
                             .else_end = else_range.end,
                         });
                         try out.append(p.scratch, try p.add(.if_stmt, at, parked.int(), @backingInt(if_record)));
-                        try out.appendSlice(p.scratch, try p.rewrite(rest, .loop));
+                        try out.appendSlice(p.scratch, try p.rewrite(moved, .loop));
                         return out.items;
                     },
                 }
@@ -340,16 +341,17 @@ pub const Pass = struct {
                 const rest = list[close + 1 ..];
                 if (!try p.terminates(rest) or !try p.terminates(tree)) return error.FallsThrough;
                 const at = p.posOf(n);
+                const moved = try p.hoistNamed(list[0..i], tree, rest, &out);
                 switch (mode) {
                     .closure => {
-                        const body = try p.rewrite(rest, .closure);
+                        const body = try p.rewrite(moved, .closure);
                         const k = try p.arrow(&.{param}, body, at);
                         try out.append(p.scratch, try p.add(.const_decl, at, @backingInt(j), k.int()));
                         try out.appendSlice(p.scratch, try p.rewrite(tree, .closure));
                         return out.items;
                     },
                     .loop => {
-                        const inlined = try p.substituteJoin(tree, j, param, rest);
+                        const inlined = try p.substituteJoin(tree, j, param, moved);
                         try out.appendSlice(p.scratch, try p.rewrite(inlined, .loop));
                         return out.items;
                     },
@@ -475,19 +477,38 @@ pub const Pass = struct {
         return p.argNode(args, 0);
     }
 
-    // ---- `let` functions a continuation would hide -------------------------
+    // ---- Locals a continuation would hide ---------------------------------
 
-    /// A `function` declaration of `rest` that the statements before the
-    /// suspension point, or the call itself, name is hoisted in front of the
-    /// point (with the declarations it names in turn), so a `let` function
-    /// is still readable anywhere in its `let` (`language.md` §7).
-    fn liftFunctions(p: *Pass, before: []const Node.Index, call_node: Node.Index, rest: []const Node.Index, out: *std.ArrayList(Node.Index)) Error!void {
+    /// The rest of a function after a split, with what `before` — the
+    /// statements that stay in front of the split, and the call or the tree
+    /// that ends it — names among its own declarations taken out of it
+    /// (`transparent-effects-proposal.md` §16.3, the bullet *A `let`
+    /// function or a local a closure in front of the point names*, #2663). The split moves `rest` into a
+    /// function, or into the leaves of a tree, where nothing in front of it
+    /// can see a name it declares; only a closure can name one there (a
+    /// direct read of a later value is `let_forward_reference`), and it is
+    /// called only once the declaration has run.
+    ///
+    ///   - a `function` declaration is written in front of the split, with
+    ///     the declarations it names in turn, so a `let` function is still
+    ///     readable anywhere in its `let` (`language.md` §7);
+    ///   - a `const name = value` (or a `let`) becomes `let name;` in front
+    ///     of the split and `name = value;` where it stood, so the value is
+    ///     still evaluated in its place and in its turn, and the closure
+    ///     reads the binding the assignment fills.
+    ///
+    /// A declaration nothing in front names is untouched: a function that
+    /// has no such closure is emitted byte for byte as before.
+    fn hoistNamed(p: *Pass, before: []const Node.Index, ends: []const Node.Index, rest: []const Node.Index, out: *std.ArrayList(Node.Index)) Error![]const Node.Index {
         var any = false;
-        for (rest) |n| any = any or p.tag(n) == .func_decl;
-        if (!any) return;
+        for (rest) |n| switch (p.tag(n)) {
+            .func_decl, .const_decl, .let_decl => any = true,
+            else => {},
+        };
+        if (!any) return rest;
         var named = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
         for (before) |n| try p.namesIn(n, &named);
-        try p.namesIn(call_node, &named);
+        for (ends) |n| try p.namesIn(n, &named);
         var lifted = try std.DynamicBitSetUnmanaged.initEmpty(p.scratch, p.b.names.items.len);
         var grew = true;
         while (grew) {
@@ -501,17 +522,40 @@ pub const Pass = struct {
                 grew = true;
             }
         }
-        for (rest) |n| {
-            if (p.tag(n) == .func_decl and lifted.isSet(p.data(n).lhs)) try out.append(p.scratch, n);
-        }
-    }
-
-    /// `rest` without the declarations `liftFunctions` put in `hoisted`.
-    fn withoutLifted(p: *Pass, rest: []const Node.Index, hoisted: []const Node.Index) Error![]const Node.Index {
-        if (hoisted.len == 0) return rest;
+        var moved = false;
+        for (rest) |n| switch (p.tag(n)) {
+            .func_decl => if (lifted.isSet(p.data(n).lhs)) {
+                moved = true;
+            },
+            .const_decl, .let_decl => if (named.isSet(p.data(n).lhs)) {
+                moved = true;
+            },
+            else => {},
+        };
+        if (!moved) return rest;
         var kept: std.ArrayList(Node.Index) = .empty;
-        outer: for (rest) |n| {
-            for (hoisted) |h| if (h == n) continue :outer;
+        for (rest) |n| {
+            const d = p.data(n);
+            const at = p.posOf(n);
+            switch (p.tag(n)) {
+                .func_decl => if (lifted.isSet(d.lhs)) {
+                    try out.append(p.scratch, n);
+                    continue;
+                },
+                .const_decl, .let_decl => if (named.isSet(d.lhs)) {
+                    const value: Node.OptionalIndex = if (p.tag(n) == .const_decl)
+                        (@as(Node.Index, @fromBackingInt(@intCast(d.rhs)))).toOptional()
+                    else
+                        @fromBackingInt(@intCast(d.rhs));
+                    try out.append(p.scratch, try p.add(.let_decl, at, d.lhs, @backingInt(Node.OptionalIndex.none)));
+                    if (value.unwrap()) |v| {
+                        const target = try p.ident(@fromBackingInt(@intCast(d.lhs)), at);
+                        try kept.append(p.scratch, try p.add(.assign_stmt, at, target.int(), v.int()));
+                    }
+                    continue;
+                },
+                else => {},
+            }
             try kept.append(p.scratch, n);
         }
         return kept.items;

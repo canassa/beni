@@ -6126,6 +6126,17 @@ bodies, a used enclosing name stepped over), `run/NestingElseIf` (nested labelle
 `browser/` page's release pass (`for(let a of a)` was found there), and every `emit/release/`
 golden.
 
+*Amended 2026-11-24 (#2663): every name is declared where it is read.* A scope only says which
+names a spelling must step around, so a local written OUTSIDE every scope that declares it is
+spelled too, and its spelling reads whatever else holds it there — the suspendable form's split
+did that to a closure naming a value below a suspension point (`undefined 1` printed, no
+diagnostic; `transparent-effects-proposal.md` §16.3). The safety build's self-check now also
+asks, once per scope and name, that each place a declared local is written has a declaration of
+it in that scope or one around it (`Rename.verifyBound`; a parameter, a `const`, a `let`, a
+function, an import, a label, a loop's or a `catch`'s binding). One that does not is an
+`internal` diagnostic naming it. Fixture: `run/ClosureNamesLocalAfterSuspension`'s release pass,
+which stops at build with the split put back as it was.
+
 #### Item 3 â compact printing
 
 One boolean on `Print.Printer`, threaded to the places that push whitespace â esbuild does it in 35
