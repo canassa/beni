@@ -947,9 +947,7 @@ const RegionUse = struct {
     /// A `Show`'s (§8.2, amended 2026-11-23, *A `Show`*): `body`, its body,
     /// a row whose root is `root`; `text`, its fallback `Html.text e`, a
     /// text node whose `root` is unused.
-    /// `statements`: the arm has `let`s no hole reads, run where it is
-    /// prepared (§8.2, amended 2026-11-24).
-    const Arm = struct { plan: *const RowPlan, root: m.Root.Index, call: bool = false, body: bool = false, text: bool = false, statements: bool = false };
+    const Arm = struct { plan: *const RowPlan, root: m.Root.Index, call: bool = false, body: bool = false, text: bool = false };
 };
 
 /// A `For`'s row, planned before anything is written (§9, amended
@@ -1208,11 +1206,11 @@ const RowBuild = struct {
             _ = try cx.programBranchEnter(null, n, @intCast(k), false, null);
             defer cx.programInlineLeave();
             const unit_plan = try unit(pg, top, scope, true);
-            out.* = .{ .plan = unit_plan, .root = r, .call = arm.what == .call, .statements = arm.statements };
+            out.* = .{ .plan = unit_plan, .root = r, .call = arm.what == .call };
             events = events or unit_plan.events;
             stateful = stateful or unit_plan.stateful;
         }
-        try pg.armStatementGroups(n, arms);
+        try pg.armStatementGroups(n, br);
         const p = try pg.a().create(RowPlan);
         p.* = .{ .html = "", .elements = false, .ops = &.{}, .events = events, .stateful = stateful, .branch = arms };
         return p;
@@ -1463,13 +1461,13 @@ const RowBuild = struct {
             _ = try cx.programBranchEnter(null, n, @intCast(k), false, null);
             defer cx.programInlineLeave();
             const unit_plan = try unit(pg, top, scope, true);
-            out.* = .{ .plan = unit_plan, .root = r, .call = arm.what == .call, .statements = arm.statements };
+            out.* = .{ .plan = unit_plan, .root = r, .call = arm.what == .call };
             any = true;
             b.events = b.events or unit_plan.events;
             b.stateful = b.stateful or unit_plan.stateful;
         }
         if (!any) return later(cx, n, not_when);
-        try pg.armStatementGroups(n, arms);
+        try pg.armStatementGroups(n, br);
         try b.ops.append(pg.a(), .{ .target = target, .what = .{ .region = .{ .node = n, .arms = arms, .end = end, .slot = b.regions, .helper = helper } } });
         if (before_marker) b.marker_wanted = b.ops.items.len - 1;
         b.regions += 1;
@@ -2242,7 +2240,7 @@ const Page = struct {
         try pg.writeReads(w, &reads);
         const entered = try pg.enter(blk, w.ctx, null, reads.items);
         const choice = try cx.fresh("branch");
-        try js.constant(blk, choice, try pg.choose(blk, u.node, u.arms));
+        try js.constant(blk, choice, try pg.choose(blk, u.node));
         const taken = try js.index(try js.name(choice), try js.number("0"));
         // One block per arm, chosen by the number the value took; the last
         // arm is the one no other is.
@@ -2335,7 +2333,7 @@ const Page = struct {
         // parameters bound to the arguments the unit evaluated.
         if (called) try cx.programInlineEnter(blk, node, try cx.programInlineArgs(blk, node), false);
         defer if (called) cx.programInlineLeave();
-        try js.constant(blk, choice, try pg.choose(blk, node, arms));
+        try js.constant(blk, choice, try pg.choose(blk, node));
         const taken = try js.index(try js.name(choice), try pg.num(0));
         const pick = try cx.fresh("pick");
         try js.let(blk, pick, null);
@@ -2362,19 +2360,24 @@ const Page = struct {
     /// are written, at every pass that chooses the arm, as a `view`'s
     /// statements run at each pass of what they read (§8.2, amended
     /// 2026-11-24, *An arm's statements*).
-    fn choose(pg: *Page, blk: m.Block, node: m.Node.Index, arms: []const ?RegionUse.Arm) m.Error!m.Expr {
-        for (arms) |x| if (x) |arm| if (arm.statements) return pg.cx.programBranchChooseAll(blk, node);
+    /// Whether an arm has statements is the branch's to say, not the
+    /// units': an arm of `<></>` has no unit and may have some.
+    fn choose(pg: *Page, blk: m.Block, node: m.Node.Index) m.Error!m.Expr {
+        if (pg.cx.programBranch(node)) |br| if (hasStatements(br)) return pg.cx.programBranchChooseAll(blk, node);
         return pg.cx.programBranchChoose(blk, node);
     }
 
-    /// The read sets of branch `n`'s arms' statements, when any of `arms`
-    /// has some, into `statement_groups` (§8.2, amended 2026-11-24).
-    fn armStatementGroups(pg: *Page, n: m.Node.Index, arms: []const ?RegionUse.Arm) m.Error!void {
-        for (arms) |x| if (x) |arm| if (arm.statements) {
-            const groups = pg.cx.programBranchStatementGroups(n) orelse return limit(pg.cx, n, "the write-set pass did not reach a statement of this branch's arms on the `view`'s call path, so `browser-inline` cannot say which messages change it");
-            try pg.statement_groups.appendSlice(pg.a(), groups);
-            return;
-        };
+    /// The read sets of branch `n`'s arms' statements, when one of its
+    /// arms has some, into `statement_groups` (§8.2, amended 2026-11-24).
+    fn armStatementGroups(pg: *Page, n: m.Node.Index, br: m.Program.Branch) m.Error!void {
+        if (!hasStatements(br)) return;
+        const groups = pg.cx.programBranchStatementGroups(n) orelse return limit(pg.cx, n, "the write-set pass did not reach a statement of this branch's arms on the `view`'s call path, so `browser-inline` cannot say which messages change it");
+        try pg.statement_groups.appendSlice(pg.a(), groups);
+    }
+
+    fn hasStatements(br: m.Program.Branch) bool {
+        for (br.arms) |arm| if (arm.statements and !arm.dead) return true;
+        return false;
     }
 
     /// `own` and the statements' read sets recorded since `from`, sorted.
@@ -2796,6 +2799,9 @@ const Page = struct {
             };
             const node = tree.root(r).node;
             const empty = tree.kind(node) == .fragment and tree.fragment(node).children.len == 0;
+            // An arm with statements, `<></>` too, is a region's: they run
+            // in its choice (§8.2, amended 2026-11-24).
+            if (arm.statements) return pg.region(n, br, ctx, where, scope, known_facts);
             if (empty) continue;
             if (tree.kind(node) != .element) return later(cx, n, not_when);
             // An arm that reads what the branch binds, or has `let`s: a
@@ -2874,7 +2880,7 @@ const Page = struct {
             _ = try cx.programBranchEnter(null, n, @intCast(k), false, null);
             defer cx.programInlineLeave();
             const unit_plan = try RowBuild.unit(pg, top, scope, true);
-            out.* = .{ .plan = unit_plan, .root = r, .call = arm.what == .call, .statements = arm.statements };
+            out.* = .{ .plan = unit_plan, .root = r, .call = arm.what == .call };
             any = true;
             pg.row_events = pg.row_events or unit_plan.events;
         }
@@ -2884,7 +2890,7 @@ const Page = struct {
         // An arm's statements run in the choice, so the region's entry is
         // also in their read sets, and in those of its units' (§8.2,
         // amended 2026-11-24).
-        try pg.armStatementGroups(n, arms);
+        try pg.armStatementGroups(n, br);
         const groups = try pg.withStatements(facts.group, statements_from);
         try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null, .marker = if (place.marker) try pg.wantMarker(place.parent) else null });
         try pg.writes.append(pg.a(), .{ .target = place.parent, .ctx = ctx, .groups = groups, .what = .{ .region = @intCast(pg.regions.items.len - 1) } });
