@@ -1,0 +1,66 @@
+-- load
+<body>
+  <main>
+    <button id="after">"after"</button>
+    <button id="twice">"twice"</button>
+    <button id="deep">"deep"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"0"</p>
+    <p id="log"></p>
+  </main>
+</body>
+-- click #after
+<body>
+  <main>
+    <button id="after">"after"</button>
+    <button id="twice">"twice"</button>
+    <button id="deep">"deep"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"1"</p>
+    <p id="log">" | after 0"</p>
+  </main>
+</body>
+-- click #twice
+<body>
+  <main>
+    <button id="after">"after"</button>
+    <button id="twice">"twice"</button>
+    <button id="deep">"deep"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"11"</p>
+    <p id="log">" | after 0 | before 1 | after 1"</p>
+  </main>
+</body>
+-- click #deep
+<body>
+  <main>
+    <button id="after">"after"</button>
+    <button id="twice">"twice"</button>
+    <button id="deep">"deep"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"111"</p>
+    <p id="log">" | after 0 | before 1 | after 1 | deep! 11"</p>
+  </main>
+</body>
+-- click #slept
+<body>
+  <main>
+    <button id="after">"after"</button>
+    <button id="twice">"twice"</button>
+    <button id="deep">"deep"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"1111"</p>
+    <p id="log">" | after 0 | before 1 | after 1 | deep! 11"</p>
+  </main>
+</body>
+-- advance 10
+<body>
+  <main>
+    <button id="after">"after"</button>
+    <button id="twice">"twice"</button>
+    <button id="deep">"deep"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"1111"</p>
+    <p id="log">" | after 0 | before 1 | after 1 | deep! 11 | slept 111"</p>
+  </main>
+</body>

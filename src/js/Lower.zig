@@ -1475,6 +1475,12 @@ pub const Lowerer = struct {
     hoist_ready: bool = false,
     hoist_at: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
     hoist_prefix: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
+    /// The reads placed after a `let` item (phase 2), by the local function
+    /// that takes them (their `capture`, an instruction): the first read's
+    /// row, and each row's next, a column per instruction and per row.
+    /// Empty when the module has none. Where `letBindings` lowers it.
+    hoist_late_head: []u32 = &.{},
+    hoist_late_next: []u32 = &.{},
     hoist_live: []HoistLive = &.{},
     /// Raised for each top-level lowering of a declaration: a temporary
     /// bound in another lowering is not this one's.
@@ -6848,9 +6854,18 @@ pub const Lowerer = struct {
             const g = try by_read.getOrPut(l.scratch, .{ r.inst, r.binding, r.capture });
             if (!g.found_existing) g.value_ptr.* = @intCast(i);
             groups[i] = g.value_ptr.*;
-            const at = try l.hoist_at.getOrPut(l.scratch, (@as(u64, r.placement) << 1) | r.phase);
+            const at = try l.hoist_at.getOrPut(l.scratch, (@as(u64, r.placement) << 2) | r.phase);
             if (!at.found_existing) at.value_ptr.* = .empty;
             try at.value_ptr.append(l.scratch, @intCast(i));
+            if (r.phase == 2 and r.capture < l.bir.insts.len) {
+                if (l.hoist_late_head.len == 0) {
+                    l.hoist_late_head = try l.scratch.alloc(u32, l.bir.insts.len);
+                    @memset(l.hoist_late_head, Hoists.none);
+                    l.hoist_late_next = try l.scratch.alloc(u32, t.reads.len);
+                }
+                l.hoist_late_next[i] = l.hoist_late_head[r.capture];
+                l.hoist_late_head[r.capture] = @intCast(i);
+            }
             const target = try l.hoist_prefix.getOrPut(l.scratch, l.hoistTarget(r));
             if (!target.found_existing) target.value_ptr.* = .empty;
             try target.value_ptr.append(l.scratch, @intCast(i));
@@ -6878,11 +6893,12 @@ pub const Lowerer = struct {
     }
 
     /// Bind the temporaries placed at `inst` (§31.14): before it (phase 0),
-    /// or after an update's values and before its stores (phase 1). Each is
-    /// the holder's path to the written field, read as the source writes it.
-    fn placeHoists(l: *Lowerer, out: *StmtList, inst: Inst.Index, phase: u1) Allocator.Error!void {
+    /// after an update's values and before its stores (phase 1), or after
+    /// it, a `let` item (phase 2, §31.6 as amended 2026-11-24). Each is the
+    /// holder's path to the written field, read as the source writes it.
+    fn placeHoists(l: *Lowerer, out: *StmtList, inst: Inst.Index, phase: u2) Allocator.Error!void {
         if (!try l.hoistsReady()) return;
-        const rows = l.hoist_at.get((@as(u64, inst.int()) << 1) | phase) orelse return;
+        const rows = l.hoist_at.get((@as(u64, inst.int()) << 2) | phase) orelse return;
         const t = l.in.ownership;
         const p = l.pos(inst);
         for (rows.items) |ri| {
@@ -6903,7 +6919,7 @@ pub const Lowerer = struct {
     /// (`dataCall`), which no path of the walk may have placed.
     fn placeHoistsOnce(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!void {
         if (!try l.hoistsReady()) return;
-        const rows = l.hoist_at.get(@as(u64, inst.int()) << 1) orelse return;
+        const rows = l.hoist_at.get(@as(u64, inst.int()) << 2) orelse return;
         for (rows.items) |ri| if (l.hoist_live[l.hoist_groups[ri]].gen == l.hoist_gen) return;
         try l.placeHoists(out, inst, 0);
     }
@@ -7002,7 +7018,7 @@ pub const Lowerer = struct {
         insts[0] = @fromBackingInt(@intCast(d.lhs));
         for (fields, insts[1..]) |f, *slot| slot.* = f.value;
         const values = try l.orderedExprs(out, insts, false);
-        const phased = l.hoist_at.contains((@as(u64, inst.int()) << 1) | 1);
+        const phased = l.hoist_at.contains((@as(u64, inst.int()) << 2) | 1);
         // The object written: a name, evaluated once.
         var base = values[0];
         if (l.b.tagOf(base) != .ident or l.isMutable(base)) {
@@ -12194,20 +12210,61 @@ pub const Lowerer = struct {
     /// scope in all bodies") and `const` would turn into a dead-zone throw.
     fn letBindings(l: *Lowerer, out: *StmtList, range: Bir.SubRange) !void {
         const defs = l.bir.extraSlice(range, Inst.Index);
-        for (defs) |def| {
+        // A local function whose read is placed after a later item, the one
+        // that binds what it reads (`ownership-checker.md` §31.6, amended
+        // 2026-11-24): lowered just after that item. A `function` is hoisted,
+        // so where it stands in the block changes no call.
+        var waiting: std.ArrayList([2]u32) = .empty;
+        for (defs, 0..) |def, at| {
+            if (at > 0) try l.afterLetItem(out, defs, at - 1, waiting.items);
+            try l.placeHoists(out, def, 0);
+            if (try l.lateFunction(defs, at)) |after| {
+                try waiting.append(l.scratch, .{ @intCast(at), @intCast(after) });
+                continue;
+            }
+            try l.letBinding(out, def);
+        }
+        if (defs.len > 0) try l.afterLetItem(out, defs, defs.len - 1, waiting.items);
+    }
+
+    /// The reads placed just after item `k` of a `let` (phase 2), then the
+    /// local functions waiting for them.
+    fn afterLetItem(l: *Lowerer, out: *StmtList, defs: []const Inst.Index, k: usize, waiting: []const [2]u32) !void {
+        try l.placeHoists(out, defs[k], 2);
+        for (waiting) |w| if (w[1] == k) try l.letBinding(out, defs[w[0]]);
+    }
+
+    /// For a local function, item `at` of `defs`: the last item at or after
+    /// it whose reads it takes are placed after (phase 2), or null.
+    fn lateFunction(l: *Lowerer, defs: []const Inst.Index, at: usize) !?usize {
+        if (!try l.hoistsReady()) return null;
+        if (defs[at].int() >= l.hoist_late_head.len) return null;
+        const t = l.in.ownership;
+        var last: ?usize = null;
+        var ri = l.hoist_late_head[defs[at].int()];
+        while (ri != Hoists.none) : (ri = l.hoist_late_next[ri]) {
+            for (defs[at..], at..) |item, k| {
+                if (item.int() == t.reads[ri].placement and (last == null or k > last.?)) last = k;
+            }
+        }
+        return last;
+    }
+
+    /// One binding of a `let` (`letBindings`), its placed reads bound.
+    fn letBinding(l: *Lowerer, out: *StmtList, def: Inst.Index) !void {
+        {
             const d = l.bir.instData(def);
             const p = l.pos(def);
-            try l.placeHoists(out, def, 0);
-            if (l.let_skip.len != 0 and std.mem.indexOfScalar(Inst.Index, l.let_skip, def) != null) continue;
+            if (l.let_skip.len != 0 and std.mem.indexOfScalar(Inst.Index, l.let_skip, def) != null) return;
             switch (l.bir.instTag(def)) {
                 .let_def => {
                     // A `let` only a grouped root reads is that root's to
                     // evaluate (`boundary.md` §9.4.6, 1.5, `Root.lets`).
-                    if (l.markupMovedLet(def)) continue;
+                    if (l.markupMovedLet(def)) return;
                     // A name for a markup root is evaluated nowhere: the
                     // holes that read it enter the root (*A markup value*),
                     // and any other read is refused where it is lowered.
-                    if (l.namedMarkupLet(def) != null) continue;
+                    if (l.namedMarkupLet(def) != null) return;
                     const payload = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
                     const params = l.bir.extraSlice(
                         .{ .start = payload.params_start, .end = payload.params_end },
@@ -12243,7 +12300,7 @@ pub const Lowerer = struct {
                             const lambda = try l.add(.arrow, lambda_p, @backingInt(lambda_record), Node.Data.unused);
                             if (l.in.unit_results and !l.functionSuspends(value_inst) and l.unitValued(@fromBackingInt(@intCast(ld.rhs)))) try l.unobserved_arrows.append(l.scratch, lambda);
                             try l.constDecl(out, n, lambda, p);
-                            continue;
+                            return;
                         }
                         // A `Js.Ref` that does not escape is a `let` of
                         // its value (§4).
@@ -12254,7 +12311,7 @@ pub const Lowerer = struct {
                             const init = try l.expr(out, init_inst);
                             try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(n), @backingInt(init.toOptional())));
                             if (l.mayHaveEffect(init_inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
-                            continue;
+                            return;
                         }
                         // A loop called once, its value bound here: the
                         // loop, whose exits write the name (§9).
@@ -12270,9 +12327,9 @@ pub const Lowerer = struct {
                             if (!l.isIdentOf(value, into)) {
                                 try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(into, p)).int(), value.int()));
                             }
-                            continue;
+                            return;
                         }
-                        if (try l.boundLoop(out, value_inst, .{ .assign = n }, if (named_before) &.{} else &.{payload.local})) continue;
+                        if (try l.boundLoop(out, value_inst, .{ .assign = n }, if (named_before) &.{} else &.{payload.local})) return;
                         // `--release`: a `case` whose value is bound writes
                         // the binding itself, declared a `let`, rather than
                         // a temporary the binding then copies.
@@ -12281,7 +12338,7 @@ pub const Lowerer = struct {
                         // binding of its object (`settleStores`).
                         const value = try l.settleStores(out, try l.expr(out, value_inst), p);
                         l.case_into = .{};
-                        if (l.isIdentOf(value, n)) continue;
+                        if (l.isIdentOf(value, n)) return;
                         // `--release`: a binding of a name nothing
                         // reassigns — `y = Js.to x` — is that name, as a
                         // parameter passed one is (`enterInline`).
@@ -12289,13 +12346,13 @@ pub const Lowerer = struct {
                             !l.isMutable(value) and !named_before and payload.local < l.local_names.len)
                         {
                             l.local_names[payload.local] = @fromBackingInt(@intCast(l.b.dataOf(value).lhs));
-                            continue;
+                            return;
                         }
                         try l.constDecl(out, n, value, p);
                         // Read by nothing or not, a binding that may have an
                         // effect is evaluated: the release optimiser keeps it.
                         if (l.mayHaveEffect(value_inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
-                        continue;
+                        return;
                     }
                     // A `let_def` with parameters is already its own hoisted
                     // `function` (§8's cases table), so the loop is
@@ -12316,7 +12373,7 @@ pub const Lowerer = struct {
                     // value is a statement*).
                     if (l.bir.instTag(@fromBackingInt(@intCast(d.lhs))) == .pat_wild) {
                         try l.discard(out, @fromBackingInt(@intCast(d.rhs)), p);
-                        continue;
+                        return;
                     }
                     // `( a, b ) = <a loop called once>`: the loop, whose
                     // exits write each element into its name (§9).
@@ -12324,7 +12381,7 @@ pub const Lowerer = struct {
                         // Which names are new, asked before they are made.
                         const locals = try l.tupleLocals(@fromBackingInt(@intCast(d.lhs)));
                         if (try l.tupleNames(@fromBackingInt(@intCast(d.lhs)))) |names| {
-                            if (try l.boundLoop(out, @fromBackingInt(@intCast(d.rhs)), .{ .tuple = names }, locals)) continue;
+                            if (try l.boundLoop(out, @fromBackingInt(@intCast(d.rhs)), .{ .tuple = names }, locals)) return;
                         }
                     }
                     const value = try l.expr(out, @fromBackingInt(@intCast(d.rhs)));

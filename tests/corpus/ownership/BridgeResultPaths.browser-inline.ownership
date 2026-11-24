@@ -33,6 +33,8 @@ module BridgeResultPaths
   130:36 List.push inner: accepted callback-param (List.foldl supplies it owned)
   140:19 List.push ys: accepted callback-param (decided at its calls)
   141:5 call <lambda> xs: rejected disjoint: another operand of the same operation reaches it (<lambda> writes π1)
+  capture state.values: read 68:34; after 67:5
+  capture state.values: read 77:14; after 74:5
   summary oppositeArm: res fresh1
   summary freshResult: res fresh1
   summary caseProjection: π1 R; res fresh1
