@@ -1,0 +1,41 @@
+-- `Pages.view`'s button has a function of the event as its handler, and the
+-- program shows the view under an `Html.map` whose function is a lambda
+-- that gives `Tagged 3 sub`. An event of another module's markup whose
+-- handler value is not one constructor goes through the dispatcher, and the
+-- program hands the root a `send` that applies the constructors of the maps
+-- around the call (docs/design/browser-inline.md §8.4, amended 2026-11-24).
+-- Each must be a constructor of one field, as for a handler of the root: a
+-- limit of the compiler, class 4 (§5), reported at the program's hole.
+import Browser
+import Html exposing (Html)
+import Pages
+import Tea
+
+
+type alias Model =
+    pages : Pages.Model
+
+
+type Msg
+    = Tagged Int Pages.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Tagged _ sub →
+            { model | pages = Pages.update sub model.pages }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {Html.map (Pages.view model.pages) λsub → Tagged 3 sub}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { pages = Pages.init ⊤ }, update = update, view = view })
+        "root"

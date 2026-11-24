@@ -1,0 +1,30 @@
+--! A counter whose button's handler is a function of the event.
+
+import Html exposing (Event, Html)
+
+
+pub type alias Model =
+    n : Int
+
+
+pub type Msg
+    = Inc
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+
+pick : Event → Msg
+pick _ = Inc
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <button id="first" onClick={pick}>+</button>
+        <p>{String.fromInt model.n}</p>
+    </section>

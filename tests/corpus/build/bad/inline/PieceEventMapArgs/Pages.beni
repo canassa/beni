@@ -1,0 +1,34 @@
+--! A pager whose one button has a function of the event as its handler.
+
+import Html exposing (Event, Html)
+
+
+pub type alias Model =
+    page : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { page = 1 }
+
+
+pub type Msg
+    = Go Int
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go n →
+            { model | page = n }
+
+
+next : Event → Msg
+next _ = Go 2
+
+
+pub view : Model → Html Msg
+view model =
+    <nav>
+        <output>{model.page}</output>
+        <button onClick={next}>Next</button>
+    </nav>

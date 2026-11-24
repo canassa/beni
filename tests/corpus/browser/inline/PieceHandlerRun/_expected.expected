@@ -1,0 +1,85 @@
+-- load
+<body>
+  <main>
+    <section>
+      <button id="first">"+"</button>
+      <p>"10"</p>
+    </section>
+    <section>
+      <button id="second">"+"</button>
+      <p>"20"</p>
+    </section>
+    <section>
+      <button id="third">"+"</button>
+      <p>"30"</p>
+    </section>
+  </main>
+</body>
+-- click #first
+<body>
+  <main>
+    <section>
+      <button id="first">"+"</button>
+      <p>"11"</p>
+    </section>
+    <section>
+      <button id="second">"+"</button>
+      <p>"20"</p>
+    </section>
+    <section>
+      <button id="third">"+"</button>
+      <p>"30"</p>
+    </section>
+  </main>
+</body>
+-- click #second
+<body>
+  <main>
+    <section>
+      <button id="first">"+"</button>
+      <p>"11"</p>
+    </section>
+    <section>
+      <button id="second">"+"</button>
+      <p>"21"</p>
+    </section>
+    <section>
+      <button id="third">"+"</button>
+      <p>"30"</p>
+    </section>
+  </main>
+</body>
+-- click #third
+<body>
+  <main>
+    <section>
+      <button id="first">"+"</button>
+      <p>"11"</p>
+    </section>
+    <section>
+      <button id="second">"+"</button>
+      <p>"21"</p>
+    </section>
+    <section>
+      <button id="third">"+"</button>
+      <p>"31"</p>
+    </section>
+  </main>
+</body>
+-- click #first
+<body>
+  <main>
+    <section>
+      <button id="first">"+"</button>
+      <p>"12"</p>
+    </section>
+    <section>
+      <button id="second">"+"</button>
+      <p>"21"</p>
+    </section>
+    <section>
+      <button id="third">"+"</button>
+      <p>"31"</p>
+    </section>
+  </main>
+</body>

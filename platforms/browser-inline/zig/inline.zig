@@ -3183,8 +3183,11 @@ const Page = struct {
             .event => {
                 var captures: std.ArrayList(u32) = .empty;
                 var groups: std.ArrayList(u32) = .empty;
-                // Piece listeners already use their constructor directly and
-                // never reenter helper arguments at dispatch.
+                // A piece keeps no arguments for its handlers. A listener of
+                // the constructor alone evaluates nothing at the event; one
+                // whose message goes through the dispatcher enters the call
+                // again (`pieceMake`), and is refused there when an argument
+                // is not proved pure and total.
                 var at: ?u32 = if (pg.piece) null else ctx;
                 while (at) |c| : (at = pg.ctxs.items[c].parent) {
                     const call_ctx = pg.ctxs.items[c];
@@ -3934,13 +3937,15 @@ const Page = struct {
                 try args.append(pg.a(), try js.arrow(fields, hblk));
             }
             // `send`: the dispatcher, handed the root's message under the
-            // constructors of the maps around its call — the dispatcher
-            // itself when there is none (§8.4, amended 2026-11-24).
+            // constructors of the maps around its call (§8.4, amended
+            // 2026-11-24). When the hook gives the message back as it is —
+            // no map is around the call, or none of them adds anything to
+            // the value at run time — `send` is the dispatcher itself.
             if (u.data.send) {
                 const dispatch = try js.name(pg.dispatch.?);
                 const msg = try cx.fresh("msg");
                 const inner = try js.name(msg);
-                const wrapped = (try cx.programPieceWrap(u.node, inner)) orelse return limit(cx, u.node, "an event of this other module's markup sends a message that `browser-inline` cannot make the program's message of through the `Html.map`s around the call, each of which must be a constructor of one field");
+                const wrapped = (try cx.programPieceWrap(u.node, inner)) orelse return limit(cx, u.node, "an event of this other module's markup makes its message when it fires, and `browser-inline` puts that message under the `Html.map`s around the call, each of which must be a constructor of one field");
                 if (wrapped == inner) {
                     try args.append(pg.a(), dispatch);
                 } else {

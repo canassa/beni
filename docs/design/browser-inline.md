@@ -354,7 +354,7 @@ by its type — hides nothing: it is written exactly, and accepted.
    longer of this class: its message goes through the dispatcher (§8.3). One of another module's
    markup still is (§8.7).
    *Amended 2026-11-24 (#2063):* one of another module's markup goes through the dispatcher too
-   (§8.4, the amendment of that date). Two narrower cases of it stay of this class (§8.7).
+   (§8.4, the amendment of that date). Three narrower cases of it stay of this class (§8.7).
 
 *Implementation specified 2026-10-30: scalar String class attributes.* The checker already
 records whether an attribute is its declared String form or a class list
@@ -1923,6 +1923,9 @@ markup is (§8.3, amended 2026-11-05), with the work split between the two modul
     program's own `view` keeps, for the handler, the arguments its binding evaluated (§8.2,
     *Evaluation order*). A root does not, and `make` would evaluate the argument again at the
     event (`PieceEventHelperArg/`).
+  - Such an event of a root shown under an `Html.map` whose function is not a constructor of one
+    field (`λsub → Tagged 3 sub`), at the program's hole: the same rule as for a handler of the
+    root (`PieceEventMapArgs/`).
   - A handler written as a literal, as in the program's own markup.
 - **Not built:** a constructor applied to values could reach its key's handler directly, with its
   arguments evaluated in the root, as the program's own markup does. It goes through the
@@ -1933,10 +1936,11 @@ markup is (§8.3, amended 2026-11-05), with the work split between the two modul
   an eager arm, and a lambda on a form's `onSubmit`, which declares `preventDefault`),
   `PieceHandlerMoved` (a sandbox: a key the root handles itself and the dispatcher's handler of
   the same key, their clicks mixed), `PieceHandlerNoMap` (no `Html.map`: `send` is the
-  dispatcher), `PieceHandlerTwoMaps` (two maps: `Wrapped (CounterMsg msg)`) and
-  `PieceHandlerHelper` (the event in a view helper's call whose argument is pure). Each
-  transcript is `browser-tea`'s of the same source, `PieceHandler`'s but for the two placeholders
-  its header names. `browser/prerender/PieceHandler` is such a root on a page the client takes
+  dispatcher), `PieceHandlerTwoMaps` (two maps: `Wrapped (CounterMsg msg)`),
+  `PieceHandlerHelper` (the event in a view helper's call whose argument is pure) and
+  `PieceHandlerRun` (such a root beside a run of two roots, called on its own). Each transcript
+  is `browser-tea`'s of the same source, but for the placeholders the headers of `PieceHandler`
+  and `PieceHandlerRun` name. `browser/prerender/PieceHandler` is such a root on a page the client takes
   over, wired through `onTaken` as its other events are (`prerender.md` §6.5).
   `emit/release/inline/PieceHandler` pins the shape: the root's listeners `l(a[2],d,undefined,
   ()=>({$:1,a:1}))`, and the program's `send`, `a=>{w({a:a})}`, around its dispatcher `w`.
@@ -2222,9 +2226,11 @@ event (`PieceEventArgs/`) stays.
 *Amended 2026-11-24 (#2063):* the row of an event of another module's markup whose handler value
 is not one constructor is withdrawn. Such an event goes through the dispatcher (§8.4, the
 amendment of that date), and `PieceEventArgs/` is part of the page `browser/inline/PieceHandler`.
-Two rows take its place, each class 4, at the event: a handler value of such an event that reads a
-`let` of that module's `view` (`PieceEventLet/`), and such an event in a view helper's call one of
-whose arguments is not proved pure and total (`PieceEventHelperArg/`).
+Three rows take its place, each class 4. At the event: a handler value of such an event that reads
+a `let` of that module's `view` (`PieceEventLet/`), and such an event in a view helper's call one
+of whose arguments is not proved pure and total (`PieceEventHelperArg/`). At the program's hole:
+such an event of markup shown under an `Html.map` whose function is not a constructor of one
+field (`PieceEventMapArgs/`).
 
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.
