@@ -1,0 +1,35 @@
+-- A widget's key that the widget's root handles itself (browser-inline.md
+-- §8.4, amended 2026-10-22: the arm is a pure forward, in a sandbox) and
+-- the program's dispatcher reach the same slice of the model
+-- (§8.4, amended 2026-11-24, #2063). `Inc` is sent by a button with the
+-- constructor alone, which the root wires to its own handler, and by a
+-- function of the event, whose message goes through the dispatcher to the
+-- program's handler of the same key. The clicks are mixed: each handler
+-- sees what the other wrote. The transcript is `browser-tea`'s.
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    counter : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg sub →
+            { model | counter = Counter.update sub model.counter }
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { counter = { count = 0, step = 1 } }
+        , update = update
+        , view = λmodel → <main>{Html.map (Counter.view model.counter) CounterMsg}</main>
+        }

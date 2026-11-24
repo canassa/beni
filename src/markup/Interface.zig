@@ -123,7 +123,11 @@ const std = @import("std");
 /// 2026-11-24, *An arm's statements*), and
 /// `Context.programBranchStatementGroups`, the read sets of an arm's
 /// statements.
-pub const version: Version = .{ .major = 1, .minor = 40 };
+/// Version 1.41 adds `Context.programPieceWrap`: a message of a root another
+/// module writes as pieces, under the constructors of the `Html.map`s around
+/// the root's call, for an event of that root whose message goes through the
+/// program's dispatcher (`browser-inline.md` §8.4, amended 2026-11-24).
+pub const version: Version = .{ .major = 1, .minor = 41 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1747,6 +1751,16 @@ pub const Context = struct {
         return cx.vtable.program_piece_message(cx.impl, node, ctor, key, fields);
     }
 
+    /// 1.41, inside `Lowering.program` only: `msg`, a message of the root
+    /// another module writes as pieces at hole `node`, as the program's
+    /// message: under the constructor of each map around the hole, the
+    /// innermost applied first. It is `msg` itself when no map is around the
+    /// hole, and null when a map is not a constructor of one field
+    /// (`browser-inline.md` §8.4, amended 2026-11-24).
+    pub fn programPieceWrap(cx: *Context, node: Node.Index, msg: Expr) Error!?Expr {
+        return cx.vtable.program_piece_wrap(cx.impl, node, msg);
+    }
+
     /// Version 1.15: `programMessage`, but a key is handed its leaf
     /// constructor's fields (`Program.Key.fields` of them) where a
     /// message of nested constructors reaches it — `CounterMsg Counter.Inc`
@@ -2244,6 +2258,7 @@ pub const VTable = struct {
     piece_view_enter: *const fn (impl: *anyopaque, block: Block, args: []const Expr) Error!void,
     program_piece_key: *const fn (impl: *anyopaque, node: Node.Index, ctor: Ctor) ?Context.PieceKey,
     program_piece_message: *const fn (impl: *anyopaque, node: Node.Index, ctor: Ctor, key: u32, fields: []const Expr) Error!Expr,
+    program_piece_wrap: *const fn (impl: *anyopaque, node: Node.Index, msg: Expr) Error!?Expr,
     program_dispatch: *const fn (impl: *anyopaque, block: Block, msg: Expr, handlers: []const Name) Error!void,
     reaches_debug: *const fn (impl: *anyopaque, v: Value.Index) bool,
     program_list: *const fn (impl: *anyopaque, node: Node.Index) Program.ListFacts,

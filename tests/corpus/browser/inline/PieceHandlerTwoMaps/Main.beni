@@ -1,0 +1,46 @@
+-- Another module's markup under two `Html.map`s, with events whose handler
+-- value is not one constructor (browser-inline.md §8.4, amended
+-- 2026-11-24, #2063): the program hands the root's factory a `send` that
+-- applies the maps' constructors to the root's message, the innermost
+-- first — `Wrapped (CounterMsg msg)` — and calls the dispatcher. The
+-- transcript is `browser-tea`'s.
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    counter : Counter.Model
+
+
+type Inner
+    = CounterMsg Counter.Msg
+
+
+type Msg
+    = Wrapped Inner
+    | Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Wrapped (CounterMsg sub) →
+            { model | counter = Counter.update sub model.counter }
+
+        Reset →
+            { model | counter = { count = 0, step = 1 } }
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { counter = { count = 0, step = 1 } }
+        , update = update
+        , view =
+            λmodel →
+                <main>
+                    {Html.map (Html.map (Counter.view model.counter) CounterMsg) Wrapped}
+                    <button id="reset" onClick={Reset}>reset</button>
+                </main>
+        }

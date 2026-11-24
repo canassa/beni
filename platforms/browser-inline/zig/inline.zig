@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 40 },
+    .targets = .{ .major = 1, .minor = 41 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -367,11 +367,22 @@ const PieceData = struct {
     /// What the factory takes after the elements: one holder per argument of
     /// the root's function (`arity`), the root's own row when it fills it,
     /// the program's table when it fills another root's, then one handler
-    /// per constructor of `handlers`.
+    /// per constructor of `handlers`, then `send` when the root has an event
+    /// whose message goes through the program's dispatcher.
     arity: u32,
     own_row: bool,
     table: bool,
     handlers: []const PieceHandler,
+    /// The root has an event whose handler value is not one constructor that
+    /// takes the payload or nothing (§8.4, amended 2026-11-24): its factory
+    /// takes `send`, which takes a message of the root's type and hands the
+    /// program's dispatcher the message it is under the maps around the
+    /// root's call.
+    send: bool = false,
+    /// The buckets of the controls such an event is on: the handler of every
+    /// key runs them, since the event may reach any (§8.3, *Controlled
+    /// inputs*).
+    send_controls: []const m.Program.BucketRef = &.{},
     /// The static markup as a tree, which the program site checks again in
     /// the scope it places the piece in: the parser rebuilds markup by
     /// what is open around it, across the boundary of the piece (#373).
@@ -403,9 +414,11 @@ const no_program: m.Program = .{ .constructor = 0, .record = true, .view = .mark
 /// function its `view` calls. The root is one factory
 /// (`<Module>$<declaration>$$root$<n>`, §8.4, amended 2026-10-22), called at
 /// mount with the root's elements, one holder per argument of its function,
-/// the buckets it fills and one handler per constructor its events send: it
-/// makes each binding entry of the root, adds it to the buckets of what it
-/// reads, and wires each event. Its static markup is a piece of its own.
+/// the buckets it fills, one handler per constructor its events send, and
+/// `send` for the events whose message goes through the program's
+/// dispatcher: it makes each binding entry of the root, adds it to the
+/// buckets of what it reads, and wires each event. Its static markup is a
+/// piece of its own.
 fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Error!void {
     const js = cx.js;
     var page: Page = .{ .cx = cx, .tree = tree, .p = &no_program, .index = req.root, .piece = true };
@@ -449,16 +462,20 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     // Each event's moved key's handler, null for one the program hands.
     const local_of = try cx.arena.alloc(?usize, pg.events.items.len);
     @memset(local_of, null);
-    for (pg.events.items, names, local_of) |ev, *name, *local| {
+    // Each event whose message goes through the program's dispatcher (§8.4,
+    // amended 2026-11-24): the function that makes its message, null for an
+    // event of the constructor alone. `send` is the factory's parameter for
+    // them, and `send_controls` the buckets of the controls they are on.
+    const makes = try cx.arena.alloc(?m.Expr, pg.events.items.len);
+    @memset(makes, null);
+    var send: ?m.Name = null;
+    var send_controls: std.ArrayList(m.Program.BucketRef) = .empty;
+    for (pg.events.items, names, local_of, makes) |ev, *name, *local, *make| {
         const v = switch (ev.item.value.kind) {
             .dynamic => ev.item.value.dynamic.?,
             else => return limit(cx, ev.node, "this event's handler is a message written as a literal, which `browser-inline` cannot route to a key"),
         };
         const payload_form = ev.item.form == .payload;
-        const sent = cx.pieceEventCtor(v, payload_form) orelse return limit(cx, ev.node, "`browser-inline` wires an event of another module's markup by the constructor alone, which takes the event's payload or nothing, and this event's handler value is a constructor applied to values, or not a constructor");
-        const moved_key: ?u32 = for (plan.moved) |mv| {
-            if (mv.ctor.module == sent.ctor.module and mv.ctor.index == sent.ctor.index) break mv.key;
-        } else null;
         // The buckets of a control this event is on (§8.3).
         var own_controls: std.ArrayList(m.Program.BucketRef) = .empty;
         for (pg.functions.items) |f| for (f.writes.items) |wi| {
@@ -466,6 +483,17 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
             if (!w.stateful or w.target != ev.target) continue;
             try addRefs(cx.arena, &own_controls, try pg.functionBuckets(&f));
         };
+        const sent = cx.pieceEventCtor(v, payload_form) orelse {
+            // Not one constructor that takes the payload or nothing: the
+            // root makes the message, and the program's dispatcher takes it.
+            make.* = try pg.pieceMake(ev, v);
+            if (send == null) send = try cx.fresh("send");
+            try addRefs(cx.arena, &send_controls, own_controls.items);
+            continue;
+        };
+        const moved_key: ?u32 = for (plan.moved) |mv| {
+            if (mv.ctor.module == sent.ctor.module and mv.ctor.index == sent.ctor.index) break mv.key;
+        } else null;
         if (moved_key) |key| {
             const li = for (locals.items, 0..) |x, k| {
                 if (x.key == key) break k;
@@ -507,10 +535,28 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     // Each event wired to its handler; in the client of a prerendering
     // build through `listen` (`prerender.md` §6.5, amended 2026-10-29).
     pg.taking = cx.build.prerender == .client;
-    for (pg.events.items, names, local_of) |ev, name, local| {
+    for (pg.events.items, names, local_of, makes) |ev, name, local, make| {
         const facts = tree.eventFacts(ev.item.event);
         const dom = tree.string(facts.dom_name);
         const kind: ?[]const u8 = if (std.mem.eql(u8, dom, "click")) null else dom;
+        // An event whose message goes through the dispatcher hands `send`
+        // the factory's `send`, and `make` as what the runtime's `send`
+        // reads of the event, while the event is dispatched (§8.3, amended
+        // 2026-11-05; §8.4, amended 2026-11-24).
+        if (make) |made| {
+            const node = try pg.ref(ev.target);
+            const to = try js.name(send.?);
+            if (!facts.prevent_default and !facts.stop_propagation) {
+                try js.expression(body, try pg.onCall(node, to, kind, ev.ctx, made));
+                continue;
+            }
+            // The guard retains one callback made at the mount: the listener
+            // allocates no closure at the event.
+            const kept = try cx.fresh("listener");
+            try js.constant(body, kept, made);
+            try pg.pieceListener(body, ev, facts, node, kind, to, try js.name(kept));
+            continue;
+        }
         const h = try js.name(name);
         var listener = h;
         const own: ?*Local = if (local) |li| (if (inside(&locals.items[li])) &locals.items[li] else null) else null;
@@ -540,23 +586,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
             try js.expression(body, try pg.onCall(node, listener, kind, ev.ctx, read));
             continue;
         }
-        const active = try pg.armActivity(ev.ctx);
-        const evn = try cx.fresh("event");
-        const dom_blk = try js.block();
-        if (facts.prevent_default or facts.stop_propagation) {
-            const stopped = try js.block();
-            try js.@"return"(stopped, null);
-            try js.@"if"(dom_blk, try js.call(try js.name(try cx.runtime("stopped")), &.{}), stopped, null);
-        }
-        if (active) |active_test| {
-            const inactive = try js.block();
-            try js.@"return"(inactive, null);
-            try js.@"if"(dom_blk, try js.unary(.not, active_test), inactive, null);
-        }
-        if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
-        if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
-        try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), if (read) |rd| &.{ listener, try js.name(evn), rd } else &.{ listener, try js.name(evn) }));
-        try js.expression(body, try pg.addListener(node, kind orelse "click", try js.arrow(&.{evn}, dom_blk)));
+        try pg.pieceListener(body, ev, facts, node, kind, listener, read);
     }
     const out_handlers = try a.alloc(PieceHandler, handlers.items.len);
     for (out_handlers, handlers.items, controls.items) |*o, h, c| o.* = .{ .ctor = h.ctor, .fields = h.fields, .controls = try a.dupe(m.Program.BucketRef, c.items) };
@@ -569,6 +599,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         if (pg.used_own) try all.append(cx.arena, pg.own.?);
         if (pg.used_table) try all.append(cx.arena, pg.table.?);
         try all.appendSlice(cx.arena, params.items);
+        if (send) |x| try all.append(cx.arena, x);
         const base = try std.fmt.allocPrint(a, "{s}$$root${d}", .{ req.decl, req.ordinal });
         try cx.pieceExport(base, try js.arrow(all.items, body));
         root_name = base;
@@ -615,6 +646,8 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         .own_row = pg.used_own,
         .table = pg.used_table,
         .handlers = out_handlers,
+        .send = send != null,
+        .send_controls = try a.dupe(m.Program.BucketRef, send_controls.items),
         .render = render_name,
         .arms = arms,
         .arm_runs = try a.dupe(ArmRun, layout.arms.items),
@@ -3719,6 +3752,13 @@ const Page = struct {
                 refs[k] += 1;
                 try addRefs(pg.a(), &pg.controls[k], h.controls);
             }
+            // A root that makes messages for the dispatcher (§8.4, amended
+            // 2026-11-24): every key is then reached, and each writes back
+            // the controls those events are on (§8.3, *Controlled inputs*).
+            if (u.data.send) {
+                runs = true;
+                for (pg.controls) |*c| try addRefs(pg.a(), c, u.data.send_controls);
+            }
         }
         for (refs, 0..) |r, k| if (r != 0 and element_) {
             if (try pg.command(@intCast(k))) runs = true;
@@ -3905,6 +3945,22 @@ const Page = struct {
                 } else fields;
                 try pg.handlerBody(hblk, pk.key, params, update, passes[pk.key]);
                 try args.append(pg.a(), try js.arrow(fields, hblk));
+            }
+            // `send`: the dispatcher, handed the root's message under the
+            // constructors of the maps around its call — the dispatcher
+            // itself when there is none (§8.4, amended 2026-11-24).
+            if (u.data.send) {
+                const dispatch = try js.name(pg.dispatch.?);
+                const msg = try cx.fresh("msg");
+                const inner = try js.name(msg);
+                const wrapped = (try cx.programPieceWrap(u.node, inner)) orelse return limit(cx, u.node, "an event of this other module's markup sends a message that `browser-inline` cannot make the program's message of through the `Html.map`s around the call, each of which must be a constructor of one field");
+                if (wrapped == inner) {
+                    try args.append(pg.a(), dispatch);
+                } else {
+                    const sblk = try js.block();
+                    try js.expression(sblk, try js.call(dispatch, &.{wrapped}));
+                    try args.append(pg.a(), try js.arrow(&.{msg}, sblk));
+                }
             }
             try js.expression(blk, try js.call(try js.name(try cx.programPieceName(u.node, factory)), args.items));
         }
@@ -4220,9 +4276,9 @@ const Page = struct {
 
     /// The runs of two roots or more mounted through one table (§8.4,
     /// amended 2026-10-24): pieces next to each other in placement order,
-    /// each with a factory that takes no handler and fills its own row, the
-    /// rows next to each other in the same order. Any other root is called
-    /// as it is.
+    /// each with a factory that takes no handler and no `send` and fills its
+    /// own row, the rows next to each other in the same order. Any other
+    /// root is called as it is.
     fn rootRuns(pg: *Page) m.Error![]const Run {
         const pieces = pg.pieces.items;
         if (pieces.len < 2) return &.{};
@@ -4267,7 +4323,7 @@ const Page = struct {
     /// Piece `i`'s own row, when its root can be one of a run's.
     fn runRow(pg: *Page, i: u32) ?u32 {
         const u = pg.pieces.items[i];
-        if (u.data.root == null or !u.data.own_row or u.data.handlers.len != 0) return null;
+        if (u.data.root == null or !u.data.own_row or u.data.handlers.len != 0 or u.data.send) return null;
         return pg.cx.programRootRow(u.node);
     }
 
@@ -5473,6 +5529,85 @@ const Page = struct {
     }
 
     // ---- Listeners ----------------------------------------------------
+
+    /// In a piece: what the runtime's `send` reads of event `ev`, whose
+    /// handler value `v` is not one constructor that takes the payload or
+    /// nothing (§8.4, amended 2026-11-24). It is a function of the event
+    /// that gives the message of the root's type: `v` applied to the payload
+    /// — what the event's extractor reads, when it has one, read first —
+    /// evaluated with the parameters of the root's function read from their
+    /// holders, so from the model the page holds then (Q1).
+    fn pieceMake(pg: *Page, ev: Event, v: m.Value.Index) m.Error!m.Expr {
+        const cx = pg.cx;
+        const js = cx.js;
+        // A `let` of the root's function that the value reads — or that an
+        // argument of a call the event is in reads — is a memo node in the
+        // program's own `view` (`memos`), and a piece has none: evaluating
+        // it here would run it once per event, not once per pass.
+        const root_reads = try pg.levelValues(ev.ctx, &.{v}, 0);
+        for (try pg.neededLets(pg.ctxs.items[0].root, root_reads)) |needed| {
+            if (needed) return limit(cx, ev.node, "this event's handler value is not one constructor that takes the event's payload or nothing, so `browser-inline` evaluates it at the event; it reads a `let` of this other module's `view`, which must then be a memo node, and another module's markup has none yet");
+        }
+        // The program's own `view` keeps the arguments its binding evaluated
+        // for a handler in a helper's call (`Event.captures`). A piece does
+        // not: entering the call here would evaluate them again.
+        var at: ?u32 = ev.ctx;
+        while (at) |c| : (at = pg.ctxs.items[c].parent) {
+            const x = pg.ctxs.items[c];
+            if (x.kind != .call) continue;
+            const call = pg.tree.hole(x.node).call orelse continue;
+            for (0..call.args.len) |i| {
+                if (!cx.valuePureTotal(call.args.at(@intCast(i)))) return limit(cx, ev.node, "this event's handler value is not one constructor that takes the event's payload or nothing, so `browser-inline` evaluates it at the event, inside the call of the function this markup is in; an argument of that call is not proved pure and total, and another module's markup does not keep the arguments its binding evaluated yet");
+            }
+        }
+        const blk = try js.block();
+        var event: ?m.Name = null;
+        var read: ?m.Expr = null;
+        if (ev.item.form == .payload) {
+            read = try cx.extractor(ev.index);
+            event = try cx.fresh(if (read != null) "payload" else "event");
+        }
+        const arms = try pg.enter(blk, ev.ctx, null, &.{v});
+        try cx.rootValues(blk, pg.ctxs.items[ev.ctx].root, &.{v});
+        const value = try cx.value(v);
+        pg.leave(arms);
+        try js.@"return"(blk, if (event) |e| try cx.call(value, &.{try js.name(e)}) else value);
+        if (read) |rd| {
+            const e = try cx.fresh("event");
+            const outer = try js.block();
+            try js.constant(outer, event.?, try js.call(rd, &.{try js.name(e)}));
+            try js.nested(outer, blk);
+            return js.arrow(&.{e}, outer);
+        }
+        return if (event) |e| js.arrow(&.{e}, blk) else js.arrow(&.{}, blk);
+    }
+
+    /// In a piece: the listener of event `ev`, written in place into
+    /// `body`, for an event with `preventDefault` or `stopPropagation`
+    /// declared. Both run in the DOM listener, before the guard, while the
+    /// page runs and the event's arms are shown; then the runtime's `send`
+    /// takes `f`, the event, and `read` when it is given.
+    fn pieceListener(pg: *Page, body: m.Block, ev: Event, facts: m.EventFacts, node: m.Expr, kind: ?[]const u8, f: m.Expr, read: ?m.Expr) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        const active = try pg.armActivity(ev.ctx);
+        const evn = try cx.fresh("event");
+        const dom_blk = try js.block();
+        if (facts.prevent_default or facts.stop_propagation) {
+            const stopped = try js.block();
+            try js.@"return"(stopped, null);
+            try js.@"if"(dom_blk, try js.call(try js.name(try cx.runtime("stopped")), &.{}), stopped, null);
+        }
+        if (active) |active_test| {
+            const inactive = try js.block();
+            try js.@"return"(inactive, null);
+            try js.@"if"(dom_blk, try js.unary(.not, active_test), inactive, null);
+        }
+        if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
+        if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
+        try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), if (read) |rd| &.{ f, try js.name(evn), rd } else &.{ f, try js.name(evn) }));
+        try js.expression(body, try pg.addListener(node, kind orelse "click", try js.arrow(&.{evn}, dom_blk)));
+    }
 
     /// Event `ev`'s listener, planned: its block, which reads the payload
     /// through the event's extractor and evaluates the message the handler

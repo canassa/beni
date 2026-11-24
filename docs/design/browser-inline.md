@@ -353,6 +353,8 @@ by its type — hides nothing: it is written exactly, and accepted.
    key when the program is built — a function of the event, a message the model holds — is no
    longer of this class: its message goes through the dispatcher (§8.3). One of another module's
    markup still is (§8.7).
+   *Amended 2026-11-24 (#2063):* one of another module's markup goes through the dispatcher too
+   (§8.4, the amendment of that date). Two narrower cases of it stay of this class (§8.7).
 
 *Implementation specified 2026-10-30: scalar String class attributes.* The checker already
 records whether an attribute is its declared String form or a class list
@@ -1107,6 +1109,10 @@ markup whose handler value is not one constructor that takes the payload or noth
 `PieceEventArgs/`, class 4), since a piece is lowered in its own module and hands the program site
 a constructor's fields (§8.4); and a handler written as a literal.
 
+*Amended 2026-11-24 (#2063):* such an event of another module's markup is compiled too: the root
+makes the message, and the program hands the root its dispatcher (§8.4, the amendment of that
+date). `PieceEventArgs/` builds and is withdrawn. A handler written as a literal stays refused.
+
 ### 8.4 Pieces: another module's view and arms
 
 The program site (§7) is written in the module that calls the program's constructor; another
@@ -1815,6 +1821,12 @@ code settled, which the amendment left to the build:
   subscription names the key; and no command of the program runs, which would need every handler
   at the program's dispatcher. Any other key's handler is the program's, handed to the root
   (`browser/inline/MainOwnedKeys`).
+  *Amended 2026-11-24 (#2063):* a key the root handles itself can have a second handler, the
+  program's: an event that goes through the dispatcher (§8.3, amended 2026-11-05; *A handler value
+  that is not one constructor*, below) gives every key a named handler at the program site. The
+  two are the same arm with the same pass, and both write the slice the root holds, in place. The
+  root's own events of the constructor alone call the root's handler; the dispatcher calls the
+  program's (`browser/inline/PieceHandlerMoved`).
 - **Pushed state** (the owner's decision 5). A route is what `write-sets.md`'s `findRoutes`
   recognises, amended the same day: a tail of `update` that gives a field `F x model.f`, `F` a
   function whose body is `Result.withDefault D old` with `D` not reading `old` (or, amended
@@ -1865,6 +1877,69 @@ code settled, which the amendment left to the build:
   bad builds `RootComputedArg` (class 4), `RootsSharedRecord` and `RootsPayloadRecord` (the
   ownership checker's record errors), beside the existing class 1, 2 and 3 fixtures; every
   existing `browser/inline/` transcript unchanged.
+
+*Amended 2026-11-24 (#2063): a handler value that is not one constructor.* An event of a root's
+markup whose handler value is not one constructor that takes the payload or nothing was a limit of
+the compiler (§8.7, `PieceEventArgs/`). Such a value is a function of the payload that is not a
+constructor (`onClick={handle}` with `handle : Event → Msg`, or a lambda), a constructor applied
+to values (`Go 1`, `Go (model.page + 1)`), a call that makes the message, or a message a
+parameter of the root's function holds. It is compiled as such an event of the program's own
+markup is (§8.3, amended 2026-11-05), with the work split between the two modules:
+
+- **The root makes the message.** The listener is `on(E[n], send, type, make)`, written in the
+  root's factory. `make` takes the event and gives the message of the root's own type: the
+  handler value applied to the payload — what the event's extractor reads, when it has one, read
+  first — evaluated in the root's module with the parameters of the root's function read from
+  their holders, so from the model the page holds then (Q1). It enters the eager arms and the view
+  helper calls the event is in, as a binding of the root does. The runtime's `send` calls `make`
+  first, inside the dispatch guard and while the event is dispatched, also when the send waits.
+  So a handler's `Html.preventDefault` takes effect, and a link whose own handler prevents the
+  default is not a request (`boundary.md` §9.8.13 (c), step 1). An event that declares
+  `preventDefault` or `stopPropagation` has its listener written in place, as any such event of
+  a root has, and that listener hands the runtime's `send` the factory's `send` and `make`.
+- **The factory takes `send`**, one more parameter after its handlers, only when the root has such
+  an event: `(elements, holder…, row?, table?, handler…, send?)`. A root that takes it is called
+  on its own, as a root that takes a handler is, and is not one of a run (§8.4, amended
+  2026-10-24).
+- **The program hands its dispatcher.** `send` is the dispatcher itself when no `Html.map` is
+  around the call of the root's function. Otherwise it is a function that applies the maps'
+  constructors to the message, the innermost first, and calls the dispatcher with the result
+  (`Context.programPieceWrap`, interface 1.41). Each map is a constructor of one field, as for a
+  handler of the root (*View pieces*, above). The program then has its dispatcher, made as when a
+  command runs (§4): every key has a named handler with its write pass and its command.
+- **A control on the element of such an event** is written back by the handler of every key of
+  the program (§8.3, *Controlled inputs*): any key may be the one its event reaches. The root
+  hands the program the buckets of the control's binding.
+- **Pay for what you use.** A root with no such event is compiled as before, byte for byte, and
+  so is the program that shows it. An event of the constructor alone keeps its handler, a
+  parameter of the factory or the root's own.
+- **What stays refused**, each a limit of the compiler, class 4, at the event:
+  - A handler value that reads a `let` of the root's function, or an argument of a view helper's
+    call the event is in that reads one. In the program's own `view` such a `let` is a memo node
+    (§8.2, amended 2026-11-23): the handler takes the value the last pass computed and evaluates
+    nothing of the `let` at the event. Another module's markup has no memo node yet
+    (`PieceEventLet/`).
+  - An event in a view helper's call one of whose arguments is not proved pure and total. The
+    program's own `view` keeps, for the handler, the arguments its binding evaluated (§8.2,
+    *Evaluation order*). A root does not, and `make` would evaluate the argument again at the
+    event (`PieceEventHelperArg/`).
+  - A handler written as a literal, as in the program's own markup.
+- **Not built:** a constructor applied to values could reach its key's handler directly, with its
+  arguments evaluated in the root, as the program's own markup does. It goes through the
+  dispatcher, which costs the program its dispatcher and a named handler for each key.
+- Pages: `browser/inline/PieceHandler` (a `Tea.element`: a link whose function handler prevents
+  the default beside a plain link that `onUrlRequest` hears, a constructor applied to a constant
+  and to a value of the model, a lambda of an input's text on a controlled input, a handler in
+  an eager arm, and a lambda on a form's `onSubmit`, which declares `preventDefault`),
+  `PieceHandlerMoved` (a sandbox: a key the root handles itself and the dispatcher's handler of
+  the same key, their clicks mixed), `PieceHandlerNoMap` (no `Html.map`: `send` is the
+  dispatcher), `PieceHandlerTwoMaps` (two maps: `Wrapped (CounterMsg msg)`) and
+  `PieceHandlerHelper` (the event in a view helper's call whose argument is pure). Each
+  transcript is `browser-tea`'s of the same source, `PieceHandler`'s but for the two placeholders
+  its header names. `browser/prerender/PieceHandler` is such a root on a page the client takes
+  over, wired through `onTaken` as its other events are (`prerender.md` §6.5).
+  `emit/release/inline/PieceHandler` pins the shape: the root's listeners `l(a[2],d,undefined,
+  ()=>({$:1,a:1}))`, and the program's `send`, `a=>{w({a:a})}`, around its dispatcher `w`.
 
 *Amended 2026-10-23 (#896): a route's function is any function whose result is `old` or holds
 nothing of it.* On S1's own programs the root plan's proof failed at N ≥ 16: the generator writes a
@@ -2143,6 +2218,13 @@ rows; `ResearchListWidget/` moves to `ListRowsById/` with the class 3 text when 
 named for is withdrawn. Such an event of the program's own markup goes through the dispatcher
 (§8.3), and `MessageValue/` is the page `browser/inline/MessageValue`. The row of another module's
 event (`PieceEventArgs/`) stays.
+
+*Amended 2026-11-24 (#2063):* the row of an event of another module's markup whose handler value
+is not one constructor is withdrawn. Such an event goes through the dispatcher (§8.4, the
+amendment of that date), and `PieceEventArgs/` is part of the page `browser/inline/PieceHandler`.
+Two rows take its place, each class 4, at the event: a handler value of such an event that reads a
+`let` of that module's `view` (`PieceEventLet/`), and such an event in a view helper's call one of
+whose arguments is not proved pure and total (`PieceEventHelperArg/`).
 
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.

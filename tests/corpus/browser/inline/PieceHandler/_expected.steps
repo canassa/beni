@@ -1,0 +1,15 @@
+click #handled
+click #plain
+click #next
+click #twice
+click #first
+click #next
+input #shout "ab"
+input #shout "abcd"
+input #shout "abc"
+click #toggle
+click #jump
+click #jump
+click #toggle
+click #handled
+click #submit

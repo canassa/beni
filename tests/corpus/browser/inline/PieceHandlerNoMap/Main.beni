@@ -1,0 +1,17 @@
+-- Another module's markup shown with no `Html.map` around it, with events
+-- whose handler value is not one constructor (browser-inline.md §8.4,
+-- amended 2026-11-24, #2063): the root's message is the program's, so the
+-- program hands the root's factory its dispatcher itself as `send`. The
+-- transcript is `browser-tea`'s.
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { count = 0, step = 1 }
+        , update = Counter.update
+        , view = λmodel → <main>{Counter.view model}</main>
+        }
