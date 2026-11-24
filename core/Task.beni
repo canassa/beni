@@ -2949,7 +2949,9 @@ adjustClock clock ms =
 
 
 -- The last millisecond an `Int` holds, 2⁵³ − 1: the last reading of a
--- virtual clock, and the longest `Duration` (#2022).
+-- virtual clock, and the longest `Duration` (#2022). `Duration`'s
+-- `longest`, `Log`'s `lastMillisecond` and the cloudflare platform's
+-- `Worker.Object` hold the same number: change them together.
 lastMillisecond : Int
 lastMillisecond = 9007199254740991
 
@@ -3060,7 +3062,8 @@ metadata input attempt began =
 -- (§17.8, amended 2026-11-24): `zero` when `now` is not later, and the
 -- longest duration when the difference is longer, which a virtual clock
 -- that began below 0 can make. The test comes before the difference: a
--- start at or above 0 leaves one that fits.
+-- start at or above 0 leaves one that fits. `Log`'s `since` is the same
+-- rule for a span's milliseconds: change them together.
 since : Int, Int → Duration
 since began now =
     if now ≤ began then

@@ -119,14 +119,23 @@ log level message =
 -- makes, and at most the longest duration, 2⁵³ − 1. A virtual clock reads
 -- any `Int`, so the difference alone can leave the `Int` range; the test
 -- comes before it, and a start at or above 0 leaves one that fits.
+-- `Task`'s `since` is the same rule for a schedule's `elapsed`: change
+-- them together.
 since : Int, Int → Int
 since began now =
     if now ≤ began then
         0
-    else if began < 0 && now > 9007199254740991 + began then
-        9007199254740991
+    else if began < 0 && now > lastMillisecond + began then
+        lastMillisecond
     else
         now - began
+
+
+-- The last millisecond an `Int` holds, 2⁵³ − 1, which is the longest
+-- `Duration`: the number of `Duration`'s `longest` and `Task`'s
+-- `lastMillisecond`.
+lastMillisecond : Int
+lastMillisecond = 9007199254740991
 
 
 -- A level's place in the order.

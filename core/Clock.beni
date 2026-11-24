@@ -23,7 +23,8 @@
 --!
 --! A virtual clock reads an `Int`, so its last reading is 9007199254740991,
 --! 2⁵³ − 1. `adjust` answers a `Result`: an `Err` when the clock cannot move
---! that far. The `_ =` above says that this test does not look at it.
+--! that far, and then no sleeper wakes. The `_ =` above says that this test
+--! does not look at it.
 --!
 --! Nothing here is `foreign`.
 
@@ -107,7 +108,8 @@ pub type AdjustError
 --|
 --| `Err (TooFar left)` when the new reading would be past the last
 --| millisecond an `Int` holds. The clock then keeps its reading and its
---| sleepers, and nothing wakes.
+--| sleepers, and no sleeper wakes. The fibers that were ready still run
+--| first, as in every `adjust` but one of `zero`.
 --|
 --|     -- 5 ms before the last reading: Err (Clock.TooFar (Duration.millis 5))
 --|     clock = Clock.virtual 9007199254740986
