@@ -82,9 +82,14 @@ go faults n =
     if n == 0 then
         Ok ⊤
     else
+        -- `history.go` takes a WebIDL `long`, the delta modulo 2³²: 2³² went
+        -- to 0, a reload, and 2³² − 1 to −1, one entry back (#1995). No
+        -- history holds 2³¹ entries, so a delta past a `long` is clamped to
+        -- one, and goes nowhere, as any delta past the history does.
+        delta = Basics.max (negate 2147483648) (Basics.min 2147483647 n)
         Js.catchIf
             (λ⊤ →
-                _ = Js.call (Js.global "history") "go" [ Js.from n ]
+                _ = Js.call (Js.global "history") "go" [ Js.from delta ]
                 Ok ⊤
             )
             (λerror → isDomException error "SecurityError")

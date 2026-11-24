@@ -48,6 +48,11 @@
 < content-length: 0
 < connection: keep-alive
 < keep-alive: timeout=5
+> GET /trailer
+< 500
+< content-length: 0
+< connection: keep-alive
+< keep-alive: timeout=5
 > GET /stop
 < 200
 < content-type: text/plain; charset=utf-8
@@ -67,4 +72,5 @@ beni: Http.Server: the response to GET /name is invalid: the header name "bad na
 beni: Http.Server: the response to GET /value is invalid: the header "x-note" has a character its value cannot hold
 beni: Http.Server: the response to GET /length is invalid: the header "Content-Length" belongs to the platform
 beni: Http.Server: the response to GET /encoding is invalid: the header "transfer-encoding" belongs to the platform
+beni: Http.Server: the response to GET /trailer is invalid: the header "Trailer" belongs to the platform
 --- exit 0 ---

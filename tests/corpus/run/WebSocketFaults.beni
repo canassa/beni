@@ -10,7 +10,8 @@
 -- nothing to continue, a new message inside a fragmented one, a close
 -- frame of one byte or with a code no peer may send (1005, 1016, 2999);
 -- 1007 for text or a close reason that is not UTF-8; 1009 for a message
--- over `maxMessage`, also when only its fragments together are over it,
+-- over `maxMessage`, also when only its fragments together are over it or
+-- its 64-bit length is the largest one below the highest bit (#1995),
 -- and for any message when `maxMessage` is below 0, which is 0; and 1003
 -- for a binary message. The session reads every message that came before
 -- the fault, then the end with the code the server sent, and the server

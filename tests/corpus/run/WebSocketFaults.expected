@@ -60,6 +60,13 @@
 < (socket highbit) sec-websocket-accept: (the right key)
 > (socket highbit) frame {"opcode":1,"text":"x","length":"9223372036854775808"}
 < (socket highbit) close 1002 ""
+> (socket huge) GET /huge
+< (socket huge) 101
+< (socket huge) upgrade: websocket
+< (socket huge) connection: Upgrade
+< (socket huge) sec-websocket-accept: (the right key)
+> (socket huge) frame {"opcode":1,"text":"x","length":"9223372036854775807"}
+< (socket huge) close 1009 ""
 > (socket opcode) GET /opcode
 < (socket opcode) 101
 < (socket opcode) upgrade: websocket
@@ -187,6 +194,7 @@
 /unmasked ended: { code = 1002, reason = "" }
 /rsv ended: { code = 1002, reason = "" }
 /highbit ended: { code = 1002, reason = "" }
+/huge ended: { code = 1009, reason = "" }
 /opcode ended: { code = 1002, reason = "" }
 /control ended: { code = 1002, reason = "" }
 /fragping ended: { code = 1002, reason = "" }
@@ -209,6 +217,7 @@
 beni: WebSocket: the connection to /unmasked failed with 1002: a frame from the client is not masked
 beni: WebSocket: the connection to /rsv failed with 1002: a frame sets a reserved bit
 beni: WebSocket: the connection to /highbit failed with 1002: a frame's length sets its highest bit
+beni: WebSocket: the connection to /huge failed with 1009: a message is longer than 16 bytes
 beni: WebSocket: the connection to /opcode failed with 1002: a frame has the reserved opcode 3
 beni: WebSocket: the connection to /control failed with 1002: a frame has the reserved opcode 11
 beni: WebSocket: the connection to /fragping failed with 1002: a control frame is fragmented

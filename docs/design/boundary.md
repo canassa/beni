@@ -4511,7 +4511,10 @@ each `DOMException` named where it cannot, nothing else caught):
   way to see a silent drop. On `Ok ()`, every follower is sent the new `Url` once (below).
 - **`replaceUrl`** is the same with `replaceState`.
 - **`back key n`** and **`forward key n`** call `history.go(-n)` and `history.go(n)`; `n = 0` does
-  nothing (Elm's `n && history.go(n)`). A `SecurityError` is `Err Throttled`. The address changes
+  nothing (Elm's `n && history.go(n)`). `history.go` takes a WebIDL `long`, its argument modulo
+  2³², so a delta past −2³¹ to 2³¹ − 1 is clamped to that range first: unclamped, 2³² was a reload
+  and 2³² − 1 one entry back (#1995); no history holds 2³¹ entries, so the clamped delta goes
+  nowhere, as any delta past the history does. A `SecurityError` is `Err Throttled`. The address changes
   later, when the host traverses: the `popstate` it fires is what followers hear. *Unlike Elm*, no
   message is sent at the call — Elm's `go` sent `onUrlChange` with the address *before* the
   traversal, then the `popstate` sent the new one.
@@ -6584,6 +6587,7 @@ header is set and before the first byte is sent**, so a fault leaves nothing beh
 | a header name is not a token | `http.validateHeaderName` throws `ERR_INVALID_HTTP_TOKEN`, a `TypeError`; caught from that call alone |
 | a header value holds a character Node refuses (CR, LF, NUL, a control character) | `http.validateHeaderValue` throws `ERR_INVALID_CHAR`, a `TypeError`; caught from that call alone |
 | a header named `content-length` or `transfer-encoding`, in any case | checked by name in the sibling; the transport owns both |
+| a header named `trailer`, in any case | checked by name in the sibling: every body goes with a `content-length` and never chunked, and on such a body `writeHead` throws `ERR_HTTP_TRAILER_INVALID` (measured, Node 24; it ended the server before #1995) |
 
 The sibling catches exactly those two codes, from those two calls, and nothing else; the
 `ERR_HTTP_INVALID_HEADER_VALUE` of `validateHeaderValue` cannot happen with a `String`, and
@@ -6635,7 +6639,7 @@ for this module. "Thrown again" means the error is a defect, and the process end
 | the server | `checkExpectation` (any other `Expect`) | left to Node: 417 |
 | the server | `connect` (a `CONNECT` request) | left to Node: the socket is destroyed |
 | the server | `upgrade` (an `Upgrade` header) | left to Node: an ordinary request, which reaches the handler |
-| the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status outside 200 to 999, a body on 204, 205 or 304, a `content-length` or `transfer-encoding` of the program's | an invalid response: 500 and a line on standard error |
+| the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status outside 200 to 999, a body on 204, 205 or 304, a `content-length`, `transfer-encoding` or `trailer` of the program's | an invalid response: 500 and a line on standard error |
 | the response | `res.destroyed` before the write | the write is dropped: the client is gone |
 | the response | the socket fails during the write (`ECONNRESET`, `EPIPE`) | `clientError`, the same default handler: nothing is writable, so the socket is destroyed |
 | the response | any other throw | thrown again |
@@ -6711,7 +6715,7 @@ rows of (e):
 - the four events Node answers by itself: no fixture; the probe behind (c) settled them.
 - the response: `HttpServerInvalidResponse` (status 1000 and 100, a body on 204 and on 205, a
   204 with no body, a 205 with no body, a bad header name, a bad header value, `Content-Length`
-  and `transfer-encoding` of the program's); `HttpServerDuplicateHeaders` (two `set-cookie`);
+  and `transfer-encoding` of the program's, a `Trailer`); `HttpServerDuplicateHeaders` (two `set-cookie`);
   `HttpServerBadClients` (a client gone before its answer, the write dropped; a client gone
   during a 16 MiB write, the socket's error left to Node); `HttpServerCloseFromHandler` (the
   program's `connection: keep-alive` replaced after `close`) and `HttpServerCloseThenInvalid`

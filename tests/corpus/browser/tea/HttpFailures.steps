@@ -9,3 +9,7 @@ advance 1
 click #stall
 respond 4 200 chunks "half of" open
 advance 500
+click #long
+advance 1
+advance 2147483646
+advance 1
