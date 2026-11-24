@@ -107,7 +107,10 @@ const std = @import("std");
 /// Version 1.37 asks `programShowFallback`, `programShowFallbackIsText` and
 /// `programShowFallbackText` of a `For`'s fallback as of a `Show`'s
 /// (`browser-inline.md` §9, amended 2026-11-24).
-pub const version: Version = .{ .major = 1, .minor = 37 };
+/// Version 1.38 asks `programBranch` and the `programBranch*` calls of a
+/// `For` whose row is a lambda whose body is an `if` or a `case`: the row's
+/// top is that branch (`browser-inline.md` §9, amended 2026-11-24).
+pub const version: Version = .{ .major = 1, .minor = 38 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1828,7 +1831,8 @@ pub const Context = struct {
     /// 1.10: when an `html` hole's value is an `if` or a `case` — its
     /// `let`s peeled — which `browser-direct.md`'s S4 amendment compiles as
     /// a branch (item 3) rather than as markup on the value path (item 1),
-    /// its arms; null otherwise.
+    /// its arms; null otherwise. 1.38: also of a `For` whose row lambda's
+    /// body is one, chosen where the row's parameters are bound.
     pub fn programBranch(cx: *Context, node: Node.Index) ?Program.Branch {
         return cx.vtable.program_branch(cx.impl, node);
     }

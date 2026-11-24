@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 37 },
+    .targets = .{ .major = 1, .minor = 38 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -96,6 +96,11 @@ pub const lowering: m.Lowering = .{
         // which remounts its body when the key changes (§8.2, amended
         // 2026-11-23, *A `Show`*).
         .{ .name = "keyShown", .arity = 5 },
+        // A row whose top is a branch (§9, amended 2026-11-24): `()` a row
+        // whose node is an empty comment, which `(row, k, make, set)` makes
+        // the node of arm `k`, the old one replaced in the page, and sets.
+        .{ .name = "emptyRow", .arity = 1 },
+        .{ .name = "rowArm", .arity = 4 },
         // `on` for a handler inside eager arms, apart so that a page with
         // none ships neither it nor its arm walk (#874).
         .{ .name = "onArm", .arity = 5 },
@@ -960,6 +965,10 @@ const RowPlan = struct {
     /// The row, or a row of a `For` in it, has a control the user edits
     /// (§8.3, *Controlled inputs*).
     stateful: bool,
+    /// A row whose top is a branch (§9, amended 2026-11-24): each arm's
+    /// unit, null for `<></>` or an arm no value takes; `html` and `ops` are
+    /// then empty, and the row's node is the shown arm's.
+    branch: ?[]const ?RegionUse.Arm = null,
 };
 
 /// One thing a row's `set` does, on the element at `target`.
@@ -1100,10 +1109,46 @@ const RowBuild = struct {
         const f = tree.for_(n);
         if (f.fallback != null and !page) return later(cx, n, "a `For` with a `fallback` in a `For`'s row or an arm of a branch");
         const row = tree.row(f.row);
+        if (row.kind == .lambda) if (cx.programBranch(n)) |br| return branchRow(pg, n, br, scope);
         if (row.kind != .markup) return later(cx, n, "a `For` whose row function is not a lambda whose body is one element written in place");
         const top = tree.root(row.body).node;
         if (tree.kind(top) != .element) return later(cx, top, "a `For` row that is not one element");
         return unit(pg, top, scope, true);
+    }
+
+    /// The row of `For` `n` whose top is branch `br` (§9, amended
+    /// 2026-11-24): each arm a unit of its own, as a region's arms are
+    /// (§8.2, *A branch region*), and the row's node the shown arm's, or an
+    /// empty comment for `<></>`.
+    fn branchRow(pg: *Page, n: m.Node.Index, br: m.Program.Branch, scope: parser.Scope) m.Error!*const RowPlan {
+        const cx = pg.cx;
+        const tree = pg.tree;
+        if (br.selector_effect) return later(cx, n, "a branch whose choice of arm may have an effect, which `browser-tea` evaluates at every render,");
+        const arms = try pg.a().alloc(?RegionUse.Arm, br.arms.len);
+        var events = false;
+        var stateful = false;
+        for (br.arms, arms, 0..) |arm, *out, k| {
+            out.* = null;
+            if (arm.dead) continue;
+            const r = switch (arm.what) {
+                .markup, .call => |r| r,
+                // An arm that never returns throws as the value is chosen.
+                .value => if (arm.never) continue else return later(cx, n, not_when),
+            };
+            if (arm.statements) return later(cx, n, "an arm of a branch with `let`s that no hole reads");
+            const top = tree.root(r).node;
+            if (arm.what == .markup and tree.kind(top) == .fragment and tree.fragment(top).children.len == 0) continue;
+            if (tree.kind(top) != .element) return later(cx, n, not_when);
+            _ = try cx.programBranchEnter(null, n, @intCast(k), false, null);
+            defer cx.programInlineLeave();
+            const unit_plan = try unit(pg, top, scope, true);
+            out.* = .{ .plan = unit_plan, .root = r, .call = arm.what == .call };
+            events = events or unit_plan.events;
+            stateful = stateful or unit_plan.stateful;
+        }
+        const p = try pg.a().create(RowPlan);
+        p.* = .{ .html = "", .elements = false, .ops = &.{}, .events = events, .stateful = stateful, .branch = arms };
+        return p;
     }
 
     /// The unit whose top element is `top`, in `scope`: a `For`'s row, or
@@ -1727,6 +1772,33 @@ const Page = struct {
             try js.constant(blk, name, try cx.value(f.each));
             break :each try js.name(name);
         } else try cx.value(f.each);
+
+        // A row whose top is a branch (§9, amended 2026-11-24): made as an
+        // empty comment, and its `set` binds the row's parameters, chooses
+        // the arm with them and shows it as the row's node.
+        if (p.branch) |arms| {
+            const st = try js.block();
+            const r = try cx.fresh("row");
+            const value_item = try cx.fresh("item");
+            const position = try cx.fresh("position");
+            try cx.rowValuesOf(st, f.row, value_item, if (row.arity == 2) position else null, &.{});
+            const pick = try js.name(try pg.prepareRegion(st, n, arms, false));
+            try js.expression(st, try js.call(try js.name(try cx.runtime("rowArm")), &.{
+                try js.name(r),
+                try js.index(pick, try pg.num(0)),
+                try js.index(pick, try pg.num(1)),
+                try js.index(pick, try pg.num(2)),
+            }));
+            try js.expression(blk, try js.call(try js.name(try cx.runtime("forRows")), &.{
+                parent,
+                end,
+                each,
+                key,
+                try js.name(try cx.runtime("emptyRow")),
+                try js.arrow(&.{ r, value_item, position }, st),
+            }));
+            return each;
+        }
 
         // The template, parsed once at the mount.
         const template = try cx.fresh("template");

@@ -18420,6 +18420,17 @@ pub const Lowerer = struct {
         // `Node.Index.none`: the `view`'s body past its `let`s, a branch at
         // the page's root (`Program.view_branch`).
         const value = if (node == .none) l.viewBranchValue() orelse return null else blk: {
+            // A `For` whose row is a lambda whose body, past the `let`s the
+            // row's values bind, is an `if` or a `case` (version 1.38,
+            // `browser-inline.md` §9, amended 2026-11-24): the row's top is
+            // the branch, chosen with the row's parameters bound.
+            if (tree.kind(node) == .for_) {
+                const row_index = tree.for_(node).row;
+                if (tree.row(row_index).kind != .lambda) return null;
+                const body = st.built.rows[@backingInt(row_index)].body.unwrap() orelse return null;
+                if (l.bir.instTag(body) != .case) return null;
+                break :blk body;
+            }
             if (tree.kind(node) != .hole) return null;
             const h = tree.hole(node);
             if (h.kind != .html) return null;

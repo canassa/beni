@@ -1420,6 +1420,34 @@ keyShown regionState k key make set =
     armShown regionState k make set
 
 
+--| `()`: a row of a `For` whose top is a branch (`browser-inline.md` §9,
+--| amended 2026-11-24) before its `set` has chosen an arm: its node an empty
+--| comment, which is also the node of an arm with none (`<></>`), as
+--| `browser-tea` keeps one.
+pub emptyRow : ⊤ → V
+emptyRow ⊤ = Js.object [ ( "n", Js.call (Js.global "document") "createComment" [ Js.from "" ] ) ]
+
+
+--| `(row, k, make, set)`: arm `k` of a row whose top is a branch shown and
+--| `set`. When another arm is shown, `make` gives arm `k`'s row (null: an
+--| empty comment) and its node takes the place of the row's node in the
+--| page, if the row is in it; the row's node is then the arm's, which
+--| `forRows` moves and removes. `set` is called with the arm's row whatever
+--| it was, kept or made: no arm is skipped because a value is the same
+--| object (`browser-inline.md` §8.2).
+pub rowArm : V, V, V, V → ⊤
+rowArm row k make set =
+    if not (Js.same (Js.get row "a") k) then
+        Js.set row "a" k
+        made = if Js.isNull make then emptyRow ⊤ else Js.apply make []
+        _ = Js.call (Js.get row "n") "replaceWith" [ Js.get made "n" ]
+        Js.set row "n" (Js.get made "n")
+        Js.set row "r" made
+    if not (Js.isNull set) then
+        _ = Js.apply set [ Js.get row "r" ]
+        ⊤
+
+
 -- The shown arm's node out of the page.
 dropArm : V → ⊤
 dropArm regionState =

@@ -252,7 +252,7 @@ On `browser-inline`, a `For` over a `List` compiles, keyed by a key function, by
 made to agree with the list by key: a row keeps its node while its key stays. The `set` of every
 row runs again. A row's `Debug.log` thus logs one time for each row.
 
-- The row function must be a lambda whose body is one element. An `if` or a `case` in it is chosen at each `set`.
+- The row function must be a lambda whose body is one element, or an `if` or a `case` whose arms are each one element or `<></>`. An `if` or a `case` in it is chosen at each `set`.
 - Elements, text, holes, branches, a `Show` or another `For` can stand after a `For`.
 - A row's event can send the row's key: `onClick={Remove row.id}`.
 
