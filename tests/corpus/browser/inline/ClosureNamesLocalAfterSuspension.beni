@@ -1,0 +1,110 @@
+-- A closure in a command's body names a local the body binds after a
+-- suspension point (#2663; transparent-effects-proposal.md §16.3, amended
+-- 2026-11-24). The rest after the sleep is a continuation; the local is
+-- declared in front of it and assigned where it stood, so the closure reads
+-- it:
+--
+--   - `#stmt`: a sleep between the lambda and the record it reads;
+--   - `#item`: the callee that builds the record sleeps;
+--   - `#join`: an `if` whose arm sleeps, between the two;
+--   - `#local`: a local function instead of a lambda, called twice and by
+--     `List.map`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Stmt
+    | Item
+    | Join
+    | Local
+    | Got String
+
+
+type alias P =
+    n : Int
+    tag : String
+
+
+type alias Model =
+    count : Int
+    log : String
+
+
+later : Int → P
+later n =
+    Time.sleep (Time.millis 5)
+    { n = n, tag = "later" }
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Stmt →
+            ( { model | count = model.count + 1 }
+            , Cmd.perform λsend →
+                a = λs → s ++ " " ++ String.fromInt p.n ++ p.tag
+                Time.sleep (Time.millis 10)
+                p = { n = model.count + 1, tag = "stmt" }
+                send (Got (a "stmt"))
+            )
+
+        Item →
+            ( { model | count = model.count + 10 }
+            , Cmd.perform λsend →
+                a = λs → s ++ " " ++ String.fromInt p.n ++ p.tag
+                p = later (model.count + 10)
+                q = { p | n = p.n + 1 }
+                send (Got (a "item" ++ " " ++ String.fromInt q.n))
+            )
+
+        Join →
+            ( { model | count = model.count + 100 }
+            , Cmd.perform λsend →
+                a = λs → s ++ " " ++ String.fromInt p.n
+                x =
+                    if model.count > 50 then
+                        Time.sleep (Time.millis 10)
+                        1
+                    else
+                        2
+                p = { n = model.count + 100 + x, tag = "join" }
+                send (Got (a "join"))
+            )
+
+        Local →
+            ( { model | count = model.count + 1000 }
+            , Cmd.perform λsend →
+                g s = s ++ String.fromInt p.n
+                Time.sleep (Time.millis 10)
+                p = { n = model.count + 1000, tag = "local" }
+                send (Got (g "local " ++ g "," ++ String.join (List.map [ "m" ] g) ""))
+            )
+
+        Got s →
+            ( { model | log = model.log ++ " | " ++ s }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="stmt" onClick={Stmt}>stmt</button>
+        <button id="item" onClick={Item}>item</button>
+        <button id="join" onClick={Join}>join</button>
+        <button id="local" onClick={Local}>local</button>
+        <p id="count">{model.count}</p>
+        <p id="log">{model.log}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { count = 0, log = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

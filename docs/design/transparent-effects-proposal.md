@@ -1995,6 +1995,21 @@ const Main$fetchSum = (a$1, b$2) =>
 - **A `let` function** a continuation's statements declare is hoisted in front of the suspension
   point when something before the point calls it, so `language.md` §7's "a function may be read
   anywhere" still holds.
+  *Amended 2026-11-24 (#2663): a local a closure in front of the point names.* A lambda, a `let`
+  function or a closure inside either may name a value written below it in its block (§7 refuses
+  only a read that runs before the value: `let_forward_reference`), and a suspension point between
+  the two used to put the value's `const` inside the continuation, where the closure cannot see it:
+  a `ReferenceError` in development and, under `--release` renaming, a read of whatever else held
+  the short name. The rule is the function rule's, for every split — a statement, a call in an item,
+  a join, a loop's fast path and slow copy, at any depth: a declaration of the rest that the
+  statements in front of the point, the call or the joined tree name (inside any function they
+  make, and through any `let` function hoisted for them) is written as `let name;` in front of the
+  point and `name = value;` where its `const` stood. The value is evaluated in the same place and
+  turn, so evaluation order (`language.md` §6) is unchanged, and a closure reads the binding the
+  assignment fills; it can only run after it (§7). A rest whose declarations nothing in front names
+  is emitted byte for byte as before. A `--release` safety build also checks that every local the
+  renamer spells is declared in its scope or one around it, so this class is a stopped build there
+  rather than a silent wrong answer (`backend.md` §9 item 2).
 - **Anything else that would hold a suspension point in a statement list that falls through** — a
   markup hole whose lowering nests statements, today — is refused at build with `not_implemented`,
   naming the call, rather than emitted wrongly.
