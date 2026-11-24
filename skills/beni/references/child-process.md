@@ -34,7 +34,8 @@ main = Io.run λ⊤ →
 - A program name without a `/` is looked up in the `PATH` of the child's environment.
 - The answer is `Ok { status, stdout, stderr }` when the child started. `status` is `Exited code`
   or `Signalled name` (`"SIGTERM"`, …). A non-zero exit is `Ok`, not `Err`.
-- Both streams are decoded as UTF-8. Standard input is empty.
+- Both streams are decoded as UTF-8.
+- Standard input is empty, unless the command has an `input` (below).
 - A child that leaves a descendant with its output open keeps `run` waiting.
 
 ## Change a default
@@ -45,12 +46,42 @@ Use record update on the command:
 |---|---|---|
 | `cwd` | `Nothing` | the child's working directory |
 | `env` | `ChildProcess.Inherit` | `Inherit`, `Extend pairs` (the program's environment with these set), or `Only pairs` |
+| `input` | `""` | the text the child reads on its standard input; `""` is no input |
 | `killAfter` | `Duration.seconds 1` | the time between `SIGTERM` and `SIGKILL` when the fiber is cancelled |
 | `maxOutput` | 16 MiB | the most bytes kept of each stream; more is `Err OutputTooLarge` |
 
 ```text
 ChildProcess.run { ChildProcess.command "make" [] | cwd = Just "build" }
 ```
+
+## Send input
+
+Set `input` to give the child its standard input. The text is written as UTF-8, and then the
+child reads an end of file.
+
+```beni platform=node
+import ChildProcess
+import Io
+import Node exposing (Program)
+
+
+main : Program
+main = Io.run λ⊤ →
+    sort = { ChildProcess.command "sort" [] | input = "pear\napple\n" }
+    case ChildProcess.run sort of
+        Err _ →
+            Node.exitWith "cannot run sort" 1
+
+        Ok output →
+            Node.print output.stdout
+```
+
+- `run` does not wait until the child has read the text. A child that exits, or closes its
+  standard input, before it has read all of the text is not an error. The rest of the text is
+  dropped, and the answer is the child's status and output, as always.
+- The answer does not say how much of the text the child read.
+- With `input = ""`, the standard input is empty (`/dev/null`), not a pipe.
+- A streamed input is not available.
 
 ## Errors
 
