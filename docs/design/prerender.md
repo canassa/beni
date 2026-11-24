@@ -666,7 +666,12 @@ amendment here before it is built, measured in bytes and in time to interactive.
   pointer events (`pointerdown`, `pointermove`, … — `Html.onPointer*`): their payload is read while
   the event is dispatched, the box of the element whose listener runs (`currentTarget`), which a
   delivery after the dispatch cannot give, and a gesture is a run of them that a later delivery
-  cannot take part in; the `click` a tap makes is recorded. A page whose program has no such
+  cannot take part in; the `click` a tap makes is recorded. *Amended 2026-11-24 (#2087;
+  `boundary.md` §9.8.20 (h)):* it does not record `contextmenu` (`Html.onContextMenu`) either. Its
+  extractor is the pointer events', so its payload needs the same `currentTarget`. Also, a
+  delivery after the dispatch cannot stop the browser's menu, which the browser showed already
+  (`browser/prerender/EarlyMenu`). A page whose only listeners are of the kinds that the script
+  does not record gets no script (`browser/prerender/EarlyMenuOnly`). A page whose program has no such
   listener gets no script, and its client has no code of this section
   (`browser/prerender/EarlyNone`). A listener a subscription adds to the window or the document
   (`Listen`) is not the unit's: input before the takeover does not reach it.

@@ -5862,6 +5862,10 @@ and each reader as the DOM names the property it reads.
 | `localX`, `localY : Pointer → Float` | the position in the handler's element, (c) |
 | `pointerEvent : Pointer → Event` | the same event as an `Event`: the modifier readers and `preventDefault` take it |
 
+*Amended 2026-11-24* (#2087, (h)): `Html` also has `button`, `buttons : Pointer → Int` and the event
+`onContextMenu`, `delegated via pointer : Pointer`. `pointerId` is -1 on an event that has no
+pointer.
+
 `pointerover`, `pointerout`, `gotpointercapture` and `lostpointercapture` wait for a use, as the
 drag events that no program has needed do (§9.8.10, *amended 2026-10-13*). So do the pen's pressure
 and tilt, `getCoalescedEvents()` (the points between two `pointermove`s, which a drawing page needs
@@ -6005,7 +6009,8 @@ an absolutely positioned element (WebKit bug 218015, open). On a `pointerdown`, 
 stops the compatibility mouse events `mousedown`, `mousemove` and `mouseup` until that pointer's
 `pointerup` or `pointercancel` (Pointer Events §11.2), and never `mouseover`, `mouseout`,
 `mouseenter`, `mouseleave`, `click`, `auxclick` or `contextmenu`. `Html.preventDefault
-(Html.pointerEvent p)` does it, as for any event. When the browser does take a gesture — on an
+(Html.pointerEvent p)` does it, as for any event. *Amended 2026-11-24* (#2087): a page stops the
+browser's menu in its `onContextMenu` handler, (h). When the browser does take a gesture — on an
 element with no `touch-action: none` — it sends `pointercancel`, then `pointerout` and
 `pointerleave`, and nothing more of that pointer, so a game ends a pointer's steering on
 `onPointerCancel` as on `onPointerUp`, and an `onPointerLeave` hears a leave after each cancel.
@@ -6052,6 +6057,124 @@ fails them. `browser/inline/PointerPoint` has no such element, because `browser-
 `press` and under a trusted move: one turn and one render for each event, with the outer handler
 running with the view of before the event. It also pins that a pointer handler on a disabled button
 does not run.
+
+**(h) The buttons, and the context menu.** *Added 2026-11-24* (issue #2087). Before this part, no
+reader gave the button of a pointer event, so a page could not tell a right-click from a
+left-click. The vocabulary had no `contextmenu` event, and a quoted `"oncontextmenu"` is
+`untyped_event_attribute` (`language.md` §11.5), which stays. So a page could not open a menu of its
+own, and could not stop the browser's menu.
+
+`Html` gains:
+
+| | Is |
+|---|---|
+| `button : Pointer → Int` | the DOM's `button`: the button whose change made the event |
+| `buttons : Pointer → Int` | the DOM's `buttons`: the buttons that are down, as a sum |
+| `onContextMenu` | the DOM's `contextmenu`, `delegated via pointer : Pointer` |
+
+**The values** are the DOM's (Pointer Events level 3, §4.1.1.2 and §4.1.1.3):
+
+| The device's button | `button` | its part of `buttons` |
+|---|---|---|
+| the left mouse button, a touch contact, a pen contact | 0 | 1 |
+| the middle mouse button | 1 | 4 |
+| the right mouse button, the pen's barrel button | 2 | 2 |
+| the back button (X1) | 3 | 8 |
+| the forward button (X2) | 4 | 16 |
+| the pen's eraser button | 5 | 32 |
+
+`button` is -1 when no button and no contact changed since the last event. That is each
+`pointermove` of a pointer whose buttons stay as they are. A `pointerdown` comes with the first
+button that goes down, and a `pointerup` with the last button that goes up. A button that changes
+between the two comes with a `pointermove`, whose `button` is that button (§4.1.1.1, *chorded button
+interactions*). `buttons` is 0 when no button is down. The numbers name the main and the secondary
+button, not a side: on a mouse that is set up for the left hand, the main button is the right one,
+and its `button` is 0 (MDN, `MouseEvent.button`).
+
+**Why `Int`.** Each reader gives the DOM's value, as `pointerType` does ((a), (b)). `buttons` is a
+sum, so no closed type holds it. A page compares `button` with a number (`Html.button p == 2`) and
+tests a part of `buttons` with `Int32.and`.
+
+**Why the readers take a `Pointer`.** Each `Pointer` comes from the extractor of a pointer event or
+of `onContextMenu`, and each of those events is a `MouseEvent` at least. A `MouseEvent` has a number
+`button` and a number `buttons`. So the standard is the reason that each read is true of `Int`
+(§9.3, amended 2026-11-15), and neither reader carries a test. An `Event` can be a key event or a
+`focus`, which has neither property. A reader of the button for the `Event` of the mouse events
+(`onMouseDown`, `onMouseUp`) waits for a use: it must give an answer for an event with no button.
+
+**`onContextMenu`.** The browser dispatches `contextmenu` when the user asks for the context menu,
+typically with the right mouse button or with the keyboard's menu key (MDN, *contextmenu event*).
+The handler gets a `Pointer`, as a pointer handler does, for the reason of (d): a page
+opens its menu at a point, and the point in the handler's element needs that element. So the
+handler reads `clientX` and `clientY`, `localX` and `localY`, `button` and `buttons`, and through
+`pointerEvent` the modifier keys. The event bubbles and can be cancelled (measured in Chrome, *As
+built, 2026-11-24*; the standards' text that was read for this part does not say). So it is
+`delegated`: under `dom` its walk is the walk of (d), with `currentTarget` defined as the node whose
+handler runs, and a handler on a node whose `disabled` is true does not run.
+
+**The handler cancels the browser's menu, or does not.** `Html.preventDefault (Html.pointerEvent p)`
+in the handler stops the browser's menu, as it stops any default (§9.8.10 (a)). The declaration has
+no `preventDefault` of its own: a page can show the browser's menu on a part of an element and its
+own on another (rule 7). `preventDefault` on the `pointerdown` does not stop the `contextmenu`
+((e); Pointer Events level 3, §11).
+
+**The event's pointer.** Pointer Events level 3 (§4.2.12) says that a `contextmenu` is a
+`PointerEvent`. Chrome 92, Firefox 129 and Safari 18.2 are the first versions that dispatch one
+(MDN's compatibility data, `contextmenu_event.type_pointerevent`). A browser before them dispatches
+a `MouseEvent`, which has no `pointerId`, no `pointerType` and no `isPrimary`. The standard gives
+the event the `pointerId` and the `pointerType` of the pointer that made it, and the default of
+each other pointer attribute. For an event that no pointing device made, such as a menu that the
+keyboard asks for, it gives `pointerId` -1 and `pointerType` `""` (§4.2.12.1). So on an
+`onContextMenu`:
+
+- **`isPrimary` is `False`**, for the mouse too: `false` is the attribute's default. Chrome 153
+  does this (*As built, 2026-11-24*).
+- `pointerType` is `""` when the event has no pointer, as (b) says of a pointer that the browser
+  cannot name.
+- **`pointerId` is -1 when the event has no `pointerId`.** Before this part, the reader gave the
+  property as it was: on a `MouseEvent` that is `undefined`, a value that is not an `Int`. Now the
+  reader gives -1 for a property that is null or absent, which is the standard's value for an event
+  with no pointing device. On each event of (b) the property is a number and the reader gives it,
+  as before.
+
+`clientX`, `clientY`, `localX`, `localY`, `button` and `buttons` are properties of a `MouseEvent`,
+so they are true on each form of the event.
+
+**What a page cannot rely on.** These are facts of the browsers, not of beni:
+
+- The system decides whether the menu comes at the press or at the release of the button, so the
+  event comes after the `pointerdown` or after the `pointerup` (§4.2.12.3), and `buttons` is the
+  buttons that are down at that time. The order of `contextmenu` and the pointer events is not
+  defined (§11). Chrome 153 on Linux dispatches it at the press.
+- A menu that the keyboard asks for. The standard gives it `pointerId` -1 and `pointerType` `""`.
+  Chrome 153 gives it the mouse's `pointerId` and `"mouse"`, a `button` of -1, and the point at the
+  centre of the element that has the focus. So a page cannot tell such a menu by its pointer in each
+  browser. The page still gets the event and a point.
+- Safari on iOS dispatches no `contextmenu` for a touch (MDN's compatibility data; WebKit bug
+  213953, open, which says that a mouse connected to an iPad does give the event). A page for a
+  touch screen measures a long press with `onPointerDown`, `onPointerUp` and a timer.
+- In Firefox, a right-click with Shift held shows the browser's menu and dispatches no
+  `contextmenu`, so no page can stop that menu.
+
+`auxclick`, the click of a button that is not the main button, waits for a use.
+
+**A prerendered page does not record `contextmenu`** before its takeover (`prerender.md` §6.5,
+amended 2026-11-24), for the reason that it does not record a pointer event: the extractor reads
+`currentTarget`, which a delivery after the dispatch cannot give. A menu that the user asks for
+before the takeover is the browser's.
+
+**Proofs.** The `pointer` step gains `button:<n>` and `buttons:<n>`, and the event name
+`contextmenu`, which it dispatches as a `PointerEvent`. The `mouse` step accepts `contextmenu` and
+dispatches a `MouseEvent`, the form of a browser before the versions above
+(`tests/corpus/README.md`). `browser/tea/PointerButtons` pins the two readers on a down, a move and
+an up; a menu at the point in the handler's element, with a child of that element as the target; an
+element that cancels the browser's menu and one that does not; and `pointerId` -1, `pointerType`
+`""` and `isPrimary` `False` on the `MouseEvent` form. `browser/dom/PointerButtons` pins the same
+under `browser`, with a handler on a disabled control and nested handlers. `browser/inline/
+PointerButtons` pins the same under `browser-inline`. `browser/prerender/EarlyMenu` pins that the
+capture script of a page with a click handler does not record a `contextmenu`, and that the click
+after it is delivered. `browser/prerender/EarlyMenuOnly` pins that a page whose only listeners are
+a pointer event's and `onContextMenu`'s gets no capture script.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:
@@ -6143,6 +6266,42 @@ specified, with these findings:
   `sternhalma` 7 428 → 7 474). `examples/steer` delegated no event before, so its build had
   `listen` and no walk. Now it has the walk and `delegate`: 405 bytes raw more, and 4 321 → 4 449
   brotli. A page that delegates no event is the same bytes.
+
+*As built, 2026-11-24* (#2087; `platforms/html/Html.beni`, `platforms/browser-inline/zig/
+inline.zig`, `tests/browser/driver.mjs`), as (h) says, with these findings:
+
+- **No lowering changed for the event.** `dom` and `inline` read the event's facts from the
+  vocabulary, so the declaration is the whole of `onContextMenu`. The one change is `inline`'s
+  `capturedKinds`, which leaves `contextmenu` out of a prerendered page's capture script.
+- **Measured in headless Chrome 153 on Linux**, with a user's events sent through
+  `Input.dispatchMouseEvent` and `Input.dispatchKeyEvent`, on an element with a child:
+
+  | The user's action | Chrome dispatches | `button` | `buttons` |
+  |---|---|---|---|
+  | the right button goes down | `pointerdown`, `mousedown`, `contextmenu` | 2 | 2 |
+  | the right button comes up | `pointerup`, `mouseup`, `auxclick` | 2 | 0 |
+  | the right button goes down while the left is down | `pointermove`, `mousedown`, `contextmenu` | 2 | 3 |
+  | a move with the two buttons down | `pointermove` | -1 | 3 |
+  | the right button comes up while the left is down | `pointermove`, `mouseup`, `auxclick` | 2 | 1 |
+  | the middle button goes down | `pointerdown`, `mousedown` | 1 | 4 |
+  | the menu key, with the focus on the element | `contextmenu` | -1 | 0 |
+
+  Each `contextmenu` was a `PointerEvent` whose `bubbles`, `cancelable` and `composed` were true,
+  with `isPrimary` false. The mouse's had `pointerId` 1 and `pointerType` `"mouse"`. The menu key's
+  had the same `pointerId` and `pointerType`, not the standard's -1 and `""`, and its point was the
+  centre of the element. A listener on the element saw the child as the `target`. A listener that
+  called `preventDefault` set `defaultPrevented`. Headless Chrome shows no menu, so the measurement
+  does not see the menu itself.
+- **The steps send what a script names**, not a user's right-click: no step is trusted for
+  `contextmenu`, so no fixture sees its turn under `dom`. The walk is the one that `PointerNested`
+  pins for the trusted pointer events. The page fuzzer sends no `contextmenu` either. Issue #2693
+  has both.
+- **Size** (the compiler before and after the change, every `.mjs` of the build, brotli at quality
+  11). A page that calls `pointerId` is 28 bytes raw more under `--release` and 52 more in
+  development: `browser/dom/PointerEvents` 10 957 → 10 985 raw and 4 424 → 4 423 brotli,
+  `browser/tea/PointerInput` 8 356 → 8 384 and 3 290 → 3 294, `browser/inline/PointerInput` 6 272 →
+  6 300 and 2 507 → 2 507. A page that does not call it is the same bytes, with pointer events
+  (`browser/dom/PointerNested`) or with none. No `emit/` golden moved.
 
 #### 9.8.21 Dates: the calendar, time zones and ISO 8601 (2026-11-04)
 
