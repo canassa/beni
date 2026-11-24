@@ -1,0 +1,26 @@
+--! A counter whose button sends the constructor alone.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    n : Int
+
+
+pub type Msg
+    = Inc
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <button id="second" onClick={Inc}>+</button>
+        <p>{String.fromInt model.n}</p>
+    </section>
