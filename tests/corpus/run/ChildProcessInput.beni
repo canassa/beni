@@ -6,10 +6,14 @@
 --   - a text sent to `cat` and read back;
 --   - text that is not ASCII, and a NUL character, which is a byte of the
 --     input and not `InvalidArgument`;
+--   - a lone surrogate, which the child gets as U+FFFD. `String` and
+--     `Char` make none; an escape of JSON brings one into a string;
 --   - 1 MiB through `cat`, more than a pipe holds: the write and the reads
 --     do not wait for each other;
 --   - no `input`, and an `input` of `""`: an end of file at once;
---   - two children at once, each with its own text.
+--   - two children at once, each with its own text;
+--   - a program that is not found: the answer is the start's, and the
+--     input, which has a pipe and no child, changes nothing.
 --
 -- A child that does not read all of its input is not an error, and the
 -- answer is the one any child gets:
@@ -24,10 +28,13 @@
 -- 1 MiB ends the program with Node's `Unhandled 'error' event`.
 --
 -- A child that is stopped while its input is not yet written leaves no
--- error either: a `Task.timeout`, and output over `maxOutput`.
+-- error either: a `Task.timeout`, and output over `maxOutput`. These two
+-- show only that nothing crashes; `ChildProcessInputFaults` shows that the
+-- platform closes the pipe.
 import ChildProcess exposing (Command, Output, RunError)
 import Duration
 import Io
+import Json
 import Node exposing (Program)
 import Task
 
@@ -39,6 +46,17 @@ sh script = ChildProcess.command "/bin/sh" [ "-c", script ]
 -- 1 048 576 bytes, each line 16 of them.
 big : String
 big = String.repeat "0123456789abcde\n" 65536
+
+
+-- `a`, the first half of a surrogate pair with no second half, `b`.
+lone : String
+lone =
+    case Json.decode "\"a\\ud800b\"" of
+        Ok text →
+            text
+
+        Err _ →
+            "JSON gave no lone surrogate"
 
 
 describe : String, Result RunError Output → String
@@ -55,6 +73,9 @@ describe label result =
 
         Err ChildProcess.OutputTooLarge →
             label ++ ": output too large"
+
+        Err ChildProcess.NotFound →
+            label ++ ": not found"
 
         Err _ →
             label ++ ": an error"
@@ -110,11 +131,14 @@ main = Io.run λ⊤ →
         [ describe "cat" (ChildProcess.run { sh "cat" | input = "hello, child\n" })
         , describe "not ASCII" (ChildProcess.run { sh "cat" | input = "é ✓ 😀" })
         , same "a NUL" binary (ChildProcess.run { sh "cat" | input = binary })
+        , describe "a lone surrogate" (ChildProcess.run { sh "cat" | input = lone })
         , same "1 MiB" big (ChildProcess.run { sh "cat" | input = big })
         , describe "no input" (ChildProcess.run (sh "cat; echo end"))
         , describe "empty input" (ChildProcess.run { sh "cat; echo end" | input = "" })
         , describe "first of two" both.0
         , describe "second of two" both.1
+        , describe "no such program"
+            (ChildProcess.run { ChildProcess.command "/no/such/program" [] | input = big })
         , describe "reads one line"
             (ChildProcess.run
                 { sh "read line; echo \"got $line\"; exit 4" | input = "first\n" ++ big }

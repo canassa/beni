@@ -9570,22 +9570,32 @@ none uses `/bin/echo`, which NixOS lacks.
   exits at once); `ChildProcessCancelledLatched` (a cancellation latched while masked reaches
   `run`'s wait, and the release alone signals the child; without that, a hang).
 - (k), *added 2026-11-24 (#2023)*: `ChildProcessInput` (a text sent to `/bin/sh -c 'cat'` and
-  read back; text that is not ASCII, and a NUL; 1 MiB through `cat`, which shows that the write
-  and the reads do not wait for each other; an empty `input`, which is an end of file at once;
-  two children at once, each with its own text; a child that reads one line of 1 MiB and exits; a child that exits and reads nothing, with a
-  short text and with 1 MiB; a child that closes its standard input and writes after that; a
-  `Task.timeout` that ends a child with 1 MiB not yet read; `OutputTooLarge` with 1 MiB not yet
-  read). Without the input pipe's `error` listener the program ends at the first child that stops
-  reading 1 MiB, with Node's `Unhandled 'error' event` — checked by hand on the emitted
-  JavaScript. `ChildProcessInputFaults`, whose test platform's child says what `spawn` was asked
-  for as its standard input: `ignore` with no `input` and with `""`, `pipe` with a text. A real
-  child reads an end of file at once from `/dev/null` and from an empty pipe, so only this case
-  tells the two apart. The same child's input pipe fails with `EPIPE`, by Node's route: `Ok`.
-  `ChildProcessInputUnknownCode`: the input pipe fails with `ENOMEM`, a code the start's table
-  names and the input pipe's does not: a defect, with a `.crash` golden.
+  read back; text that is not ASCII, and a NUL; a lone surrogate, which an escape of JSON brings
+  into a string, read back as U+FFFD; 1 MiB through `cat`, which shows that the write and the
+  reads do not wait for each other; an empty `input`, which is an end of file at once; two
+  children at once, each with its own text; a program that is not found, with an input; a child
+  that reads one line of 1 MiB and exits; a child that exits and reads nothing, with a short text
+  and with 1 MiB; a child that closes its standard input and writes after that; a `Task.timeout`
+  that ends a child with 1 MiB not yet read; `OutputTooLarge` with 1 MiB not yet read). Without
+  the input pipe's `error` listener the program ends at the first child that stops reading
+  1 MiB, with Node's `Unhandled 'error' event` — checked by hand on the emitted JavaScript. The
+  last two cases show only that a stopped child leaves no error.
+- (k), where a real child shows nothing, or shows it only by a race: `ChildProcessInputFaults`,
+  whose test platform gives its own children in place of `spawn`'s. One says what `spawn` was
+  asked for as its standard input: `ignore` with no `input` and with `""`, `pipe` with a text (a
+  real child reads an end of file at once from `/dev/null` and from an empty pipe). Its input
+  pipe fails with `EPIPE`, by Node's route: `Ok`. One does not start, and notes a write to its
+  standard input: there is none. One never reads and writes over `maxOutput`, and notes that its
+  input pipe is destroyed before the signal comes. Each of the three fails with its rule broken
+  in the emitted JavaScript, checked by hand. `ChildProcessInputUnknownCode`: the input pipe
+  fails with `ENOMEM`, a code the start's table names and the input pipe's does not: a defect,
+  with a `.crash` golden.
 - The rows with no fixture: `OutputTooLarge`'s clamp to `MAX_STRING_LENGTH` (a string of 512 MiB
   is no test); an `error` event after the start (no program can make Node's `kill` fail); an
-  output pipe's `error` (left to Node).
+  output pipe's `error` (left to Node). *Amended 2026-11-24 (#2023):* and two facts of (k) that
+  are Node's and measured only: a descendant that reads after the child's exit gets an early end
+  of file (how much it reads is the kernel's), and Node's `close` does not wait for the input
+  pipe.
 
 **(i) The owner's decisions**, taken on the dashboard.
 
