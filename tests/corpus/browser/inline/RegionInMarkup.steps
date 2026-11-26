@@ -1,0 +1,12 @@
+# The arm is made with the list `Pick` wrote in the same pass.
+click #pick
+# The inner branch swaps; then a write only its `For` reads.
+click #toggle
+click #add
+# A handler whose message the arm built from what it binds.
+click #rename
+# Out of the arm and back into it: fresh nodes, the inner arm the model's.
+click #unpick
+click #add
+click #pick
+click #toggle

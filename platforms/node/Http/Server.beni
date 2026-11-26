@@ -74,8 +74,8 @@ pub type alias Request =
 --| A name given twice is written twice, in order. A response Node cannot
 --| write — a status outside 200 to 999, a body on a 204, a 205 or a 304, a
 --| header name that is not a token, a header value with a
---| control character, or a `content-length` or `transfer-encoding` of the
---| program's — is answered with 500 and reported on standard error
+--| control character, or a `content-length`, `transfer-encoding` or
+--| `trailer` of the program's — is answered with 500 and reported on standard error
 --| (§9.10 (d)).
 pub type alias Response =
     status : Int
@@ -846,7 +846,7 @@ invalidUpgrade incoming fault =
 -- `writeHead` less the interim statuses (a handler answers once, and Node
 -- resets the connection on a final 100), the two statuses that carry no
 -- body, `validateHeaderName` and `validateHeaderValue` — caught from
--- those two calls alone — and the two headers the transport owns.
+-- those two calls alone — and the three headers the transport owns.
 invalid : Response → Maybe String
 invalid response =
     status = response.status
@@ -922,8 +922,16 @@ headerFault headers =
                             Just fault
 
                         Nothing →
+                            -- `trailer` too: the platform frames every body
+                            -- with `content-length`, never chunked, and on
+                            -- such a body `writeHead` throws
+                            -- `ERR_HTTP_TRAILER_INVALID` (#1995).
                             lower = Js.to (Js.call (Js.from name) "toLowerCase" [])
-                            if lower == "content-length" || lower == "transfer-encoding" then
+                            if
+                                lower == "content-length"
+                                    || lower == "transfer-encoding"
+                                    || lower == "trailer"
+                            then
                                 Just ("the header " ++ quote name ++ " belongs to the platform")
                             else
                                 headerFault rest

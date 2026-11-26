@@ -1,0 +1,30 @@
+-- load
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="command">"command"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #direct
+console.info: saved inner=0ms outer=0ms {"1":"x","user":"7","__proto__":"p"}
+console.debug: a trace line
+console.debug: a debug line
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="command">"command"</button>
+    <p>"1"</p>
+  </main>
+</body>
+-- click #command
+console.warn: from a command {"request":"r1"}
+console.error: an error from a command, with update's annotation {"request":"r1"}
+console.debug: a debug line from a command, under update's minimum {"request":"r1"}
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="command">"command"</button>
+    <p>"2"</p>
+  </main>
+</body>

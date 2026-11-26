@@ -1,0 +1,6 @@
+click [data-role=add]
+click [data-role=back]
+click [data-role=inc]
+click [data-role=add]
+click [data-role=reset]
+click [data-role=back]

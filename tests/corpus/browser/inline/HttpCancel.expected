@@ -1,0 +1,41 @@
+-- load
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="ab">"ab"</button>
+    <button id="abc">"abc"</button>
+    <button id="stop">"stop"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #a
+(fetch 1: GET /search?q=a {})
+(the DOM did not change)
+-- click #ab
+(fetch 1 aborted: AbortError)
+(fetch 2: GET /search?q=ab {})
+(the DOM did not change)
+-- respond 1 200 "too late"
+(fetch 1 was aborted: nothing hears the answer)
+(the DOM did not change)
+-- click #stop
+(fetch 2 aborted: AbortError)
+(the DOM did not change)
+-- respond 2 200 "too late too"
+(fetch 2 was aborted: nothing hears the answer)
+(the DOM did not change)
+-- click #abc
+(fetch 3: GET /search?q=abc {})
+(the DOM did not change)
+-- respond 3 200 "found"
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="ab">"ab"</button>
+    <button id="abc">"abc"</button>
+    <button id="stop">"stop"</button>
+    <ol>
+      <li>"abc: found"</li>
+    </ol>
+  </main>
+</body>

@@ -1,0 +1,6 @@
+key body Enter code:Enter
+hash "#/active"
+# The bodies are cancelled: their listeners are removed.
+click #stop
+key body Escape code:Escape
+hash "#/done"

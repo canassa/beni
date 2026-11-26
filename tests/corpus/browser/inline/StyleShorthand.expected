@@ -1,0 +1,31 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="margin: 0px 0px 0px 7px;">"0"</p>
+      <p data-role="q" style="margin-left: 7px;">"q"</p>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="margin: 1px 1px 1px 7px;">"1"</p>
+      <p data-role="q" style="margin-left: 7px;" class="a">"q"</p>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="margin: 2px 2px 2px 7px;">"2"</p>
+      <p data-role="q" style="margin-left: 7px;" class="a">"q"</p>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>

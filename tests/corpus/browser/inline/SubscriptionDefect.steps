@@ -1,0 +1,10 @@
+click #start
+timers
+listeners window resize
+event window resize
+advance 100
+throws click #boom
+timers
+listeners window resize
+advance 1000
+event window resize

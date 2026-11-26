@@ -1,0 +1,19 @@
+-- A `view` whose body is a branch, after a statement (docs/design/browser-inline.md §8.2,
+-- amended 2026-11-23): the statement runs in an entry of its own, at the mount and in each
+-- pass that writes what it reads, before the region's entry. Every click writes `n`, so its
+-- transcript is `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n =
+    _ = Debug.log "view" n
+    if n > 1 then
+        <main><p>{n}</p></main>
+    else
+        <section><button id="b" onClick={n + 1}>{n}</button></section>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λm _ → m, view = view }

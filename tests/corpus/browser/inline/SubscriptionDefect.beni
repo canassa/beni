@@ -1,0 +1,66 @@
+-- A defect stops a set that depends on the model (browser-inline.md §3,
+-- amended 2026-11-23; boundary.md §9.8.14). Started, the program holds a
+-- resize listener and a 100 ms clock. A throw in `update` stops the page:
+-- the listener is removed and the clock's fiber cancelled, so no timer is
+-- left, and neither a resize nor the clock moving on applies a message.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Start
+    | Boom
+    | Resized Browser.Events.Size
+    | Tick Time.Posix
+
+
+type alias Model =
+    on : Bool
+    seen : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Start →
+            ( { model | on = True }, Cmd.none )
+
+        Boom →
+            Debug.todo "update threw"
+
+        Resized _ →
+            ( { model | seen = model.seen + 1 }, Cmd.none )
+
+        Tick _ →
+            ( { model | seen = model.seen + 1 }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    if model.on then
+        Sub.batch [ Browser.Events.onResize Resized, Time.every (Time.millis 100) Tick ]
+    else
+        Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="start" onClick={Start}>start</button>
+        <button id="boom" onClick={Boom}>boom</button>
+        <p>{model.seen}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { on = False, seen = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

@@ -1,0 +1,43 @@
+-- A program whose keyed bodies never wait ships the key table but none of
+-- the fiber runtime (browser-inline.md §4, amended 2026-11-23): only a
+-- `Keyed` item makes a run in a fiber, and every step that spawns, waits
+-- for or cancels one is in that run's arm (backend.md §9, *A `case` arm on
+-- a constructor nothing builds*).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Stop
+    | Got Int
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            ( n, Cmd.keyed "go" Cmd.Restart λsend → send (Got 1) )
+
+        Stop →
+            ( n, Cmd.batch [ Cmd.cancel "go", Cmd.cancelAll ] )
+
+        Got k →
+            ( n + k, Cmd.none )
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="go" onClick={Go}>go</button>
+        <button id="stop" onClick={Stop}>stop</button>
+        <output>{n}</output>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

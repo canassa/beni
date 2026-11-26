@@ -1,0 +1,7 @@
+respond 1 200 "hello"
+click #missing
+respond 2 404 ""
+click #offline
+fail 3
+click #save
+respond 4 200 "saved"

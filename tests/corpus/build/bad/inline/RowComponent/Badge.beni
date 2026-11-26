@@ -1,0 +1,5 @@
+import Html exposing (Html)
+
+
+pub view : { text : String } → Html msg
+view props = <b>{props.text}</b>

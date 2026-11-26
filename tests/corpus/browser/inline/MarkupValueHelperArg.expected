@@ -1,0 +1,80 @@
+-- load
+<body>
+  <main>
+    <section class="frame">
+      <h2>"count"</h2>
+      <p>
+        <button id="inc">"0"</button>
+      </p>
+    </section>
+    <section class="frame">
+      <h2>"resets"</h2>
+      <button class="reset">"reset"</button>
+    </section>
+    <p id="resets">"0"</p>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <section class="frame">
+      <h2>"count"</h2>
+      <p>
+        <button id="inc">"1"</button>
+      </p>
+    </section>
+    <section class="frame">
+      <h2>"resets"</h2>
+      <button class="reset">"reset"</button>
+    </section>
+    <p id="resets">"0"</p>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <section class="frame">
+      <h2>"count"</h2>
+      <p>
+        <button id="inc">"2"</button>
+      </p>
+    </section>
+    <section class="frame">
+      <h2>"resets"</h2>
+      <button class="reset">"reset"</button>
+    </section>
+    <p id="resets">"0"</p>
+  </main>
+</body>
+-- click .reset
+<body>
+  <main>
+    <section class="frame">
+      <h2>"count"</h2>
+      <p>
+        <button id="inc">"0"</button>
+      </p>
+    </section>
+    <section class="frame">
+      <h2>"resets"</h2>
+      <button class="reset">"reset"</button>
+    </section>
+    <p id="resets">"1"</p>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <section class="frame">
+      <h2>"count"</h2>
+      <p>
+        <button id="inc">"1"</button>
+      </p>
+    </section>
+    <section class="frame">
+      <h2>"resets"</h2>
+      <button class="reset">"reset"</button>
+    </section>
+    <p id="resets">"1"</p>
+  </main>
+</body>

@@ -719,7 +719,7 @@ pub fn check(a: std.mem.Allocator, io: std.Io, c: Native.Catalogue, text: []cons
             }
             const relative = try a.dupe(u8, module);
             std.mem.replaceScalar(u8, relative, '.', '/');
-            const file_path = try std.fmt.allocPrint(a, "platforms/browser/{s}.beni", .{relative});
+            const file_path = try std.fmt.allocPrint(a, "platforms/browser-base/{s}.beni", .{relative});
             const source = (try files.read(file_path)) orelse {
                 problem(quiet, &count, row, "no file {s}", .{file_path});
                 continue;

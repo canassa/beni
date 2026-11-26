@@ -1,0 +1,63 @@
+-- A view helper whose body is a `case` an arm of which reads what its
+-- pattern binds (docs/design/browser-inline.md §8.4, amended 2026-11-23,
+-- #2498): the branch is a region at the hole, as the same `case` written
+-- there would be, with the helper's parameter bound around it. The editor
+-- comes and goes both ways, its input is written from the draft, and its
+-- handlers are wired again each time it is made. Its transcript is
+-- `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Start
+    | Typed String
+    | Done
+
+
+type alias Model =
+    editing : Maybe String
+    saved : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Start →
+            { model | editing = Just model.saved }
+
+        Typed s →
+            { model | editing = Just s }
+
+        Done →
+            case model.editing of
+                Just s →
+                    { model | editing = Nothing, saved = s }
+
+                Nothing →
+                    model
+
+
+editor : Maybe String → Html Msg
+editor editing =
+    case editing of
+        Just draft →
+            <input id="edit" value={draft} onInput={Typed} onBlur={λ_ → Done} />
+
+        Nothing →
+            <></>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="start" onClick={Start}>start</button>
+        <p id="saved">{model.saved}</p>
+        {editor model.editing}
+        <button id="done" onClick={Done}>done</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox { init = λ⊤ → { editing = Nothing, saved = "ada" }, update = update, view = view }

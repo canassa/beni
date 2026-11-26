@@ -1,0 +1,7 @@
+click #inc
+click #bottom>button
+click #inc
+click #inc
+click #inner>button
+click #inc
+click #top>button

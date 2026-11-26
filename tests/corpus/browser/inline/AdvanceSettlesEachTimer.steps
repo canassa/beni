@@ -1,0 +1,4 @@
+click #go
+advance 20
+click #arm
+frame 2 10

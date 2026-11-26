@@ -1,0 +1,13 @@
+# Rows appear before each comment, in their own place.
+click #more
+click #more
+# The first `Show` takes its body, the region its other arm, the helper's
+# branch its other arm; the text after them is written in place.
+click #flip
+click #name
+click #more
+# Every row and the second `Show` go; the regions switch back.
+click #less
+click #less
+click #less
+click #flip

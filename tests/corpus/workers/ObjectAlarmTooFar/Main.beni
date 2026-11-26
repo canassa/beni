@@ -1,0 +1,63 @@
+-- workers: `Object.alarmIn` answers a `Result` (boundary.md §9.12 (e.5),
+-- amended 2026-11-24; #2022). An alarm the longest duration from now is
+-- at a time past 9007199254740991, the last millisecond an `Int` holds:
+-- `alarmIn` answers `Err TooFar` and sets nothing, so an alarm that was
+-- set stays. Before the fix it added with no bound, answered `⊤`, and
+-- gave the host a time that is not an `Int`. The program's time is read
+-- by `/__beni/alarms`.
+import Duration exposing (Duration)
+import Schema
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ room ] }
+
+
+room : Worker.Definition
+room = Object.define "Room" Schema.string (λ_ → ⊤) { Object.none | request = serve }
+
+
+-- What `alarmIn` of the duration answered.
+alarm : Object.Context String, Duration → String
+alarm ctx d =
+    case Object.alarmIn ctx d of
+        Ok ⊤ →
+            "alarm set"
+
+        Err Object.TooFar →
+            "too far: no alarm set"
+
+
+serve : Object.Context String, ⊤, Request → ⊤ × Response
+serve ctx state request =
+    case List.reverse (String.split (Worker.path request) "/") of
+        [ "longest", …rest ] →
+            ( state, Worker.text 200 (alarm ctx (Duration.millis 9007199254740991)) )
+
+        [ "hour", …rest ] →
+            ( state, Worker.text 200 (alarm ctx (Duration.hours 1)) )
+
+        _ →
+            ( state, Worker.text 404 "no such page" )
+
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "ROOMS" Schema.string
+        , String.split (Worker.path request) "/"
+        )
+    of
+        ( Just rooms, [ "", "room", name, …rest ] ) →
+            case Worker.forward (Worker.byName rooms name) request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the room is not available"
+
+        _ →
+            Worker.text 404 "no such page"

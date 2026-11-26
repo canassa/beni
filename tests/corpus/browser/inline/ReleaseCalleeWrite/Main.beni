@@ -1,0 +1,126 @@
+-- A write in place made inside a callee is a store under `--release` too
+-- (ownership-checker.md §31.10, amended 2026-11-24, #2642). No key gives
+-- the model another object, so the handler stores nothing back and its
+-- write pass reads the object the arm wrote (`programModelKept`). The arm's
+-- pair is split into one binding per slot by scalar replacement, and the
+-- model's slot has no read: the call that writes must stay all the same.
+-- Each button writes through a helper in another shape:
+--
+--   - `#later`: the helper in the pair beside a command (the issue);
+--   - `#deep`: a helper that writes only through another, two calls deep;
+--   - `#cross`: the same, from another module;
+--   - `#record`: the pair taken out of a record;
+--   - `#tuple`: the model taken out of a tuple, beside a read before it;
+--   - `#batch`: beside `Cmd.batch`;
+--   - `#slept`: beside a command whose body sleeps.
+--   - `#apply`: through a function a helper is handed (its call has no
+--     demand of its own), the helper written where it is called;
+--   - `#handed`: the same, the helper in another module.
+--
+-- Each `Got` writes through `said` again, with `Cmd.none`. The release
+-- build must show the development build's page after every step.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Notes exposing (Model)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Later
+    | Deep
+    | Cross
+    | InRecord
+    | InTuple
+    | Batch
+    | Slept
+    | Apply
+    | ApplyCross
+    | Got String
+
+
+said : Model, String → Model
+said model line = { model | lines = List.push model.lines line, count = model.count + 1 }
+
+
+-- A writer handed in, in this module.
+apply : (Model, String → Model), Model, String → Model
+apply f model line = f model line
+
+
+-- Two calls deep, in this module.
+twice : Model, String → Model
+twice model line = said (said model line) "again"
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Later →
+            ( said model "later", Cmd.perform λsend → send (Got "c") )
+
+        Deep →
+            ( twice model "deep", Cmd.perform λsend → send (Got "d") )
+
+        Cross →
+            ( Notes.noted model "cross", Cmd.perform λsend → send (Got "x") )
+
+        InRecord →
+            both = { m = said model "record", c = Cmd.perform λsend → send (Got "r") }
+            ( both.m, both.c )
+
+        InTuple →
+            ( m, n ) = ( said model "tuple", model.count )
+            ( m, Cmd.perform λsend → send (Got "t ${String.fromInt n}") )
+
+        Batch →
+            ( said model "batch"
+            , Cmd.batch
+                [ Cmd.perform λsend → send (Got "b1")
+                , Cmd.perform λsend → send (Got "b2")
+                ]
+            )
+
+        Slept →
+            ( said model "slept"
+            , Cmd.perform λsend →
+                Time.sleep (Time.millis 10)
+                send (Got "s")
+            )
+
+        Apply →
+            ( apply said model "apply", Cmd.perform λsend → send (Got "p") )
+
+        ApplyCross →
+            ( Notes.apply said model "handed", Cmd.perform λsend → send (Got "h") )
+
+        Got s →
+            ( said model s, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="later" onClick={Later}>later</button>
+        <button id="deep" onClick={Deep}>deep</button>
+        <button id="cross" onClick={Cross}>cross</button>
+        <button id="record" onClick={InRecord}>record</button>
+        <button id="tuple" onClick={InTuple}>tuple</button>
+        <button id="batch" onClick={Batch}>batch</button>
+        <button id="slept" onClick={Slept}>slept</button>
+        <button id="apply" onClick={Apply}>apply</button>
+        <button id="handed" onClick={ApplyCross}>handed</button>
+        <p id="count">{model.count}</p>
+        <p id="log">{String.join model.lines " | "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { lines = [], count = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

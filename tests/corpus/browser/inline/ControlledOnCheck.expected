@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <input id="box" type="checkbox" .value="on" .checked=false>
+    <p>"off"</p>
+  </main>
+</body>
+-- click #box
+<body>
+  <main>
+    <input id="box" type="checkbox" .value="on" .checked=true>
+    <p>"on"</p>
+  </main>
+</body>
+-- click #box
+<body>
+  <main>
+    <input id="box" type="checkbox" .value="on" .checked=false>
+    <p>"off"</p>
+  </main>
+</body>

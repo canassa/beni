@@ -1,0 +1,2 @@
+# A render after the mount writes nothing to them either.
+click #tick

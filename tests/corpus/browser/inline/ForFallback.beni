@@ -1,0 +1,80 @@
+-- A `For` with a `fallback` (docs/design/browser-inline.md §9, amended
+-- 2026-11-24): shown, in a region of its own where the rows stand, while the
+-- list is empty, and removed when a row comes. One fallback is an element
+-- with a hole and an event, one `Html.text e`, one `<></>`; one `For` is
+-- followed by text, so its rows and its fallback stand before a comment.
+-- The fallback's values are evaluated while it is shown, and its event
+-- sends its message. A `let` of the `view` that only a `For`'s and a
+-- `Show`'s fallback read is bound. Its transcript is `browser-tea`'s for the
+-- same source but for the empty comments the two keep as markers.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Clear
+    | Bump
+
+
+type alias Model =
+    items : List Int
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | items = List.range 1 (List.length model.items + 1) }
+
+        Clear →
+            { model | items = [] }
+
+        Bump →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    label = "n=${String.fromInt model.n}"
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <ul id="element">
+            <For
+                each={model.items}
+                keyed={λi → i}
+                fallback={<li><button id="bump" onClick={Bump}>{"none ${String.fromInt model.n}"}</button></li>}
+            >
+                {λi → <li>{i}</li>}
+            </For>
+        </ul>
+        <p id="text">
+            <For
+                each={model.items}
+                keyed={False}
+                fallback={Html.text "empty ${String.fromInt model.n}"}
+            >
+                {λi → <b>{i}</b>}
+            </For>
+            end
+        </p>
+        <ol id="label">
+            <For each={model.items} keyed={False} fallback={<li>{label}</li>}>
+                {λi → <li>{i}</li>}
+            </For>
+        </ol>
+        <div id="show">
+            <Show when={List.head model.items} keyed fallback={<i>{label}</i>}>
+                {λi → <b>{i}</b>}
+            </Show>
+        </div>
+        <ol id="empty">
+            <For each={model.items} keyed={False} fallback={<></>}>{λi → <li>{i}</li>}</For>
+        </ol>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { items = [], n = 0 }, update = update, view = view }

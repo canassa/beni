@@ -1,0 +1,15 @@
+-- A `For` in another module's markup, which the program site writes as
+-- pieces (browser-inline.md §8.4): the simple form compiles a `For` of the
+-- program's own markup only (§9, amended 2026-11-23), class 1 (§5).
+import Browser
+import Html exposing (Html)
+import Rows
+import Tea
+
+
+view : List String → Html ⊤
+view items = <main>{Rows.view items}</main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ "a" ], update = λ_ m → m, view = view }

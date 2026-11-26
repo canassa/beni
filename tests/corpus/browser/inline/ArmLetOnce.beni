@@ -1,0 +1,62 @@
+-- A copy of `browser/tea/ArmLetOnce` on `browser-inline` (browser-inline.md §8.2, amended
+-- 2026-11-23, a branch region). Its transcript is that page's but for two differences: a
+-- text of several parts is one text node here; and the arm's `let` is evaluated in a pass that
+-- writes what the branch reads, not at every render, so a tick, which writes only `ticks`, logs
+-- nothing here — a difference of when, not of what, as for a `view`'s statements (§8.2).
+--
+-- An open arm's let is evaluated once, not once for each hole that reads
+-- it. It reads a List, so backend.md §15.5 (O3) recomputes it on every
+-- render of that arm, including a tick. Closing the arm does not evaluate
+-- its let. All DOM snapshots remain unchanged.
+
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Tick
+    | Toggle
+
+
+type alias Model =
+    items : List Int
+    ticks : Int
+    open : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | items = [ …model.items, List.length model.items ] }
+
+        Tick →
+            { model | ticks = model.ticks + 1 }
+
+        Toggle →
+            { model | open = not model.open }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="tick" onClick={Tick}>tick {model.ticks}</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        {if model.open then
+            total = Debug.log "total" (List.sum model.items)
+            <p><b>{total}</b><i>{total + 1}</i></p>
+         else
+            <p>closed</p>
+        }
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { items = [ 1, 2 ], ticks = 0, open = True }
+        , update = update
+        , view = view
+        }

@@ -1,0 +1,77 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" title="a">"a"</p>
+      <progress data-role="g" max="10" value="0"></progress>
+      <iframe data-role="f" title="f" sandbox=""></iframe>
+      <table>
+        <tbody>
+          <tr>
+            <td data-role="c" colspan="1">"c"</td>
+          </tr>
+        </tbody>
+      </table>
+      <button data-role="inc">"i"</button>
+      <button data-role="rename">"r"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" title="a">"a"</p>
+      <progress data-role="g" max="10" value="1"></progress>
+      <iframe data-role="f" title="f" sandbox=""></iframe>
+      <table>
+        <tbody>
+          <tr>
+            <td data-role="c" colspan="2">"c"</td>
+          </tr>
+        </tbody>
+      </table>
+      <button data-role="inc">"i"</button>
+      <button data-role="rename">"r"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=rename]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" title="a!">"a!"</p>
+      <progress data-role="g" max="10" value="1"></progress>
+      <iframe data-role="f" title="f" sandbox=""></iframe>
+      <table>
+        <tbody>
+          <tr>
+            <td data-role="c" colspan="2">"c"</td>
+          </tr>
+        </tbody>
+      </table>
+      <button data-role="inc">"i"</button>
+      <button data-role="rename">"r"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" title="a!">"a!"</p>
+      <progress data-role="g" max="10" value="2"></progress>
+      <iframe data-role="f" title="f" sandbox="allow-scripts"></iframe>
+      <table>
+        <tbody>
+          <tr>
+            <td data-role="c" colspan="3">"c"</td>
+          </tr>
+        </tbody>
+      </table>
+      <button data-role="inc">"i"</button>
+      <button data-role="rename">"r"</button>
+    </main>
+  </div>
+</body>

@@ -1629,6 +1629,15 @@ no sibling, so `Html.js` goes the way the rest of the platforms' JavaScript goes
 *Done 2026-11-03*: the three extractors are beni declarations of `Html.beni`, `targetValue` and
 `targetChecked` `pub`, `pointer` not, each `Event → …` or `Dispatched → Pointer` over `Js.get`,
 and `Html.js` is deleted (`plans/runtime-in-beni.md` step 14).
+*Amended 2026-11-15 (#1993; §4.3 (a), the owner's decision of 2026-11-05).* `targetValue` is
+`Event → Maybe String`, `Nothing` when the target has no string `value`. It is no longer the
+extractor of an event. `onInput` and `onChange` name `controlValue`, which is not `pub`, and are
+allowed only `on "input" "select" "textarea"`, whose `value` is a string by the HTML specification,
+so their payload stays `String`. The specification is the reason the read is true (§4.3 (a)), so
+`controlValue` carries no test, and a release page is byte for byte what it was.
+In the same way, `targetChecked` is `Event → Maybe Bool`, `Nothing` when the target has no boolean
+`checked`, and `onCheck`, allowed only `on "input"`, names the private `controlChecked` (the owner,
+2026-11-16).
 
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
@@ -2686,7 +2695,12 @@ itself (`Program.Key.fields`). The lowering sends each value to that handler as
 answers for such a declaration. A lowering that targets 1.24 sees what it saw, and hands such a
 handler the bare value, which is the defect 1.25 corrects; `inline` targets 1.25.
 
-**Version 1.29** (*added 2026-11-14*, numbered 1.29 when master's 1.26–1.28 merged in; additive, gated on nothing; research report 134):
+**Version 1.32** (*added 2026-11-10*, additive, gated on nothing; `browser-inline.md` §10.2, #1168):
+`programRetitles(key)` reports whether the key's writes conflict with what a document's `title`
+reads, conservatively true for unknown reads and for a program that is not a document. A lowering
+that targets 1.31 sees what it saw; `inline` targets 1.32.
+
+**Version 1.42** (*added 2026-11-14*, numbered 1.42 when master's 1.26–1.41 merged in; additive, gated on nothing; research report 134):
 `Lowering.keeps_let`, which `let`s of a grouped root (`Root.lets`) the lowering keeps beyond the call of
 the function that made them, and reads at a later call (§9.4.8, *What a lowering keeps*). Its default
 keeps every one, and the ownership checker refuses every write of a kept `let`. `dom` says which it
@@ -3418,6 +3432,17 @@ field names where `box` is live: it reads the host rectangle's `x`, `y`, `width`
 (`backend.md` §9 item 4's closed list); a page that never measures a node renames them, since no
 JavaScript reads these records. `emit/release/tea/DomCapabilities` pins both.
 
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Dom*).* `Dom` is a module of
+`browser-base`, re-exported by `browser`, `browser-tea` and `browser-inline`, and imports no
+renderer. `Dom.rendered` and HTTP's after-render wait go through the base's private `Phase`
+module, which owns the hosted loop's phase state that `Browser` held: the loop's `flush`, the
+after-render phase, its queued work and its waiting fibers. `Browser.hosted` hands its loop to
+`Phase.mount`; `Browser.onRendered` is `Phase.onRendered`. On `browser-inline`, which writes the
+page inside the dispatch, no loop is mounted: `Dom.rendered` resumes from a microtask, once the
+scheduler's drain that runs the fiber (and with it the dispatch that writes the page) has returned,
+and `Cmd.afterRender` runs after the write pass as a `perform` that cannot suspend does
+(`browser-inline.md` §4). `browser/prerender/BaseDom` pins both, prerendered and not.
+
 **`Browser.flush : () -> ()`**, `impure`, renders every program with a message waiting now, then runs
 phase (2). Called during a dispatch or a flush it does nothing more than the flush already queued,
 so no render sees a half-handled message.
@@ -3497,7 +3522,7 @@ pub foreign pure hosted :
     }
     → Program
 pub foreign impure flush : ⊤ → ⊤
-pub foreign impure onRendered : Resume ⊤ → (⊤ → ⊤)     -- `Dom.rendered` is `Task.callback` over it
+pub foreign impure onRendered : Resume ⊤ → (⊤ → ⊤)     -- `Dom.rendered` is `Task.callback` over it; `Phase.onRendered` since 2026-11-10
 ```
 
 `init` is called once, at mount, with the program's `Host`; `update` for each message; `settle` once
@@ -3794,7 +3819,25 @@ the branch the build takes, in reachability and in lowering.
   a throw out of a fiber stops it — no fiber runs again, as `Task`'s "a defect ends the program"
   says — and calls the hook a platform gave `Task.onDefect : (() -> ()) -> ()` (impure, core). A
   hosted mount hands it the page's stop, which reaches `Browser.beni` as the mount's fourth
-  argument, `h(root, flush, setPhase, stop)`, as the loop reaches it (§9.8.7).
+  argument, `h(root, flush, setPhase, stop)`, as the loop reaches it (§9.8.7). *Amended
+  2026-11-15 (#1994; as built):* a plain `Browser.program`'s `update` can start a fiber too
+  (`Task.spawnDetached`), and its throw left the page running, since no hosted mount had given
+  the hook. `Rt.beni`'s `run` now gives `Task.onDefect` the page's stop for every page, and the
+  page's stop shuts the runtime down (§9.8.14) for every page, not only once a hosted mount has
+  set the after-render phase: a plain program's fibers are cancelled by a defect as a hosted
+  mount's are. Pages: `browser/dom/DefectInFiber`, `browser/dom/DefectCancelsFibers`.
+- **A throw while the program's modules load stops the page too.** *Amended 2026-11-17 (#1994;
+  the owner's choice of 2026-11-16; as built):* a top-level value that throws ran when its module
+  was evaluated, before `run`, out of reach of the four guards, and the page showed no crash screen
+  on `browser`, `browser-tea` or `browser-inline`. A runtime module may now declare `pub
+  loadFailed : ⊤ → ⊤` (`Rt.beni` stops the page, `Inline.beni` takes its defect path). In a
+  development build the entry file then loads the program's module with `import()` inside a
+  `try … finally` that names no catch, and calls `loadFailed` when the load did not complete; the
+  throw goes on to the host, and the crash screen takes its message from the host's report as
+  for any defect. The cost is the development build's: the program's modules are fetched after
+  the runtime's, and the entry file uses top-level `await`. A release build is one hoisted file
+  and keeps its static `import`: nothing has mounted, and its stop adds nothing a page shows.
+  Pages: `browser/{dom,tea,inline}/DefectAtLoad`.
 - **An error a primitive did not expect is a throw in the fiber that waited on it** (rule 9):
   `Http`'s sibling names each failure `fetch` documents — a `TypeError` from `new URL` is
   `BadUrl`, a rejection with a `TypeError` is `NetworkError`, a `SyntaxError` from `JSON.parse`
@@ -3995,6 +4038,11 @@ section is normative for `browser`'s `Http` and **replaces §9.8.8's `Http` row*
 them are migrated by the slice that lands this (`plans/http-and-routing.md`). The choices it takes
 for the owner are H1–H5 of that plan; each is written here as recommended and is reversible until
 its slice lands. *Amended 2026-10-02:* the owner confirmed H1–H5 as recommended.
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Http*):* `Http` is a module of
+`browser-base`, re-exported by `browser`, `browser-tea` and `browser-inline`, and imports no
+renderer. Its after-render wait (`ready`) is `Phase.onRendered` (§9.8.6). On `browser-inline`
+`send`, `riskySend` and a request in a `Cmd.task` or `Cmd.perform` body compile as any
+unkeyed command; `browser/prerender/BaseHttp` sends its request only after the takeover.
 
 **The model is elm/http 2.0** (the owner, 2026-10-01: mirror Elm's packages, read their code;
 `Http.elm` and `Elm/Kernel/Http.js` at `2.0.0`). Its pieces keep their names — `request`, `get`,
@@ -4297,6 +4345,12 @@ H7 with one change, recorded under (a). *Amended 2026-10-29 (#1163):* `browser-i
 `Browser.Navigation`, `Browser.UrlRequest`, `Tea.document` and `Tea.application` too, with these
 semantics; what its `inline` lowering compiles of them, and its two departures (no `each` forms, a
 `sync` refusal tagger), are `browser-inline.md` §10.
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Navigation*):* the host operations of
+`Browser.Navigation` — reading and changing the address, `load`, `reload`, history traversal, URL
+resolution, the link-click guard of (c) and the shared listeners — are `browser-base`'s private
+`Browser.Address`. `browser` and `browser-inline` each keep a facade with its own `Key`, `Error` and
+`Browser.UrlRequest`, whose constructors programs match; a facade hands `Browser.Address` its
+`Error` constructors and maps a link to its own `UrlRequest`.
 
 **(a) Where `Url` lives** (H7). `Url`, `Url.Parser`, `Url.Parser.Query` and `Url.Builder` are
 pure and use nothing of a page, so they are **core modules**: a library, the `node` platform and a
@@ -4496,7 +4550,10 @@ each `DOMException` named where it cannot, nothing else caught):
   way to see a silent drop. On `Ok ()`, every follower is sent the new `Url` once (below).
 - **`replaceUrl`** is the same with `replaceState`.
 - **`back key n`** and **`forward key n`** call `history.go(-n)` and `history.go(n)`; `n = 0` does
-  nothing (Elm's `n && history.go(n)`). A `SecurityError` is `Err Throttled`. The address changes
+  nothing (Elm's `n && history.go(n)`). `history.go` takes a WebIDL `long`, its argument modulo
+  2³², so a delta past −2³¹ to 2³¹ − 1 is clamped to that range first: unclamped, 2³² was a reload
+  and 2³² − 1 one entry back (#1995); no history holds 2³¹ entries, so the clamped delta goes
+  nowhere, as any delta past the history does. A `SecurityError` is `Err Throttled`. The address changes
   later, when the host traverses: the `popstate` it fires is what followers hear. *Unlike Elm*, no
   message is sent at the call — Elm's `go` sent `onUrlChange` with the address *before* the
   traversal, then the `popstate` sent the new one.
@@ -4843,6 +4900,10 @@ test driver's virtual clock owns). When it passes:
   finaliser's boundary, are discarded — and the fiber goes on to its next finaliser;
 - from then on, each finaliser still to run runs until its first suspension and is abandoned
   there.
+
+*(Amended 2026-11-10, #2093: under a scheduler of its own (§9.12, proposal §17.5), a fiber that
+belongs to `s` and is lent to `s2` inside a finaliser is cut by whichever of the two deadlines passes
+first; the deadline of `s` is not lost because the slot names `s2`.)*
 
 Every finaliser therefore **starts** exactly once, and the teardown ends in bounded time. The count
 of abandoned ones reaches `done`; the `browser` platform writes one `console.warn` line when it is
@@ -5843,6 +5904,10 @@ and each reader as the DOM names the property it reads.
 | `localX`, `localY : Pointer → Float` | the position in the handler's element, (c) |
 | `pointerEvent : Pointer → Event` | the same event as an `Event`: the modifier readers and `preventDefault` take it |
 
+*Amended 2026-11-24* (#2087, (h)): `Html` also has `button`, `buttons : Pointer → Int` and the event
+`onContextMenu`, `delegated via pointer : Pointer`. `pointerId` is -1 on an event that has no
+pointer.
+
 `pointerover`, `pointerout`, `gotpointercapture` and `lostpointercapture` wait for a use, as the
 drag events that no program has needed do (§9.8.10, *amended 2026-10-13*). So do the pen's pressure
 and tilt, `getCoalescedEvents()` (the points between two `pointermove`s, which a drawing page needs
@@ -5986,7 +6051,8 @@ an absolutely positioned element (WebKit bug 218015, open). On a `pointerdown`, 
 stops the compatibility mouse events `mousedown`, `mousemove` and `mouseup` until that pointer's
 `pointerup` or `pointercancel` (Pointer Events §11.2), and never `mouseover`, `mouseout`,
 `mouseenter`, `mouseleave`, `click`, `auxclick` or `contextmenu`. `Html.preventDefault
-(Html.pointerEvent p)` does it, as for any event. When the browser does take a gesture — on an
+(Html.pointerEvent p)` does it, as for any event. *Amended 2026-11-24* (#2087): a page stops the
+browser's menu in its `onContextMenu` handler, (h). When the browser does take a gesture — on an
 element with no `touch-action: none` — it sends `pointercancel`, then `pointerout` and
 `pointerleave`, and nothing more of that pointer, so a game ends a pointer's steering on
 `onPointerCancel` as on `onPointerUp`, and an `onPointerLeave` hears a leave after each cancel.
@@ -6033,6 +6099,131 @@ fails them. `browser/inline/PointerPoint` has no such element, because `browser-
 `press` and under a trusted move: one turn and one render for each event, with the outer handler
 running with the view of before the event. It also pins that a pointer handler on a disabled button
 does not run.
+
+**(h) The buttons, and the context menu.** *Added 2026-11-24* (issue #2087). Before this part, no
+reader gave the button of a pointer event, so a page could not tell a right-click from a
+left-click. The vocabulary had no `contextmenu` event, and a quoted `"oncontextmenu"` is
+`untyped_event_attribute` (`language.md` §11.5), which stays. So a page could not open a menu of its
+own, and could not stop the browser's menu.
+
+`Html` gains:
+
+| | Is |
+|---|---|
+| `button : Pointer → Int` | the DOM's `button`: the button whose change made the event |
+| `buttons : Pointer → Int` | the DOM's `buttons`: the buttons that are down, as a sum |
+| `onContextMenu` | the DOM's `contextmenu`, `delegated via pointer : Pointer` |
+
+**The values** are the DOM's (Pointer Events level 3, §4.1.1.2 and §4.1.1.3):
+
+| The device's button | `button` | its part of `buttons` |
+|---|---|---|
+| the left mouse button, a touch contact, a pen contact | 0 | 1 |
+| the middle mouse button | 1 | 4 |
+| the right mouse button, the pen's barrel button | 2 | 2 |
+| the back button (X1) | 3 | 8 |
+| the forward button (X2) | 4 | 16 |
+| the pen's eraser button | 5 | 32 |
+
+`button` is -1 when no button and no contact changed since the last event. That is each
+`pointermove` of a pointer whose buttons stay as they are. For a mouse, a `pointerdown` comes when
+the first button goes down (§4.2.3), and a `pointerup` when the last button comes up (§4.2.6). A
+button that changes between the two comes with a `pointermove` (§4.2.4; §4.1.1.1, *chorded button
+interactions*), whose `button` is that button (measured in Chrome, *As built, 2026-11-24*).
+`buttons` is 0 when no button is down. The numbers name the main and the secondary
+button, not a side: on a mouse that is set up for the left hand, the main button is the right one,
+and its `button` is 0 (MDN, `MouseEvent.button`).
+
+**Why `Int`.** Each reader gives the DOM's value, as `pointerType` does ((a), (b)). `buttons` is a
+sum, so no closed type holds it. A page compares `button` with a number (`Html.button p == 2`) and
+tests a part of `buttons` with `Int32.and`.
+
+**Why the readers take a `Pointer`.** Each `Pointer` comes from the extractor of a pointer event or
+of `onContextMenu`, and each of those events is a `MouseEvent` at least. A `MouseEvent` has a number
+`button` and a number `buttons`. So the standard is the reason that each read is true of `Int`
+(§9.3, amended 2026-11-15), and neither reader carries a test. An `Event` can be a key event or a
+`focus`, which has neither property. A reader of the button for the `Event` of the mouse events
+(`onMouseDown`, `onMouseUp`) waits for a use: it must give an answer for an event with no button.
+
+**`onContextMenu`.** The browser dispatches `contextmenu` when the user asks for the context menu,
+typically with the right mouse button or with the keyboard's menu key (MDN, *contextmenu event*).
+The handler gets a `Pointer`, as a pointer handler does, for the reason of (d): a page
+opens its menu at a point, and the point in the handler's element needs that element. So the
+handler reads `clientX` and `clientY`, `localX` and `localY`, `button` and `buttons`, and through
+`pointerEvent` the modifier keys. The event bubbles and can be cancelled (measured in Chrome, *As
+built, 2026-11-24*; the standards' text that was read for this part does not say). So it is
+`delegated`: under `dom` its walk is the walk of (d), with `currentTarget` defined as the node whose
+handler runs, and a handler on a node whose `disabled` is true does not run.
+
+**The handler cancels the browser's menu, or does not.** `Html.preventDefault (Html.pointerEvent p)`
+in the handler stops the browser's menu, as it stops any default (§9.8.10 (a)). The declaration has
+no `preventDefault` of its own: a page can show the browser's menu on a part of an element and its
+own on another (rule 7). `preventDefault` on the `pointerdown` does not stop the `contextmenu`
+((e); Pointer Events level 3, §11).
+
+**The event's pointer.** Pointer Events level 3 (§4.2.12) says that a `contextmenu` is a
+`PointerEvent`. Chrome 92, Firefox 129 and Safari 18.2 are the first versions that dispatch one
+(MDN's compatibility data, `contextmenu_event.type_pointerevent`). A browser before them dispatches
+a `MouseEvent`, which has no `pointerId`, no `pointerType` and no `isPrimary`. The standard has
+three rules for the event (§4.2.12.1). Each attribute of a `PointerEvent` but `pointerId` and
+`pointerType` has its default value. An event that a pointing device made has the `pointerId` and
+the `pointerType` of the pointer events that caused it. An event that no pointing device made,
+such as a menu that the keyboard asks for, has `pointerId` -1 and `pointerType` `""`. So on an
+`onContextMenu`:
+
+- **`isPrimary` is `False`**, for the mouse too. The section does not name `isPrimary`: the rule
+  of the default values gives it, and the default of `isPrimary` is `false` (§4.1,
+  `PointerEventInit`). Chrome 153 does this (*As built, 2026-11-24*).
+- `pointerType` is `""` when the event has no pointer, as (b) says of a pointer that the browser
+  cannot name.
+- **`pointerId` is -1 when the event has no `pointerId`.** Before this part, the reader gave the
+  property as it was: on a `MouseEvent` that is `undefined`, a value that is not an `Int`. Now the
+  reader gives -1 for a property that is null or absent, which is the standard's value for an event
+  with no pointing device. On each event of (b) the property is a number and the reader gives it,
+  as before.
+
+`clientX`, `clientY`, `localX`, `localY`, `button` and `buttons` are properties of a `MouseEvent`,
+so they are true on each form of the event.
+
+**What a page cannot rely on.** These are facts of the browsers, not of beni:
+
+- The system decides whether the menu comes at the press or at the release of the button, so the
+  event comes after the `pointerdown` or after the `pointerup` (§4.2.12.3), and `buttons` is the
+  buttons that are down at that time. The order of `contextmenu` and the pointer events is not
+  defined (§11). Chrome 153 on Linux dispatches it at the press.
+- A menu that the keyboard asks for. The standard gives it `pointerId` -1 and `pointerType` `""`.
+  Chrome 153 gives it the mouse's `pointerId` and `"mouse"`, a `button` of -1, and the point at the
+  centre of the element that has the focus. So a page cannot tell such a menu by its pointer in each
+  browser. The page still gets the event and a point.
+- Safari on iOS dispatches no `contextmenu` for a touch (MDN's compatibility data; WebKit bug
+  213953, open, which says that a mouse connected to an iPad does give the event). A page for a
+  touch screen measures a long press with `onPointerDown`, `onPointerUp` and a timer.
+- In Firefox, a right-click with Shift held shows the browser's menu and dispatches no
+  `contextmenu`, so no page can stop that menu (MDN, *contextmenu event*; not measured here).
+
+`auxclick`, the click of a button that is not the main button, waits for a use.
+
+**A prerendered page does not record `contextmenu`** before its takeover (`prerender.md` §6.5,
+amended 2026-11-24), for the reason that it does not record a pointer event: the extractor reads
+`currentTarget`, which a delivery after the dispatch cannot give. A menu that the user asks for
+before the takeover is the browser's.
+
+**Proofs.** The `pointer` step gains `button:<n>` and `buttons:<n>`, and the event name
+`contextmenu`, which it dispatches as a `PointerEvent`. The `mouse` step accepts `contextmenu` and
+dispatches a `MouseEvent`, the form of a browser before the versions above
+(`tests/corpus/README.md`). `browser/tea/PointerButtons` pins the two readers on a down, a move and
+an up; a menu at the point in the handler's element, with a child of that element as the target; an
+element that cancels the browser's menu and one that does not; and `pointerId` -1, `pointerType`
+`""` and `isPrimary` `False` on the `MouseEvent` form. `browser/inline/PointerButtons` is the same
+page under `browser-inline`, with the same transcript. `browser/dom/PointerButtons` pins, under
+`browser`: the two readers on a down; nested `onContextMenu` handlers, where the outer one reads a
+point in its own box; a handler on a disabled control, which does not run; a row added later; an
+element that does not cancel the browser's menu; and `pointerId` -1 on the `MouseEvent` form.
+`check/bad/markup/UntypedContextMenu` pins that a quoted `"oncontextmenu"` is still
+`untyped_event_attribute`, and that its hint now names `onContextMenu`. `browser/prerender/EarlyMenu` pins that the
+capture script of a page with a click handler does not record a `contextmenu`, and that the click
+after it is delivered. `browser/prerender/EarlyMenuOnly` pins that a page whose only listeners are
+a pointer event's and `onContextMenu`'s gets no capture script.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:
@@ -6124,6 +6315,42 @@ specified, with these findings:
   `sternhalma` 7 428 → 7 474). `examples/steer` delegated no event before, so its build had
   `listen` and no walk. Now it has the walk and `delegate`: 405 bytes raw more, and 4 321 → 4 449
   brotli. A page that delegates no event is the same bytes.
+
+*As built, 2026-11-24* (#2087; `platforms/html/Html.beni`, `platforms/browser-inline/zig/
+inline.zig`, `tests/browser/driver.mjs`), as (h) says, with these findings:
+
+- **No lowering changed for the event.** `dom` and `inline` read the event's facts from the
+  vocabulary, so the declaration is the whole of `onContextMenu`. The one change is `inline`'s
+  `capturedKinds`, which leaves `contextmenu` out of a prerendered page's capture script.
+- **Measured in headless Chrome 153 on Linux**, with a user's events sent through
+  `Input.dispatchMouseEvent` and `Input.dispatchKeyEvent`, on an element with a child:
+
+  | The user's action | Chrome dispatches | `button` | `buttons` |
+  |---|---|---|---|
+  | the right button goes down | `pointerdown`, `mousedown`, `contextmenu` | 2 | 2 |
+  | the right button comes up | `pointerup`, `mouseup`, `auxclick` | 2 | 0 |
+  | the right button goes down while the left is down | `pointermove`, `mousedown`, `contextmenu` | 2 | 3 |
+  | a move with the two buttons down | `pointermove` | -1 | 3 |
+  | the right button comes up while the left is down | `pointermove`, `mouseup`, `auxclick` | 2 | 1 |
+  | the middle button goes down | `pointerdown`, `mousedown` | 1 | 4 |
+  | the menu key, with the focus on the element | `contextmenu` | -1 | 0 |
+
+  Each `contextmenu` was a `PointerEvent` whose `bubbles`, `cancelable` and `composed` were true,
+  with `isPrimary` false. The mouse's had `pointerId` 1 and `pointerType` `"mouse"`. The menu key's
+  had the same `pointerId` and `pointerType`, not the standard's -1 and `""`, and its point was the
+  centre of the element. A listener on the element saw the child as the `target`. A listener that
+  called `preventDefault` set `defaultPrevented`. Headless Chrome shows no menu, so the measurement
+  does not see the menu itself.
+- **The steps send what a script names**, not a user's right-click: no step is trusted for
+  `contextmenu`, so no fixture sees its turn under `dom`. The walk is the one that `PointerNested`
+  pins for the trusted pointer events. The page fuzzer sends no `contextmenu` either. Issue #2693
+  has both.
+- **Size** (the compiler before and after the change, every `.mjs` of the build, brotli at quality
+  11). A page that calls `pointerId` is 28 bytes raw more under `--release` and 52 more in
+  development: `browser/dom/PointerEvents` 10 957 → 10 985 raw and 4 424 → 4 423 brotli,
+  `browser/tea/PointerInput` 8 356 → 8 384 and 3 290 → 3 294, `browser/inline/PointerInput` 6 272 →
+  6 300 and 2 507 → 2 507. A page that does not call it is the same bytes, with pointer events
+  (`browser/dom/PointerNested`) or with none. No `emit/` golden moved.
 
 #### 9.8.21 Dates: the calendar, time zones and ISO 8601 (2026-11-04)
 
@@ -6565,6 +6792,7 @@ header is set and before the first byte is sent**, so a fault leaves nothing beh
 | a header name is not a token | `http.validateHeaderName` throws `ERR_INVALID_HTTP_TOKEN`, a `TypeError`; caught from that call alone |
 | a header value holds a character Node refuses (CR, LF, NUL, a control character) | `http.validateHeaderValue` throws `ERR_INVALID_CHAR`, a `TypeError`; caught from that call alone |
 | a header named `content-length` or `transfer-encoding`, in any case | checked by name in the sibling; the transport owns both |
+| a header named `trailer`, in any case | checked by name in the sibling: every body goes with a `content-length` and never chunked, and on such a body `writeHead` throws `ERR_HTTP_TRAILER_INVALID` (measured, Node 24; it ended the server before #1995) |
 
 The sibling catches exactly those two codes, from those two calls, and nothing else; the
 `ERR_HTTP_INVALID_HEADER_VALUE` of `validateHeaderValue` cannot happen with a `String`, and
@@ -6616,7 +6844,7 @@ for this module. "Thrown again" means the error is a defect, and the process end
 | the server | `checkExpectation` (any other `Expect`) | left to Node: 417 |
 | the server | `connect` (a `CONNECT` request) | left to Node: the socket is destroyed |
 | the server | `upgrade` (an `Upgrade` header) | left to Node: an ordinary request, which reaches the handler |
-| the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status outside 200 to 999, a body on 204, 205 or 304, a `content-length` or `transfer-encoding` of the program's | an invalid response: 500 and a line on standard error |
+| the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status outside 200 to 999, a body on 204, 205 or 304, a `content-length`, `transfer-encoding` or `trailer` of the program's | an invalid response: 500 and a line on standard error |
 | the response | `res.destroyed` before the write | the write is dropped: the client is gone |
 | the response | the socket fails during the write (`ECONNRESET`, `EPIPE`) | `clientError`, the same default handler: nothing is writable, so the socket is destroyed |
 | the response | any other throw | thrown again |
@@ -6692,7 +6920,7 @@ rows of (e):
 - the four events Node answers by itself: no fixture; the probe behind (c) settled them.
 - the response: `HttpServerInvalidResponse` (status 1000 and 100, a body on 204 and on 205, a
   204 with no body, a 205 with no body, a bad header name, a bad header value, `Content-Length`
-  and `transfer-encoding` of the program's); `HttpServerDuplicateHeaders` (two `set-cookie`);
+  and `transfer-encoding` of the program's, a `Trailer`); `HttpServerDuplicateHeaders` (two `set-cookie`);
   `HttpServerBadClients` (a client gone before its answer, the write dropped; a client gone
   during a 16 MiB write, the socket's error left to Node); `HttpServerCloseFromHandler` (the
   program's `connection: keep-alive` replaced after `close`) and `HttpServerCloseThenInvalid`
@@ -8150,7 +8378,9 @@ pub sockets : Context msg → List Socket  -- every accepted socket still open, 
 pub socketsTagged : Context msg, String → List Socket
 
 pub alarmAt : Context msg, Int → ⊤       -- `setAlarm(ms since the epoch)`; replaces the one set; shared with the wake, (e.5)
-pub alarmIn : Context msg, Duration → ⊤  -- `alarmAt` of `Clock.now ⊤` plus the duration
+pub type AlarmError
+    = TooFar                             -- the time is past the last millisecond an `Int` holds, (e.5)
+pub alarmIn : Context msg, Duration → Result AlarmError ⊤  -- `alarmAt` of the host's `Date.now()` plus the duration, (e.5), amended 2026-11-24
 pub cancelAlarm : Context msg → ⊤        -- `deleteAlarm`, unless the wake holds the host alarm, (e.5)
 
 -- The socket operations that need the object ((g) has their meaning):
@@ -8359,6 +8589,35 @@ inside a handler queues it behind the events already waiting ((e.10)).
     would set, and two paths drive it ((k)). `/__beni/host-alarm` is the firing of the host
     alarm, and `/__beni/alarms` answers which alarm the host would hold — `none`, `program` or
     `wake` — and whether the program has a time.
+  ***Amended 2026-11-24 (#2022; the owner's decision of 2026-11-05 on #1988: a typed failure for
+  an unrepresentable deadline supplied from outside): `alarmIn` answers a `Result`.***
+  `alarmIn ctx d` is a deadline that the program supplies as a length: the host's time now plus
+  `d`. `L` is 9007199254740991, the last millisecond that an `Int` holds.
+  - **A time past `L` is `Err TooFar`.** When the time now plus `d` is more than `L`, no `Int`
+    holds the alarm's time, and `alarmIn` answers `Err TooFar`. Otherwise it is `alarmAt` of that
+    time and answers `Ok ⊤`. Before this amendment the sum had no bound, and `alarmIn` of the
+    longest duration gave `setAlarm` a number that is not an `Int`.
+  - **A failed `alarmIn` changes nothing.** The program's time, the table `beni_alarm` and the
+    host alarm stay as they were: an alarm that was set is still set.
+  - **The time now is the host's `Date.now()`**, not the fiber's clock slot. The signature list
+    said "`Clock.now ⊤`". The code read `Date.now()` from its first commit, and that is correct.
+    The host alarm fires on the host's clock. The wake and the test "the program's time has come"
+    read `Date.now()`. A virtual clock's reading means nothing to `setAlarm`. On the real clock
+    the two readings are the same. Under `Clock.run` only `Date.now()` is right.
+  - **The test comes before the sum** and stays in the range: a time now at or below 0 has room
+    for each duration, and above 0 the test is `d > L − now`.
+  - **`alarmAt` does not change.** Its time is an `Int` that the program holds, so it is
+    representable. The host takes each one: workerd accepted `alarmAt` of `L` and of −1 with 200
+    (*measured* in the review of #1999 under Miniflare, compatibility date 2026-05-18; #2022
+    records it). A time in the past fires at the next firing, as `workers/ObjectWake` shows with
+    `alarmAt ctx 0`.
+  - **`L` is the language's bound, not the host's.** A JavaScript `Date` ends at 8.64 × 10¹⁵ ms,
+    which is below `L`. What a deployed workerd does with an alarm between those two times is
+    *owed*: only the acceptance under Miniflare is measured. #1995 tracks host calls that misfire
+    on a program's argument.
+  - **Fixture.** `workers/ObjectAlarmTooFar`: `alarmIn` of the longest duration answers
+    `Err TooFar` and `/__beni/alarms` shows no program time; after an `alarmIn` of one hour the
+    same call answers `Err TooFar` again and the program's time is still set.
   Local workerd hibernates an idle object too: the review of #860 ran the
   probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
   on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold

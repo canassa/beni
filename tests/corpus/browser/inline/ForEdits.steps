@@ -1,0 +1,17 @@
+# Mark each row's node; each input sends its own row's key.
+input li:nth-child(1)>input "a"
+input li:nth-child(2)>input "b"
+input li:nth-child(3)>input "c"
+# New rows at the front and in the middle; the marked rows keep their nodes.
+click #front
+click #middle
+# The ends change places, then the whole list turns round.
+click #swap
+click #reverse
+# A moved row's input still sends its own key.
+input li:nth-child(5)>input "cc"
+# A row's own button sends its key: that row and its node go.
+click li:nth-child(2)>button
+# Every row goes, then one new row comes, with nothing typed in it.
+click #clear
+click #refill

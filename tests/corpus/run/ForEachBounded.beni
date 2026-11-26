@@ -29,12 +29,12 @@ main = Io.run λ⊤ →
 
     caller = Task.spawn λ⊤ →
         Clock.run clock λ⊤ → Task.forEach (List.range 1 10) 3 λn → counted inside peak n
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     _ = Debug.log "answer" (Task.join caller)
     _ = Debug.log "peak" (Ref.get peak)
     Ref.set peak 0
 
     one = Task.spawn λ⊤ → Clock.run clock λ⊤ → Task.forEach [ 1, 2, 3 ] 0 λn → counted inside peak n
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     _ = Debug.log "bound 0: answer" (Task.join one)
     Node.print "bound 0: peak ${String.fromInt (Ref.get peak)}"

@@ -1,0 +1,238 @@
+-- load
+(socket 1: /chat)
+<body>
+  <main>
+    <p id="state">"connecting"</p>
+    <button id="say">"say"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #say
+<body>
+  <main>
+    <p id="state">"connecting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 open
+<body>
+  <main>
+    <p id="state">"up"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 message "hello"
+<body>
+  <main>
+    <p id="state">"up"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 message "world"
+<body>
+  <main>
+    <p id="state">"up"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+    </ol>
+  </main>
+</body>
+-- click #say
+(socket 1 sent: "ping")
+(the DOM did not change)
+-- socket 1 close 4000 "bye"
+<body>
+  <main>
+    <p id="state">"waiting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+    </ol>
+  </main>
+</body>
+-- click #say
+<body>
+  <main>
+    <p id="state">"waiting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+    </ol>
+  </main>
+</body>
+-- sockets
+(sockets: 0)
+(the DOM did not change)
+-- advance 99
+(the DOM did not change)
+-- advance 1
+(socket 2: /chat)
+<body>
+  <main>
+    <p id="state">"connecting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+    </ol>
+  </main>
+</body>
+-- socket 2 error-only
+<body>
+  <main>
+    <p id="state">"waiting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+      <li>"unreachable"</li>
+    </ol>
+  </main>
+</body>
+-- advance 200
+(socket 3: /chat)
+<body>
+  <main>
+    <p id="state">"connecting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+      <li>"unreachable"</li>
+    </ol>
+  </main>
+</body>
+-- socket 3 open
+<body>
+  <main>
+    <p id="state">"up"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+      <li>"unreachable"</li>
+      <li>"opened"</li>
+    </ol>
+  </main>
+</body>
+-- socket 3 message "again"
+<body>
+  <main>
+    <p id="state">"up"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+      <li>"unreachable"</li>
+      <li>"opened"</li>
+      <li>"received again"</li>
+    </ol>
+  </main>
+</body>
+-- socket 3 error-only
+<body>
+  <main>
+    <p id="state">"waiting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+      <li>"unreachable"</li>
+      <li>"opened"</li>
+      <li>"received again"</li>
+      <li>"closed 1006 \"\""</li>
+    </ol>
+  </main>
+</body>
+-- advance 300
+(socket 4: /chat)
+<body>
+  <main>
+    <p id="state">"connecting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+      <li>"unreachable"</li>
+      <li>"opened"</li>
+      <li>"received again"</li>
+      <li>"closed 1006 \"\""</li>
+    </ol>
+  </main>
+</body>
+-- socket 4 fail
+<body>
+  <main>
+    <p id="state">"waiting"</p>
+    <button id="say">"say"</button>
+    <ol>
+      <li>"not connected"</li>
+      <li>"opened"</li>
+      <li>"received hello"</li>
+      <li>"received world"</li>
+      <li>"closed 4000 \"bye\""</li>
+      <li>"not connected"</li>
+      <li>"unreachable"</li>
+      <li>"opened"</li>
+      <li>"received again"</li>
+      <li>"closed 1006 \"\""</li>
+      <li>"unreachable"</li>
+    </ol>
+  </main>
+</body>
+-- sockets
+(sockets: 0)
+(the DOM did not change)

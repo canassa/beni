@@ -1,0 +1,43 @@
+-- `CounterMsg` wraps `Counter`'s message beside an `Int`. The key
+-- `CounterMsg#1 · Inc` passes `CounterMsg`, a constructor of two fields, so
+-- its handler takes the message whole (docs/design/browser-inline.md §8.4,
+-- §8.7, amended 2026-11-23), and the branch that binds the `Int` reads it
+-- from the message. It was a limit of the compiler before; each button
+-- sends its own `Int`, which the page shows beside the count.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+    by : Int
+
+
+type Msg
+    = CounterMsg Int Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg by sub →
+            { model | c = Counter.update sub model.c, by = by }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.c.count}</output>
+        <span data-role="by">{model.by}</span>
+        <button data-role="inc" onClick={CounterMsg 1 Counter.Inc}>+</button>
+        <button data-role="dec" onClick={CounterMsg 2 Counter.Dec}>-</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤, by = 0 }, update = update, view = view })
+        "root"

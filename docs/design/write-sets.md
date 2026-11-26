@@ -663,8 +663,8 @@ Same(ρ.todos[*]))`, which is `value p[*]` by §3.4's second row.
 | `Maybe.map`, `withDefault`, `andThen`; `Result.map`, `mapError`, `andThen`, `withDefault`, `toMaybe`; `Tuple.first`, `second` | **no row**: beni bodies, summarised by §4 | — |
 | `Basics.*`, `Int.*`, `Float.*`, `String.*`, `Char.*` | `Fresh(deps)` — except `Basics.identity x = x` and `always`, by their bodies | — |
 | `Debug.log tag x` | `Same` of what `x` is: `⟦x⟧` itself | the sibling returns its argument (requirement, §5.4) |
-| `Debug.todo` | `Fresh(∅)` | never returns |
-| `Html.map`, `Cmd.map`, `Cmd.*`, `Sub.*`, `Task.*`, platform primitives | `Fresh(deps)` | not model values; `Cmd` is not analysed |
+| `Debug.todo` | ⊥ (*amended 2026-11-23*; was `Fresh(∅)`) | never returns |
+| `Html.map`, `Cmd.map`, `Cmd.*`, `Sub.*`, `Task.*` (save `bracket` and `onExit`, *amended 2026-11-23*), platform primitives | `Fresh(deps)` | not model values; `Cmd` is not analysed |
 | `Schema.*` (*added 2026-10-17*) | `Fresh(deps)` | a run's answer is a value the engine builds from its input, never a part of the model: `Fresh` is the coarsest write, so the row is sound, and walking the engine's bodies only cost work (the ownership checker keeps rows of its own for `Schema`, `ownership-checker.md` §30.10) |
 
 **How a function gets a row.** A row is an entry in the compiler's table keyed by the function's
@@ -2517,3 +2517,69 @@ set does not change; deps are never used to decide a write (§3.6). No cap moved
 The order of a deps set is a defect of its own, hidden by another: an `Alt` keeps alternatives that
 are equal up to the renaming of their roots, so a recursion whose base case maps its list also
 reaches the cap. Both are #2102.
+
+### *Amended 2026-11-23 (`browser-inline`'s commands, #966):* code that never returns, and `bracket`
+
+Two rows of §3.7 change, each because the command half of an arm could not be read through it
+(`browser-inline.md` §4, amended 2026-11-23). No cap moves.
+
+- **`Debug.todo` is ⊥**, not `Fresh(∅)`. It never returns, so no value comes out of it, and ⊥ —
+  the empty alternative of §4.3, which joins as nothing and instantiates to nothing — is its exact
+  value. An arm that is `Debug.todo`, or that ends in it under `Log.annotate` or `Task.bracket`,
+  writes nothing and has no command; an `Alt` one of whose alternatives is it keeps the others.
+  Before, the `Fresh` made the key a `*` (§3.4), an approximation, and its command unreadable. The
+  answer is sound because evaluation is eager: an argument that is `Debug.todo` throws before the
+  call it is passed to runs. Pinned: `browser/inline/DefectInUpdate`.
+- **`Task.bracket acquire release use` is `use (acquire ⊤)`**, and **`Task.onExit work cleanup`
+  is `work ⊤`**: each answers what its use, or its work, answers, or does not return
+  (`core/Task.beni`; `run/BracketRelease` and `run/OnExitSeesOutcome` pin the value they answer).
+  The release and the cleanup answer `⊤`, so they are walked for what they read and their answer
+  is dropped. `Task`'s other functions stay `Fresh`. Pinned: `browser/inline/BracketInUpdate`.
+
+The command reader is stricter in two places (`browser-inline.md` §4, amended 2026-11-23). An
+`Alt` with one alternative that is unread is unread as a whole, also beside an alternative that
+suspends. And only `[]` (`Lst(none, clear)`) is an empty list of commands. A `Lst(none, replaced)`
+with no elements is the value of a list that substitution lost (§4.2), and it is unread.
+A list of commands that `List.map` makes stays unread, waiting on #2617.
+
+### *Amended 2026-11-23 (`browser-inline`'s keyed commands, #2615):* four more command readers
+
+For a lowering that sets `Lowering.Effects.keyed` (interface 1.33), the command reader of the
+amendment above reads four more of `Cmd`'s values by name (`browser-inline.md` §4, amended
+2026-11-23). No cap moves, and no write changes: a command's bodies run after the write pass and
+are read only for whether one may suspend.
+
+- **`Cmd.keyed k policy body`** is the command of `body`, as `Cmd.perform body` is. The key and the
+  policy are evaluated, as every argument is, and dropped: the runtime's table reads them.
+- **`Cmd.cancel k`** and **`Cmd.cancelAll`** are a command with one part that is not a body, the
+  cancel marker, a literal no program can write. A command of nothing else is `runs`, not `none`:
+  the runtime must read it. A log scope's result holds a body only through a part that is not the
+  marker.
+- **`Cmd.map cmd segment tag`** has `cmd`'s parts. The segment and the tagger act when the command
+  runs.
+- **A chosen command** — an `Alt` of commands, as an element of `Cmd.batch`'s list or as
+  `Cmd.map`'s command — has the parts of every alternative. Before, an `Alt` was read only as the
+  whole command half of the pair, and `Cmd.batch [ if c then x else y ]` was unread. The union is
+  exact for what the reader answers: whether the command has work, and whether a body may suspend.
+  An alternative that is not a command makes the whole unread, as before. A chosen set of
+  subscriptions is not read so: §3 of `browser-inline.md` refuses a set that depends on the model.
+  This last reading holds for every lowering that reads commands, keyed or not.
+
+### *Amended 2026-11-23 (#2641):* a list of commands that `List.map` makes, read again
+
+The third row the amendment *code that never returns, and `bracket`* withdrew is back, as first
+written: **`List.map xs f` whose callback answers a command** — an effect term of `Cmd`'s, or
+alternatives each of which is one — is a list built afresh (base none, edit `replaced`) holding
+one element at `[*]`, `f`'s answer, and the reads of `xs`. `Cmd.batch` reads it as the bodies of
+that element's command, each alternative's; it is the batch's whole question, which bodies may
+run, not how many. As a model value it is a `value` write, as any built list is. It waited on
+#2617, a lowering defect: a body nested in the callback read a field that the same arm writes in
+place after the store. #2623 fixed it (`ownership-checker.md` §31.6, amended), and
+`browser/inline/BatchMapOldValue` pins the old value at depths one to three.
+
+The two stricter readings stay. The `[*]` element is what tells this list from one that
+substitution lost: a `Lst(none, replaced)` with no element at `[*]` is still unread
+(`build/bad/inline/CommandHelperList`). Other list functions whose callbacks answer commands
+(`indexedMap`, `concatMap`, the folds) are unchanged, and a batch of them stays unread
+(`build/bad/inline/CommandFolded`). Pinned: `browser/inline/CommandsOverModelList`,
+`SettlesManyFibers`, `RespondSettlesEachChunk`.

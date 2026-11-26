@@ -1,0 +1,62 @@
+-- A command chosen between a keyed one and one that suspends is read as
+-- both (browser-inline.md §4, amended 2026-11-23): each alternative is a
+-- command the pass reads, so the handler runs whichever `update` returns.
+-- It was refused, class 4, while keyed commands were not compiled. `#go`
+-- runs the keyed body (the flag is set); `#flip` clears the flag, and
+-- `#go` then runs the body that sleeps.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+import Time
+
+
+type alias Model =
+    flag : Bool
+    got : Int
+
+
+type Msg
+    = Go
+    | Got
+    | Flip
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Go →
+            if model.flag then
+                ( model, Cmd.keyed "k" Cmd.Restart λsend → send Got )
+            else
+                ( model
+                , Cmd.perform λsend →
+                    Task.sleep (Time.millis 1)
+                    send Got
+                )
+
+        Flip →
+            ( { model | flag = False }, Cmd.none )
+
+        Got →
+            ( { model | got = model.got + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="got">{String.fromInt model.got}</p>
+        <button id="go" onClick={Go}>go</button>
+        <button id="flip" onClick={Flip}>flip</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { flag = True, got = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

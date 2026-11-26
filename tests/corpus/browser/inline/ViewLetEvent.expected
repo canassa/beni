@@ -1,0 +1,118 @@
+-- load
+console.log: sum: 0
+console.log: label: "a=0"
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="t">"t"</button>
+    <button id="g">"g"</button>
+    <p id="one">"a=0"</p>
+    <p id="b">"0"</p>
+    ""
+    <p id="sum">"0"</p>
+    <p id="got">"0"</p>
+  </main>
+</body>
+-- click #a
+console.log: sum: 10
+console.log: label: "a=1"
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="t">"t"</button>
+    <button id="g">"g"</button>
+    <p id="one">"a=1"</p>
+    <p id="b">"0"</p>
+    ""
+    <p id="sum">"10"</p>
+    <p id="got">"0"</p>
+  </main>
+</body>
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="t">"t"</button>
+    <button id="g">"g"</button>
+    <p id="one">"a=1"</p>
+    <p id="b">"0"</p>
+    <p id="arm">"10 0"</p>
+    <p id="sum">"10"</p>
+    <p id="got">"0"</p>
+  </main>
+</body>
+-- click #b
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="t">"t"</button>
+    <button id="g">"g"</button>
+    <p id="one">"a=1"</p>
+    <p id="b">"1"</p>
+    <p id="arm">"10 1"</p>
+    <p id="sum">"10"</p>
+    <p id="got">"0"</p>
+  </main>
+</body>
+-- click #g
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="t">"t"</button>
+    <button id="g">"g"</button>
+    <p id="one">"a=1"</p>
+    <p id="b">"1"</p>
+    <p id="arm">"10 1"</p>
+    <p id="sum">"10"</p>
+    <p id="got">"10"</p>
+  </main>
+</body>
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="t">"t"</button>
+    <button id="g">"g"</button>
+    <p id="one">"a=1"</p>
+    <p id="b">"1"</p>
+    ""
+    <p id="sum">"10"</p>
+    <p id="got">"10"</p>
+  </main>
+</body>
+-- click #a
+console.log: sum: 20
+console.log: label: "a=2"
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="t">"t"</button>
+    <button id="g">"g"</button>
+    <p id="one">"a=2"</p>
+    <p id="b">"1"</p>
+    ""
+    <p id="sum">"20"</p>
+    <p id="got">"10"</p>
+  </main>
+</body>
+-- click #t
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="t">"t"</button>
+    <button id="g">"g"</button>
+    <p id="one">"a=2"</p>
+    <p id="b">"1"</p>
+    <p id="arm">"20 1"</p>
+    <p id="sum">"20"</p>
+    <p id="got">"10"</p>
+  </main>
+</body>

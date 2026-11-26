@@ -1,0 +1,10 @@
+-- load
+<body>
+  <main id="hello">
+    <h1 class="title">"Hello"</h1>
+    <p>"A static page, & nothing to change."</p>
+    <hr>
+  </main>
+</body>
+-- click #hello
+(the DOM did not change)

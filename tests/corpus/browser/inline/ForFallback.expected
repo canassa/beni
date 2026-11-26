@@ -1,0 +1,172 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <ul id="element">
+      <li>
+        <button id="bump">"none 0"</button>
+      </li>
+    </ul>
+    <p id="text">
+      "empty 0"
+      <!---->
+      "end"
+    </p>
+    <ol id="label">
+      <li>"n=0"</li>
+    </ol>
+    <div id="show">
+      <i>"n=0"</i>
+    </div>
+    <ol id="empty"></ol>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <ul id="element">
+      <li>
+        <button id="bump">"none 1"</button>
+      </li>
+    </ul>
+    <p id="text">
+      "empty 1"
+      <!---->
+      "end"
+    </p>
+    <ol id="label">
+      <li>"n=1"</li>
+    </ol>
+    <div id="show">
+      <i>"n=1"</i>
+    </div>
+    <ol id="empty"></ol>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <ul id="element">
+      <li>"1"</li>
+    </ul>
+    <p id="text">
+      <b>"1"</b>
+      <!---->
+      "end"
+    </p>
+    <ol id="label">
+      <li>"1"</li>
+    </ol>
+    <div id="show">
+      <b>"1"</b>
+    </div>
+    <ol id="empty">
+      <li>"1"</li>
+    </ol>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <ul id="element">
+      <li>"1"</li>
+      <li>"2"</li>
+    </ul>
+    <p id="text">
+      <b>"1"</b>
+      <b>"2"</b>
+      <!---->
+      "end"
+    </p>
+    <ol id="label">
+      <li>"1"</li>
+      <li>"2"</li>
+    </ol>
+    <div id="show">
+      <b>"1"</b>
+    </div>
+    <ol id="empty">
+      <li>"1"</li>
+      <li>"2"</li>
+    </ol>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <ul id="element">
+      <li>
+        <button id="bump">"none 1"</button>
+      </li>
+    </ul>
+    <p id="text">
+      "empty 1"
+      <!---->
+      "end"
+    </p>
+    <ol id="label">
+      <li>"n=1"</li>
+    </ol>
+    <div id="show">
+      <i>"n=1"</i>
+    </div>
+    <ol id="empty"></ol>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <ul id="element">
+      <li>
+        <button id="bump">"none 2"</button>
+      </li>
+    </ul>
+    <p id="text">
+      "empty 2"
+      <!---->
+      "end"
+    </p>
+    <ol id="label">
+      <li>"n=2"</li>
+    </ol>
+    <div id="show">
+      <i>"n=2"</i>
+    </div>
+    <ol id="empty"></ol>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <ul id="element">
+      <li>"1"</li>
+    </ul>
+    <p id="text">
+      <b>"1"</b>
+      <!---->
+      "end"
+    </p>
+    <ol id="label">
+      <li>"1"</li>
+    </ol>
+    <div id="show">
+      <b>"1"</b>
+    </div>
+    <ol id="empty">
+      <li>"1"</li>
+    </ol>
+  </main>
+</body>

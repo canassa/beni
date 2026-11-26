@@ -1,0 +1,55 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <div>""</div>
+      <button data-role="show">"s"</button>
+      <button data-role="a">"a"</button>
+      <button data-role="b">"b"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=a]
+(the DOM did not change)
+-- click [data-role=show]
+<body>
+  <div id="root">
+    <main>
+      <div>
+        <b data-role="w" class="y x">"w"</b>
+      </div>
+      <button data-role="show">"s"</button>
+      <button data-role="a">"a"</button>
+      <button data-role="b">"b"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=show]
+<body>
+  <div id="root">
+    <main>
+      <div>""</div>
+      <button data-role="show">"s"</button>
+      <button data-role="a">"a"</button>
+      <button data-role="b">"b"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=b]
+(the DOM did not change)
+-- click [data-role=b]
+(the DOM did not change)
+-- click [data-role=show]
+<body>
+  <div id="root">
+    <main>
+      <div>
+        <b data-role="w" class="x y">"w"</b>
+      </div>
+      <button data-role="show">"s"</button>
+      <button data-role="a">"a"</button>
+      <button data-role="b">"b"</button>
+    </main>
+  </div>
+</body>

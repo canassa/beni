@@ -1,0 +1,7 @@
+# The first mirror fails; the race goes on.
+click #go
+respond 1 503 "down"
+respond 2 200 "from b"
+# Again: the first mirror answers first, and the other request is aborted.
+click #go
+respond 3 200 "from a"

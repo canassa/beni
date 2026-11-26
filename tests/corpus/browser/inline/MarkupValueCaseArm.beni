@@ -1,0 +1,42 @@
+-- A constant whose body is markup as an arm of a branch region (browser-inline.md §8.2,
+-- amended 2026-11-23, *A markup value*): the arm is a call of no argument, a template of its
+-- own, made when the value takes it, its listener wired with it.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Reset
+
+
+done : Html Msg
+done = <button id="reset" onClick={Reset}>start again</button>
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        {case n of
+            3 →
+                done
+
+            _ →
+                <p id="count">{n}</p>
+        }
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Inc →
+            n + 1
+
+        Reset →
+            0
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 1, update = update, view = view }

@@ -1,0 +1,40 @@
+-- emit/release/inline: an arm of a branch region with `let`s no hole reads
+-- (browser-inline.md §8.2, amended 2026-11-24, *An arm's statements*): the
+-- statement runs in the choice of the arm, where it is written, and the
+-- region's entry is in its read set too, so a write of `n` alone, which no
+-- hole of the arm reads, chooses the arm again and logs.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : Maybe String
+    n : Int
+
+
+type Msg
+    = Bump
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Bump}>bump</button>
+        {case model.name of
+            Just s →
+                _ = Debug.log "shown" model.n
+                <b>{s}</b>
+
+            Nothing →
+                <i>none</i>
+        }
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { name = Just "ada", n = 0 }
+        , update = λ_ m → { m | n = m.n + 1 }
+        , view = view
+        }

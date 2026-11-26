@@ -6,11 +6,13 @@
 -- method in any case, a header name that is not a token, a header value
 -- holding a line break or a character `Headers` cannot hold, a forbidden
 -- header (`Cookie`, a `Sec-` or `Proxy-` name, a method override naming
--- `TRACE`), and a body on `GET`. After it is sent: `NetworkError` when
+-- `TRACE`), a body on `GET`, and a `stringBody` MIME type `Headers`
+-- cannot hold, through `request` and through `post` (#1995). After it is sent: `NetworkError` when
 -- the request fails, `BadStatus` for a 404, and `Timeout` when the
 -- request's own timer runs out — with no answer yet, and again with the
 -- body half read — each aborting the request; a zero timeout times out at
--- once, sending nothing.
+-- once, sending nothing. A timeout past 2³¹ − 1 ms, the longest delay a host
+-- timer keeps, runs out at its time and not 1 ms later (#1995).
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Http
@@ -113,6 +115,12 @@ refused =
               Nothing
       )
     , ( "get body", λ⊤ → ask "get" "/x" [] (Http.stringBody "text/plain" "no") Nothing )
+    , ( "mime", λ⊤ → ask "POST" "/x" [] (Http.stringBody "text/日本" "x") Nothing )
+    , ( "post mime"
+      , λ⊤ →
+          Http.post
+              { url = "/x", body = Http.stringBody "text/a\nb" "x", expect = Http.expectString }
+      )
     , ( "zero", λ⊤ → ask "GET" "/x" [] Http.emptyBody (Just 0) )
     ]
 
@@ -128,6 +136,9 @@ sentLater name =
 
         "slow" →
             λ⊤ → ask "GET" "/slow" [] Http.emptyBody (Just 500)
+
+        "long" →
+            λ⊤ → ask "GET" "/long" [] Http.emptyBody (Just 2147483648)
 
         _ →
             λ⊤ → ask "GET" "/stall" [] Http.emptyBody (Just 500)
@@ -149,7 +160,7 @@ update msg lines =
 view : List String → Html Msg
 view lines =
     <main>
-        <For each={[ "refused", "down", "missing", "slow", "stall" ]} keyed={False}>
+        <For each={[ "refused", "down", "missing", "slow", "stall", "long" ]} keyed={False}>
             {λname → <button id={name} onClick={Run name}>{name}</button>}
         </For>
         <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>

@@ -25,6 +25,8 @@ module Browser.Navigation
   alias Key
   value back : Key, Int, (Error → msg) → Cmd msg  -- impure
   value currentUrl : ⊤ → Maybe Url  -- impure
+  value eachUrlChange : (Url → ⊤) → ⊤  -- suspends
+  value eachUrlRequest : (UrlRequest → ⊤) → ⊤  -- suspends
   value forward : Key, Int, (Error → msg) → Cmd msg  -- impure
   value goBack : Key, Int → Result Error ⊤  -- impure
   value goForward : Key, Int → Result Error ⊤  -- impure
@@ -42,18 +44,24 @@ module Browser.Navigation
 module Inline
   opaque type NavigationKey
   value address : ⊤ → Url  -- impure
+  value armShown : V, V, V, V → ⊤  -- impure
   value arrived : Url → ⊤  -- impure
   value busy : ⊤ → Bool  -- impure
   value caught : V → ⊤  -- impure
   value commands : Cmd V, V → ⊤  -- impure
   value decoded : Schema e d, V → V  -- impure
   value deliver : V → ⊤  -- impure
+  value emptyRow : ⊤ → V  -- impure
   value entry : V, V → V  -- impure
   value escape : V → V  -- impure
   value escapeAttribute : V → V  -- impure
   value escapePre : V → V  -- impure
   value first : ⊤ → ⊤  -- impure
+  value forRows : V, V, V, V, V, V → ⊤  -- impure
+  value forTemplate : String → V  -- impure
+  value keyShown : V, V, V, V, V → ⊤  -- impure
   value listen : V, V, V → ⊤  -- impure
+  value liveSet : V → V  -- impure
   value load : V, V, V, V → ⊤  -- impure
   value loadAll : V, V, V → ⊤  -- impure
   value loadAllPlanned : V, V, V → ⊤  -- impure
@@ -61,6 +69,7 @@ module Inline
   value loadAllShapedConst : V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadAllShapedPlanned : V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadAllShapedPlannedConst : V, V, V, (V, V → Result V V) → ⊤  -- impure
+  value loadFailed : ⊤ → ⊤  -- impure
   value loadPlanned : V, V, V, V → ⊤  -- impure
   value loadShaped : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadShapedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
@@ -78,19 +87,25 @@ module Inline
   value pass : V → ⊤  -- impure
   value passes : V → ⊤  -- impure
   value prop : V, V, V → ⊤  -- impure
+  value region : V, V, V → V  -- impure
   value root : V → V  -- impure
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure
+  value rowArm : V, V, V, V → ⊤  -- impure
+  value rowText : V, V, V → V  -- impure
   value run : V → ⊤  -- impure
   value safeUrl : V → V  -- impure
   value send : V, V, V → ⊤  -- impure
+  value settle : V, V, Sub V → ⊤  -- impure
   value startWork : V, V → V  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
+  value style : V, V, V → ⊤  -- impure
   value subscribe : (⊤ → a) → a  -- impure
   value take : V, V, V, V → V  -- impure
   value text : V, V → ⊤  -- impure
   value title : String → ⊤  -- impure
+  value toggle : V, V, Bool → ⊤  -- impure
   value update : (⊤ → ⊤) → ⊤  -- impure
   value when : V, Bool → ⊤  -- impure
 module Tea

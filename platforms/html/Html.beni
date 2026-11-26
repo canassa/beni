@@ -44,14 +44,47 @@ pub markup text : String → Html msg
 pub markup map : Html a, (a → b) → Html b
 
 
---| The value of the form control an event came from.
-pub targetValue : Event → String
-targetValue ev = Js.to (Js.get (Js.get (Js.from ev) "target") "value")
+--| The value of the form control an event came from. `Nothing` when the
+--| target has no string `value`, as a `<div>` has none and an `<li>`'s is a
+--| number. A program that knows its target writes the default it wants:
+--|
+--|     onClick={λev → Picked (Maybe.withDefault "" (Html.targetValue ev))}
+pub targetValue : Event → Maybe String
+targetValue ev =
+    value = Js.get (Js.get (Js.from ev) "target") "value"
+    if Js.typeIs value "string" then
+        Just (Js.to value)
+    else
+        Nothing
 
 
---| Whether the checkbox an event came from is checked.
-pub targetChecked : Event → Bool
-targetChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
+-- The payload of `onInput` and `onChange`: the `value` of the control the
+-- event came from. The events are allowed only on `input`, `select` and
+-- `textarea`, and on each of them `value` is a string by the HTML
+-- specification, which is why the read is true of `String`
+-- (boundary.md §4.3 (a)). `targetValue` is the read for any other target.
+controlValue : Event → String
+controlValue ev = Js.to (Js.get (Js.get (Js.from ev) "target") "value")
+
+
+--| Whether the checkbox an event came from is checked. `Nothing` when the
+--| target has no boolean `checked`, as only an `<input>` has one.
+pub targetChecked : Event → Maybe Bool
+targetChecked ev =
+    checked = Js.get (Js.get (Js.from ev) "target") "checked"
+    if Js.typeIs checked "boolean" then
+        Just (Js.to checked)
+    else
+        Nothing
+
+
+-- The payload of `onCheck`: whether the control the event came from is
+-- checked. The event is allowed only on `input`, and every `input` has a
+-- boolean `checked` by the HTML specification, which is why the read is
+-- true of `Bool` (boundary.md §4.3 (a)). `targetChecked` is the read for
+-- any other target.
+controlChecked : Event → Bool
+controlChecked ev = Js.to (Js.get (Js.get (Js.from ev) "target") "checked")
 
 
 --| A text field's selection, in code points as `String` counts them: where
@@ -159,9 +192,12 @@ preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 -- is handed as a `Pointer`, not an `Event`: its extractor runs while the
 -- event is dispatched to the handler's own element, so the position in
 -- that element's box is taken then, and stays right after the dispatch.
+-- `onContextMenu` hands one too (§9.8.20 (h)): a browser dispatches its
+-- event as a pointer event, and an older one as a mouse event, which has
+-- the position and the buttons and no pointer.
 
 --| A pointer event — a mouse, a pen or a touch — as a pointer handler is
---| handed it.
+--| handed it, or the event of `onContextMenu`.
 pub crossing foreign type Pointer
 
 
@@ -200,21 +236,45 @@ number v = Js.to v
 
 --| The pointer's identity: the same number from its first event to its
 --| `onPointerUp` or `onPointerCancel`, and a different one for each finger
---| on a touch screen.
+--| on a touch screen. `-1` on an `onContextMenu` whose event has no
+--| pointer: one that no pointing device made, and each one in a browser
+--| that dispatches it as a mouse event. Do not use `-1` to find a menu
+--| that the keyboard asked for: Chrome gives that menu the mouse's number.
 pub pointerId : Pointer → Int
-pointerId p = Js.to (Js.get (Js.from (pointerEvent p)) "pointerId")
+pointerId p =
+    v = Js.get (Js.from (pointerEvent p)) "pointerId"
+    if Js.isNullish v then -1 else Js.to v
 
 
 --| What the pointer is: `"mouse"`, `"pen"` or `"touch"`, or `""` when the
---| browser cannot say.
+--| browser cannot say, as on an `onContextMenu` that has no pointer.
 pub pointerType : Pointer → String
 pointerType p = stringProp (pointerEvent p) "pointerType"
 
 
 --| Whether the pointer is the primary one of its type: the mouse, or the
---| first finger of a touch.
+--| first finger of a touch. `False` on each `onContextMenu`.
 pub isPrimary : Pointer → Bool
 isPrimary p = boolProp (pointerEvent p) "isPrimary"
+
+
+--| The button whose change made the event, as the DOM numbers it: `0` the
+--| main button (the left one, a touch or a pen on the surface), `1` the
+--| middle button, `2` the secondary button (the right one, a pen's barrel
+--| button), `3` back, `4` forward, `5` a pen's eraser. `-1` when no button
+--| changed, as on an `onPointerMove` whose buttons stay as they are.
+--|
+--|     onPointerDown={λp → if Html.button p == 2 then Secondary else Main}
+pub button : Pointer → Int
+button p = Js.to (Js.get (Js.from (pointerEvent p)) "button")
+
+
+--| The buttons that are down, as the DOM adds them: `1` the main button,
+--| `2` the secondary, `4` the middle, `8` back, `16` forward, `32` a pen's
+--| eraser. `0` when none is down, and `3` when the main and the secondary
+--| button are.
+pub buttons : Pointer → Int
+buttons p = Js.to (Js.get (Js.from (pointerEvent p)) "buttons")
 
 
 --| The pointer's position from the left edge of the viewport, in CSS
@@ -1506,18 +1566,23 @@ pub attribute "accumulate" on "animate" "animateMotion" "animateTransform" : Str
 -- Four pointer events bubble and are `delegated`: the walk defines the
 -- event's `currentTarget` as the element whose handler runs, and their
 -- extractor reads that element's box. `pointerenter` and `pointerleave` do
--- not bubble (§9.8.20 (d)).
+-- not bubble (§9.8.20 (d)). `contextmenu` bubbles and has the pointer
+-- events' extractor: its handler opens a menu at a point, and stops the
+-- browser's menu with `preventDefault` when it wants to (§9.8.20 (h)).
 
 pub event "onBlur" : Event
 
 
-pub event "onChange" delegated via targetValue : String
+pub event "onChange" delegated via controlValue on "input" "select" "textarea" : String
 
 
-pub event "onCheck" name "change" delegated via targetChecked on "input" : Bool
+pub event "onCheck" name "change" delegated via controlChecked on "input" : Bool
 
 
 pub event "onClick" delegated : Event
+
+
+pub event "onContextMenu" delegated via pointer : Pointer
 
 
 pub event "onDblClick" delegated : Event
@@ -1538,7 +1603,7 @@ pub event "onDrop" delegated : Event
 pub event "onFocus" : Event
 
 
-pub event "onInput" delegated via targetValue : String
+pub event "onInput" delegated via controlValue on "input" "select" "textarea" : String
 
 
 pub event "onKeyDown" delegated : Event

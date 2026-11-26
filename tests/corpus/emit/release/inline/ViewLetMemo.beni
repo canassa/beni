@@ -1,0 +1,46 @@
+-- A `view` with a memo node (docs/design/browser-inline.md §8.2, amended 2026-11-23): `sum`,
+-- read by two holes whose read sets differ, is one entry that writes its slot, before the
+-- entries that read it, in the buckets of what it reads.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    b : Int
+    c : Int
+
+
+type Msg
+    = IncA
+    | IncB
+    | IncC
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        IncA →
+            { model | a = model.a + 1 }
+
+        IncB →
+            { model | b = model.b + 1 }
+
+        IncC →
+            { model | c = model.c + 1 }
+
+
+view : Model → Html Msg
+view model =
+    sum = model.a + model.b
+    <main>
+        <button onClick={IncA}>a</button>
+        <button onClick={IncB}>b</button>
+        <button onClick={IncC}>c</button>
+        <p>{sum} and {model.c}</p>
+        <p>{sum}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { a = 0, b = 0, c = 0 }, update = update, view = view }

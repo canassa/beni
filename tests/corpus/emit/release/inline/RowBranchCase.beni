@@ -1,0 +1,100 @@
+-- A branch in a `For`'s row (docs/design/browser-inline.md §9, amended
+-- 2026-11-23, *A branch in a row*): a `case` whose arms read what its
+-- pattern binds, and a call of a view helper whose body is a `case`, each a
+-- branch region of the row, chosen at every `set` with the row's values. An
+-- arm's button sends the row's key; a row keeps its arm's node while the arm
+-- stays (the uncontrolled input keeps its text), and makes the other arm when
+-- it changes. Rows are reordered with their arms. Its transcript is
+-- `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Toggle Int
+    | Reverse
+    | Mark
+
+
+type alias Row =
+    id : Int
+    note : Maybe String
+
+
+type alias Model =
+    rows : List Row
+    mark : String
+
+
+flip : Row → Row
+flip r =
+    case r.note of
+        Just _ →
+            { r | note = Nothing }
+
+        Nothing →
+            { r | note = Just "note ${String.fromInt r.id}" }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle id →
+            { model | rows = List.map model.rows λr → if r.id == id then flip r else r }
+
+        Reverse →
+            { model | rows = List.reverse model.rows }
+
+        Mark →
+            { model | mark = model.mark ++ "!" }
+
+
+badge : String, Maybe String → Html Msg
+badge mark note =
+    case note of
+        Just n →
+            <em>{"${n}${mark}"}</em>
+
+        Nothing →
+            <i>none</i>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <button id="mark" onClick={Mark}>mark</button>
+        <ul>
+            <For each={model.rows} keyed={.id}>
+                {λr →
+                    <li>
+                        {case r.note of
+                            Just n →
+                                <span>
+                                    <input id="in-${String.fromInt r.id}" />
+                                    <button id="off-${String.fromInt r.id}" onClick={Toggle r.id}>
+                                        {n}
+                                    </button>
+                                </span>
+
+                            Nothing →
+                                <button id="on-${String.fromInt r.id}" onClick={Toggle r.id}>
+                                    add
+                                </button>
+                        }
+                        <p>{badge model.mark r.note}</p>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ → { rows = [ { id = 1, note = Nothing }, { id = 2, note = Just "two" } ], mark = "" }
+        , update = update
+        , view = view
+        }

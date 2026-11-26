@@ -1,0 +1,10 @@
+click #later
+click #deep
+click #cross
+click #record
+click #tuple
+click #batch
+click #slept
+advance 10
+click #apply
+click #handed

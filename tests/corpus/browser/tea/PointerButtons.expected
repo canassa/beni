@@ -1,0 +1,343 @@
+-- load
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol></ol>
+  </main>
+</body>
+-- pointer #pad pointerdown 10 20 button:0 buttons:1
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #pad pointermove 12 22 button:2 buttons:3
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #pad pointermove 14 24 button:-1 buttons:3
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #pad pointermove 14 24 button:2 buttons:1
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #pad pointerup 14 24 button:0 buttons:0
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #pad pointerdown 1 1 button:1 buttons:4
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #pad pointerdown 1 1 button:5 buttons:32 type:pen
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #dot pointerdown 55 25 button:2 buttons:2 box:#pad
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #dot contextmenu 55 25 button:2 buttons:2 box:#pad
+(contextmenu's default prevented)
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+      <li>"menu on pad: at 55.0, 25.0, client 95.0, 55.0; button 2, buttons 2: secondary; \"mouse\" #1, not primary"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #dot pointerup 55 25 button:2 buttons:0 box:#pad
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+      <li>"menu on pad: at 55.0, 25.0, client 95.0, 55.0; button 2, buttons 2: secondary; \"mouse\" #1, not primary"</li>
+      <li>"up button 2, buttons 0:"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #native contextmenu 3 4 button:2
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+      <li>"menu on pad: at 55.0, 25.0, client 95.0, 55.0; button 2, buttons 2: secondary; \"mouse\" #1, not primary"</li>
+      <li>"up button 2, buttons 0:"</li>
+      <li>"menu on native: button 2"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #split contextmenu 10 5 button:2
+(contextmenu's default prevented)
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+      <li>"menu on pad: at 55.0, 25.0, client 95.0, 55.0; button 2, buttons 2: secondary; \"mouse\" #1, not primary"</li>
+      <li>"up button 2, buttons 0:"</li>
+      <li>"menu on native: button 2"</li>
+      <li>"menu on split: at 10.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #split contextmenu 80 5 button:2
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+      <li>"menu on pad: at 55.0, 25.0, client 95.0, 55.0; button 2, buttons 2: secondary; \"mouse\" #1, not primary"</li>
+      <li>"up button 2, buttons 0:"</li>
+      <li>"menu on native: button 2"</li>
+      <li>"menu on split: at 10.0"</li>
+      <li>"menu on split: at 80.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #pad contextmenu 0 0 id:-1 type:none
+(contextmenu's default prevented)
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+      <li>"menu on pad: at 55.0, 25.0, client 95.0, 55.0; button 2, buttons 2: secondary; \"mouse\" #1, not primary"</li>
+      <li>"up button 2, buttons 0:"</li>
+      <li>"menu on native: button 2"</li>
+      <li>"menu on split: at 10.0"</li>
+      <li>"menu on split: at 80.0"</li>
+      <li>"menu on pad: at 0.0, 0.0, client 40.0, 30.0; button 0, buttons 0:; \"\" #-1, not primary"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #pad contextmenu 100 50 button:-1
+(contextmenu's default prevented)
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+      <li>"menu on pad: at 55.0, 25.0, client 95.0, 55.0; button 2, buttons 2: secondary; \"mouse\" #1, not primary"</li>
+      <li>"up button 2, buttons 0:"</li>
+      <li>"menu on native: button 2"</li>
+      <li>"menu on split: at 10.0"</li>
+      <li>"menu on split: at 80.0"</li>
+      <li>"menu on pad: at 0.0, 0.0, client 40.0, 30.0; button 0, buttons 0:; \"\" #-1, not primary"</li>
+      <li>"menu on pad: at 100.0, 50.0, client 140.0, 80.0; button -1, buttons 0:; \"mouse\" #1, not primary"</li>
+    </ol>
+  </main>
+</body>
+-- mouse #pad contextmenu
+<body>
+  <main>
+    <div id="pad" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <p id="native">"native"</p>
+    <p id="split">"split"</p>
+    <ol>
+      <li>"down button 0, buttons 1: main"</li>
+      <li>"move button 2, buttons 3: main secondary"</li>
+      <li>"move button -1, buttons 3: main secondary"</li>
+      <li>"move button 2, buttons 1: main"</li>
+      <li>"up button 0, buttons 0:"</li>
+      <li>"down button 1, buttons 4:"</li>
+      <li>"down button 5, buttons 32:"</li>
+      <li>"down button 2, buttons 2: secondary"</li>
+      <li>"menu on pad: at 55.0, 25.0, client 95.0, 55.0; button 2, buttons 2: secondary; \"mouse\" #1, not primary"</li>
+      <li>"up button 2, buttons 0:"</li>
+      <li>"menu on native: button 2"</li>
+      <li>"menu on split: at 10.0"</li>
+      <li>"menu on split: at 80.0"</li>
+      <li>"menu on pad: at 0.0, 0.0, client 40.0, 30.0; button 0, buttons 0:; \"\" #-1, not primary"</li>
+      <li>"menu on pad: at 100.0, 50.0, client 140.0, 80.0; button -1, buttons 0:; \"mouse\" #1, not primary"</li>
+      <li>"menu on pad: at -40.0, -30.0, client 0.0, 0.0; button 0, buttons 0:; \"\" #-1, not primary"</li>
+    </ol>
+  </main>
+</body>

@@ -172,7 +172,7 @@ test "a markup module's dispatch table and diagnostics are the same at one job a
     try testing.expectEqual(@as(u8, 0), dumped.exit_code);
     try testing.expectEqualStrings(dumped.stdout, tripped.stdout);
     try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 for reference arity=1 primitive=false\n") != null);
-    try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 event Html.onInput payload via Html.targetValue\n") != null);
+    try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 event Html.onInput payload\n") != null);
     try testing.expect(std.mem.indexOf(u8, dumped.stdout, "markup 47 escape \"formaction\" string url\n") != null);
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expect(std.mem.indexOf(u8, checked.stderr, "UNKEYED FOR") != null);

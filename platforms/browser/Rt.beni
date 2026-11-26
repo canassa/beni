@@ -578,10 +578,9 @@ stop ⊤ =
     -- build's `stop` is only the write, as it was before the teardown.
     if Js.development ⊤ then
         if Js.read dead then ⊤ else crashScreen ⊤
-    -- Only a hosted mount runs fibers, and one sets the after-render
-    -- `phase` when it mounts: a page of `Browser.program`s never calls
-    -- `shutdown`, and its release build knows it.
-    if Js.isNull (Js.read phase) then ⊤ else Task.shutdown deadline stopped
+    -- A plain `Browser.program`'s `update` can start a fiber too
+    -- (`Task.spawnDetached`, #1994), so every page shuts the runtime down.
+    Task.shutdown deadline stopped
     Js.write dead True
 
 
@@ -720,9 +719,22 @@ flush ⊤ =
                 if Js.read ok then ⊤ else stop ⊤
 
 
--- `(program)`: start every program the array holds, in order.
+--| What a development entry calls when a module of the program throws
+--| while it loads, a top-level value that crashed: the page stops, as it
+--| does for a throw in `init`, before `run` is called. The throw goes on
+--| to the host, which reports it (`boundary.md` §9.8.10 (c), #1994).
+pub loadFailed : ⊤ → ⊤
+loadFailed ⊤ = stop ⊤
+
+
+-- `(program)`: start every program the array holds, in order. A fiber
+-- that throws stops the page whatever program started it: a plain
+-- `Browser.program`'s `update` can start one as a hosted mount's can, so
+-- the hook is given here, not only by `host` (`boundary.md` §9.8.10 (c),
+-- #1994).
 pub run : V → ⊤
 run program =
+    Task.onDefect λ⊤ → stop ⊤
     ok = Js.ref False
     Js.finally
         (λ⊤ →
@@ -1867,10 +1879,11 @@ hide s f =
 -- no selection (its `selectionStart` is null, or undefined on a `select`)
 -- and one without the focus are written and left alone. A `value` the
 -- control already shows is not written, and its selection is not touched.
+-- Nor is a `value` the control refuses (`refused`).
 writeProp : V, String, V → ⊤
 writeProp el prop v =
     caret = if prop == "value" then Js.get el "selectionStart" else Js.undefined
-    if prop == "value" && Js.same (Js.get el prop) v then
+    if prop == "value" && (Js.same (Js.get el prop) v || refused el v) then
         ⊤
     else if
         Js.isNullish caret || not (Js.same (Js.get (Js.global "document") "activeElement") el)
@@ -1889,6 +1902,17 @@ writeProp el prop v =
                 , direction
                 ]
         ⊤
+
+
+-- Whether `el` refuses `v` as its `value`. A script can give an `input` of
+-- type `file` the empty string alone, which removes the chosen files: an
+-- assignment of another value throws `InvalidStateError` (#2020). Such a
+-- value is a model no page can show, so it is not written, and the input
+-- keeps what it shows (backend.md §15.3, *Controlled inputs*). The `type`
+-- is the live one: it may come from the model, and it is read only for a
+-- value that is not empty. A test, with no `try`.
+refused : V, V → Bool
+refused el v = not (Js.same v (Js.from "")) && Js.same (Js.get el "type") (Js.from "file")
 
 
 -- `(el, prop, v, immutable)`: aggregates are always assigned. Only a proven

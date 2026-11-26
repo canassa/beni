@@ -300,6 +300,13 @@ place:
   value is a constant or a hole of the same unit, and otherwise the first pass writes it.
   *Amended 2026-11-05 (`browser-inline.md` §10.5, #1169):* a URL binding's value is
   `safeUrl` of it, `""` for a script URL, so the page holds what the client's first pass writes.
+- **A class list** (*amended 2026-11-23, `browser-inline.md` §8.2, #2499*) — the attribute as the
+  client's first pass leaves it: the baked names, then the name of each toggle whose flag `init`
+  makes true, in entry order, separated by spaces; with no baked name, the attribute is written
+  only when some flag is true, since `toggle` makes none otherwise. A style list's baked entries
+  are written as the markup has them; one with an entry whose value changes is refused (the
+  string would be the CSS parser's serialisation). An attribute that is no DOM property is
+  written as its value, a number as `String(n)` writes it.
 - **An event** — nothing. A listener is the client's (research 36 §2.12 records the same for
   Solid's `ssr`).
 - **An eager `when`** (§8.2 there) — the arm `init`'s model shows is written; **an arm it hides is
@@ -561,6 +568,11 @@ nodes, and the markers bound it (`getNextMarker`). A beni text hole is the whole
 and only a hidden arm writes one, a few bytes. That refusal is a limit of the compiler (class 4,
 §5 there), to be lifted; the slice that lifts it also gives the string form a marker around such a
 hole, as Solid's `<!--$-->` and `<!--/-->`, and amends this section.
+*Amended 2026-11-24 (#2650):* `browser-inline` compiles a text hole beside an element on a page
+that does not prerender (§8.2 there, amended 2026-11-24: each text a node the mount makes). On a
+page that prerenders it stays refused, as a limit of the compiler (class 1,
+`build/bad/prerender/TextBesideElement/`), until the string form writes such markers; so no text
+needs a marker yet.
 
 ### 6.4 When the page is not what the program would make
 
@@ -654,7 +666,12 @@ amendment here before it is built, measured in bytes and in time to interactive.
   pointer events (`pointerdown`, `pointermove`, … — `Html.onPointer*`): their payload is read while
   the event is dispatched, the box of the element whose listener runs (`currentTarget`), which a
   delivery after the dispatch cannot give, and a gesture is a run of them that a later delivery
-  cannot take part in; the `click` a tap makes is recorded. A page whose program has no such
+  cannot take part in; the `click` a tap makes is recorded. *Amended 2026-11-24 (#2087;
+  `boundary.md` §9.8.20 (h)):* it does not record `contextmenu` (`Html.onContextMenu`) either. Its
+  extractor is the pointer events', so its payload needs the same `currentTarget`. Also, a
+  delivery after the dispatch cannot stop the browser's menu, which the browser showed already
+  (`browser/prerender/EarlyMenu`). A page whose only listeners are of the kinds that the script
+  does not record gets no script (`browser/prerender/EarlyMenuOnly`). A page whose program has no such
   listener gets no script, and its client has no code of this section
   (`browser/prerender/EarlyNone`). A listener a subscription adds to the window or the document
   (`Listen`) is not the unit's: input before the takeover does not reach it.

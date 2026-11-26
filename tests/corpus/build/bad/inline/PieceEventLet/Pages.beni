@@ -1,0 +1,31 @@
+--! A pager whose button sends the next page number, a `let` of its view.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    page : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { page = 1 }
+
+
+pub type Msg
+    = Go Int
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go n →
+            { model | page = n }
+
+
+pub view : Model → Html Msg
+view model =
+    target = Debug.log "target" (model.page + 1)
+    <nav>
+        <output>{model.page}</output>
+        <button onClick={Go target}>Next</button>
+    </nav>

@@ -685,6 +685,9 @@ pub const Direct = struct {
         /// group (`browser-direct.md` §5.4, `cx.programLet`).
         lets: []const Let = &.{},
         settles: []const bool = &.{},
+        /// Version 1.26: whether each key's writes conflict with what a
+        /// document's title reads (`cx.programRetitles`).
+        retitles: []const bool = &.{},
         sites: []const Site = &.{},
         view_capped: bool = false,
         root_group: u32 = std.math.maxInt(u32),
@@ -1485,6 +1488,10 @@ pub const Lowerer = struct {
     /// The `let`s that lowering leaves out: an arm's statements, outside
     /// the mount of its markup.
     let_skip: []const Inst.Index = &.{},
+    /// The `let`s lowering binds although a markup root took them: the
+    /// statements of a branch's arms that `programBranchChooseAll` runs in
+    /// the choice (1.40), which no root value reads and so no root binds.
+    let_force: []const Inst.Index = &.{},
     /// §31.10, R6: the module's hoisted reads, indexed once its table is
     /// clean (`hoistsReady`). `hoist_at` lists the reads a placement binds,
     /// by `(instruction, phase)`; `hoist_prefix` the read each rewritten
@@ -1495,10 +1502,20 @@ pub const Lowerer = struct {
     hoist_prefix: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
     /// The rows `hoistsReady` read: v1's table, or the v3 oracle's channel's.
     hoist_reads: ?[]const Hoists.Read = null,
+    /// The reads placed after a `let` item (phase 2), by the local function
+    /// that takes them (their `capture`, an instruction): the first read's
+    /// row, and each row's next, a column per instruction and per row.
+    /// Empty when the module has none. Where `letBindings` lowers it.
+    hoist_late_head: []u32 = &.{},
+    hoist_late_next: []u32 = &.{},
     hoist_live: []HoistLive = &.{},
     /// Raised for each top-level lowering of a declaration: a temporary
     /// bound in another lowering is not this one's.
     hoist_gen: u32 = 0,
+    /// Temporaries a lambda's body named before the item that binds them
+    /// was lowered (`hoistedRead`, #2658), in this lowering: each must be
+    /// bound by its placement before the lowering ends.
+    hoist_pending: u32 = 0,
     /// Each read row's group: the row that stands for its source read.
     hoist_groups: []const u32 = &.{},
     /// The values of `let`s `directReachesDebug` found reach no `Debug`.
@@ -1720,6 +1737,9 @@ pub const Lowerer = struct {
         l.next_tag = 1;
         // A hoisted read's temporary is named in this numbering, and so
         // belongs to the lowering it was bound in (§31.14).
+        if (std.debug.runtime_safety and l.hoist_pending != 0)
+            std.debug.panic("ownership: a lambda reads a temporary that its block never binds ({d} left)", .{l.hoist_pending});
+        l.hoist_pending = 0;
         l.hoist_gen +%= 1;
     }
 
@@ -4283,7 +4303,46 @@ pub const Lowerer = struct {
     /// A call that may suspend, in a suspendable function: bound to a
     /// temporary behind a marker (§16.3), which `Suspend` turns into the
     /// continuation of everything lowered after it into `out`.
+    /// Whether the function call `inst` runs is not known where it is
+    /// written: a parameter, a pattern's variable, a field, an evidence
+    /// parameter. Whole-program specialisation writes a callee's body where
+    /// it is called, with the arguments in its parameters' places, and the
+    /// call may then run a function that writes a record in place: it is
+    /// marked a store wherever it is copied (`ownership-checker.md` §31.10,
+    /// amended 2026-11-24). Its own module need not write in place: a
+    /// callee of core may be written into a module that does.
+    fn calleeUnknown(l: *Lowerer, inst: Inst.Index) bool {
+        switch (l.bir.instTag(inst)) {
+            .call => {
+                const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
+                switch (l.bir.instTag(callee)) {
+                    .local => {
+                        const index = l.decl_index orelse return true;
+                        const local = l.bir.decls[index].locals_start + l.bir.instData(callee).lhs;
+                        if (local >= l.bir.locals.len) return true;
+                        return l.bir.locals[local].kind != .let;
+                    },
+                    .top, .ext_value, .ctor, .ext_ctor, .lambda => return false,
+                    else => return true,
+                }
+            },
+            .method_call, .type_dispatch => {
+                const site = l.in.dispatch.siteOf(inst) orelse return true;
+                const callee = site.callee.unwrap() orelse return true;
+                return switch (l.in.dispatch.term(callee)) {
+                    .param, .field => true,
+                    else => false,
+                };
+            },
+            else => return false,
+        }
+    }
+
     fn suspension(l: *Lowerer, out: *StmtList, inst: Inst.Index, value: Node.Index) !Node.Index {
+        // A call whose callee writes a record argument in place is a store
+        // (`ownership-checker.md` §31.10, amended 2026-11-24): every call
+        // lowering hands its call node through here.
+        if (l.b.tagOf(value) == .call and ((l.in.ownership.clean and l.in.ownership.writesAt(inst)) or l.calleeUnknown(inst))) l.b.markStores(value);
         if (!l.suspendable) return value;
         if (!l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return value;
         const p = l.pos(inst);
@@ -7005,7 +7064,9 @@ pub const Lowerer = struct {
 
     /// What stands for one read in the lowering under way: the row that
     /// bound it, its temporary, and the lowering that bound it.
-    const HoistLive = struct { row: u32, name: JsIr.NameIndex, gen: u32 };
+    /// `pending`: named by a lambda's body (`hoistedRead`) and not bound
+    /// yet; its placement binds that name (#2658).
+    const HoistLive = struct { row: u32, name: JsIr.NameIndex, gen: u32, pending: bool = false };
 
     const hoist_binding_key: u64 = 1 << 63;
 
@@ -7040,9 +7101,18 @@ pub const Lowerer = struct {
             const g = try by_read.getOrPut(l.scratch, .{ r.inst, r.binding, r.capture });
             if (!g.found_existing) g.value_ptr.* = @intCast(i);
             groups[i] = g.value_ptr.*;
-            const at = try l.hoist_at.getOrPut(l.scratch, (@as(u64, r.placement) << 1) | r.phase);
+            const at = try l.hoist_at.getOrPut(l.scratch, (@as(u64, r.placement) << 2) | r.phase);
             if (!at.found_existing) at.value_ptr.* = .empty;
             try at.value_ptr.append(l.scratch, @intCast(i));
+            if (r.phase == 2 and r.capture < l.bir.insts.len) {
+                if (l.hoist_late_head.len == 0) {
+                    l.hoist_late_head = try l.scratch.alloc(u32, l.bir.insts.len);
+                    @memset(l.hoist_late_head, Hoists.none);
+                    l.hoist_late_next = try l.scratch.alloc(u32, t.reads.len);
+                }
+                l.hoist_late_next[i] = l.hoist_late_head[r.capture];
+                l.hoist_late_head[r.capture] = @intCast(i);
+            }
             const target = try l.hoist_prefix.getOrPut(l.scratch, l.hoistTarget(r));
             if (!target.found_existing) target.value_ptr.* = .empty;
             try target.value_ptr.append(l.scratch, @intCast(i));
@@ -7070,21 +7140,25 @@ pub const Lowerer = struct {
     }
 
     /// Bind the temporaries placed at `inst` (§31.14): before it (phase 0),
-    /// or after an update's values and before its stores (phase 1). Each is
-    /// the holder's path to the written field, read as the source writes it.
-    fn placeHoists(l: *Lowerer, out: *StmtList, inst: Inst.Index, phase: u1) Allocator.Error!void {
+    /// after an update's values and before its stores (phase 1), or after
+    /// it, a `let` item (phase 2, §31.6 as amended 2026-11-24). Each is the
+    /// holder's path to the written field, read as the source writes it.
+    fn placeHoists(l: *Lowerer, out: *StmtList, inst: Inst.Index, phase: u2) Allocator.Error!void {
         if (!try l.hoistsReady()) return;
-        const rows = l.hoist_at.get((@as(u64, inst.int()) << 1) | phase) orelse return;
+        const rows = l.hoist_at.get((@as(u64, inst.int()) << 2) | phase) orelse return;
         const t = .{ .reads = l.hoist_reads.? };
         const p = l.pos(inst);
         for (rows.items) |ri| {
             const r = t.reads[ri];
             const g = l.hoist_groups[ri];
             const was = l.hoist_live[g];
+            const pending = was.gen == l.hoist_gen and was.pending;
             if (was.gen == l.hoist_gen and was.row != ri) continue;
             if (std.debug.runtime_safety) std.debug.assert(l.decl_index == r.decl);
             const value = try l.hoistValue(r, p);
-            const n = try l.fresh(l.well.temp);
+            // A name the lambda's body already reads (#2658) is the one bound.
+            if (pending) l.hoist_pending -= 1;
+            const n = if (pending) was.name else try l.fresh(l.well.temp);
             try l.constDecl(out, n, value, p);
             l.hoist_live[g] = .{ .row = ri, .name = n, .gen = l.hoist_gen };
         }
@@ -7095,7 +7169,7 @@ pub const Lowerer = struct {
     /// (`dataCall`), which no path of the walk may have placed.
     fn placeHoistsOnce(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!void {
         if (!try l.hoistsReady()) return;
-        const rows = l.hoist_at.get(@as(u64, inst.int()) << 1) orelse return;
+        const rows = l.hoist_at.get(@as(u64, inst.int()) << 2) orelse return;
         for (rows.items) |ri| if (l.hoist_live[l.hoist_groups[ri]].gen == l.hoist_gen) return;
         try l.placeHoists(out, inst, 0);
     }
@@ -7112,7 +7186,21 @@ pub const Lowerer = struct {
             },
             else => break,
         };
-        var value = try l.ident(try l.localName(r.holder), p);
+        // A holder that is a part of a key's message a handler never binds
+        // (`MsgTrack.held`) is read as every read of it is, from the
+        // message (`trackedExpr`'s `.local`), never by its name.
+        var value = held: {
+            if (l.msg_track) |mt| for (mt.held.items) |h| if (h[0] == r.decl and h[1] == r.holder) {
+                break :held (try l.heldValue(mt, h[2], p)) orelse try l.trackFail(mt, @fromBackingInt(r.inst),
+                    \\A limit of the compiler: this program's `update` reads its message, or a part of it, whole,
+                    \\and the key's handler is handed only the fields of the message's innermost constructor:
+                    \\`browser-inline` builds the message from them only through constructors of one field
+                    \\each (`docs/design/browser-inline.md` §8.4, D-e; §5, class 4). The program is valid: it
+                    \\builds with `--platform=browser-tea`.
+                , .{});
+            };
+            break :held try l.ident(try l.localName(r.holder), p);
+        };
         var k: u32 = 0;
         var i = chain.items.len;
         while (i > 0 and k < r.prefix_len) : (k += 1) {
@@ -7143,8 +7231,36 @@ pub const Lowerer = struct {
         if (!try l.hoistsReady()) return null;
         const rows = l.hoist_prefix.get(key) orelse return null;
         const t = .{ .reads = l.hoist_reads.? };
+        // One source read has one temporary: two groups bound for it are
+        // two placements of one read, and the later one may come after a
+        // store (§31.6, #2617).
+        if (std.debug.runtime_safety) for (rows.items, 0..) |ri, i| for (rows.items[i + 1 ..]) |rj| {
+            const gi = l.hoist_groups[ri];
+            const gj = l.hoist_groups[rj];
+            if (gi != gj and l.hoist_live[gi].gen == l.hoist_gen and l.hoist_live[gj].gen == l.hoist_gen and
+                t.reads[ri].prefix_len == t.reads[rj].prefix_len)
+                std.debug.panic("ownership: a hoisted record read is bound at two placements (read rows {d} and {d})", .{ ri, rj });
+        };
         for (rows.items) |ri| {
             const live = l.hoist_live[l.hoist_groups[ri]];
+            // A lambda made before the item that binds the record it reads
+            // reads the temporary bound just after that item (§31.6, amended
+            // 2026-11-24, #2658): its body names it first, and `placeHoists`
+            // binds that name there. Nothing runs the lambda before that
+            // item (`let_forward_reference`), so the name is never read in
+            // its dead zone. Any other read before its placement panics.
+            // The lambda's item is lowered before the record's, so a row
+            // already bound (not pending) was bound by an earlier copy of
+            // the block (an arm lowered twice, `browser-inline`): this copy
+            // names a temporary of its own, which its own placement binds.
+            if (!(live.gen == l.hoist_gen and live.pending) and t.reads[ri].phase == 2 and t.reads[ri].capture < l.bir.insts.len and
+                l.bir.instTag(@fromBackingInt(t.reads[ri].capture)) == .lambda)
+            {
+                const n = try l.fresh(l.well.temp);
+                l.hoist_live[l.hoist_groups[ri]] = .{ .row = ri, .name = n, .gen = l.hoist_gen, .pending = true };
+                l.hoist_pending += 1;
+                return try l.ident(n, p);
+            }
             if (live.gen != l.hoist_gen) std.debug.panic("ownership: a hoisted record read is lowered before its placement (read row {d})", .{ri});
             if (live.row == ri) return try l.ident(live.name, p);
             if (t.reads[live.row].prefix_len >= t.reads[ri].prefix_len)
@@ -7212,7 +7328,7 @@ pub const Lowerer = struct {
         insts[0] = @fromBackingInt(@intCast(d.lhs));
         for (fields, insts[1..]) |f, *slot| slot.* = f.value;
         const values = try l.orderedExprs(out, insts, false);
-        const phased = l.hoist_at.contains((@as(u64, inst.int()) << 1) | 1);
+        const phased = l.hoist_at.contains((@as(u64, inst.int()) << 2) | 1);
         // The object written: a name, evaluated once.
         var base = values[0];
         if (l.b.tagOf(base) != .ident or l.isMutable(base)) {
@@ -7972,7 +8088,13 @@ pub const Lowerer = struct {
             return l.coreSchemaValue(l.valid_sites.shapeRunner(inst.int()), p);
         }
         return switch (l.bir.instTag(inst)) {
-            .local => try l.ident(try l.localName(d.lhs), p),
+            .local => if ((d.lhs < l.locals.len and l.locals[d.lhs].kind == .let and l.namedMarkupLet(l.locals[d.lhs].inst) != null) or l.markupParamRead(inst))
+                (if (try l.refuseMarkupValue(inst))
+                    try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused)
+                else
+                    unreachable)
+            else
+                try l.ident(try l.localName(d.lhs), p),
             // A markup primitive is the markup runtime's export of its name
             // (`boundary.md` §9.3), in its own module as in any other.
             .top => if (d.lhs < l.bir.decls.len and l.bir.decls[d.lhs].kind == .vocab_markup)
@@ -12443,16 +12565,61 @@ pub const Lowerer = struct {
     /// scope in all bodies") and `const` would turn into a dead-zone throw.
     fn letBindings(l: *Lowerer, out: *StmtList, range: Bir.SubRange) !void {
         const defs = l.bir.extraSlice(range, Inst.Index);
-        for (defs) |def| {
+        // A local function whose read is placed after a later item, the one
+        // that binds what it reads (`ownership-checker.md` §31.6, amended
+        // 2026-11-24): lowered just after that item. A `function` is hoisted,
+        // so where it stands in the block changes no call.
+        var waiting: std.ArrayList([2]u32) = .empty;
+        for (defs, 0..) |def, at| {
+            if (at > 0) try l.afterLetItem(out, defs, at - 1, waiting.items);
+            try l.placeHoists(out, def, 0);
+            if (try l.lateFunction(defs, at)) |after| {
+                try waiting.append(l.scratch, .{ @intCast(at), @intCast(after) });
+                continue;
+            }
+            try l.letBinding(out, def);
+        }
+        if (defs.len > 0) try l.afterLetItem(out, defs, defs.len - 1, waiting.items);
+    }
+
+    /// The reads placed just after item `k` of a `let` (phase 2), then the
+    /// local functions waiting for them.
+    fn afterLetItem(l: *Lowerer, out: *StmtList, defs: []const Inst.Index, k: usize, waiting: []const [2]u32) !void {
+        try l.placeHoists(out, defs[k], 2);
+        for (waiting) |w| if (w[1] == k) try l.letBinding(out, defs[w[0]]);
+    }
+
+    /// For a local function, item `at` of `defs`: the last item at or after
+    /// it whose reads it takes are placed after (phase 2), or null.
+    fn lateFunction(l: *Lowerer, defs: []const Inst.Index, at: usize) !?usize {
+        if (!try l.hoistsReady()) return null;
+        if (defs[at].int() >= l.hoist_late_head.len) return null;
+        const t = .{ .reads = l.hoist_reads.? };
+        var last: ?usize = null;
+        var ri = l.hoist_late_head[defs[at].int()];
+        while (ri != Hoists.none) : (ri = l.hoist_late_next[ri]) {
+            for (defs[at..], at..) |item, k| {
+                if (item.int() == t.reads[ri].placement and (last == null or k > last.?)) last = k;
+            }
+        }
+        return last;
+    }
+
+    /// One binding of a `let` (`letBindings`), its placed reads bound.
+    fn letBinding(l: *Lowerer, out: *StmtList, def: Inst.Index) !void {
+        {
             const d = l.bir.instData(def);
             const p = l.pos(def);
-            try l.placeHoists(out, def, 0);
-            if (l.let_skip.len != 0 and std.mem.indexOfScalar(Inst.Index, l.let_skip, def) != null) continue;
+            if (l.let_skip.len != 0 and std.mem.indexOfScalar(Inst.Index, l.let_skip, def) != null) return;
             switch (l.bir.instTag(def)) {
                 .let_def => {
                     // A `let` only a grouped root reads is that root's to
                     // evaluate (`boundary.md` §9.4.6, 1.5, `Root.lets`).
-                    if (l.markupMovedLet(def)) continue;
+                    if (l.markupMovedLet(def) and std.mem.indexOfScalar(Inst.Index, l.let_force, def) == null) return;
+                    // A name for a markup root is evaluated nowhere: the
+                    // holes that read it enter the root (*A markup value*),
+                    // and any other read is refused where it is lowered.
+                    if (l.namedMarkupLet(def) != null) return;
                     const payload = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
                     const params = l.bir.extraSlice(
                         .{ .start = payload.params_start, .end = payload.params_end },
@@ -12488,7 +12655,7 @@ pub const Lowerer = struct {
                             const lambda = try l.add(.arrow, lambda_p, @backingInt(lambda_record), Node.Data.unused);
                             if (l.in.unit_results and !l.functionSuspends(value_inst) and l.unitValued(@fromBackingInt(@intCast(ld.rhs)))) try l.unobserved_arrows.append(l.scratch, lambda);
                             try l.constDecl(out, n, lambda, p);
-                            continue;
+                            return;
                         }
                         // A `Js.Ref` that does not escape is a `let` of
                         // its value (§4).
@@ -12499,7 +12666,7 @@ pub const Lowerer = struct {
                             const init = try l.expr(out, init_inst);
                             try out.append(l.scratch, try l.add(.let_decl, p, @backingInt(n), @backingInt(init.toOptional())));
                             if (l.mayHaveEffect(init_inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
-                            continue;
+                            return;
                         }
                         // A loop called once, its value bound here: the
                         // loop, whose exits write the name (§9).
@@ -12515,9 +12682,9 @@ pub const Lowerer = struct {
                             if (!l.isIdentOf(value, into)) {
                                 try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(into, p)).int(), value.int()));
                             }
-                            continue;
+                            return;
                         }
-                        if (try l.boundLoop(out, value_inst, .{ .assign = n }, if (named_before) &.{} else &.{payload.local})) continue;
+                        if (try l.boundLoop(out, value_inst, .{ .assign = n }, if (named_before) &.{} else &.{payload.local})) return;
                         // `--release`: a `case` whose value is bound writes
                         // the binding itself, declared a `let`, rather than
                         // a temporary the binding then copies.
@@ -12526,7 +12693,7 @@ pub const Lowerer = struct {
                         // binding of its object (`settleStores`).
                         const value = try l.settleStores(out, try l.expr(out, value_inst), p);
                         l.case_into = .{};
-                        if (l.isIdentOf(value, n)) continue;
+                        if (l.isIdentOf(value, n)) return;
                         // `--release`: a binding of a name nothing
                         // reassigns — `y = Js.to x` — is that name, as a
                         // parameter passed one is (`enterInline`).
@@ -12534,13 +12701,13 @@ pub const Lowerer = struct {
                             !l.isMutable(value) and !named_before and payload.local < l.local_names.len)
                         {
                             l.local_names[payload.local] = @fromBackingInt(@intCast(l.b.dataOf(value).lhs));
-                            continue;
+                            return;
                         }
                         try l.constDecl(out, n, value, p);
                         // Read by nothing or not, a binding that may have an
                         // effect is evaluated: the release optimiser keeps it.
                         if (l.mayHaveEffect(value_inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
-                        continue;
+                        return;
                     }
                     // A `let_def` with parameters is already its own hoisted
                     // `function` (§8's cases table), so the loop is
@@ -12561,7 +12728,7 @@ pub const Lowerer = struct {
                     // value is a statement*).
                     if (l.bir.instTag(@fromBackingInt(@intCast(d.lhs))) == .pat_wild) {
                         try l.discard(out, @fromBackingInt(@intCast(d.rhs)), p);
-                        continue;
+                        return;
                     }
                     // `( a, b ) = <a loop called once>`: the loop, whose
                     // exits write each element into its name (§9).
@@ -12569,7 +12736,7 @@ pub const Lowerer = struct {
                         // Which names are new, asked before they are made.
                         const locals = try l.tupleLocals(@fromBackingInt(@intCast(d.lhs)));
                         if (try l.tupleNames(@fromBackingInt(@intCast(d.lhs)))) |names| {
-                            if (try l.boundLoop(out, @fromBackingInt(@intCast(d.rhs)), .{ .tuple = names }, locals)) continue;
+                            if (try l.boundLoop(out, @fromBackingInt(@intCast(d.rhs)), .{ .tuple = names }, locals)) return;
                         }
                     }
                     const value = try l.expr(out, @fromBackingInt(@intCast(d.rhs)));
@@ -15577,9 +15744,9 @@ pub const Lowerer = struct {
             const root = st.built.rootAt(at.int()) orelse return .{ .function, null };
             return .{ if (lets) .function else .markup, root };
         };
-        if (l.bir.instTag(at) != .markup) return .{ .function, null };
-        const st = l.mk orelse return .{ .function, null };
-        const root = st.built.rootAt(at.int()) orelse return .{ .function, null };
+        // A body whose result is a `let` naming a root is that root (*A
+        // markup value*): its `let`s are bound as the `view` is entered.
+        const root = l.resultRoot(at) orelse return .{ .function, null };
         return .{ if (at == body) .markup else .function, root };
     }
 
@@ -15599,25 +15766,31 @@ pub const Lowerer = struct {
         return null;
     }
 
-    /// The first `let` of `view`'s body that its root does not take, its
-    /// markup reads, and may have an effect (version 1.10), or null.
+    /// The first `let` of `view`'s body that its root does not take, that
+    /// is no statement, and whose value may have an effect or throw, or null.
     fn effectfulViewLet(l: *Lowerer, pc: *const ProgramCall) Allocator.Error!?Inst.Index {
-        const st = l.mk orelse return null;
         const function = l.fieldFunction(pc, pc.view) orelse return null;
-        _, const root_index = l.programShape(pc.view);
-        const root = st.built.tree.root(root_index orelse return null);
         const saved = try l.enterDecl(function.decl);
         defer l.leaveDecl(saved);
+        // `browser-inline.md` §8.2, amended 2026-11-23: every binding function
+        // that enters the `view` evaluates such a `let` (`programViewEnter`),
+        // so only one whose value is pure and total is accepted — evaluated
+        // once or n times, it cannot be told apart. A `let` the root takes
+        // and a statement are the lowering's to place.
         var at = function.body;
         while (l.bir.instTag(at) == .let) : (at = @fromBackingInt(@intCast(l.bir.instData(at).rhs))) {
             for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(at).lhs))), Inst.Index)) |def| {
-                if (l.bir.instTag(def) != .let_def or l.markupMovedLet(def)) continue;
                 const rhs: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(def).rhs));
-                if (!l.mayHaveEffect(rhs)) continue;
-                const local = l.bir.extraData(@fromBackingInt(@intCast(l.bir.instData(def).lhs)), Bir.LetDef).local;
-                for (0..root.inputs.len) |j| {
-                    if (st.built.values[root.inputs.start + j].capture == local) return def;
+                switch (l.bir.instTag(def)) {
+                    .let_def => {
+                        if (l.markupMovedLet(def)) continue;
+                        const payload = l.bir.extraData(@fromBackingInt(@intCast(l.bir.instData(def).lhs)), Bir.LetDef);
+                        if (payload.params_end != payload.params_start or l.bir.instTag(rhs) == .lambda) continue;
+                    },
+                    .let_pattern => if (l.bir.instTag(@fromBackingInt(@intCast(l.bir.instData(def).lhs))) == .pat_wild) continue,
+                    else => continue,
                 }
+                if (!l.instSafeMode(rhs, true)) return def;
             }
         }
         return null;
@@ -15666,7 +15839,7 @@ pub const Lowerer = struct {
         // wherever the root's values are, so as many times as the lowering
         // evaluates them; refused rather than drawn again by each.
         if (program.view_lets) if (try l.effectfulViewLet(pc)) |def| {
-            try l.report(.not_implemented, def, "This `let` of `view` may have an effect, and its markup reads it: `{s}` evaluates such a `let` wherever the markup's values are evaluated, which is not once per message (`docs/design/browser-direct.md` §5.4, §8.4). Write the call where the markup reads it, or build this program with `--platform=browser-tea`.", .{st.lowering.name});
+            try l.report(.not_implemented, def, "A limit of the compiler: this `let` of `view` is a pattern, or a binding that something besides the markup's holes reads — a statement, a `For`'s row, another such `let` — and its value may have an effect or throw: `{s}` evaluates such a `let` in every binding function that enters the `view`, which is not once per pass (`docs/design/browser-inline.md` §8.2; §5, class 1). Bind the value with a plain `let` the markup reads, or write the call where the markup reads it, or build this program with `--platform=browser-tea`.", .{st.lowering.name});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         };
         // Each lowering of the call evaluates `init` once: a declaration
@@ -16031,7 +16204,7 @@ pub const Lowerer = struct {
     /// time the walk enters it.
     const Verdicts = struct { per: [][]Purity, command_diagnostic: bool = false };
 
-    const StagedConstructor = enum { none, perform, batch };
+    const StagedConstructor = enum { none, perform, batch, after_render };
 
     /// Resolve against the selected lowering's actual platform module and
     /// declaration. An app module or alias merely spelled Cmd is no proof.
@@ -16057,6 +16230,7 @@ pub const Lowerer = struct {
         if (std.mem.eql(u8, value_name, "none")) return .none;
         if (std.mem.eql(u8, value_name, "perform")) return .perform;
         if (std.mem.eql(u8, value_name, "batch")) return .batch;
+        if (effects.after_render and std.mem.eql(u8, value_name, "afterRender")) return .after_render;
         return null;
     }
 
@@ -16076,7 +16250,7 @@ pub const Lowerer = struct {
         if (args.len != 1) return null;
         switch (kind) {
             .none => return null,
-            .perform => return try l.effectOf(l.ownFrame(), args[0], verdicts),
+            .perform, .after_render => return try l.effectOf(l.ownFrame(), args[0], verdicts),
             .batch => {
                 if (l.bir.instTag(args[0]) != .list) return null;
                 var debug = false;
@@ -16141,7 +16315,7 @@ pub const Lowerer = struct {
             const d = l.bir.instData(root);
             const kind = (try l.stagedConstructor(@fromBackingInt(@intCast(d.lhs)))).?;
             const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
-            if (kind == .perform) {
+            if (kind == .perform or kind == .after_render) {
                 try l.discard(out, args[0], p);
             } else if (kind == .batch) {
                 for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(args[0])), Inst.Index)) |command| _ = try l.eraseStagedCommand(out, command);
@@ -16929,7 +17103,7 @@ pub const Lowerer = struct {
                 const keys = l.directKeys();
                 if (key >= keys.len or m.field >= params.len) return null;
                 const s = l.directSteps(key);
-                if (!(s.len == 1 and s[0].named and keys[key].params == params.len)) return null;
+                if (!(s.len == 1 and s[0].named and !keys[key].message and keys[key].params == params.len)) return null;
                 subject = try l.ident(params[m.field], p);
                 steps = m.steps;
             },
@@ -17107,11 +17281,18 @@ pub const Lowerer = struct {
         // out unless code names it after all (`wanted`, then refused as a
         // markup value, as before).
         if (l.in.markup) |mk| if (mk.lowering.no_markup_values != null) for (l.bir.decls, 0..) |dc, i| {
-            if (dc.kind != .value or dc.params == 0) continue;
+            // A constant whose body is markup too (`browser-inline.md` §8.2,
+            // amended 2026-11-23, *A markup value*): a function of no
+            // parameter.
+            if (dc.kind != .value) continue;
             if (l.in.public_roots and dc.is_pub) continue;
             var body = dc.body.unwrap() orelse continue;
             while (l.bir.instTag(body) == .let) body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
-            if (l.bir.instTag(body) != .markup) continue;
+            // And one whose body is an `if` or a `case` with markup in an arm
+            // (§8.4, amended 2026-11-23, #2498): written where a hole calls
+            // it (`Callee.Refusal.branch`), or, named by code, lowered as
+            // before.
+            if (l.bir.instTag(body) != .markup and !(l.bir.instTag(body) == .local and l.resultRoot(body) != null) and !try l.caseOfMarkup(body)) continue;
             if (l.consumed.len == 0) {
                 l.consumed = try l.scratch.alloc(bool, l.bir.decls.len);
                 @memset(l.consumed, false);
@@ -17136,6 +17317,22 @@ pub const Lowerer = struct {
             }
             l.consumed[vp.decl] = true;
         }
+    }
+
+    /// Whether `body` is an `if` or a `case` some arm of which, past its
+    /// `let`s, is markup written there: a helper `chainOfRef` calls a
+    /// branch (`Callee.Refusal.branch`) whose markup only a hole's call
+    /// writes.
+    fn caseOfMarkup(l: *Lowerer, body: Inst.Index) Allocator.Error!bool {
+        if (l.bir.instTag(body) != .case) return false;
+        var bodies: std.ArrayList(Inst.Index) = .empty;
+        try l.flattenArms(body, &bodies);
+        for (bodies.items) |b| {
+            var at = b;
+            while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+            if (l.bir.instTag(at) == .markup) return true;
+        }
+        return false;
     }
 
     /// The root a view piece's declaration's body is, past its `let`s.
@@ -17709,6 +17906,26 @@ pub const Lowerer = struct {
         return value;
     }
 
+    /// `cx.programPieceWrap`: `msg` under the constructor of each map around
+    /// hole `node`, the innermost first; null when a map is not a
+    /// constructor of one field.
+    fn programPieceWrap(l: *Lowerer, node: beni_markup.Node.Index, msg: Node.Index) Allocator.Error!?Node.Index {
+        const p = l.mk.?.pos;
+        const found = l.holePiece(node) orelse return null;
+        var value = msg;
+        var k = found.chain.maps.len;
+        while (k > 0) {
+            k -= 1;
+            // A constructor alone, which `ctorShaped` gives only for one of
+            // one field (`pieceLayers`' rule).
+            const shape = l.ctorShaped(found.chain.maps[k]) orelse return null;
+            if (shape.args.len != 0) return null;
+            const rt = l.ctorRepOf(shape.ctor) orelse return null;
+            value = try l.ctorValue(rt[0], rt[1], &.{value}, p);
+        }
+        return value;
+    }
+
     /// The interface row of this module's constructor `index`, by name.
     fn ownCtorRow(l: *Lowerer, index: u32) u32 {
         if (l.in.module.int() >= l.in.interfaces.len or index >= l.bir.ctors.len) return Direct.Ctor.none;
@@ -17738,6 +17955,9 @@ pub const Lowerer = struct {
         /// other step splits a prefix of it.
         leaf: Direct.Step,
         fields: []const Node.Index,
+        /// The message itself, for a key that takes it from its root
+        /// (`Program.Key.message`): a part read whole is read from it.
+        root: ?Node.Index = null,
         /// `(declaration, local, depth)`: the local of that declaration
         /// holds the message's part at the leaf path's first `depth`
         /// accesses — 0 the message, `leaf.access.len` the leaf's value.
@@ -17783,10 +18003,26 @@ pub const Lowerer = struct {
         defer l.case_depth = depth;
         const outer = l.enterFunction(false);
         defer l.leaveFunction(outer);
-        const nodes = try l.scratch.alloc(Node.Index, fields.len);
-        for (nodes, fields) |*n, f| n.* = try l.ident(f, p);
         const steps = l.directSteps(key);
         const leaf = steps[steps.len - 1];
+        // A key that takes the message from its root (`Program.Key.message`,
+        // version 1.35) reads its leaf's fields, and each part a branch reads
+        // whole, from the message (`browser-inline.md` §8.4, amended
+        // 2026-11-23).
+        const root: ?Node.Index = if (l.directKeys()[key].message) try l.ident(fields[0], p) else null;
+        const nodes = if (root) |msg| leaf: {
+            const subject = try l.dispatchSubject(msg, leaf.access);
+            if (!leaf.named) break :leaf try l.scratch.dupe(Node.Index, &.{subject});
+            const rt = l.directCtor(leaf.ctor) orelse break :leaf try l.scratch.dupe(Node.Index, &.{});
+            const n = l.directArity(leaf.ctor) orelse 0;
+            const out = try l.scratch.alloc(Node.Index, n);
+            for (out, 0..) |*o, i| o.* = try l.ctorField(subject, rt[0], @intCast(i), p);
+            break :leaf out;
+        } else nodes: {
+            const out = try l.scratch.alloc(Node.Index, fields.len);
+            for (out, fields) |*n, f| n.* = try l.ident(f, p);
+            break :nodes out;
+        };
         for (steps) |s| {
             const prefix = s.access.len <= leaf.access.len and for (s.access, leaf.access[0..s.access.len]) |a, b| {
                 if (!std.meta.eql(a, b)) break false;
@@ -17801,7 +18037,7 @@ pub const Lowerer = struct {
                 return null;
             }
         }
-        var mt: MsgTrack = .{ .steps = steps, .leaf = leaf, .fields = nodes };
+        var mt: MsgTrack = .{ .steps = steps, .leaf = leaf, .fields = nodes, .root = root };
         const saved = try l.enterDecl(function.decl);
         defer l.leaveDecl(saved);
         try l.bindParam(&stmts, function.params[1], model);
@@ -17856,6 +18092,8 @@ pub const Lowerer = struct {
     /// a branch that reads it whole is handed (D-e).
     fn heldValue(l: *Lowerer, mt: *MsgTrack, depth: u32, p: u32) Allocator.Error!?Node.Index {
         const path = mt.leaf.access;
+        // The message the handler was handed: the part is read from it.
+        if (mt.root) |msg| return try l.dispatchSubject(msg, path[0..depth]);
         if (depth == path.len) {
             if (!mt.leaf.named) return if (mt.fields.len == 1) mt.fields[0] else null;
             const rt = l.directCtor(mt.leaf.ctor) orelse return null;
@@ -17949,17 +18187,24 @@ pub const Lowerer = struct {
                             if (!l.sameCtor(@fromBackingInt(@intCast(pd.lhs)), ctor)) continue;
                             const subs = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(pd.rhs))), Inst.Index);
                             // Taken only when every field pattern is one this
-                            // binds: a variable, or nothing.
+                            // binds: a variable, or nothing. Off the leaf
+                            // path, a variable binds the field read from the
+                            // message, for a key handed the message
+                            // (`Program.Key.message`).
                             for (subs, 0..) |sub, i| switch (l.bir.instTag(sub)) {
                                 .pat_var => if (leaf) {
                                     if (i >= mt.fields.len) return null;
-                                } else if (i != next_field.?) return null,
+                                } else if (i != next_field.? and (mt.root == null or l.directCtor(ctor) == null)) return null,
                                 .pat_wild, .pat_unit => {},
                                 else => return null,
                             };
                             for (subs, 0..) |sub, i| if (l.bir.instTag(sub) == .pat_var) {
                                 if (leaf) {
                                     try l.bindParam(out, sub, mt.fields[i]);
+                                } else if (i != next_field.?) {
+                                    const rt = l.directCtor(ctor).?;
+                                    const part = (try l.heldValue(mt, depth, l.pos(sub))).?;
+                                    try l.bindParam(out, sub, try l.ctorField(part, rt[0], @intCast(i), l.pos(sub)));
                                 } else try mt.held.append(l.scratch, .{ l.decl_index.?, l.bir.instData(sub).lhs, depth + 1 });
                             };
                             return try l.expr(out, body);
@@ -18380,10 +18625,21 @@ pub const Lowerer = struct {
         /// The body has `let`s the markup does not read.
         statements: bool = false,
         refusal: beni_markup.Program.Callee.Refusal = .none,
+        /// `refusal` is `branch` (version 1.34): the `if` or `case` the
+        /// callee's body is past its `let`s, which `branchArms` reads under
+        /// the call's frame (`browser-inline.md` §8.4, amended 2026-11-23).
+        branch: ?Inst.Index = null,
         /// A component's callee, as the call names it (`Callee.debug`).
         callee: ?Inst.Index = null,
         /// Version 1.15: the callee of another module (`other_module`).
         ext: ?Inst.Index = null,
+        /// The root is the value of a `let` of the enclosing declaration
+        /// (`namedMarkupLet`): entered where it stands, its inputs read under
+        /// the names their locals have there, on the path it was walked on.
+        nested: bool = false,
+        /// A parameter's argument (`chainOfParam`): the context of the
+        /// caller, where the root's inputs are read.
+        outer: ?DeclCtx = null,
     };
 
     /// One call entered (`cx.programInlineEnter`): its chain, the context
@@ -18434,6 +18690,21 @@ pub const Lowerer = struct {
                 }
                 return chain;
             },
+            // A `For` or a `Show` whose row function is a function of the
+            // program's module, named (version 1.39, `browser-inline.md` §9,
+            // amended 2026-11-24): the call of that function with the item
+            // (and the position), entered as a view helper's call is. The
+            // write-set pass applies the row function on the path the `For`
+            // stands on, so the call adds no step to it.
+            .for_, .show => {
+                const row_index = if (tree.kind(node) == .for_) tree.for_(node).row else tree.show(node).body;
+                if (tree.row(row_index).kind != .function) return null;
+                const f = st.built.rows[@backingInt(row_index)].function;
+                if (l.bir.instTag(f) != .top and l.bir.instTag(f) != .ext_value) return null;
+                var chain = l.chainOfRef(f, &.{}, &.{}, true);
+                chain.nested = true;
+                return chain;
+            },
             else => return null,
         }
     }
@@ -18456,6 +18727,10 @@ pub const Lowerer = struct {
         bodies: []const Inst.Index,
         results: []const Inst.Index,
         document: bool = false,
+        /// The branch is the body of the function the hole calls (version
+        /// 1.34): its arms were walked, and are entered, on the call's own
+        /// path, which the call's frame already extends by the hole's token.
+        helper: bool = false,
     };
 
     /// What `exprValue` lowers an arm's body or result as.
@@ -18488,9 +18763,39 @@ pub const Lowerer = struct {
     fn branchArms(l: *Lowerer, node: beni_markup.Node.Index) Allocator.Error!?BranchArms {
         const st = l.mk orelse return null;
         const tree = &st.built.tree;
+        // A hole whose call's callee is the branch (version 1.34): read from
+        // the call's frame, which `programInlineEnter` pushed, since on that
+        // path the callee is being entered and `chainOfRef` would call it
+        // recursive.
+        if (node != .none) if (l.helperBranch(node)) |b| {
+            var bodies: std.ArrayList(Inst.Index) = .empty;
+            if (l.bir.instTag(b) == .case) try l.flattenArms(b, &bodies) else try bodies.append(l.scratch, b);
+            const results = try l.scratch.alloc(Inst.Index, bodies.items.len);
+            for (bodies.items, results) |x, *r| {
+                r.* = x;
+                while (l.bir.instTag(r.*) == .let) r.* = @fromBackingInt(@intCast(l.bir.instData(r.*).rhs));
+            }
+            return .{ .value = b, .bodies = bodies.items, .results = results, .helper = true };
+        };
         // `Node.Index.none`: the `view`'s body past its `let`s, a branch at
         // the page's root (`Program.view_branch`).
         const value = if (node == .none) l.viewBranchValue() orelse return null else blk: {
+            // A `For` whose row is a lambda whose body, past the `let`s the
+            // row's values bind, is an `if` or a `case` (version 1.38,
+            // `browser-inline.md` §9, amended 2026-11-24): the row's top is
+            // the branch, chosen with the row's parameters bound.
+            // A `Show` whose body is such a lambda (version 1.39): the body's
+            // top is the branch, chosen with `v` bound.
+            if (tree.kind(node) == .for_ or tree.kind(node) == .show) {
+                const row_index = if (tree.kind(node) == .for_) tree.for_(node).row else tree.show(node).body;
+                if (tree.row(row_index).kind != .lambda) return null;
+                const body = st.built.rows[@backingInt(row_index)].body.unwrap() orelse return null;
+                // Its own `let`s run as the branch is chosen, as a hole's do.
+                var past = body;
+                while (l.bir.instTag(past) == .let) past = @fromBackingInt(@intCast(l.bir.instData(past).rhs));
+                if (l.bir.instTag(past) != .case) return null;
+                break :blk body;
+            }
             if (tree.kind(node) != .hole) return null;
             const h = tree.hole(node);
             if (h.kind != .html) return null;
@@ -18511,6 +18816,18 @@ pub const Lowerer = struct {
             while (l.bir.instTag(r.*) == .let) r.* = @fromBackingInt(@intCast(l.bir.instData(r.*).rhs));
         }
         return .{ .value = value, .bodies = bodies.items, .results = results, .document = document };
+    }
+
+    /// The branch the callee of the call at hole `node` is, when that call
+    /// is entered (version 1.34): the innermost frame of the hole's call.
+    fn helperBranch(l: *Lowerer, node: beni_markup.Node.Index) ?Inst.Index {
+        var i = l.inline_frames.items.len;
+        while (i > 0) {
+            i -= 1;
+            const f = l.inline_frames.items[i];
+            if (f.node == node) if (f.chain.branch) |b| return b;
+        }
+        return null;
     }
 
     /// The program's `view`'s body past its `let`s, when it is a `case` —
@@ -18560,7 +18877,9 @@ pub const Lowerer = struct {
             const root = st.built.rootAt(r.int()) orelse return .value;
             return if (l.markupGrouped(root)) .{ .markup = root } else .value;
         }
-        if (l.bir.instTag(r) != .call) return .value;
+        // A constant whose body is markup is a call of no argument (*A markup
+        // value*).
+        if (l.bir.instTag(r) != .call and l.bir.instTag(r) != .top) return .value;
         const chain = l.chainOfExpr(r, &.{}, true) orelse return .value;
         const root = chain.root orelse return .value;
         if (chain.refusal != .none or chain.decl == null or chain.maps.len != 0 or chain.component != null) return .value;
@@ -18570,13 +18889,15 @@ pub const Lowerer = struct {
 
     /// A completed view walk proves this arm dead on this call path.
     /// Missing facts are unknown, never a dead-arm proof.
-    fn directArmDead(l: *Lowerer, node: beni_markup.Node.Index, body: Inst.Index) bool {
+    fn directArmDead(l: *Lowerer, node: beni_markup.Node.Index, body: Inst.Index, helper: bool) bool {
         const pc = l.program_now orelse return false;
         const d = pc.direct orelse return false;
         const st = l.mk orelse return false;
         const module = l.in.module.int();
         const path = l.inline_path.items;
-        const extra: usize = if (node == .none) 0 else 1;
+        // A helper's branch was walked on the call's path, which the frame
+        // entered for the call already extends by the hole's token.
+        const extra: usize = if (node == .none or helper) 0 else 1;
         const token: u64 = if (node == .none) 0 else (@as(u64, module) << 32) | st.built.node_tokens[@backingInt(node)];
         // Match the current branch's path without changing its caller state.
         const full = l.scratch.alloc(u64, path.len + extra) catch return false;
@@ -18608,9 +18929,58 @@ pub const Lowerer = struct {
             // A call's callee may have statements of its own, as one
             // written in place may (version 1.9's `Callee.statements`).
             const callee = what == .call and (l.chainOfExpr(r, &.{}, true) orelse Chain{}).statements;
-            o.* = .{ .what = what, .dead = l.deadArm(b) or l.directArmDead(node, b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
+            o.* = .{ .what = what, .dead = l.deadArm(b) or l.directArmDead(node, b, arms.helper), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup), .never = what == .value and l.armNever(r) };
         }
-        return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value) };
+        return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value), .selector_effect = l.selectorEffect(arms.value) };
+    }
+
+    /// Version 1.31: whether arm result `r` never returns — a call of core's
+    /// `Debug.todo` (`Program.Arm.never`).
+    fn armNever(l: *Lowerer, r: Inst.Index) bool {
+        if (l.bir.instTag(r) != .call) return false;
+        const callee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(r).lhs));
+        if (l.bir.instTag(callee) != .ext_value) return false;
+        const data = l.bir.instData(callee);
+        const module: Graph.Index = @fromBackingInt(@intCast(data.lhs));
+        if (module.int() >= l.in.interfaces.len) return false;
+        if (l.in.graph.modulePackage(module) != .core) return false;
+        if (!std.mem.eql(u8, l.text(l.in.graph.moduleName(module)), "Debug")) return false;
+        const iface = &l.in.interfaces[module.int()];
+        if (data.rhs >= iface.values.len) return false;
+        return std.mem.eql(u8, l.interner.slice(iface.symbols[@backingInt(iface.values[data.rhs].name)]), "todo");
+    }
+
+    /// Version 1.31: whether choosing an arm of branch `value` may have an
+    /// effect — its `let`s, a `case`'s scrutinee or an `else if`'s, or the
+    /// arguments of a call that is its one arm (`browser-inline.md` §8.2,
+    /// amended 2026-11-23).
+    fn selectorEffect(l: *Lowerer, value: Inst.Index) bool {
+        var i = value;
+        while (l.bir.instTag(i) == .let) {
+            for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(i).lhs))), Inst.Index)) |def| {
+                if (l.mayHaveEffect(def)) return true;
+            }
+            i = @fromBackingInt(@intCast(l.bir.instData(i).rhs));
+        }
+        switch (l.bir.instTag(i)) {
+            .case => {
+                if (l.mayHaveEffect(@fromBackingInt(@intCast(l.bir.instData(i).lhs)))) return true;
+                const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(i).rhs))), Inst.Index);
+                for (branches) |br| {
+                    const body: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(br).rhs));
+                    if (l.bir.instTag(body) == .case and l.selectorEffect(body)) return true;
+                }
+                return false;
+            },
+            .call => {
+                const d = l.bir.instData(i);
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
+                    if (l.mayHaveEffect(arg)) return true;
+                }
+                return false;
+            },
+            else => return l.mayHaveEffect(i),
+        }
     }
 
     /// The `let`s of an arm's body its result does not need — a statement,
@@ -18640,6 +19010,21 @@ pub const Lowerer = struct {
             const needed = switch (l.bir.instTag(def)) {
                 .let_def => blk: {
                     const local = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef).local;
+                    // A `let` moved into the arm's root (`Root.lets`) is that
+                    // root's to evaluate when one of its values reads it: an
+                    // arm of a helper's branch, whose markup is a root of its
+                    // own (§8.4, amended 2026-11-23). One the root moved and
+                    // nothing reads is a statement, as in the `view`.
+                    if (result_root) |r| if (l.markupMovedLet(def)) {
+                        for (0..r.values.len) |j| {
+                            const vi: Inst.Index = switch (st.built.values[r.values.start + j]) {
+                                .inst => |x| x,
+                                .call => |c| c.inst,
+                                else => continue,
+                            };
+                            if (l.subtreeReadsLocal(vi, local)) break :blk true;
+                        }
+                    };
                     if (result_root) |r| for (0..r.inputs.len) |j| {
                         if (st.built.values[r.inputs.start + j].capture == local) break :blk true;
                     };
@@ -18710,7 +19095,7 @@ pub const Lowerer = struct {
                             try cells.append(l.scratch, try l.ident(try l.localName(local), p));
                         }
                     },
-                    .call => {
+                    .call => if (l.bir.instTag(inst) == .call) {
                         const d = l.bir.instData(inst);
                         for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
                             try cells.append(l.scratch, try l.expr(out, arg));
@@ -18728,7 +19113,7 @@ pub const Lowerer = struct {
                 var cells: std.ArrayList(Node.Index) = .empty;
                 if (l.bir.instTag(inst) == .markup) {
                     for (ov.inputs) |local| try cells.append(l.scratch, try l.ident(try l.localName(local), p));
-                } else {
+                } else if (l.bir.instTag(inst) == .call) {
                     const d = l.bir.instData(inst);
                     for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |arg| {
                         try cells.append(l.scratch, try l.expr(out, arg));
@@ -18828,12 +19213,15 @@ pub const Lowerer = struct {
         const st = l.mk.?;
         const p = st.pos;
         // A `view`'s body (`Node.Index.none`): its arms were walked on the
-        // root's call path, which no token extends.
-        if (node != .none) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
-        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = node != .none };
+        // root's call path, which no token extends; nor does a helper's
+        // branch add one, its call's frame having extended the path.
+        const arms_known = try l.branchArms(node);
+        const token = node != .none and !(if (arms_known) |x| x.helper else false);
+        if (token) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = token };
         defer l.inline_frames.append(l.scratch, frame) catch {};
         const b = block orelse return null;
-        const arms = try l.branchArms(node) orelse return null;
+        const arms = arms_known orelse return null;
         if (k >= arms.bodies.len) return null;
         const what = l.armWhat(arms.results[k]);
         var inputs: []const u32 = &.{};
@@ -18898,12 +19286,19 @@ pub const Lowerer = struct {
     /// scrutinee, the decision and the taken arm's `let`s but those that are
     /// statements — as `[j, …]`: the arm taken and what binds its values
     /// (`ArmOverride.Mode.choose`).
-    fn directBranchChoose(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index) Allocator.Error!Node.Index {
+    fn directBranchChoose(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index, statements: bool) Allocator.Error!Node.Index {
         const p = l.mk.?.pos;
         const arms = try l.branchArms(node) orelse return l.nullNode(p);
         const ov: ArmOverride = .{ .arms = arms, .mode = .choose };
         var skip: std.ArrayList(Inst.Index) = .empty;
-        if (!arms.document) for (arms.bodies) |b| try skip.appendSlice(l.scratch, l.armStatements(b));
+        // A document's statements, and with `statements` (1.40) any arm's,
+        // run in the choice, among the arm's other `let`s.
+        if (!arms.document and !statements) for (arms.bodies) |b| try skip.appendSlice(l.scratch, l.armStatements(b));
+        var force: std.ArrayList(Inst.Index) = .empty;
+        if (statements) for (arms.bodies) |b| try force.appendSlice(l.scratch, l.armStatements(b));
+        const saved_force = l.let_force;
+        defer l.let_force = saved_force;
+        l.let_force = force.items;
         if (node != .none and l.parametricMarkup()) {
             try l.mk.?.blocks.append(l.scratch, .empty);
             const nested: beni_markup.Block = @fromBackingInt(@intCast(l.mk.?.blocks.items.len - 1));
@@ -18921,11 +19316,14 @@ pub const Lowerer = struct {
         const st = l.mk.?;
         const p = st.pos;
         // A `view`'s body (`Node.Index.none`): its arms were walked on the
-        // root's call path, which no token extends.
-        if (node != .none) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
-        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = node != .none };
+        // root's call path, which no token extends; nor does a helper's
+        // branch add one (`directBranchEnter`).
+        const arms_known = try l.branchArms(node);
+        const token = node != .none and !(if (arms_known) |x| x.helper else false);
+        if (token) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = .{}, .caller = l.declCtx(), .token = token };
         defer l.inline_frames.append(l.scratch, frame) catch {};
-        const arms = try l.branchArms(node) orelse return;
+        const arms = arms_known orelse return;
         if (k >= arms.bodies.len) return;
         var stmts: StmtList = .empty;
         defer st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items) catch {};
@@ -19048,7 +19446,7 @@ pub const Lowerer = struct {
     fn eagerArm(l: *Lowerer, value: Inst.Index, r: beni_markup.Root.Index) bool {
         const st = l.mk orelse return false;
         const root = st.built.tree.root(r);
-        if (root.inputs.len == 0) return true;
+        if (root.inputs.len == 0 and root.lets.len == 0) return true;
         const decl = for (l.bir.decls) |d| {
             if (value.int() >= d.inst_start.int() and value.int() < d.inst_end.int()) break d;
         } else return false;
@@ -19059,6 +19457,16 @@ pub const Lowerer = struct {
         const lo = Lift.low(l.bir, l.scratch, value.int()) catch return false;
         for (0..root.inputs.len) |j| {
             const local = st.built.values[root.inputs.start + j].capture;
+            if (local >= locals.len) return false;
+            const binder = locals[local].inst.int();
+            if (binder >= lo and binder <= value.int()) return false;
+        }
+        // A `let` the root evaluates (`Root.lets`) that an arm binds: an arm
+        // of a helper's branch, whose markup is a root of its own (§8.4,
+        // amended 2026-11-23), is a region's, as the same arm written at the
+        // hole is.
+        for (0..root.lets.len) |j| {
+            const local = st.built.values[root.lets.start + j].let_value.local;
             if (local >= locals.len) return false;
             const binder = locals[local].inst.int();
             if (binder >= lo and binder <= value.int()) return false;
@@ -19077,7 +19485,8 @@ pub const Lowerer = struct {
         if (k >= arms.bodies.len) return;
         const what = l.armWhat(arms.results[k]);
         if (what != .markup) return;
-        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        // A helper's branch adds no token (`directBranchEnter`).
+        if (!arms.helper) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
         const root = st.built.tree.root(what.markup);
         const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
         for (names, 0..) |*n, j| {
@@ -19085,17 +19494,27 @@ pub const Lowerer = struct {
             n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
         }
         try l.markupBindInputs(what.markup, names);
-        try l.inline_frames.append(l.scratch, .{ .node = node, .chain = .{ .root = what.markup }, .caller = l.declCtx(), .bound = true, .token = true });
+        try l.inline_frames.append(l.scratch, .{ .node = node, .chain = .{ .root = what.markup }, .caller = l.declCtx(), .bound = true, .token = !arms.helper });
     }
 
-    /// `cx.programShowFallback`: the markup root a `Show`'s fallback is,
-    /// when it is markup written there and its values can be evaluated
-    /// apart.
+    /// The fallback of a `Show` or, since version 1.37, of a `For`
+    /// (`browser-inline.md` §9, amended 2026-11-24); null for any other
+    /// node, or one with none.
+    fn fallbackOf(tree: *const beni_markup.Tree, node: beni_markup.Node.Index) ?beni_markup.Value.Index {
+        return switch (tree.kind(node)) {
+            .show => tree.show(node).fallback,
+            .for_ => tree.for_(node).fallback,
+            else => null,
+        };
+    }
+
+    /// `cx.programShowFallback`: the markup root a `Show`'s or a `For`'s
+    /// fallback is, when it is markup written there and its values can be
+    /// evaluated apart.
     fn directShowFallback(l: *Lowerer, node: beni_markup.Node.Index) ?beni_markup.Root.Index {
         const st = l.mk orelse return null;
         const tree = &st.built.tree;
-        if (tree.kind(node) != .show) return null;
-        const fb = tree.show(node).fallback orelse return null;
+        const fb = fallbackOf(tree, node) orelse return null;
         const i = switch (st.built.values[@backingInt(fb)]) {
             .inst => |x| x,
             else => return null,
@@ -19103,6 +19522,63 @@ pub const Lowerer = struct {
         if (l.bir.instTag(i) != .markup) return null;
         const root = st.built.rootAt(i.int()) orelse return null;
         return if (l.markupGrouped(root)) root else null;
+    }
+
+    /// `cx.programShowFallbackIsText` (version 1.36): the argument of a
+    /// `Show`'s fallback when the fallback is `Html.text e` — a saturated
+    /// call of the markup primitive `text` — and null otherwise.
+    fn directShowFallbackTextArg(l: *Lowerer, node: beni_markup.Node.Index) ?Inst.Index {
+        const st = l.mk orelse return null;
+        const tree = &st.built.tree;
+        const fb = fallbackOf(tree, node) orelse return null;
+        const i = switch (st.built.values[@backingInt(fb)]) {
+            .inst => |x| x,
+            else => return null,
+        };
+        if (l.bir.instTag(i) != .call) return null;
+        const d = l.bir.instData(i);
+        const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        if (args.len != 1 or !l.isMarkupPrimitive(callee, "text")) return null;
+        return args[0];
+    }
+
+    /// `cx.programShowEffect` (version 1.36): whether evaluating a `Show`'s
+    /// `when`, or its key function, may have an effect — what
+    /// `Program.Branch.selector_effect` says of a branch's choice.
+    fn directShowEffect(l: *Lowerer, node: beni_markup.Node.Index) bool {
+        const st = l.mk orelse return true;
+        const tree = &st.built.tree;
+        if (tree.kind(node) != .show) return true;
+        const s = tree.show(node);
+        const when = switch (st.built.values[@backingInt(s.when)]) {
+            .inst => |i| i,
+            else => return true,
+        };
+        if (l.mayHaveEffect(when)) return true;
+        if (s.mode != .key) return false;
+        // The key function is called with `v`: what calling it may do. A
+        // lambda's body says; any other function value, what it reaches.
+        const key = switch (st.built.values[@backingInt(s.key orelse return true)]) {
+            .inst => |i| i,
+            else => return true,
+        };
+        if (l.mayHaveEffect(key)) return true;
+        if (l.bir.instTag(key) == .lambda) return l.mayHaveEffect(@fromBackingInt(@intCast(l.bir.instData(key).rhs)));
+        const d = l.in.direct orelse return true;
+        return d.debug_decls.len != 0 and l.instReachesDebug(key);
+    }
+
+    /// `cx.programShowFallbackText` (version 1.36): `e` of the fallback
+    /// `Html.text e`, evaluated into `block` with the locals as they are
+    /// named there; the call itself is never made.
+    fn directShowFallbackText(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index) Allocator.Error!Node.Index {
+        const st = l.mk.?;
+        const arg = l.directShowFallbackTextArg(node).?;
+        var stmts: StmtList = .empty;
+        const value = try l.expr(&stmts, arg);
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return value;
     }
 
     /// The chain of expression `i`: markup written in place, a call of a
@@ -19129,15 +19605,214 @@ pub const Lowerer = struct {
                     else => null,
                 };
             },
+            // A constant of this module whose body is markup: a function
+            // of no parameter, called (`browser-inline.md` §8.2, amended
+            // 2026-11-23, *A markup value*).
+            .top => {
+                if (st.lowering.no_markup_values == null) return null;
+                const decl = l.bir.instData(i).lhs;
+                if (decl >= l.bir.decls.len or l.bir.decls[decl].kind != .value or l.bir.decls[decl].params != 0) return null;
+                const chain = l.chainOfRef(i, &.{}, maps, composed);
+                return if (chain.root != null) chain else null;
+            },
+            .local => {
+                if (maps.len != 0) return null;
+                if (l.letDefOf(i)) |def| {
+                    const root = l.namedMarkupLet(def) orelse return null;
+                    return .{ .root = root, .nested = true };
+                }
+                return l.chainOfParam(i);
+            },
             else => return null,
         }
+    }
+
+    /// The chain of an argument `arg` that names a markup root, entered
+    /// where the callee's hole reads its parameter: markup written in place
+    /// in the caller, or a constant of this module whose body is markup.
+    /// Either was walked as the call's argument, on the call's path, so it
+    /// is entered with no step of its own (*A markup value*).
+    fn markupArgChain(l: *Lowerer, arg: Inst.Index) ?Chain {
+        const st = l.mk orelse return null;
+        if (st.lowering.no_markup_values == null) return null;
+        switch (l.bir.instTag(arg)) {
+            .markup => {
+                const root = st.built.rootAt(arg.int()) orelse return null;
+                // The caller's `let`s are bound where the caller's own
+                // values are, not where the callee's hole enters this root:
+                // a root that reads one, or evaluates one of its own, is
+                // refused as a markup value.
+                const r = st.built.tree.root(root);
+                if (r.lets.len != 0) return null;
+                const decl = for (l.bir.decls) |d| {
+                    if (arg.int() >= d.inst_start.int() and arg.int() < d.inst_end.int()) break d;
+                } else return null;
+                const locals = l.bir.declLocals(decl);
+                for (0..r.inputs.len) |j| {
+                    const local = st.built.values[r.inputs.start + j].capture;
+                    if (local >= locals.len or locals[local].kind == .let) return null;
+                }
+                return .{ .root = root, .nested = true };
+            },
+            .top => {
+                const decl = l.bir.instData(arg).lhs;
+                if (decl >= l.bir.decls.len or l.bir.decls[decl].kind != .value or l.bir.decls[decl].params != 0) return null;
+                var chain = l.chainOfRef(arg, &.{}, &.{}, true);
+                if (chain.root == null or chain.refusal != .none or chain.statements) return null;
+                chain.nested = true;
+                return chain;
+            },
+            else => return null,
+        }
+    }
+
+    /// The chain of `inst`, a read of a parameter of the call entered last,
+    /// whose argument names a markup root (`markupArgChain`), its inputs
+    /// read in the caller.
+    fn chainOfParam(l: *Lowerer, inst: Inst.Index) ?Chain {
+        const frames = l.inline_frames.items;
+        if (frames.len == 0) return null;
+        const frame = frames[frames.len - 1];
+        const decl = frame.chain.decl orelse return null;
+        if (frame.chain.component != null or decl >= l.bir.decls.len) return null;
+        const dc = l.bir.decls[decl];
+        if (inst.int() < dc.inst_start.int() or inst.int() >= dc.inst_end.int()) return null;
+        const arg = (l.argumentOf(frame, inst) catch return null) orelse return null;
+        var chain = l.markupArgChain(arg) orelse return null;
+        chain.outer = frame.caller;
+        return chain;
+    }
+
+    /// Whether root value `v` is an argument of a hole's call that names a
+    /// markup root, to a parameter that only `html` holes of the callee
+    /// read: no code evaluates it, and each of those holes enters the root
+    /// (*A markup value*).
+    fn markupArgSlot(l: *Lowerer, v: usize) bool {
+        const st = l.mk orelse return false;
+        if (st.lowering.no_markup_values == null) return false;
+        const inst = switch (st.built.values[v]) {
+            .inst => |i| i,
+            else => return false,
+        };
+        if (l.bir.instTag(inst) != .markup and l.bir.instTag(inst) != .top) return false;
+        if (l.markupArgChain(inst) == null) return false;
+        for (st.built.tree.holes) |h| {
+            const hc = h.call orelse continue;
+            const start = hc.args.start;
+            if (v < start or v >= start + hc.args.len) continue;
+            const callee = switch (st.built.values[@backingInt(hc.callee)]) {
+                .callee => |c| c,
+                else => return false,
+            };
+            if (l.bir.instTag(callee) != .top) return false;
+            const decl = l.bir.instData(callee).lhs;
+            if (decl >= l.bir.decls.len) return false;
+            const params = l.paramsOf(decl);
+            const k = v - start;
+            if (k >= params.len or l.bir.instTag(params[k]) != .pat_var) return false;
+            return l.paramOnlyInHoles(decl, l.bir.instData(params[k]).lhs);
+        }
+        return false;
+    }
+
+    /// Whether every read of local `local` of declaration `decl` is the
+    /// whole value of an `html` hole.
+    fn paramOnlyInHoles(l: *Lowerer, decl: u32, local: u32) bool {
+        const st = l.mk orelse return false;
+        const dc = l.bir.decls[decl];
+        var reads: u32 = 0;
+        for (dc.inst_start.int()..dc.inst_end.int()) |i| {
+            const at: Inst.Index = @fromBackingInt(@intCast(i));
+            if (l.bir.instTag(at) != .local or l.bir.instData(at).lhs != local) continue;
+            reads += 1;
+            const in_hole = for (st.built.tree.holes) |h| {
+                if (h.kind != .html) continue;
+                switch (st.built.values[@backingInt(h.value)]) {
+                    .inst => |x| if (x == at) break true,
+                    else => {},
+                }
+            } else false;
+            if (!in_hole) return false;
+        }
+        return reads != 0;
+    }
+
+    /// Whether `inst`, a read of a local of the declaration being lowered,
+    /// reads a parameter some hole's call binds to a markup root
+    /// (`markupArgSlot`): such a parameter holds no value, so a read that
+    /// needs one is refused, and only the callee's holes read it.
+    fn markupParamRead(l: *Lowerer, inst: Inst.Index) bool {
+        const st = l.mk orelse return false;
+        if (st.lowering.no_markup_values == null) return false;
+        const local = l.bir.instData(inst).lhs;
+        if (local >= l.locals.len or l.locals[local].kind != .param) return false;
+        const decl = for (l.bir.decls, 0..) |d, di| {
+            if (inst.int() >= d.inst_start.int() and inst.int() < d.inst_end.int()) break di;
+        } else return false;
+        for (st.built.tree.holes) |h| {
+            const hc = h.call orelse continue;
+            const callee = switch (st.built.values[@backingInt(hc.callee)]) {
+                .callee => |c| c,
+                else => continue,
+            };
+            if (l.bir.instTag(callee) != .top or l.bir.instData(callee).lhs != decl) continue;
+            const params = l.paramsOf(@intCast(decl));
+            for (params, 0..) |param, k| {
+                if (k >= hc.args.len) break;
+                if (l.bir.instTag(param) != .pat_var or l.bir.instData(param).lhs != local) continue;
+                if (l.markupArgSlot(hc.args.start + k)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// The markup root a function's result `body`, past its `let`s, is:
+    /// markup written in place, or a read of a `let` of the same body that
+    /// names a root (`namedMarkupLet`) — a helper returning its markup
+    /// value (*A markup value*).
+    fn resultRoot(l: *Lowerer, body: Inst.Index) ?beni_markup.Root.Index {
+        const st = l.mk orelse return null;
+        return switch (l.bir.instTag(body)) {
+            .markup => st.built.rootAt(body.int()),
+            .local => l.namedMarkupLet(l.letDefOf(body) orelse return null),
+            else => null,
+        };
+    }
+
+    /// The `let_def` that binds the local read `inst`, by the declaration
+    /// whose code holds it, or null.
+    fn letDefOf(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        const local = l.bir.instData(inst).lhs;
+        for (l.bir.decls) |d| {
+            if (inst.int() < d.inst_start.int() or inst.int() >= d.inst_end.int()) continue;
+            const locals = l.bir.declLocals(d);
+            if (local >= locals.len or locals[local].kind != .let) return null;
+            return locals[local].inst;
+        }
+        return null;
+    }
+
+    /// Under a lowering that has no markup value, a `let` whose value is
+    /// markup written in place names that root: no code evaluates it, and
+    /// each hole that reads it enters the root where the hole stands
+    /// (`browser-inline.md` §8.2, amended 2026-11-23, *A markup value*).
+    fn namedMarkupLet(l: *Lowerer, def: Inst.Index) ?beni_markup.Root.Index {
+        const st = l.mk orelse return null;
+        if (st.lowering.no_markup_values == null) return null;
+        if (def.int() >= l.bir.insts.len or l.bir.instTag(def) != .let_def) return null;
+        const d = l.bir.instData(def);
+        const payload = l.bir.extraData(@fromBackingInt(@intCast(d.lhs)), Bir.LetDef);
+        if (payload.params_end != payload.params_start) return null;
+        const rhs: Inst.Index = @fromBackingInt(@intCast(d.rhs));
+        if (l.bir.instTag(rhs) != .markup) return null;
+        return st.built.rootAt(rhs.int());
     }
 
     /// The chain of a call of reference `callee` with `args`: a function of
     /// this module whose body after its `let`s is markup, not already on
     /// the path being entered.
     fn chainOfRef(l: *Lowerer, callee: Inst.Index, args: []const Inst.Index, maps: []const Inst.Index, composed: bool) Chain {
-        const st = l.mk.?;
+        std.debug.assert(l.mk != null);
         var chain: Chain = .{ .args = args, .maps = maps, .composed = composed };
         const d = l.bir.instData(callee);
         switch (l.bir.instTag(callee)) {
@@ -19164,12 +19839,25 @@ pub const Lowerer = struct {
         var body = l.bodyOf(decl);
         while (l.bir.instTag(body) == .let) {
             for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(body).lhs))), Inst.Index)) |def| {
-                if (l.bir.instTag(def) != .let_def or !l.markupMovedLet(def)) chain.statements = true;
+                if (l.bir.instTag(def) != .let_def or !(l.markupMovedLet(def) or l.namedMarkupLet(def) != null)) chain.statements = true;
             }
             body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
         }
-        const root = if (l.bir.instTag(body) == .markup) st.built.rootAt(body.int()) else null;
+        const root = l.resultRoot(body);
         if (root == null) {
+            // An `if` or a `case` past the `let`s (version 1.34): a branch
+            // the program lowering reads with `programBranch` on the hole,
+            // once the call is entered and its parameters bound.
+            // Every `let` before it is a statement here: the branch's value
+            // is lowered alone, with none of them bound.
+            if (l.bir.instTag(body) == .case) {
+                chain.refusal = .branch;
+                chain.branch = body;
+                chain.decl = decl;
+                chain.params = l.paramsOf(decl);
+                chain.statements = body != l.bodyOf(decl);
+                return chain;
+            }
             chain.refusal = .not_markup;
             return chain;
         }
@@ -19181,12 +19869,18 @@ pub const Lowerer = struct {
 
     /// Whether reference `callee` is `Html.map`, the markup primitive.
     fn isHtmlMap(l: *Lowerer, callee: Inst.Index) bool {
+        return l.isMarkupPrimitive(callee, "map");
+    }
+
+    /// Whether `callee` names the markup primitive `name` of a vocabulary
+    /// (`language.md` §11.13): `map` or `text`.
+    fn isMarkupPrimitive(l: *Lowerer, callee: Inst.Index, which: []const u8) bool {
         if (l.bir.instTag(callee) != .ext_value) return false;
         const d = l.bir.instData(callee);
         if (d.lhs >= l.in.interfaces.len) return false;
         const iface = &l.in.interfaces[d.lhs];
         if (d.rhs >= iface.values.len or !iface.values[d.rhs].is_markup_primitive) return false;
-        return std.mem.eql(u8, l.text(iface.symbols[@backingInt(iface.values[d.rhs].name)]), "map");
+        return std.mem.eql(u8, l.text(iface.symbols[@backingInt(iface.values[d.rhs].name)]), which);
     }
 
     /// An `Html.map` function of a constructor's shape (§9.1): the
@@ -19286,10 +19980,20 @@ pub const Lowerer = struct {
     fn directInlineEnter(l: *Lowerer, block: ?beni_markup.Block, node: beni_markup.Node.Index, args: ?[]const Node.Index, made: bool) Allocator.Error!void {
         const st = l.mk.?;
         const chain = l.directChain(node) orelse Chain{};
-        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
-        var frame: InlineFrame = .{ .node = node, .chain = chain, .caller = l.declCtx() };
-        if (args) |values| if (chain.root) |root_index| {
+        // A `let`'s root was walked where the `let` is bound, on the path of
+        // the declaration that binds it: the hole adds no step.
+        if (!chain.nested) try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        var frame: InlineFrame = .{ .node = node, .chain = chain, .caller = l.declCtx(), .token = !chain.nested };
+        // A callee whose body is a branch (version 1.34) has its parameters
+        // bound here and no root: each arm's root is bound as the arm is
+        // entered.
+        if (args) |values| if (chain.root != null or chain.branch != null) {
             var stmts: StmtList = .empty;
+            // A parameter's argument: read in the caller, where it is written.
+            if (chain.outer) |outer| {
+                l.setDeclCtx(outer);
+                frame.entered = true;
+            }
             if (chain.decl) |decl| {
                 _ = try l.enterDecl(decl);
                 frame.entered = true;
@@ -19317,14 +20021,16 @@ pub const Lowerer = struct {
                     }
                 }
             }
-            const root = st.built.tree.root(root_index);
-            const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
-            for (names, 0..) |*n, k| {
-                const local = st.built.values[root.inputs.start + k].capture;
-                n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+            if (chain.root) |root_index| {
+                const root = st.built.tree.root(root_index);
+                const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
+                for (names, 0..) |*n, k| {
+                    const local = st.built.values[root.inputs.start + k].capture;
+                    n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+                }
+                try l.markupBindInputs(root_index, names);
+                frame.bound = true;
             }
-            try l.markupBindInputs(root_index, names);
-            frame.bound = true;
             if (block) |b| try st.blocks.items[@backingInt(b)].appendSlice(l.scratch, stmts.items);
         };
         try l.inline_frames.append(l.scratch, frame);
@@ -19676,6 +20382,54 @@ pub const Lowerer = struct {
         return unknown;
     }
 
+    /// `cx.programViewStatementGroups` (1.30): the group of each statement
+    /// of `view`'s body, by its value's instruction, on the current call
+    /// path; null when one has none (`browser-inline.md` §8.2, amended
+    /// 2026-11-23).
+    fn directViewStatementGroups(l: *Lowerer) ?[]const u32 {
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        const function = l.fieldFunction(pc, pc.view) orelse return null;
+        const lets = l.viewLets(function.body) catch return null;
+        const out = l.scratch.alloc(u32, lets.statements.len) catch return null;
+        const module = l.in.module.int();
+        const path = l.inline_path.items;
+        for (lets.statements, out) |def, *g| {
+            const value: u32 = l.bir.instData(def).rhs;
+            g.* = for (d.lets) |*x| {
+                if (x.module == module and x.inst == value and std.mem.eql(u64, x.path, path)) break x.group;
+            } else return null;
+        }
+        return out;
+    }
+
+    /// `cx.programBranchStatementGroups`: the group the write-set pass
+    /// recorded for each statement of each arm of branch `node`, on the
+    /// current call path, or null when one is missing.
+    fn directBranchStatementGroups(l: *Lowerer, node: beni_markup.Node.Index) ?[]const u32 {
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        const arms = (l.branchArms(node) catch return null) orelse return null;
+        var out: std.ArrayList(u32) = .empty;
+        const module = l.in.module.int();
+        // A hole's value is walked on the path its token extends: a
+        // `view`'s body, a helper's branch and the row of a `For` or a
+        // `Show` (whose body the pass walks on the path it stands on) add
+        // none.
+        var path: std.ArrayList(u64) = .empty;
+        path.appendSlice(l.scratch, l.inline_path.items) catch return null;
+        const row = node != .none and (l.mk.?.built.tree.kind(node) == .for_ or l.mk.?.built.tree.kind(node) == .show);
+        if (node != .none and !arms.helper and !row) path.append(l.scratch, (@as(u64, module) << 32) | l.mk.?.built.node_tokens[@backingInt(node)]) catch return null;
+        for (arms.bodies) |body| for (l.armStatements(body)) |def| {
+            const value: u32 = l.bir.instData(def).rhs;
+            const g = for (d.lets) |*x| {
+                if (x.module == module and x.inst == value and std.mem.eql(u64, x.path, path.items)) break x.group;
+            } else return null;
+            out.append(l.scratch, g) catch return null;
+        };
+        return out.items;
+    }
+
     fn directViewLeave(l: *Lowerer) void {
         const v = l.program_view orelse return;
         if (v.root) |r| l.markupUnbindInputs(r);
@@ -19777,7 +20531,9 @@ pub const Lowerer = struct {
         switch (composed) {
             .layers => |layers| if (l.keyOfLayers(layers)) |found| {
                 const steps = l.directSteps(found.key);
-                const args: []const Node.Index = if (steps.len == 0)
+                // A key of no steps, or one that takes the message from its
+                // root (`Program.Key.message`), is handed the message whole.
+                const args: []const Node.Index = if (steps.len == 0 or l.directKeys()[found.key].message)
                     &.{try l.composedValue(composed, p)}
                 else blk: {
                     const leaf = steps[steps.len - 1].access.len;
@@ -19951,7 +20707,7 @@ pub const Lowerer = struct {
         // last step names, however deep, or the value the last step tests
         // at a default one — the message itself for a key of no steps.
         const args = try l.scratch.alloc(Node.Index, key.fields);
-        if (steps.len == 0) {
+        if (steps.len == 0 or key.message) {
             for (args) |*a| a.* = msg;
         } else {
             const leaf = steps[steps.len - 1];
@@ -20003,6 +20759,7 @@ pub const Lowerer = struct {
             .comparison = .{ .ctx = l, .classify = classifyComparison },
             .debug_module = if (l.in.graph.lookup(.core, InternPool.WellKnown.Debug.symbol())) |d| d.int() else null,
             .parameterised_templates = mk.lowering.parameterised_templates,
+            .named_markup_lets = mk.lowering.no_markup_values != null,
         }) orelse blk: {
             // A module with no markup of its own may still call a program
             // constructor: the hook runs with an empty tree (§9.4.6, 1.6).
@@ -20242,6 +20999,12 @@ pub const Lowerer = struct {
     /// the lowering can name it.
     fn markupBind(l: *Lowerer, out: *StmtList, v: usize, inst: Inst.Index) Allocator.Error!void {
         const st = l.mk.?;
+        // An argument that names a markup root is no value: the callee's
+        // holes enter the root (`markupArgSlot`).
+        if (l.markupArgSlot(v)) {
+            st.bound[v] = .{ .node = try l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused) };
+            return;
+        }
         const value = if (l.templateValueToken(v)) |token| blk: {
             var body: StmtList = .empty;
             const result = try l.expr(&body, inst);
@@ -20999,6 +21762,12 @@ const markup_vtable: beni_markup.VTable = struct {
         return if (key < d.settles.len) d.settles[key] else true;
     }
 
+    fn programRetitles(impl: *anyopaque, key: u32) bool {
+        const pc = lowerer(impl).program_now orelse return true;
+        const d = pc.direct orelse return true;
+        return if (key < d.retitles.len) d.retitles[key] else true;
+    }
+
     fn programReport(impl: *anyopaque, at_: M.Program.Part, code: M.Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
         try lowerer(impl).programReport(at_, code, message);
         return error.Reported;
@@ -21123,6 +21892,15 @@ const markup_vtable: beni_markup.VTable = struct {
             // read anything.
             else => return true,
         };
+        // Markup written in place — a `Show`'s or a `For`'s fallback — reads
+        // what its own values read, which are no children of the
+        // instruction (`browser-inline.md` §9, amended 2026-11-24).
+        if (l.bir.instTag(i) == .markup) {
+            var values: std.ArrayList(Inst.Index) = .empty;
+            l.bir.markupValues(l.scratch, @fromBackingInt(@intCast(l.bir.instData(i).lhs)), &values) catch return true;
+            for (values.items) |x| if (l.subtreeReadsLocal(x, local)) return true;
+            return false;
+        }
         return l.subtreeReadsLocal(i, local);
     }
 
@@ -21188,6 +21966,11 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn programPieceMessage(impl: *anyopaque, n: M.Node.Index, ctor: M.Ctor, key: u32, fields: []const M.Expr) E!M.Expr {
         return expr(try lowerer(impl).programPieceMessage(n, ctor, key, @ptrCast(fields)));
+    }
+
+    fn programPieceWrap(impl: *anyopaque, n: M.Node.Index, msg: M.Expr) E!?M.Expr {
+        const wrapped = (try lowerer(impl).programPieceWrap(n, node(msg))) orelse return null;
+        return expr(wrapped);
     }
 
     fn programMessageFields(impl: *anyopaque, into: M.Block, v: M.Value.Index, payload: ?M.Expr) E!M.Program.Message {
@@ -21265,7 +22048,11 @@ const markup_vtable: beni_markup.VTable = struct {
     }
 
     fn programBranchChoose(impl: *anyopaque, into: M.Block, n: M.Node.Index) E!M.Expr {
-        return expr(try lowerer(impl).directBranchChoose(into, n));
+        return expr(try lowerer(impl).directBranchChoose(into, n, false));
+    }
+
+    fn programBranchChooseAll(impl: *anyopaque, into: M.Block, n: M.Node.Index) E!M.Expr {
+        return expr(try lowerer(impl).directBranchChoose(into, n, true));
     }
 
     fn programBranchBind(impl: *anyopaque, into: M.Block, n: M.Node.Index, k: u32, from: M.Expr, made: bool) E!void {
@@ -21278,6 +22065,18 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn programShowFallback(impl: *anyopaque, n: M.Node.Index) ?M.Root.Index {
         return lowerer(impl).directShowFallback(n);
+    }
+
+    fn programShowFallbackIsText(impl: *anyopaque, n: M.Node.Index) bool {
+        return lowerer(impl).directShowFallbackTextArg(n) != null;
+    }
+
+    fn programShowEffect(impl: *anyopaque, n: M.Node.Index) bool {
+        return lowerer(impl).directShowEffect(n);
+    }
+
+    fn programShowFallbackText(impl: *anyopaque, into: M.Block, n: M.Node.Index) E!M.Expr {
+        return expr(try lowerer(impl).directShowFallbackText(into, n));
     }
 
     fn programNestedEnter(impl: *anyopaque, r: M.Root.Index) E!void {
@@ -21294,6 +22093,14 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn programLet(impl: *anyopaque, r: M.Root.Index, k: u32) M.Program.HoleFacts {
         return lowerer(impl).directLet(r, k);
+    }
+
+    fn programViewStatementGroups(impl: *anyopaque) ?[]const u32 {
+        return lowerer(impl).directViewStatementGroups();
+    }
+
+    fn programBranchStatementGroups(impl: *anyopaque, n: M.Node.Index) ?[]const u32 {
+        return lowerer(impl).directBranchStatementGroups(n);
     }
 
     fn programSubscriptions(impl: *anyopaque) M.Program.Subscriptions {
@@ -21609,6 +22416,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_start = programStart,
         .program_field = programField,
         .program_settles = programSettles,
+        .program_retitles = programRetitles,
         .program_report = programReport,
         .program_report_at = programReportAt,
         .program_keys = programKeys,
@@ -21641,6 +22449,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .piece_view_enter = pieceViewEnter,
         .program_piece_key = programPieceKey,
         .program_piece_message = programPieceMessage,
+        .program_piece_wrap = programPieceWrap,
         .program_dispatch = programDispatch,
         .reaches_debug = reachesDebug,
         .program_list = programList,
@@ -21657,13 +22466,19 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_branch_enter = programBranchEnter,
         .program_branch_value = programBranchValue,
         .program_branch_choose = programBranchChoose,
+        .program_branch_choose_all = programBranchChooseAll,
         .program_branch_bind = programBranchBind,
         .program_branch_statements = programBranchStatements,
         .program_show_fallback = programShowFallback,
+        .program_show_fallback_is_text = programShowFallbackIsText,
+        .program_show_effect = programShowEffect,
+        .program_show_fallback_text = programShowFallbackText,
         .program_nested_enter = programNestedEnter,
         .program_branch_eager = programBranchEager,
         .program_view_statements = programViewStatements,
         .program_let = programLet,
+        .program_view_statement_groups = programViewStatementGroups,
+        .program_branch_statement_groups = programBranchStatementGroups,
         .program_subscriptions = programSubscriptions,
         .program_subscription_start = programSubscriptionStart,
         .program_subscription_message = programSubscriptionMessage,

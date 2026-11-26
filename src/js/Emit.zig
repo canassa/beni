@@ -3521,6 +3521,9 @@ const Emitter = struct {
             // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17):
             // the page may call it whatever the program reached.
             if (e.suppliedAs("stop") != null) try names.append(e.scratch, "stop");
+            // What a development entry calls when the program's modules
+            // throw while they load (`boundary.md` §9.8.10 (c), #1994).
+            if (e.loadGuard() != null) try names.append(e.scratch, load_failed);
         } else {
             // A build with no entry file (`--library`): the page's own
             // entry mounts the exported program, so the program runtime's
@@ -4227,6 +4230,13 @@ const Emitter = struct {
                     found.cmd_none = ref(e, m, "none");
                     found.cmd_batch = ref(e, m, "batch");
                     found.cmd_perform = ref(e, m, "perform");
+                    if (fx.after_render) found.cmd_after_render = ref(e, m, "afterRender");
+                    if (fx.keyed) {
+                        found.cmd_keyed = ref(e, m, "keyed");
+                        found.cmd_cancel = ref(e, m, "cancel");
+                        found.cmd_cancel_all = ref(e, m, "cancelAll");
+                        found.cmd_map = ref(e, m, "map");
+                    }
                 }
             }
             effects = found;
@@ -4623,7 +4633,9 @@ const Emitter = struct {
         @memset(piece_at, &.{});
         for (e.writes_calls) |call| {
             const prog = &call.program;
-            if (prog.subscriptions_inst != Writes.none) {
+            // A set that reads the model is evaluated where the page runs
+            // (`browser-inline.md` §3, amended 2026-11-23): its field is not cut.
+            if (prog.subscriptions_inst != Writes.none and prog.subscriptions.class != .model) {
                 const b = e.writes_birs[prog.subscriptions_module];
                 try cuts.append(e.scratch, .{ .module = @fromBackingInt(@intCast(prog.subscriptions_module)), .lo = try Lift.low(b, e.scratch, prog.subscriptions_inst), .hi = prog.subscriptions_inst });
             }
@@ -4881,6 +4893,13 @@ const Emitter = struct {
                 } else false;
             }
             out.settles = settles;
+            const retitles = try a.alloc(bool, keys.len);
+            for (key_writes, retitles) |kw, *retitles_key| {
+                retitles_key.* = for (prog.title_reads) |r| {
+                    if (w.conflicts(r, kw)) break true;
+                } else false;
+            }
+            out.retitles = retitles;
             // Version 1.14: the subscription set and the commands.
             if (effects != null) {
                 const where = struct {
@@ -5044,6 +5063,15 @@ const Emitter = struct {
                 if (prog.recognised and prog.keys[ki].steps.len != 0) {
                     const last = prog.keys[ki].steps[prog.keys[ki].steps.len - 1];
                     key.fields = if (last.ctor != Writes.none) w.ctorArity(last.ctor) else 1;
+                    // Version 1.35: a path through a constructor of other than
+                    // one field, a record or a tuple — the leaf's fields would
+                    // lose the rest of the message — hands the handler the
+                    // message itself (`browser-inline.md` §8.4, amended
+                    // 2026-11-23).
+                    if (keyTakesMessage(w, last.path)) {
+                        key.message = true;
+                        key.fields = 1;
+                    }
                 }
                 if (prog.recognised) {
                     const c = prog.keys[ki].caps;
@@ -5889,6 +5917,20 @@ const Emitter = struct {
 
     /// The constructor steps from the message's root to message path `p`:
     /// what a dispatcher reads to reach the value a key's step tests.
+    /// Whether a key whose last step splits the message at path `p` must
+    /// take the message whole (`Program.Key.message`): some step on the way
+    /// is a constructor of other than one field, a record or a tuple, whose
+    /// other fields a handler of the leaf's fields would not be handed.
+    fn keyTakesMessage(w: *const Writes, p: u32) bool {
+        var q = p;
+        while (q != Writes.none and w.pathParent(q) != Writes.none) : (q = w.pathParent(q)) switch (w.pathKind(q)) {
+            .ctor => if (w.ctorArity(w.pathA(q)) != 1) return true,
+            .tag => {},
+            else => return true,
+        };
+        return false;
+    }
+
     fn directAccess(e: *Emitter, w: *const Writes, p: u32) ![]const Lower.Direct.Access {
         var chain: std.ArrayList(u32) = .empty;
         var q = p;
@@ -10119,6 +10161,8 @@ const Emitter = struct {
                 try Add.one(e, &imports, try e.outputPath(e.runtime_module.?), try std.fmt.allocPrint(e.scratch, "{s}{s}start", .{ try e.moduleSpelling(e.runtime_module.?, "start"), as }));
             } else try Add.one(e, &imports, s.path, "start");
         }
+        const guarded = e.loadGuard() != null;
+        if (guarded) try Add.one(e, &imports, try e.outputPath(e.runtime_module.?), try std.fmt.allocPrint(e.scratch, "{s}{s}{s}", .{ try e.moduleSpelling(e.runtime_module.?, load_failed), as, load_failed }));
         var text: std.ArrayList(u8) = .empty;
         if (!release) try text.appendSlice(e.scratch,
             \\// Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
@@ -10131,7 +10175,27 @@ const Emitter = struct {
             else
                 try text.print(e.scratch, "import {{ {s} }} from \"./{s}\";\n", .{ i.names.items, i.path });
         }
-        if (release)
+        if (guarded) {
+            // A top-level value that throws stops the page as any other
+            // defect does (`boundary.md` §9.8.10 (c), #1994). A static
+            // `import` would throw before this file's body ran, out of
+            // reach of any guard; this one is a `finally`, so the throw
+            // goes on to the host, which reports it, and nothing is caught.
+            try text.print(e.scratch,
+                \\
+                \\let loaded = false;
+                \\let program;
+                \\try {{
+                \\  program = await import("./{s}");
+                \\  loaded = true;
+                \\}} finally {{
+                \\  if (!loaded) {s}();
+                \\}}
+                \\const {{ {s} }} = program;
+                \\
+                \\
+            , .{ try e.outputPath(entry.module), load_failed, imported });
+        } else if (release)
             try text.print(e.scratch, "import{{{s}}}from\"./{s}\";\n", .{ imported, try e.outputPath(entry.module) })
         else
             try text.print(e.scratch, "import {{ {s} }} from \"./{s}\";\n\n", .{ imported, try e.outputPath(entry.module) });
@@ -10157,6 +10221,24 @@ const Emitter = struct {
                 try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, try e.outputPath(e.runtime_module.?) });
         };
         try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
+    }
+
+    /// The runtime module's value a development entry calls when a module
+    /// of the program throws while it loads (`boundary.md` §9.8.10 (c),
+    /// amended 2026-11-17, #1994).
+    const load_failed = "loadFailed";
+
+    /// The declaration of the runtime module's `loadFailed`, when this is a
+    /// development build and the module declares one: then the entry file
+    /// loads the program's module with `import()` inside a `try … finally`
+    /// that names no catch (CLAUDE.md rule 9), and calls it when the load did
+    /// not complete. A release build is one hoisted file whose top-level
+    /// values run before `run` as they always did, and a stop there adds
+    /// nothing a page shows, so it keeps its static `import`.
+    fn loadGuard(e: *Emitter) ?u32 {
+        if (e.options.release) return null;
+        const module = e.runtime_module orelse return null;
+        return e.moduleValue(module, load_failed);
     }
 
     const StartData = struct { path: []const u8, data: []const u8 };

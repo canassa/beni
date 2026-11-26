@@ -28,7 +28,8 @@ fall back on.
 | `Html` | `html`'s vocabulary, re-exported |
 
 *Amended 2026-10-29 (§10, #1163):* `Tea` adds `Document`, `document` and `application`, `Browser`
-adds `UrlRequest`, and the platform has `Browser.Navigation`.
+adds `UrlRequest`, and the platform has `Browser.Navigation`. *Amended 2026-11-23 (§4):* `Cmd`
+adds `afterRender`, `keyed`, `cancel`, `cancelAll`, `map` and `Policy`.
 
 One program per page: `Browser.mountAt p id` mounts it at the element `id` names, and a program
 not placed mounts at `document.body`. The runtime exports `run` and `stop` (`boundary.md` §9.4.5,
@@ -95,6 +96,59 @@ send's value — `own(start(v => send(handler, v)))`. `send` gives `undefined`, 
 no start reads what its send gives; a key two declarations share keeps one statement per
 declaration, in declaration order.
 
+*Amended 2026-11-23 (#2632, part of #966): a set that depends on the model is compiled.* The
+first rule above, *the set must not depend on the model*, is withdrawn. When the pass answers that
+the set reads ρ (`Program.Subscriptions.model`), the lowering compiles `subscriptions` as code
+(`programField`) and the runtime diffs the set with `browser-tea`'s meaning (`boundary.md`
+§9.8.5; `Tea.settle` is the reference):
+
+- **When the set is made.** At the mount, after the first pass, and in a key's handler only when
+  the key's writes conflict with what `subscriptions` reads — the anchored reads of its result,
+  the taggers' captures included (`write-sets.md`, amended 2026-10-14; `programSettles`) — after
+  the write pass and before the key's command. Never from an identity check of the model or of
+  the set (`CLAUDE.md` rule 8): a write the program makes in place changes no reference. A read
+  the pass cannot anchor reads ρ, so every key makes the set again. `browser-tea` makes it once
+  per render; here every dispatch renders, so that is once per dispatch that writes what it reads.
+- **The diff.** A declaration's identity is its key — the key's type and that type's `compare`
+  (`Hosted.compare`, `boundary.md` §9.8.3) — and two declarations of one key are one resource,
+  as for a fixed set. A key that left is stopped at once: what it sends from then on is dropped,
+  its listener is removed, and its fiber is cancelled from a fiber of the program's scope. A key
+  that stayed keeps its listener or its fiber, started by the declaration it arrived with, and
+  takes the taggers of its current declarations, in declaration order. A key that arrived starts,
+  with its first declaration's body or listener; keys arrive in the order of their first
+  declarations (`browser-tea` starts them in key order). A body's fiber is spawned in the diff and
+  first runs at the scheduler's next turn; a listener is added in a microtask the diff queues,
+  inside the dispatch guard, so it never hears the native event whose message made the set (a
+  keydown that turns on a keydown subscription; `browser/inline/SubscriptionSameEvent`), and a
+  key that left before then never adds it. A start that throws is a defect, as in a handler.
+- **A value.** A value a key's body or listener sends is applied in a dispatch of its own, or
+  queued behind the dispatch that runs (§6): each tagger of the key's declarations current when
+  it is sent makes a message of it, each a dispatch of its own, through the dispatcher, as
+  `browser-tea`'s relay does. A message of a key that left before it was applied is dropped, also
+  one queued behind the dispatch that stopped the key (`SubscriptionQueuedStop`). No
+  handler is chosen when the program is built, so the tagger rules above — a key per tagger, one
+  field — do not apply to such a set.
+- **Where `browser-inline` differs from `browser-tea`.** Each value is sent while its event is
+  dispatched, as for a fixed set, where `browser-tea` queues it for the scheduler (`boundary.md`
+  §9.8.5, point 2), and a listener is added in a microtask rather than in the scheduler's queue
+  (point 1). And a key is stopped in the dispatch that wrote the model it left, where
+  `browser-tea` settles once per render: a body that sends several values in a row loses those
+  sent after the message that removed its key, which `browser-tea` delivers when they were sent in
+  the same render. A program sees the first difference only in the order of a value against a
+  fiber's work or an after-render push.
+- **Stop and defect.** The page's `stop` and a defect stop every live key: each is closed and its
+  listener removed; at a defect the program's task roots are closed too, which cancels the fibers
+  (`boundary.md` §9.8.5 point 5, §9.8.14).
+- **Pay for what you use.** A page whose set does not read the model is compiled as above, byte
+  for byte, and ships none of the diff (`emit/release/inline/SubscriptionsFixedSet`). Only
+  `Sub.listen` makes a `Hosted.Waits`, so a page whose model-dependent set only listens ships no
+  fiber code for it: every step that spawns or cancels a fiber is in a `Waits` arm.
+- **What stays refused.** A set the pass cannot read and that does not read the model, and a
+  fixed set's tagger that gives no constructor or splits on its payload, keep the refusals of §5.
+  A `Tea.application` whose set depends on the model is refused, class 1: its set also holds the
+  navigation subscriptions `onUrlRequest` and `onUrlChange` (§10.3), which only the pass adds to a
+  fixed set, and `Browser.Navigation` imports the runtime, so the runtime cannot add them.
+
 ## 4. Commands
 
 A polymorphic command body is checked with the actual synchronous sender and
@@ -114,6 +168,116 @@ command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
 - a command the pass cannot read as one of these is refused (§5, class 4). *Amended 2026-10-29
   (§10.4):* the pass reads `init` and each key through the platform's functions, so a command a
   layer makes (`Navigation.pushUrl`) is read as its `perform`.
+
+*Amended 2026-11-10 (`browser-capability-base.md` §9, *Dom*; interface 1.29).* The pass also
+reads `Cmd.afterRender` (`Lowering.Effects.after_render`). Its body is `sync`, so it **runs**: in
+the runtime it is queued exactly as a `perform` that cannot suspend, after the write pass that shows
+its model, in the same dispatch. That point is this platform's after-render phase: the page is
+written inside the dispatch, so nothing is left to patch. `Dom.rendered` in a fiber waits until the
+scheduler's drain that runs it, and with it the dispatch, has returned. A prerendered `init` may
+return it, staged as a `perform` is (§4.2 of the base design).
+
+*Amended 2026-11-23 (#966): two more commands are read; keyed ones are not compiled yet.* The
+`browser/tea` pages whose `update` stops at this refusal had commands of four shapes. Two of them
+are read now (`write-sets.md`, amended 2026-11-23):
+
+- **An arm that never returns** — `Debug.todo`, alone or under `Log.annotate` or `Task.bracket` —
+  has no command and writes nothing. ⊥ joins as nothing, so the key's command is the command of its
+  other arms. The handler calls the arm, the arm throws, and the defect stops the page (§6).
+- **An arm inside `Task.bracket` or `Task.onExit`** has the command and the writes of its use or
+  its work, because the bracket answers that value.
+
+Two readings are now stricter, because each one made a build that misruns. An alternative the pass
+cannot read makes the whole command unread, also beside an alternative that suspends. Before, the
+suspending alternative was taken as the whole command, and a keyed alternative failed when it ran.
+And only `[]` is an empty batch. A list that the pass lost while it substituted a helper's summary
+(`List.push cs …` inside a helper) is unread. Before, it was read as `[]`, and no command ran.
+
+The third shape is `Cmd.batch` of a `List.map` whose callback makes a command. It waits on #2617.
+The pass reads it correctly, but the lowering then sends a field that the same arm writes in place
+with its new value, from a body nested in the callback. It stays refused, class 4, like a batch
+that a fold builds.
+
+*Amended 2026-11-23 (#2641): the third shape is read.* #2623 fixed #2617: a nested closure's
+eager read of a captured field is made where the outermost closure is made, in the arm, before
+the store. So the pass reads `Cmd.batch (List.map xs f)` again when `f` answers a command
+(`write-sets.md`, the amendment of that date): the bodies of each alternative of `f`'s command,
+once, whatever the length of `xs`. Each body sends the value the field had when `update` was
+called, at every depth it is read from (`browser/inline/BatchMapOldValue`: one, two and three
+closures deep, a nested field, and the model's own list mapped in the arm that replaces it
+with a copy it pushes onto).
+`List.indexedMap`, `concatMap` and a fold that builds the list stay refused, class 4
+(`build/bad/inline/CommandFolded`), and so does a list that a helper's summary lost
+(`CommandHelperList`). Pages: `CommandsOverModelList`, and `SettlesManyFibers`,
+`RespondSettlesEachChunk`, `AdvanceSettlesEachTimer` and `HttpFailures` (whose `update` also
+reads its message through a wide constructor, §8.7), copied from `browser/tea` with their
+transcripts. With this reading, no `browser/tea` or `browser/dom` page stops at *"the write-set
+pass could not read this command"* any more.
+
+The fourth shape is `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cmd.map` (#2615). A keyed
+command needs a table of the bodies that run under each key, with `Restart`'s cancel-and-wait,
+`Queue`'s wait and `Ignore`'s skip, and the runtime does not have one. Until it has, a program that
+makes such a command is refused, class 4. The message names these functions, and names
+`--platform=browser-tea` as the build that compiles the program.
+
+*Amended 2026-11-23 (#2615): keyed commands are compiled; interface 1.33.* The paragraph above is
+superseded. A program may use `Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll` and `Cmd.map`, with
+`browser-tea`'s meaning (`boundary.md` §9.8.2–§9.8.4; `Tea.beni`'s command table is the reference).
+
+- **The pass** (`Lowering.Effects.keyed`, `write-sets.md`, amended 2026-11-23) reads `Cmd.keyed k
+  policy body` as `body`, with the body's class, as it reads `Cmd.perform body`: the key and the
+  policy are the runtime's. `Cmd.cancel k` and `Cmd.cancelAll` are work with no body: a command made
+  only of them **runs**, so the handler calls `commands`. `Cmd.map cmd segment tag` has `cmd`'s
+  bodies. A command chosen where it is made — an `if` inside `Cmd.batch` or as `Cmd.map`'s command
+  — has the bodies of all its alternatives; one alternative that is unread still makes the whole
+  command unread.
+- **The table.** `Inline.commands` keeps, per program, the bodies running under each key path,
+  sorted by path with the path's `compare`. An item changes the table where `commands` reads it, in
+  the command's order, so a later item of one command sees what an earlier one did. The body
+  itself starts as an unkeyed body does (above): one that never waits runs in the dispatch, after
+  the items queued before it; one that may wait is spawned there, in its item's order, and first
+  runs at the scheduler's next turn, after every body of the dispatch that never waits. Each body
+  sends through an outlet of its own.
+  - `Restart` closes the outlets of the bodies running under the path at once, then starts the new
+    body in a fiber that first cancels them and waits for their cleanup;
+  - `Ignore` drops the new body while one runs;
+  - `Queue` starts it in a fiber that first waits for the running ones to end, and keeps them
+    under the path beside it, so a later `Restart` or `Cmd.cancel` reaches every body queued
+    there (`boundary.md` §9.8.2: the fibers not yet ended, per path);
+  - `Concurrent` adds it beside them;
+  - `Cmd.cancel` takes the path's entry out of the table, and `Cmd.cancelAll` every entry whose
+    path is longer than its prefix and starts with it — the keys of the component and of those it
+    maps in, not the key of the parent that equals the component's segment; each closes the
+    outlets at once and cancels the fibers in a fiber spawned behind them;
+  - `Cmd.map` puts its segment in front of each item's path when the command is made (`Cmd.mapItem`),
+    so a child's keys never meet another instance's, and a child's `cancelAll` stops only its own.
+
+  `browser-tea`'s table differs in two points: its `Queue` keeps only the new body under
+  the path, and its `cancelAll` also takes the entry whose path is the prefix. Both contradict
+  `boundary.md` §9.8.2 and `Cmd`'s documentation (#2627). Page: `browser/inline/KeyedChains`.
+
+  A body that never waits runs in no fiber, as an unkeyed one does: it is *running* from the
+  item that queued it until it has run, in the same dispatch. So two such bodies under one key in
+  one `update` meet as on `browser-tea`, and two in two dispatches do not: the first has run when
+  the second is read. Under `Restart` or `Queue` of a key whose running body is in a fiber, a body
+  that never waits starts in a fiber of its own, since only a fiber can wait. A body cancelled
+  before it first waits runs to that wait, and one that never waits runs to its end; their sends are
+  dropped. Pages: `browser/inline/KeyedBatch`, `KeyedMap`, `Policies`, `SyncKeyedPolicies`,
+  `DebouncedSearch`.
+- **Pay for what you use.** Only a `Keyed` or `KeyedNow` item reaches the table, a `Cancel` or a
+  `CancelAll` the code that empties it, and only a `Keyed` item a run in a fiber; every step that
+  spawns, waits for or cancels a fiber is in that run's `case` arm (`backend.md` §9, *A `case`
+  arm on a constructor nothing builds*). A program that makes no keyed command ships none of the
+  table (`emit/release/inline/CommandMapNoKeys`); one whose keyed bodies never wait ships no fiber
+  runtime (`emit/release/inline/KeyedNowOnly`). Measured 2026-11-23, release, brotli 11: a page of
+  one keyed `Restart` body that never waits, a `cancel` and a `cancelAll` is 1 679 bytes against
+  705 for the same page with `Cmd.perform` and no cancellation; with a body that waits, 3 129
+  against 2 274. `browser-tea` builds them in 4 459 and 5 194.
+- **A defect** stops the page as before (§6): the program's scope is closed, which cancels every
+  keyed fiber; the table is not read again. The teardown's gaps of #2616 (no deadline, no
+  `update` finaliser) are the same for keyed bodies (`browser/inline/DefectReleaseRunning`).
+- A prerendered `init` (`prerender.md`) that returns a keyed command is still refused: the staged
+  command reads `Cmd.none`, `batch`, `perform` and `afterRender` only.
 
 ## 5. What the lowering refuses
 
@@ -155,6 +319,8 @@ by its type — hides nothing: it is written exactly, and accepted.
    on 2026-10-17 — `Show`, branches). The message says *"A limit of the
    compiler: … does not compile … yet"* and what to write instead; it names no slice and no
    plan, which are this document's and not the user's.
+   *Amended 2026-11-23 (#966):* branches are compiled as branch regions (§8.2, *A branch
+   region*); what a region refuses stays in this class.
    *Amended 2026-10-25 (S2's design pass, §9; not built):* S2's `For` is a `For` over a `Dict` that
    a root holds (§9.1); the `For` shapes §9.6 lists stay class 1, and an edit by key of the rows of
    a keyed `For` over a `List` is class 3 (§9.6, D2).
@@ -187,6 +353,8 @@ by its type — hides nothing: it is written exactly, and accepted.
    key when the program is built — a function of the event, a message the model holds — is no
    longer of this class: its message goes through the dispatcher (§8.3). One of another module's
    markup still is (§8.7).
+   *Amended 2026-11-24 (#2063):* one of another module's markup goes through the dispatcher too
+   (§8.4, the amendment of that date). Three narrower cases of it stay of this class (§8.7).
 
 *Implementation specified 2026-10-30: scalar String class attributes.* The checker already
 records whether an attribute is its declared String form or a class list
@@ -368,12 +536,102 @@ beni over `Js` in `Inline.beni`:
 - **A text hole** is `text` on its element. An element whose children are texts and text holes —
   *mixed text* — is one binding writing its whole text as a template. A hole of `String`, `Char` or
   a number only; a text hole beside an element is a limit of the compiler (§8.7).
+  *Amended 2026-11-24 (#2650, #966): a text hole beside an element is compiled.* An element of
+  the unit's markup whose children mix elements with texts and text holes — `<strong>{n}</strong>
+  {if n == 1 then " item" else " items"}`, as TodoMVC's footer writes it — keeps **each text a
+  node of its own**, as a `For`'s row does (§9, amended 2026-11-23) and as `browser-tea` keeps
+  them: none of its texts is in the markup, where the parser would merge the texts on either side
+  of a hole into one node, and the mount makes each, in document order, with the runtime's
+  `rowText(parent, before, text)`, before the element after it or at the element's end. A
+  constant text, and a hole `init` bakes, is made holding its text and never written again; any
+  other hole's node is named, and its binding is `text` on that node, in the hole's own group
+  (`programHole`), evaluated as any text hole's value is (*Evaluation order*). The texts are made
+  once the elements are found and before the first pass, so a `For`'s rows, a region's arm or a
+  `Show` that stands before the same element is put after a text that comes before it in the
+  source; a text after a `For`, a region or a `Show` stays refused, as before (their own rules).
+  An element whose children are texts and text holes only is still one binding of its whole
+  text. Nothing is compared but what `text` compares with the node (rule 8). What stays refused
+  (class 1, at the element): such an element in another module's markup (§8.4), on a page that
+  prerenders (the string form and the takeover have no node per text: `build/bad/prerender/
+  TextBesideElement/`), and a text before markup that is not an element written in place (another
+  module's markup). Pages: `browser/inline/TextBesideElement`, and `browser/tea/TodoMVC` and
+  `TodoRouting` copied beside it.
 - **An attribute** whose value changes is `prop`; a constant one, and one `init` bakes, is in the
   markup. An attribute that is not a DOM property and whose value changes, a URL, raw HTML, and a
-  class or style list that changes are limits of the compiler. *Amended 2026-10-29 (§10.5):* a
+  class or style list that changes are limits of the compiler (*amended 2026-11-23:* all but raw
+  HTML and a few shapes compile, below). *Amended 2026-10-29 (§10.5):* a
   constant URL is checked and written into the markup. *Amended 2026-11-05 (§10.5, #1169):* a URL
   that changes is a binding through the runtime's `safeUrl`, and so is a constant URL the build
   cannot decide.
+- **A class or style list, a `style`, and an attribute that is not a property** (*amended
+  2026-11-23, #2499, #2635, #966*). Three shapes `browser-tea` compiles, each split as the `dom`
+  lowering splits it (`platforms/browser/zig/dom.zig`, `entriesInPlace`, after dom-expressions'
+  compile-time split of an object literal; rule 8), so that the page shows the attribute
+  `browser-tea` shows, its names in the same order. The design of the class list is the one written
+  for #2499 on 2026-11-11 (`origin/inline-class-list`), not merged then, built now on the page, in
+  a `For`'s row and in a branch region's arm alike.
+  - **A class list written in place** (`language.md` §11.19; `Item.class` is `class_list`, its
+    value `entries`). An entry whose flag is the constant `True` is baked into the markup's `class`,
+    in entry order; one whose flag is `False` writes nothing; an entry whose flag changes is a
+    **toggle**, the runtime's `toggle(E[n], name, flag)`, in entry order: the class on the node or
+    off it as the flag says, written — `classList.toggle(name, flag)` — when
+    `classList.contains(name)` differs, one write guarded by a compare like every binding. The
+    compare is the runtime's and not the DOM's: `toggle` with a flag writes nothing when the node
+    agrees in the DOM Standard, but a DOM that runs the update steps then makes `class=""` on a
+    node with no class (happy-dom, which the gates run pages in; Chrome does not). A class that
+    turns on is appended after the element's other classes, and one that turns off leaves
+    `class=""` behind when it was the last, as `browser`'s runtime does. *Rejected:* one binding
+    writing the whole attribute from the list (`setAttribute("class", …)` behind a compare), which
+    orders the names as the list does where `browser-tea` — the oracle — appends a name that turns
+    on, so the transcripts would part after the first change.
+  - **A style list written in place** (`Item.class` is `style_list`). An entry whose value is a
+    constant non-empty `String` is baked into the markup's `style` as `name:value`, the entries
+    joined by `;`, in entry order, and one whose value is the constant `""` writes nothing; an entry
+    whose value changes is a **style write**, the runtime's `style(E[n], name, value)`:
+    `style.setProperty(name, value)` — which removes the property for `""` (`language.md` §11.19)
+    — when `style.getPropertyValue(name)` differs. A value the CSS parser serialises otherwise
+    (`#FFF` read back as `rgb(255, 255, 255)`) is then written again at each pass that runs it,
+    which writes nothing new: the compare saves work and decides nothing. `browser-tea`'s
+    `setProperty` at the mount runs for every entry; this one runs only for a value that differs.
+  - **The two lists share their rules.** The writes of one list share one group, the list's: the
+    write-set pass records an attribute's whole value as one hole, so a write that any entry reads
+    runs every write of the list, each writing nothing where the node already shows its entry; an
+    entry no key's write reaches is written by the first pass alone. In a `For`'s row and an arm, every write
+    runs at each `set`, as the row's other writes do. A list the `dom` lowering hands its runtime's
+    `classes` or `styles` instead — an entry whose name is empty or is an earlier entry's, or, for a
+    class, holds whitespace — is a limit of the compiler (§8.7, `ClassListNames/`), and so is a list
+    held as a value, `class={model.classes}` (`ClassListValue/`, `StyleListValue/`): this platform
+    ships neither `classes` nor `styles` (`language.md` §11.19's runtime diff, to come with the
+    first page that needs it). `toggle` and `style` ship only on a page that calls them.
+  - **A `style` of a `String`** is the attribute, as a scalar `String` `class` is (§5,
+    *scalar String class attributes*): a constant one in the markup, one that changes
+    `setAttribute` when `getAttribute` differs.
+  - **An attribute that is no DOM property** whose value changes and is a `String` or a number
+    (`id`, `title`, `sandbox`, a `progress`'s `value`), with no namespace prefix, is written with
+    `setAttribute` when `getAttribute` differs, its value a string, as §9's simple form writes one
+    in a row; a number is written as `String(n)` writes it. One of another type — a `Bool` that is
+    no reflected property (`readonly`), a `Maybe String` — stays a limit of the compiler
+    (`AttributeChanges/`).
+  - **The string form** (`prerender.md` §4.1, amended 2026-11-11 and 2026-11-23) writes the
+    `class` as the first pass leaves it, and an attribute that is no property as its value; a style
+    list whose value changes on a page that prerenders is a limit of the compiler, since the string
+    would have to be the CSS parser's serialisation (`build/bad/prerender/StyleList/`).
+  - **Where the transcripts part** (*the review of this slice*). They agree wherever both
+    platforms write the same node. They part where `browser-inline` keeps a node that
+    `browser-tea` makes afresh: an eager arm's element (hidden, not removed, so its toggles run
+    while it is hidden), and a row of an unkeyed `For` whose item changed. A class that turned
+    on while such a node was kept stands after the classes it already held (`class="y x"`, where
+    the new node shows `class="x y"`), and one that turned off may leave `class=""`; a class
+    list's order carries no meaning (`language.md` §11.19). And a style list that sets a
+    shorthand and one of its longhands (`margin`, `margin-left`) shows the longhand after a pass
+    that writes the shorthand, as the list says, where `browser-tea`, comparing each entry with the
+    value it last wrote, skips the longhand and loses it. Both are pinned with the difference
+    listed (`browser/inline/ClassListEagerArm`, `StyleShorthand`). A class name in the string
+    form is escaped as a baked one is.
+  Raw HTML stays a limit of the compiler. Pages: `browser/inline/ClassList`, `StyleList`,
+  `AttributeNoProperty`, `ListsInRows`, each also built on `browser-tea` as its oracle;
+  `emit/release/inline/ListsInPlace`. The vocabulary of `html` declares no attribute of a
+  `Float`, so that branch of an attribute that is no property is reached by no page.
 - **An eager `when`** (the owner's D-b) is an `html` hole whose value is an `if` — a `case` of two
   arms — one arm of which is one element written in place and the other `<></>`, and whose markup
   arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
@@ -382,7 +640,8 @@ beni over `Js` in `Inline.beni`:
   and total. Every other value, including an effect, a potentially throwing call, a foreign call or an
   operation whose totality is unknown, executes only in the selected arm, as in an ordinary `if` or
   `case`. A hidden arm does not log or throw. Entering it computes current values; no value persists
-  as a memo while it is hidden. A branch of any other shape is S4's (§5, class 1).
+  as a memo while it is hidden. A branch of any other shape is S4's (§5, class 1). *Amended
+  2026-11-23:* a branch of any other shape is a branch region, below.
   *Amended 2026-10-19 (the owner): a `case` in markup.* A hole whose value is a `case` (or an `if`
   of `else if`s) of any number of arms, each one element written in place or `<></>`, each element
   arm eager, is one eager `when` per element arm: every arm's element is in the markup, in
@@ -419,6 +678,271 @@ beni over `Js` in `Inline.beni`:
   release optimiser keeps a binding whose value reads a field, which it cannot prove pure — so
   #351's first text, which evaluated every `let` in every binding function and counted on release
   to drop the unread ones, was wrong.
+  *Amended 2026-11-23 (#966): a `view` whose body is `let`s and statements around markup is
+  compiled, and a `let` several holes read is a memo node.* The `view` of the program (not
+  another module's, §8.4, and not a page that prerenders) may be a function whose body is `let`s
+  and statements around markup written in place (`Program.view_lets`). What each part compiles to:
+  - **A `let` the root alone reads** (`Root.lets`) is evaluated in the binding function of the
+    hole that reads it, as above.
+  - **A `let` several binding functions read**, directly or through another `let`, is a **memo
+    node**: one binding entry of its own, in the `let`'s read set (`programLet`), which evaluates
+    the `let` into a slot of the mount, and the functions that read it read the slot. A `let` binds
+    once per pass that writes what it reads, and at the mount: never because its value is `===`
+    the last one (rule 8). Its entry comes before every function that reads it (a lower ordinal),
+    so a pass that writes the `let`'s reads computes it before any reader runs. A reader's read
+    set holds the `let`'s reads (the write-set pass reads through the `let`), so every reader runs
+    in such a pass too, and a reader that runs for its own reads alone takes the slot as it is.
+    A `let` that throws throws in its entry, before any reader writes.
+    A reader is counted per context a binding function enters (a function writing in the `view`
+    and in an eager arm evaluates its `let`s once in each), and an event's handler value — or an
+    argument of a helper call the event is in — is a reader that makes the `let` a memo node
+    alone: the handler sends the value the last pass computed and evaluates nothing at the event.
+  - **Where a `let` is bound.** A binding function binds the `view`'s `let`s it needs as it
+    enters the `view`, before it enters a helper's markup, whose arguments may read them; a
+    helper's own locals are numbered apart from the `view`'s, so only the values written in the
+    `view`'s own declaration (its holes, its eager arms, the arguments of the calls it makes) are
+    tested against its `let`s (`browser/inline/ViewLetHelper`).
+  - **The statements** — `_ = e`, a `⊤` line, an `if` without `else` — run in one binding entry
+    of their own, before every other entry, whose read sets are the statements' (the write-set
+    pass records each statement's reads as a `let`'s, `programViewStatementGroups`, version 1.30):
+    at the mount, and in each pass that writes what any statement reads. On `browser-tea`, which
+    runs the whole `view` per render, a statement runs at every render instead; so a statement
+    that reads nothing (`Log.info "view"`) runs once here, and a `Debug.log` of the model logs only
+    when what it reads is written. That is a difference of when, not of what: a statement whose
+    outcome can change runs every time it can.
+  - **Any other `let` of the body** — a pattern (`( a, b ) = …`), or one the tree does not move
+    into the root — is evaluated by every binding function that enters the `view`
+    (`programViewEnter`), so it is accepted only when its value is pure and total
+    (`instSafeMode`): evaluating it once or n times cannot be told apart. One that may have an
+    effect or throw is a limit of the compiler (class 1, at the `let`).
+  A `let` several holes of a view helper or of an arm read stays refused as before (§8.4,
+  `HelperArgTwice`), and so does one of another module's `view` (`PieceLetTwice`): their roots are
+  entered once per call, and a memo node per call is not built. A `view` whose body past its
+  `let`s is an `if` or a `case` (`Program.view_branch`), a call (`page shown`) or a markup value
+  stays class 1 (`browser/tea/RootSelector`, `TemplateRootLets`, `TemplateRootValue`).
+  *Amended 2026-11-23 (*A markup value*, below):* a body whose result is a `let` that names
+  markup is that markup (`browser/inline/MarkupValueRootLet`).
+- **A branch region** (*amended 2026-11-23, #966*). A `view` whose body past its `let`s is an `if`,
+  a `case` or a call of a function whose body is markup (`Program.view_branch`), and an `html` hole
+  of the `view`'s own markup whose value is an `if` or a `case` that is not an eager `when` (its
+  arms read what the branch binds, have `let`s a hole reads, or call a helper), is a **branch
+  region**: what `browser-tea` does for it, a switch tearing the shown arm down and making the
+  other, compiled. At the mount node, a branch whose arms would be eager `when`s is a region too:
+  several eager arms there would be several top-level nodes.
+  - **One mount unit per arm.** Each arm whose result is one element written in place, or a call
+    of a function of the program's module whose body is one element (`Arm.What.call`), is a
+    template of its own, written as a `For`'s row is (§9, amended 2026-11-23): its HTML parsed
+    once, a `make` that clones it, finds its elements and wires its events, and a `set` that
+    writes its holes. An arm that is `<></>`, that no value takes (`Arm.dead`), or that never
+    returns (`Arm.never`, `Debug.todo`: the choice throws as `browser-tea`'s render does) has no
+    unit.
+  - **One binding entry** in the read set of the whole branch value — the scrutinee and every
+    arm's values, handlers included (`programHole`'s group of the hole, the root group for a
+    `view`'s body) — evaluates the value once (`programBranchChoose`), binds the arm it takes
+    (`programBranchBind`), evaluates every value of that arm, chooses the arm of each branch
+    inside it the same way, and only then hands the runtime's `armShown` the arm's number, its
+    `make` and its `set`. When the number is not the one shown, `armShown` removes the shown
+    arm's node and puts the new arm's made node where the region stands — before the element
+    after its hole, or at its parent's end, which is why a region must be followed by an element
+    or by nothing — then calls `set`. The region's state is made at the mount by `region`; one
+    at the mount node `own`s the arm shown, which `stop` removes, and one in an element goes with
+    it. So a pass that writes the scrutinee and a value of the new arm writes the new arm once,
+    with fresh nodes, from the model the pass holds; a pass that writes only a value of the shown
+    arm writes it in place. No arm is skipped because a value is `===` the last one (rule 8):
+    every write of `set` compares with what the node shows, as a row's does. The entry is coarser
+    than the holes of an arm: a write any arm reads runs `set` of the arm shown.
+  - **The entry is guarded by the arm:** only the arm the value takes is evaluated and written; an
+    arm not shown holds no node and evaluates nothing (#459).
+  - **A branch in an arm** is a region of the arm's unit, its state kept on the unit's row, its
+    arm chosen and its values evaluated with the outer arm's, before anything is shown.
+  - **Events are wired at each swap**, by `make`, and go through the dispatcher with the message
+    `set` last kept (§9's rows): a listener of an arm a dispatch tore down, which the same event
+    reaches as it bubbles, sends the message that arm last showed, as Elm and `browser-tea` do
+    (`browser/tea/DetachedArmEvent`). A control in an arm is written back by every key, as a
+    row's is (§8.3).
+  - **`let`s.** A `let` of the `view`'s markup root that a region reads — through its value or an
+    arm's — is a memo node, as one an event reads is: computed in a pass that writes what it
+    reads, not in every pass of the region. The `let`s of a `view` whose body is a branch are
+    bound as the entry enters the `view` (`programViewEnter`), once per pass of the entry, and
+    `Lower` refuses one that may have an effect (`effectfulBranchViewLet`); its statements run in
+    their own entry, as a `view` with `let`s' do. An arm's own `let`s are evaluated with its
+    values. On `browser-tea`, which renders the whole `view` per message, a `let` with a
+    `Debug.log` logs at every render; here it logs when what it reads is written, a difference of
+    when, not of what (`browser/inline/ArmLetOnce`, `LetInMarkup`).
+  - **What stays refused** (class 1, at the hole or the `view`): a branch whose choice of arm may
+    have an effect (`Branch.selector_effect`, version 1.31), which `browser-tea` evaluates at
+    every render and the region at a pass of its read set; an arm that is any other markup value
+    (`Arm.What.value`), more than one node, or has `let`s no hole reads (`Arm.statements`; *amended
+    2026-11-24:* compiled, *An arm's statements* below); in an
+    arm, what a `For`'s row refuses (§9: a helper's markup, a component, a `Show`, an attribute
+    that is not a property); a branch in a `For`'s row (*amended 2026-11-23:* compiled, §9, *A
+    branch in a row*); a region inside an eager arm, a helper's
+    markup or another module's markup; a region followed by anything but an element or its
+    element's end, or in a control whose value changes; and a region on a page that prerenders.
+    `build/bad/inline/Region*/`, `build/bad/prerender/ViewBranch/`; the pages are
+    `browser/inline/Region*` and the `browser/tea` pages copied beside them.
+    *Amended 2026-11-23 (#2498):* a view helper whose body is the branch is not a region inside
+    a helper's markup: the helper has no markup around the branch, and the region stands at the
+    hole that calls it (§8.4, *A view helper whose body is a branch*).
+- **A `Show`** (*amended 2026-11-23, #2636, #966*; `language.md` §11.18). A `Show` among the
+  children of an element of the `view`'s own markup is a branch region of two arms — the
+  fallback, and the body with `v` bound — that also remounts the body when its key changes.
+  - **The arms.** The body is a `For`'s row with one item (§9, amended 2026-11-23): a lambda
+    whose result, past its `let`s, is one element written in place, planned as a row is (a `For`
+    in it, mixed text, its events and controls); its captures are evaluated where the `Show`
+    stands, and its values with `v` bound (`cx.rowValues`). The fallback is absent (nothing is
+    shown), one element written in place (`programShowFallback`, its values evaluated where the
+    `Show` stands), `<></>`, or `Html.text e` (`programShowFallbackText`, version 1.36): a text
+    node made with the arm, whose text is `e`, written by `text` as a text hole's is. Any other
+    body or fallback is a limit of the compiler (class 1).
+  - **One binding entry** in the `Show`'s read set — its `when`, its key function, its fallback
+    and its body, which the write-set pass records as one edge (`write-sets.md`, *a `Show`'s
+    arms*) — evaluates the attributes as `language.md` §11.18 orders them: `when` once; then, on
+    `Just v`, the key, `f v` or `v` itself, once, and every value of the body; on `Nothing`, the
+    fallback's values. *Corrected 2026-11-24 (#2662):* the first text evaluated the fallback's
+    values whichever arm was taken and said a `Debug.todo` in it threw while the body was shown
+    "as on `browser-tea`"; `browser-tea` does not, for a fallback written in place, which is a
+    kind of its own there, patched only while it is shown. `language.md` §6 and §11.18 now say a
+    fallback is evaluated only while it is shown, #459's rule for an arm, as a `For`'s is (§9);
+    so a `Debug.log` or a `Debug.todo` in it runs at no pass that shows the body. An `Html.text
+    e` fallback is a value `browser-tea`'s `view` builds at every render, so there it is
+    evaluated at every render, a listed difference (`browser/inline/FallbackShownOnly`;
+    `ShowFallbackThrows` agrees with `browser-tea`). The body is evaluated only when it is taken (#459), and all of
+    it before anything is shown, as a region's arm (*Evaluation order*). Then the runtime's
+    `keyShown(state, k, key, make, set)`: arm `k` — 0 the fallback, 1 the body — shown as
+    `armShown` shows it, and made afresh, the shown arm's node removed, when `key` is not `===` the
+    key the region last showed (`language.md` §11.18's remount: inputs' text, focus and scroll
+    are thrown away). The key is kept in a field of the region's state apart from the arm's
+    number, so no key value can be taken for an arm number. `set` runs at every pass of the
+    entry, kept or new: nothing is skipped because `v` is the same object (rule 8).
+  - **By identity** (`keyed`, `keyed={True}`), an item an arm wrote in place is the same object,
+    so the body is not remounted where `browser-tea` remounts it: the table of `language.md`
+    §11.18 read with §9's *Identity*, and the same listed difference as a `For` keyed by
+    reference. By key, the two agree.
+  - **What stays refused** (class 1, at the `Show`): a `Show` that is not among an element's
+    children in the `view`'s own markup — at the `view`'s top, in a fragment, in a `For`'s row, in
+    a region's arm, in a helper's or another module's markup; one followed by text, a hole or a
+    `For`, or inside a control whose value changes, as a region; one on a page that prerenders;
+    a `when` or a key function that may have an effect, which `browser-tea` evaluates at every
+    render (`programShowEffect`, version 1.36); a body that is not one element — a branch, a
+    named function — and a fallback that is any
+    other markup value. `build/bad/inline/Show*/`; pages `browser/inline/Show*` and the
+    `browser/tea` pages copied beside them.
+    *Amended 2026-11-24 (#2637, #966):* a body that is a lambda whose body, past its `let`s, is an
+    `if` or a `case`, and a body that is a named function of the program's module, are compiled
+    as a `For`'s row of the same shape is (§9, *A row whose top is a branch*, *A named row
+    function*): the body's arm `make` is the runtime's `emptyRow`, and its `set`, given the row
+    `keyShown` made or kept, hands `rowArm` the arm chosen with `v` bound; a key change remounts
+    the whole body, its arm chosen afresh. A `For` with a `fallback` in the body is compiled (§9).
+    `ShowBodyBranch/` builds and is withdrawn; `ShowBodyFragment/` (an arm of two elements)
+    stays refused. Pages `browser/inline/NamedRows` and `browser/tea/ShowValueArms` copied beside
+    it.
+- **What follows a `For`, a region or a `Show`** (*amended 2026-11-24, #2625, #966*). Each of
+  them puts its nodes before a node the mount holds — the element after it, or nothing at its
+  element's end — so until now one followed by text, a hole, another `For`, region or `Show` was
+  refused: a text of the markup has no node the mount can find, and two of them before one element
+  would change places when the first one's arm changed. Now one followed by anything but an
+  element stands before **an empty comment of its own**, written in its place in the markup as
+  dom-expressions writes one, `<!>`: the parser keeps a comment where it is, between two texts as
+  well, and it changes no layout, style, `textContent` or `querySelectorAll("*")` — the page's
+  element numbering is unchanged. The mount finds each comment once, as child `k` of its element
+  (`childNodes[k]`, `k` counted as the parser makes the children, a run of texts one node), before
+  it makes any text (*A text hole*, above) or region state; the `For`'s rows, the region's arm or
+  the `Show`'s arm are then put before that comment as they were before the element. So each keeps
+  its place whatever the others do: `browser-tea` keeps a comment at each such place too
+  (`<!---->`), and the transcripts agree there. One followed by an element, or by nothing, keeps
+  no comment, so every page that built before builds to the same bytes; a comment costs its page
+  `<!>` and one lookup at the mount. A text before a comment is made before it. What stays refused:
+  the same shapes in a `For`'s row or a region's arm (`RowBranchBeforeText/`, §9), where no
+  comment is written yet; one inside a control whose value changes. `ForBeforeText/`,
+  `ShowBeforeText/`, `RegionBeforeText/` and `HelperBranchBeforeText/` build and are withdrawn;
+  the page is `browser/inline/MarkerPlaces`.
+  *Amended 2026-11-24 (#2625, #966): in a unit too.* A `For` or a branch region in a `For`'s row,
+  in a region's arm or in a `Show`'s body, followed by anything but an element, stands before an
+  empty comment of its own in the unit's template (`RowPlan.markers`), `<!>` as on the page.
+  `make` finds each once, as child `k` of its element (`childNodes[k]`, a run of texts one node,
+  counted over the template's children: a text that `make` makes is not one), before it makes
+  any text; a text before the comment is made before it (`anchor_marker`), one after it before
+  the next element or at the end, so the order is the source's whichever arm shows and however
+  many rows the inner `For` has. A region's state is made before the comment; a `For`'s comment
+  is kept as the row's `c<k>`, before which its `set` puts the rows and its fallback's region.
+  A unit with no such shape builds to the same bytes. What stays refused: a `Show` in a unit (as
+  before); one inside a control whose value changes; and one in a `pre` or a `listing` whose first
+  text begins with a newline, which the parser drops, so the comment would not be where its place
+  says (`RowMarkerPre/`; the review of this slice: a `TypeError` in Chrome, which happy-dom, keeping
+  the newline, does not show). `RowBranchBeforeText/` builds and is
+  withdrawn; the page is `browser/inline/RowMarkers` (checked against `browser-tea` for the same
+  source, its comments apart), the golden `emit/release/inline/RowMarkers`.
+- **An arm's statements** (*amended 2026-11-24, #2625, #966*). An arm of a branch region — of
+  the page, of a unit (a branch in a row, an arm or a `Show`'s body), of a row whose top is a
+  branch, or of a view helper whose body is the branch — may have `let`s no hole reads
+  (`Arm.statements`: `_ = e`, a `⊤` line, a `let` nothing reads), an arm of `<></>` too, which has
+  no unit (an eager `if` with such an arm is a region). They run in the choice of the arm:
+  `programBranchChooseAll` (version 1.40) is `programBranchChoose` with the taken arm's
+  statements evaluated where they are written among its other `let`s, so a `let` both a statement
+  and a hole read is evaluated once, and one a root took is bound all the same (`let_force`). The
+  choice runs at each pass of the region's entry, or of the unit's `set`, so the entry of a region
+  — and the write of the `For`, the `Show` or the region whose units hold such an arm — is also
+  in the read sets of every arm's statements (`programBranchStatementGroups`, version 1.40, the
+  groups the write-set pass records for them as for a `view`'s statements). So a statement runs at
+  every pass that writes what it reads, and at the mount; on `browser-tea`, which renders the
+  whole `view` per message, it runs at every render, and not in a row or a helper call it skips
+  because its inputs are the same: a difference of when, not of what, as for a `view`'s
+  statements. A statement that throws (`Debug.todo`) stops the page as the arm is chosen,
+  before anything of it is written. A choice that may have an effect stays refused (above), so
+  the branch's value evaluated again by a later pass has no effect of its own. A `let` a root
+  took — an arm's of a view helper's branch (§8.4) — is evaluated with the arm's values, after
+  the choice, so a statement written after it runs before it: `HelperBranchStatement`'s
+  `Debug.todo` throws before the line its `loud` logs, which `browser-tea` writes first (a
+  difference of order). Pages
+  `browser/inline/ArmStatements` and `HelperBranchStatement` (checked against `browser-tea` for
+  the same source: the same DOM but for markers, and log lines that differ in number, not in
+  what they say), and `ArmStatementsEmpty` (the review of this slice: an arm of `<></>` lost its
+  statements, its `Debug.todo` never ran); `build/bad/inline/RegionArmStatements/` and
+  `HelperBranchStatement/` are withdrawn. The golden `emit/release/inline/ArmStatements`.
+- **A markup value** (*amended 2026-11-23, #966*). `browser-inline` has no run-time value of the
+  markup type, and still compiles markup that a program holds in a name, passes or returns, when
+  the compiler can see which root the name stands for. Such a name is a **name for a markup
+  root**, never a value: no code evaluates it, nothing is stored, and there is nothing to compare.
+  - **What is a name for a root.** (a) A `let` whose value is markup written in place, of the
+    `view` or of a view helper (`namedMarkupLet`). (b) A constant of the program's module whose
+    body, past its `let`s, is markup: a view helper of no parameter (§8.4). (c) A view helper's
+    parameter whose argument, at the hole's call, is markup written in place or such a constant,
+    when only `html` holes of the helper read the parameter (`markupArgSlot`). (d) The result of
+    a view helper or of the `view` that is a `let` of kind (a) (`resultRoot`): the helper's markup
+    is that root.
+  - **What it compiles to.** Each `html` hole that reads the name enters its root in place, as a
+    view helper's call is entered (§8.4): the root's elements are the page's, in document order;
+    its holes are bindings in their own groups (`programHole`); its events are wired as any
+    event of the unit is. Two holes that read one name are two copies, with their own elements
+    and listeners and the same groups, as two calls of one helper are and as `browser-tea` shows
+    one `Html` value at two places. A constant is entered on the path its hole extends, since
+    the write-set pass walks it there; a `let`'s root and an argument's are entered on the path
+    they were walked on — where the `let` is bound, or where the call's arguments are evaluated —
+    so the hole adds no step. An argument's root reads its values in the caller's context. The
+    argument itself is bound to `undefined`, which no code reads: a read of such a parameter
+    that code evaluates is refused (`markupParamRead`), and one no code evaluates — a `let` of
+    the helper nothing reads — is left out, as any such `let` is. A constant is also a branch
+    region's arm, a call of no argument (`Arm.What.call`).
+  - **When it is written.** Only by the writes of its holes and attributes, in the read sets the
+    write-set pass gives each of them: a pass that writes what a copy's hole reads writes that
+    hole, in place, and nothing else. Nothing is rebuilt, and nothing is skipped because a value
+    is `===` the last one (rule 8 of `CLAUDE.md`): the name has no value to compare. A `let` its
+    root takes (`Root.lets`) is evaluated by each copy's binding, as each call of a helper
+    evaluates its own; `browser-tea` evaluates it once per copy too (`browser/inline/MarkupValueLetTwice`).
+  - **What stays refused** (class 1, at the hole, the read, the call or the constant): any
+    other read of the name — a `let` of markup passed to a helper, put in a list, a record or a
+    `Maybe`, or read by code that is not a hole; a parameter read by code; an argument whose
+    markup reads a `let` of the caller or has `let`s of its own, since the caller's `let`s are
+    bound where the caller's values are and not where the helper's hole enters the root (*the
+    review of this slice*: it built, and the page threw); a constant under `Html.map`; a `let`
+    of markup in a branch's arm or a `For`'s row; and markup a helper returns through an `if`, a
+    `case` or a call (#2498). Markup held in the model stays §8.7's `MarkupValue/` rule (class
+    3). `browser/inline/MarkupValue*`, `LetOneOwner`, `LetMarkupHandler`;
+    `build/bad/inline/MarkupLetArgument/`, `MarkupLetRead/`, `MarkupArgumentReadsLet/`.
+    *Amended 2026-11-23 (#2498):* markup a helper returns through an `if` or a `case` is
+    compiled where a hole calls the helper (§8.4, *A view helper whose body is a branch*);
+    markup it returns through a call stays refused.
 - **Evaluation order** (*added 2026-10-19, the review of #398*). A binding function evaluates, per
   context: first the `let`s it reads; then every value that may throw — a hole's or an attribute's
   value, or a `when`'s branch value, holding any call that is not a basic operator
@@ -541,6 +1065,13 @@ selection (`browser/inline/ControlledCaret`). *Noted 2026-10-18:* the rule is pe
 written back on its `<select>`'s event — the event is the select's, not the option's; a select shows
 the model through its own `value`.
 
+*Amended 2026-11-24 (#2020): a file input's `value`.* A script can give an `input` of type `file`
+one `value` only, the empty string. An assignment of another value throws `InvalidStateError`. So
+`prop` does not write a `value` that is not empty to an element whose `type` property is `file`,
+and the input keeps what it shows (`backend.md` §15.3, *Controlled inputs*). `prop` writes `""` as
+on each control, which removes the chosen files. `Inline.deliver` leaves a file input's state alone
+for the same reason (`prerender.md` §6.5). `browser/inline/FileInputValue`.
+
 **An event** is `on(E[n], f, type)`: `f` is the key's handler when the handler value is a
 constructor with no fields, and otherwise a function of the event that reads the payload through
 the event's extractor (`onInput`'s `target.value`) and calls the handler with the constructor's
@@ -584,6 +1115,10 @@ A page with no such event is compiled as before, byte for byte (the `emit/inline
 markup whose handler value is not one constructor that takes the payload or nothing (§8.7,
 `PieceEventArgs/`, class 4), since a piece is lowered in its own module and hands the program site
 a constructor's fields (§8.4); and a handler written as a literal.
+
+*Amended 2026-11-24 (#2063):* such an event of another module's markup is compiled too: the root
+makes the message, and the program hands the root its dispatcher (§8.4, the amendment of that
+date). `PieceEventArgs/` builds and is withdrawn. A handler written as a literal stays refused.
 
 **Records written in place: a hole refreshes because a field it reads was written.** *Added
 2026-11-15 (research report 142, the owner's decision of that day: a record update the checker
@@ -673,6 +1208,8 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   ordinary code, with the message built from the key's fields where it is read (D-e), not a
   refusal. Only a message wrapped in a constructor whose other fields the handler is not handed
   is still a limit of the compiler (`ArmWideWrapper/`); `deep_split` is no longer a refusal.
+  *Amended 2026-11-23 (#2640):* no longer a limit; such a key's handler takes the message, and
+  the arm reads its parts from it (§8.7, the amendment of that date).
 - **A cross-module reader** (D-c) — `W2.view` reading `W1.Model` — is a binding piece of `W2`
   whose groups `W1`'s keys reach: the handler of each such key calls it in its write pass, from the
   program site, by name. There is no registration at mount and no rule about which widget is above
@@ -697,6 +1234,62 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   call sites bind their own arguments. This is local evaluation, not a memo shared between passes. Two calls of one helper
   share its root, so a `let` of the helper read by both, in two functions, is refused the same
   way: conservative, never unsound.
+  *Amended 2026-11-23 (§8.2, *A markup value*):* markup passed to a helper as an argument written
+  in place, and a constant as a branch's arm, are compiled: `HelperMarkupArg/` is the page
+  `browser/inline/MarkupValueHelperArg` and `CaseValueArm/` the page
+  `browser/inline/MarkupValueCaseArm`. A constant whose body is markup is a helper of no
+  parameter; a `let` of a helper whose value is markup is no `let` "no hole reads".
+- **A view helper whose body is a branch** (*amended 2026-11-23, #2498*: the view helper above
+  and §8.2's branches, composed; an eager-`when`-only draft of 2026-11-11 was never merged). A
+  hole whose value calls a function of the program's own module — under no `Html.map`, not
+  calling itself — whose body is an `if` or a `case` (`Program.Callee.refusal` `branch`, version
+  1.34) is compiled exactly as the same branch written at the hole would be, with the call's
+  parameters bound around it:
+  - **The call's context.** The hole is the call's context, entered as a view helper's call is:
+    its arguments evaluated in the enclosing context, its parameters bound, and no markup root of
+    its own (`Ctx.bare`), since the callee has no markup around the branch. Inside it the branch
+    is the callee's `if` or `case`, evaluated in the callee's declaration, and §8.2's rules apply
+    unchanged: one eager `when` per element arm when every arm is one element or `<></>` and
+    reads nothing the branch binds, and a branch region otherwise — an arm that reads a variable
+    its pattern binds (`Just draft → <input value={draft} …>`), an arm with `let`s a hole reads,
+    an arm that calls a helper. A `let` of an arm is that arm's root's (`Root.lets`), so an arm
+    with one is never eager (`eagerArm`), and it is evaluated with the arm's values, once per pass
+    that writes what it reads, never at the choice and never at an event (`HelperCaseArmLet`); a
+    `let` of an arm that no hole reads is a statement (`Arm.statements`), refused as in the `view`
+    (*amended 2026-11-24:* compiled, §8.2, *An arm's statements*).
+  - **The path.** The write-set pass walks the callee's body on the call's path (`write-sets.md`,
+    *a hole's facts per call*), which the call's frame already extends by the hole's token, so
+    choosing and entering an arm (`programBranchEnter`, `programBranchBind`,
+    `programBranchEager`) adds no step, and an arm the pass proved dead on that path is left out
+    as in the `view`. The hole's facts are read outside the call: one group, the call's, whose
+    reads are the arguments' and so every value of the branch; a write any arm reads runs the
+    `when`s or the region's entry, which then write nothing or `set` the arm shown, as §8.2's
+    region entry is coarser than its arms' holes. Every write still compares with what the node
+    shows, and nothing is skipped on an identity check (rule 8).
+  - **Two calls** of one helper are two contexts, each with its own `when`s or region, its own
+    arguments and its own handlers. A handler of an eager arm whose message reads a parameter is
+    bound with the call's arguments captured, as any helper's handler is (§8.2, *Evaluation
+    order*); one of a region's arm goes through the dispatcher with the message its `set` last
+    kept (§9's rows).
+  - **What stays refused** (class 1, at the hole): `let`s before the branch in the callee's body,
+    whose values the branch would read unbound (`build/bad/inline/HelperBranchLet/`); whatever
+    §8.2 refuses of the same branch written at the hole — an arm that is a markup value
+    (`HelperBranchValue/`), an arm with a `let` no hole reads (`HelperBranchStatement/`; *amended 2026-11-24:* compiled, §8.2,
+    *An arm's statements*, the page `browser/inline/HelperBranchStatement`), a region
+    followed by text or a hole (`HelperBranchBeforeText/`), in a
+    control whose value changes, or on a page that prerenders; a region inside an eager arm or
+    inside a helper's markup (`HelperBranchInEagerArm/`), and a helper's branch in a region's arm
+    or a `For`'s row, which refuse a helper's markup; a helper under `Html.map` or calling
+    itself; and another module's helper, a piece (§8.4, *View pieces*). Eager `when`s nest: a
+    helper's branch in an eager arm of another's compiles (`browser/inline/HelperCaseNested`).
+  - Pages: `browser/inline/HelperCase`, `HelperCaseTwice`, `HelperCaseHandlers`,
+    `HelperCaseNested`, `HelperCaseRegion`, `HelperCaseLetLog`, `HelperCaseArmLet`, `Routes` (a copy
+    of `browser/tea/Routes`) and `browser/prerender/HelperBranchOpens`, each with `browser-tea`'s
+    transcript of the same source but for the empty placeholders each one lists (the prerendered
+    page has `ArmOpens`'s). `emit/release/inline/HelperCase` and `HelperCaseRegion` pin the
+    shapes, which are those of the `case` written in the `view`. The region is 2 bytes of brotli
+    away from it (1 048 against 1 046); the `when`s are 45 bytes more (661 against 616), the
+    empty bucket of the call's argument group that every view helper's call has (#2500).
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
   module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
   `ResearchS2/`, `ResearchS3/`, `Texts/`).
@@ -1257,6 +1850,12 @@ code settled, which the amendment left to the build:
   subscription names the key; and no command of the program runs, which would need every handler
   at the program's dispatcher. Any other key's handler is the program's, handed to the root
   (`browser/inline/MainOwnedKeys`).
+  *Amended 2026-11-24 (#2063):* a key the root handles itself can have a second handler, the
+  program's: an event that goes through the dispatcher (§8.3, amended 2026-11-05; *A handler value
+  that is not one constructor*, below) gives every key a named handler at the program site. The
+  two are the same arm with the same pass, and both write the slice the root holds, in place. The
+  root's own events of the constructor alone call the root's handler; the dispatcher calls the
+  program's (`browser/inline/PieceHandlerMoved`).
 - **Pushed state** (the owner's decision 5). A route is what `write-sets.md`'s `findRoutes`
   recognises, amended the same day: a tail of `update` that gives a field `F x model.f`, `F` a
   function whose body is `Result.withDefault D old` with `D` not reading `old` (or, amended
@@ -1307,6 +1906,75 @@ code settled, which the amendment left to the build:
   bad builds `RootComputedArg` (class 4), `RootsSharedRecord` and `RootsPayloadRecord` (the
   ownership checker's record errors), beside the existing class 1, 2 and 3 fixtures; every
   existing `browser/inline/` transcript unchanged.
+
+*Amended 2026-11-24 (#2063): a handler value that is not one constructor.* An event of a root's
+markup whose handler value is not one constructor that takes the payload or nothing was a limit of
+the compiler (§8.7, `PieceEventArgs/`). Such a value is a function of the payload that is not a
+constructor (`onClick={handle}` with `handle : Event → Msg`, or a lambda), a constructor applied
+to values (`Go 1`, `Go (model.page + 1)`), a call that makes the message, or a message a
+parameter of the root's function holds. It is compiled as such an event of the program's own
+markup is (§8.3, amended 2026-11-05), with the work split between the two modules:
+
+- **The root makes the message.** The listener is `on(E[n], send, type, make)`, written in the
+  root's factory. `make` takes the event and gives the message of the root's own type: the
+  handler value applied to the payload — what the event's extractor reads, when it has one, read
+  first — evaluated in the root's module with the parameters of the root's function read from
+  their holders, so from the model the page holds then (Q1). It enters the eager arms and the view
+  helper calls the event is in, as a binding of the root does. The runtime's `send` calls `make`
+  first, inside the dispatch guard and while the event is dispatched, also when the send waits.
+  So a handler's `Html.preventDefault` takes effect, and a link whose own handler prevents the
+  default is not a request (`boundary.md` §9.8.13 (c), step 1). An event that declares
+  `preventDefault` or `stopPropagation` has its listener written in place, as any such event of
+  a root has, and that listener hands the runtime's `send` the factory's `send` and `make`.
+- **The factory takes `send`**, one more parameter after its handlers, only when the root has such
+  an event: `(elements, holder…, row?, table?, handler…, send?)`. A root that takes it is called
+  on its own, as a root that takes a handler is, and is not one of a run (§8.4, amended
+  2026-10-24).
+- **The program hands its dispatcher.** `send` is the dispatcher itself when no `Html.map` is
+  around the call of the root's function. Otherwise it is a function that applies the maps'
+  constructors to the message, the innermost first, and calls the dispatcher with the result
+  (`Context.programPieceWrap`, interface 1.41). Each map is a constructor of one field, as for a
+  handler of the root (*View pieces*, above). The program then has its dispatcher, made as when a
+  command runs (§4): every key has a named handler with its write pass and its command.
+- **A control on the element of such an event** is written back by the handler of every key of
+  the program (§8.3, *Controlled inputs*): any key may be the one its event reaches. The root
+  hands the program the buckets of the control's binding.
+- **Pay for what you use.** A root with no such event is compiled as before, byte for byte, and
+  so is the program that shows it. An event of the constructor alone keeps its handler, a
+  parameter of the factory or the root's own.
+- **What stays refused**, each a limit of the compiler, class 4, at the event:
+  - A handler value that reads a `let` of the root's function, or an argument of a view helper's
+    call the event is in that reads one. In the program's own `view` such a `let` is a memo node
+    (§8.2, amended 2026-11-23): the handler takes the value the last pass computed and evaluates
+    nothing of the `let` at the event. Another module's markup has no memo node yet
+    (`PieceEventLet/`).
+  - An event in a view helper's call one of whose arguments is not proved pure and total. The
+    program's own `view` keeps, for the handler, the arguments its binding evaluated (§8.2,
+    *Evaluation order*). A root does not, and `make` would evaluate the argument again at the
+    event (`PieceEventHelperArg/`).
+  - Such an event of a root shown under an `Html.map` whose function is not a constructor of one
+    field (`λsub → Tagged 3 sub`), at the program's hole: the same rule as for a handler of the
+    root (`PieceEventMapArgs/`).
+  - A handler written as a literal, as in the program's own markup.
+- **Not built:** a constructor applied to values could reach its key's handler directly, with its
+  arguments evaluated in the root, as the program's own markup does. It goes through the
+  dispatcher, which costs the program its dispatcher and a named handler for each key.
+- Pages: `browser/inline/PieceHandler` (a `Tea.element`: a link whose function handler prevents
+  the default beside a plain link that `onUrlRequest` hears, a constructor applied to a constant
+  and to a value of the model, a lambda of an input's text on a controlled input, a handler in
+  an eager arm, and a lambda on a form's `onSubmit`, which declares `preventDefault`),
+  `PieceHandlerMoved` (a sandbox: a key the root handles itself and the dispatcher's handler of
+  the same key, their clicks mixed), `PieceHandlerNoMap` (no `Html.map`: `send` is the
+  dispatcher), `PieceHandlerTwoMaps` (two maps: `Wrapped (CounterMsg msg)`),
+  `PieceHandlerHelper` (the event in a view helper's call whose argument is pure),
+  `PieceHandlerRun` (such a root beside a run of two roots, called on its own), and
+  `PieceHandlerReplaced` and `PieceHandlerCell` (`make` reads the model after the program
+  replaced the root's record, or its whole model: through the model's object, or its cell). Each
+  transcript is `browser-tea`'s of the same source, but for the placeholders the headers of
+  `PieceHandler` and `PieceHandlerRun` name. `browser/prerender/PieceHandler` is such a root on a page the client takes
+  over, wired through `onTaken` as its other events are (`prerender.md` §6.5).
+  `emit/release/inline/PieceHandler` pins the shape: the root's listeners `l(a[2],d,undefined,
+  ()=>({$:1,a:1}))`, and the program's `send`, `a=>{w({a:a})}`, around its dispatcher `w`.
 
 *Amended 2026-10-23 (#896): a route's function is any function whose result is `old` or holds
 nothing of it.* On S1's own programs the root plan's proof failed at N ≥ 16: the generator writes a
@@ -1553,6 +2221,31 @@ the compiler"*, a language rule never says *"yet"*):
 | an event whose handler value is a message no key can be named for when the program is built: *"… so its message would need a dispatcher …"* | 4 | the element | `MessageValue/` |
 | an `if` or `case` in markup that is not an eager `when`: arms that are not one element and `<></>`, or a shown arm that reads what the branch binds | 1 | the hole | `WhenBinds/` |
 
+*Amended 2026-11-23 (§8.2, a branch region):* the last row above keeps its markup values and its
+arms of more than one node; an `if` or a `case` whose shown arm reads what the branch binds, or
+whose arm calls a helper or has `let`s a hole reads, is a branch region, and `WhenBinds/` is the
+page `browser/inline/RegionEmptyArm`. What a region refuses is §8.2's list, in
+`RowBranchBeforeText/` (*amended 2026-11-23:* it was `RegionInRow/`, which §9 now compiles),
+`RegionSelectorEffect/`, `RegionBeforeText/`, `RegionInEagerArm/`,
+`RegionArmStatements/` and `build/bad/prerender/ViewBranch/`. *Amended 2026-11-24 (§8.2, *in a unit
+too*):* `RowBranchBeforeText/` builds and is withdrawn, as `RegionBeforeText/` was. *Amended
+2026-11-24 (§8.2, *An arm's statements*):* `RegionArmStatements/` builds and is withdrawn.
+
+*Amended 2026-11-23 (§8.2, *A class or style list, …*, #2499, #2635):* the row *an attribute
+that changes and is not a DOM property* now holds only for a value that is not a `String` or a
+number (`AttributeChanges/`, a `readonly` of a `Bool`). The row *an attribute written as raw
+HTML, or a class or style list* holds for raw HTML; three rows are added, each class 1, at the
+element: a class or style list held as a value (`ClassListValue/`, `StyleListValue/`), a list
+whose names repeat, are empty or (a class's) hold whitespace (`ClassListNames/`), and a style
+list whose value changes on a page that prerenders (`build/bad/prerender/StyleList/`).
+`StringClassList/`, whose list was constant, compiles and is withdrawn.
+
+*Amended 2026-11-24 (§8.2, *A text hole*, #2650):* the row *a text hole beside an element* is
+withdrawn: such an element is compiled, each text a node of its own. Its class-1 rows in its place,
+at the element: such an element on a page that prerenders (`TextBesideElement/` moved to
+`build/bad/prerender/`), in another module's markup, and a text before markup that is not an
+element written in place.
+
 *Amended 2026-10-25 (S2's design pass):* the keyed `For` row above is replaced, from S2, by §9.6's
 rows; `ResearchListWidget/` moves to `ListRowsById/` with the class 3 text when S2's refusals land.
 
@@ -1561,8 +2254,57 @@ named for is withdrawn. Such an event of the program's own markup goes through t
 (§8.3), and `MessageValue/` is the page `browser/inline/MessageValue`. The row of another module's
 event (`PieceEventArgs/`) stays.
 
+*Amended 2026-11-24 (#2063):* the row of an event of another module's markup whose handler value
+is not one constructor is withdrawn. Such an event goes through the dispatcher (§8.4, the
+amendment of that date), and `PieceEventArgs/` is part of the page `browser/inline/PieceHandler`.
+Three rows take its place, each class 4. At the event: a handler value of such an event that reads
+a `let` of that module's `view` (`PieceEventLet/`), and such an event in a view helper's call one
+of whose arguments is not proved pure and total (`PieceEventHelperArg/`). At the program's hole:
+such an event of markup shown under an `Html.map` whose function is not a constructor of one
+field (`PieceEventMapArgs/`).
+
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.
+
+*Amended 2026-11-23 (#2640, part of #966): a key whose path passes a wide constructor, a record or
+a tuple takes the message.* The fields of a key's leaf constructor make the message again only
+through constructors of one field each: `Progressed#1 · Sending` hands its handler `Sending`'s
+record, and `Progressed`'s first field, the tracker's name, is not among them. So such an arm,
+which reads that field or the message whole, was a limit of the compiler, class 4, at the read
+(13 `browser/tea` pages stopped there: `HttpTrack`, `ListenerOrder`, `SyncCommandOrder`, …). Now
+a key whose path, from the message's root to the place its last step splits, passes a constructor
+of more than one field (or of none), a record field or a tuple component **takes the message
+itself** (`Program.Key.message`, interface 1.35; its `fields` is one), decided when the program
+is built from the key's steps alone (`Emit.keyTakesMessage`):
+
+- **Every sender hands it the message.** The dispatcher hands it the message it reads the tags
+  of (`programDispatch`), and an event whose handler value is constructors applied
+  (`onClick={Got "a" 1 (Ok 10)}`) hands it the value they make (`programMessageFields`), where
+  it would hand the leaf's fields. A subscription's tagger never reaches such a key directly: a
+  key that splits a tagger's payload is §3's class-4 limit, or reaches its key through the
+  dispatcher. An index of a list edit read from the message (`IndexRecipe.message`) is not
+  evaluated for such a key, so the edit visits every row, as for any index the handler cannot
+  read.
+- **The arm reads each part from it.** The arm is still `update`'s body written in place, its
+  `case`s taking the branches the key's steps name (§8.4, *Arms*); a local that holds a part of
+  the message, the leaf's fields, and a part read whole are reads of the message along the key's
+  path (`dispatchSubject`). Nothing is rebuilt, so no field can be lost or swapped.
+- **Pay for what you use.** A key whose path passes only constructors of one field keeps its
+  leaf's fields, so every page that built before builds to the same bytes. A key that takes the
+  message costs its senders the message they make, and its arm one property read per step.
+
+What stays refused: a `update` that splits one message at two places side by side (§8.4), and a
+`*` key (§5): `browser/tea/ConcurrentJobs` and `UrlAddress`, whose `update` is a lambda that
+matches its parameter, stop at the `*` refusal now. Pages: `browser/inline/MessageWhole` (a wide
+constructor, three levels, a record, a tuple, a default step, a command's message and one the
+model holds; its transcript is `browser-tea`'s but for an empty text node),
+`MessageRecordClosure` and `MessageDeepRecordClosure` (a closure in the arm reads a field of a
+part of the message the arm never binds: the eager read hoisted to the closure's creation,
+`ownership-checker.md` §31.6, is a read of the message too, `hoistValue`), and ten of the eleven
+`browser/tea` pages it compiles, `SyncCommandOrder` and `NavigatePush` with the order differences
+their headers name. `ListenerOrder` builds, and its page is not copied: it pins `browser-tea`'s
+queueing of a listener's value, and its `flush` step needs a runtime export this platform does
+not have. `ArmWideWrapper` builds and moved from `build/bad/inline/` to `browser/inline/`.
 
 ### 8.8 Release
 
@@ -1614,6 +2356,168 @@ goldens cannot show: the target output, priced; which facts the lowering takes; 
 `Int` or `String` keys; no idiom recogniser) and on the root closures of §8.4 (amended 2026-10-22,
 built 2026-10-23). Its four questions (§9.10) were decided by the owner on 2026-10-25, each as recommended: `For` over
 a `Dict`, `Dict.keyAt`, the index from key to entry pair, and how the bar is read.*
+
+*Amended 2026-11-23 (the owner, #298): **the simple form lands first.*** `For` is built on
+`browser-inline` now, before ownership v3 is enforced, so that `browser-tea` can retire (#966).
+The simple form is S2c's row unit with none of S2d's edits:
+
+- **What it compiles.** A `For` over a `List`, keyed by a key function, by position
+  (`keyed={False}`) or by reference, whose row function is a lambda whose body is one element
+  written in place (after any `let`s). The `For` is the only child of its parent element, or the
+  children after it are plain elements, the first of which its rows stand before; text or
+  elements may come before it. Its `each` may be any expression: a model path or a list `view`
+  derives (`List.filter …`), since the rows are made to agree with whatever the list is. A `For`
+  may stand in a row: its rows are synced by its own row's `set`. In a row, an element may mix
+  elements and text holes — each text a node of its own, made with the row, as `browser-tea` keeps
+  them — and an attribute of a `String` or a number that is no DOM property (`id`, `title`) is
+  written with `setAttribute` when it differs; outside rows both stay §8.7's limits.
+- **What it does.** The `For` is one binding of its root, whose read set is everything the `For`
+  reads — its list, its key function, and what its rows read, the selector included
+  (`programHole` of the `For`, the write-set pass's edge). The first pass builds a row per item
+  from the row's template; after any key whose writes reach that read set, `forRows` (`Inline.beni`)
+  makes the rows agree with the list: each item takes the row of its key, rows that share a key
+  matched by rank (`language.md` §11.9), new keys get new rows, rows of keys that left are
+  removed, and only the rows outside a longest increasing subsequence of their old places move.
+  **Every row's `set` runs**, kept or new, in list order: no row is skipped because its item is the
+  same object (§9.4, *Identity*; rule 8 of `CLAUDE.md`), and `text` and `prop` write only what
+  differs. The rows are put in place from the last to the first, each before the row after it, so
+  the first render inserts its rows in reverse order rather than appending them in order: the same
+  page, and never `browser-tea`'s move order (`plans/direct-rewrite.md` §8). When the page's
+  focus is in a kept row, the old places that cannot stay in order beside it are left out of the
+  subsequence, so that row is not moved and keeps its focus, which a move takes (`language.md`
+  §11.9: a row keeps its focus wherever it moved). A `For`'s rows are synced before its parent's
+  own attributes are written, and a control whose value changes (a `select`) and the `For` that is
+  its only child are one binding of both their read sets, the rows first, so its `value` chooses
+  among the options its rows make whichever write reaches either (`browser/inline/ForSelectValue`).
+  Keyed by reference, an item an arm wrote in place is the same object, so its row is kept: the
+  table of `language.md` §11.9 (*the very same item value is in both lists*), where `browser-tea`
+  made a new row.
+- **Row events.** A row's event goes through the program's dispatcher (§8.3, amended
+  2026-11-05): the row's `set` evaluates the event's handler value with the row's values, as a
+  binding evaluates any value (§8.2, #466), and the listener hands the dispatcher that message —
+  applied to the payload its extractor reads, for an event with one. So a row's handler has the
+  row's key and item in scope as the view wrote them. A control in a row is written back by every
+  key (§8.3, *Controlled inputs*).
+- **What it refuses**, each class 1 (§5), in `build/bad/inline/` and `build/bad/prerender/`: a
+  `fallback` (`ForFallback/`); a `For` followed by text, a hole or another `For`
+  (`ForBeforeText/`); a `For` beside other children of a control whose value changes, whose value
+  would be written before its rows (`ForBesideControl/`), or deeper inside such a control, as
+  in an `optgroup` (`ForInControl/`); a row function that is not a lambda
+  whose body is one element (`ForRowFunction/`, `ForRowFragment/`); inside a row, a hole of
+  markup that is not a branch (`RowMarkupHole/`), a component (`RowComponent/`) and a `Show`;
+  a `For` in another module's markup (`ForInPiece/`); and a `For` in a prerendered page, which has
+  no string form of its rows yet (`ForPrerendered/`). §9.6's other rows — a keyed `List` refused, a `For` over
+  anything but a model path, a row that reads a global — are S2d's, whose edits need them, and
+  the simple form does not apply them. *Amended 2026-11-24 (§8.2, *What follows a `For`, a region
+  or a `Show`*):* a `For` of the page followed by text, a hole or another `For` stands before an
+  empty comment of its own and is compiled; `ForBeforeText/` is withdrawn. In a row it stays
+  refused. *Amended 2026-11-24 (§8.2, *in a unit too*):* in a row too.
+- **A `fallback`** (*amended 2026-11-24, #2637, #966*; `language.md` §11.9: shown when the list
+  is empty). A `For` of the page with a `fallback` shows it in a branch region of its own (§8.2, *A
+  branch region*), made at the mount where the rows stand — before the element after the `For`,
+  before its comment, or at its element's end — so the rows and the fallback, which are never
+  shown together, share one place. The fallback is planned as a `Show`'s is (§8.2, *A `Show`*):
+  one element written in place, a unit with its holes and events; `Html.text e`, a text node; or
+  `<></>`, nothing; any other markup is a limit of the compiler (class 1, at the `For`). It is
+  written by the `For`'s one binding entry, whose read set the write-set pass already gives the
+  fallback's reads (`programHole` of the `For`): after `forRows`, while the list's `length` is
+  0, the entry evaluates the fallback's values and the runtime's `armShown` shows it; otherwise
+  `armShown` removes it and nothing of it is evaluated. That is when `browser-tea` evaluates one written
+  in place — a fallback is a kind of its own there, patched only while it is shown — and it is
+  #459's rule for an arm: a `Debug.todo` or a `Debug.log` in the fallback runs only while it is
+  shown. *Corrected 2026-11-24 (#2662):* a `Show`'s fallback is now evaluated the same way
+  (§8.2), and `language.md` §6 and §11.18 say so for both; an `Html.text e` fallback, which
+  `browser-tea`'s `view` builds at every render, is evaluated there at every render, a listed
+  difference (`browser/inline/FallbackShownOnly`). A `let` of the `view`
+  that only the fallback's markup reads is bound by the entry as any `let` its values read is
+  (`Context.valueReadsLet` reads into markup written in place; before, such a `let` of a `Show`'s
+  fallback was never bound). Every `set` of the shown fallback runs (rule 8). The
+  interface asks `programShowFallback`, `programShowFallbackIsText` and `programShowFallbackText`
+  of a `For` as of a `Show` (version 1.37). What stays refused: a `fallback` on a `For` in a row or
+  an arm (`ForFallbackInRow/`, class 1). `ForFallback/` builds and is the page
+  `browser/inline/ForFallback`. *Amended 2026-11-24 (#2637):* a `fallback` on a `For` in a row, in
+  a region's arm or in a `Show`'s body is compiled, below; `ForFallbackInRow/` is withdrawn.
+- **A branch in a row** (*amended 2026-11-23, #2625, #966*). An `html` hole of a row whose value
+  is an `if` or a `case` — or a call of a view helper whose body is one (§8.4, amended
+  2026-11-23) — is a branch region of the row, as one in a region's arm is (§8.2, *A branch
+  region*, *A branch in an arm*): each arm a unit of its own, the region's state the row's
+  `g<slot>`, made with the row and gone with it. The row's `set` evaluates the values its own
+  writes read (`cx.rowValuesOf`: not the branch's value, which is markup), then chooses the arm
+  (`programBranchChoose`, inside the helper's call for a helper, its arguments values of the row)
+  and prepares it with the row's values bound, before any of the row is written; then each write,
+  and `armShown` for the region. So the branch is chosen at every `set` — every write of what the
+  `For` reads — and its arm made afresh only when the arm changes. Every other limit of a
+  region's (an arm of more than one node, a choice that may have an effect, a region followed
+  by text) stays class 1 (`build/bad/inline/Region*/`,
+  `RowBranchBeforeText/`, compiled since 2026-11-24, §8.2, *in a unit too*); a row whose top is a branch is compiled since 2026-11-24 (below). Pages `browser/inline/RowBranchCase`, and `browser/tea/RowBranch`
+  copied beside it; `browser/tea/TodoMVC` now passes its rows and stops at a text hole beside an
+  element (§8.7).
+- **A row whose top is a branch** (*amended 2026-11-24, #2637, #966*). A row function that is a
+  lambda whose body, past its `let`s, is an `if` or a `case` (`EmptyMarkup`'s `λn → if … then
+  <></> else <li>…</li>`) is a row whose node is the arm it shows: each arm one element written in
+  place, a call of a view helper of one element (`Arm.What.call`), or `<></>`, planned as a
+  region's arms are (§8.2, *A branch region*), its own branches regions of the arm. The
+  interface asks `programBranch` and the `programBranch*` calls of the `For` itself (version
+  1.38): `Lower` gives the lambda's body as the branch, lowered where the row's parameters are
+  bound. A row is made by the runtime's `emptyRow` — its node an empty comment — and its `set`
+  binds the item and the position (`cx.rowValuesOf`, no value of its own), chooses the arm with
+  them (`programBranchChoose`), prepares it, and hands `rowArm(row, k, make, set)` the arm's
+  number, `make` and `set`: when the arm is not the one the row shows, `make` gives the new arm's
+  row (none for `<></>`: another empty comment, the node `browser-tea` keeps for empty markup),
+  its node takes the place of the old one in the page with `replaceWith`, which does nothing to a
+  row not yet placed, and becomes the row's `n`, which `forRows` moves, focuses and removes. Then
+  `set` runs, kept arm or new (rule 8). So the rows of `<></>` move with the others and go with
+  them, as on `browser-tea`, and the transcripts agree (`browser/inline/RowTopBranch`). What stays
+  refused (class 1, at the `For`): an arm of more than one node or of a value (`not_when`,
+  `build/bad/inline/RowTopBranchFragment/`), an arm with `let`s no hole reads (*amended 2026-11-24:*
+  compiled, §8.2, *An arm's statements*), a choice that may
+  have an effect, a row whose body is a call of a helper whose body is the branch, and a named row
+  function (`ForRowFunction/`). Pages `browser/tea/EmptyMarkup` and `WholeFor` build and are
+  copied to `browser/inline/`, each with its listed differences of nodes. *Amended 2026-11-24:* a
+  named row function is compiled, below.
+- **A named row function** (*amended 2026-11-24, #2637, #966*). A row function that is a
+  function of the program's module (`{row}`, `Row.kind` `function`), not calling itself and
+  under no `Html.map`, whose body, past `let`s its holes read, is one element written in
+  place, or an `if` or a `case` whose arms are what *A row whose top is a branch* takes, is
+  compiled as the lambda `λx → row x` (or `λx i → row x i`) would be: the row's `set` enters
+  the call of the function with the item and the position bound to its parameters, as a view
+  helper's call is entered (§8.4), and evaluates the values of its body's root, or chooses the
+  branch's arm, with them. The interface asks `programCallee`, `programInlineEnter` and
+  `programInlineLeave` of the `For` (version 1.39), and a `Show`'s body is the same (§8.2). The
+  write-set pass applies the row function on the path the `For` stands on, so the call adds no
+  step to the call path, as a `let`'s root does not (`Chain.nested`). What stays refused (class
+  1, at the `For`): a local function, which `Lower` cannot see into (`ForRowFunction/`, now a
+  `let`-bound lambda); another module's function (`ForRowOtherModule/`, with another module's
+  markup in a row below); a function that calls itself, one under `Html.map`, and one whose body
+  has `let`s no hole reads — which, conservatively, counts some `let`s read only by events or
+  rows inside its arms (`Chain.statements`). The body's `let`s are bound once, where the call
+  is entered, for every value its unit reads, its branch regions' arms and its `For`s'
+  fallbacks included (`Page.namedLets`; the review of this slice found a `let` read only inside
+  an arm, or only by a fallback, unbound: a `ReferenceError` in development, a wrong text in
+  release). Pages `browser/inline/NamedRows` (checked against `browser-tea` for
+  the same source) and `browser/tea/ApiItems` copied beside it.
+- **A `fallback` in a row** (*amended 2026-11-24, #2637, #966*). A `For` in a row, in a region's
+  arm or in a `Show`'s body may have a `fallback`, planned as the page's is: a region of the unit
+  whose state `make` keeps as the row's `g<slot>`, made where the rows stand, and shown by the
+  unit's `set` after `forRows` while the list's `length` is 0, its values evaluated only then
+  (#459). The unit then evaluates only the values its writes read (`cx.rowValuesOf`), as a row
+  with a branch region does, since the fallback is markup, no value; a `view` `let` the fallback
+  reads is bound as one a region reads is. Since every row's `set` runs at each write of what the
+  `For` reads, a `Debug.log` in a row's shown fallback logs again when another row changes, where
+  `browser-tea` skips a row whose item is the same object: a difference of when, listed in
+  `browser/inline/RowFallback`, whose pages agree with `browser-tea`'s. A fallback of more than one
+  element stays class 1, as the page's.
+- **Another module's markup in a row** stays refused (`build/bad/inline/ForRowOtherModule/`,
+  `browser/tea/TemplateMappedRows`, `TemplateRowChoices`): a piece (§8.4) is lifted with its
+  binding functions taking `E` and the facts of one call path, and a row has no path of its own
+  per item; it needs the piece's bindings to take the row's item as a root of their own, a slice
+  of its own.
+- **`Dict`.** A `For` over a `Dict` waits for S2b (§9.9): the checker refuses it today (its `each`
+  must be a `List a`), and `core/Dict` is still ordered by key, not by insertion, until #961.
+- **Dependencies.** The simple form edits no list in place and reads none by identity, so S2c's
+  dependency on O5 (§9.9) is lifted for it. S2d's edits from the tag and at the write, and S2e's
+  measurement, come after enforcement, as §9.9 says. The simple form makes no claim of parity with
+  Solid: every write of what a `For` reads runs every row's `set`.
 
 ### 9.1 What S2 compiles
 
@@ -2086,6 +2990,14 @@ does, builds on both platforms. Its listeners read only the host — the event a
 they are added as they are, not through `Listen.on`: the `send` the mount hands a start enters the
 dispatch guard itself (§3).
 
+*Amended 2026-11-10 (`browser-capability-base.md` §3, §9 *Navigation*).* The host work —
+reading and changing the address, `load`, `reload`, `go`, URL resolution and the link-click guard —
+is `browser-base`'s private `Browser.Address`, shared with `browser`'s facade. This facade keeps
+`Key`, `Error`, its `sync` taggers and its own listener installation for `onUrlRequest` and
+`onUrlChange`, and hands `Browser.Address` its `Error` constructors. Since the platform has scoped
+tasks (§9 of the base design, *Time*), `eachUrlRequest` and `eachUrlChange` exist here too, over
+`Listen.each` and the shared listeners, in a command's fiber (`browser/prerender/BaseNavigation`).
+
 ### 10.2 `Tea.document`
 
 The lowering recognises `Tea.document` where it is called, as it does `element` (§2): `init`,
@@ -2101,6 +3013,17 @@ mount calls it after its first pass, and each key's handler calls it after its w
 same dispatch, so the title and the body never disagree after a message. *A later precision, not a
 rule:* a handler whose writes the title does not read calls it too; the write-set pass does not yet
 give the title's read set (#1168).
+
+*Amended 2026-11-10 (#1168): a handler calls the title's function only when its key's writes
+conflict with what the title reads.* The write-set pass gives the title's read set, as it gives the
+subscriptions' (§3): the model paths that the `title` field of the view's result reads, with the
+reads of each function that the field's value comes through. A key's handler calls
+the function after its write pass when one of the key's writes conflicts with one of those paths
+(`cx.programRetitles`, `boundary.md` §9.4.6, version 1.32), and has no call otherwise. The title is
+then evaluated as a hole's value is (§8.3): when a write reaches it, and not after every message.
+The mount's call after the first pass stays. The read set is ρ, so that every handler calls the
+function, when the pass cannot give it: a view whose walk was cut short, a result that is not the
+record the view wrote, and a program whose keys the pass did not recognise.
 
 ### 10.3 `Tea.application`
 

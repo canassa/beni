@@ -32,6 +32,6 @@ main = Io.run λ⊤ →
                 "got the permit"
             _ = Debug.log "at ${String.fromInt (Clock.now ⊤)}" got
             Task.join releaser
-    Clock.adjust clock (Duration.millis 100)
+    _ = Clock.adjust clock (Duration.millis 100)
     Task.join caller
     Node.print "available: ${String.fromInt (Semaphore.available s)}"

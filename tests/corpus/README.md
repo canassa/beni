@@ -534,7 +534,12 @@ project) against it, one step per line, `#` for a comment:
                                 `click`s before it
     mouse <selector> <name>     a bubbling `MouseEvent` of that name
                                 (`mouseover`, `mouseout`, `mousemove`, …),
-                                button 0
+                                button 0; or `contextmenu`, the mouse event
+                                that a browser dispatched before
+                                `contextmenu` became a `PointerEvent`
+                                (Chrome 92, Firefox 129, Safari 18.2): it
+                                has no `pointerId`, `pointerType` or
+                                `isPrimary`
     drag <selector> <name>      a bubbling drag event of that name
                                 (`dragstart`, `drag`, `dragenter`,
                                 `dragover`, `dragleave`, `drop`,
@@ -543,22 +548,32 @@ project) against it, one step per line, `#` for a comment:
                                 `dragleave` and `dragend`; one whose
                                 default a handler prevented logs
                                 `(drop's default prevented)` (or its name's)
-    pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>] [trusted]
+    pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [button:<n>] [buttons:<n>] [secondary] [box:<selector>] [trusted]
                                 one `PointerEvent` of that name
                                 (`pointerdown`, `pointermove`, `pointerup`,
                                 `pointercancel`, `pointerenter`,
                                 `pointerleave`, `pointerover`,
-                                `pointerout`) at the point `x`, `y`
+                                `pointerout`, or `contextmenu`, which a
+                                current browser dispatches as a
+                                `PointerEvent`) at the point `x`, `y`
                                 (default 0 0), CSS pixels from the top-left
                                 corner of the `box:` element's border box
                                 (default the element itself; a selector
                                 with no spaces); `pointerId` `n` (default
                                 1), `pointerType` `t` (`mouse`, the
                                 default, `pen`, `touch`, or `none` for
-                                `""`), primary unless `secondary`. It bubbles and
+                                `""`), primary unless `secondary` (a
+                                `contextmenu` is never primary, as the
+                                standard dispatches it, and takes no
+                                `secondary`); its
+                                `button` the `button:` number, -1 to 5, and
+                                its `buttons` the `buttons:` number, 0 to
+                                63 (default 0 for each: the step sends what
+                                it names, not what a device would). It bubbles and
                                 is cancelable as the standard fires it:
                                 `pointerenter` and `pointerleave` do
-                                neither, `pointercancel` does not cancel.
+                                neither, `pointercancel` does not cancel,
+                                `contextmenu` does both.
                                 One whose default a handler prevented logs
                                 `(pointerdown's default prevented)` (or its
                                 name's). happy-dom has no layout: there,
@@ -572,7 +587,8 @@ project) against it, one step per line, `#` for a comment:
                                 point at a child of it. With `trusted`, a
                                 user's mouse move to the point: only
                                 `pointermove`, with the mouse's defaults
-                                (`id:1`, `type:mouse`, primary). It is
+                                (`id:1`, `type:mouse`, primary) and no
+                                `button:` or `buttons:`. It is
                                 trusted (below): a `pointermove`, then a
                                 `mousemove`, and neither logs a prevented
                                 default. In Chrome the mouse goes to the
@@ -1124,7 +1140,11 @@ it wrote that a static host answers the script's address with — its first
 happy-dom, its module and `src` scripts left out and its inline scripts run — and runs `_expected.steps` against the one
 `_expected.expected`, so the page from the shell with no view and the
 prerendered page give one transcript. No build may leave its prerender tree,
-`.<out>.prerender`. `build/bad/prerender/` projects are refused
+`.<out>.prerender`. A project that holds `_expected.webgpu` (its reason) draws with a
+real adapter: `zig build test-webgpu` runs it too, beside `browser/gpu/`, and compares all
+four builds with one golden, `_expected.webgpu-expected`, which a blessing run of
+`test-webgpu` writes from the first build (`browser-capability-base.md` §6). The gates
+compare its page with no adapter against `_expected.expected`. `build/bad/prerender/` projects are refused
 prerendering builds: an `init`, a `view` or a route list that is not pure, a
 render that throws, a shell without `{{view}}` or with two, a route that
 breaks §7.4's rules or two that write one file, an application with no

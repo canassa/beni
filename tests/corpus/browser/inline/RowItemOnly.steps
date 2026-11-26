@@ -1,0 +1,7 @@
+# Selecting runs each row for its class, and computes no label.
+click #pick1
+# The handlers kept are still each row's own.
+click #pick2
+click #pick1
+# A new item computes its label again.
+click #relabel

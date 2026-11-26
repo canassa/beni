@@ -1,0 +1,53 @@
+-- A `Show`'s fallback is evaluated only while it is shown (language.md
+-- §11.18 and §6's table, amended 2026-11-24; browser-inline.md §8.2, *A
+-- `Show`*): while the body is shown, a `Debug.todo` in the fallback does not
+-- run, however often what it reads is written; when `when` turns to
+-- `Nothing` and the fallback shows, it throws and the page stops. Its
+-- transcript is `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Bump
+    | Toggle
+
+
+type alias Model =
+    n : Int
+    on : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | n = model.n + 1 }
+
+        Toggle →
+            { model | on = not model.on }
+
+
+boom : Int → String
+boom n = if n > 1 then Debug.todo "fallback evaluated" else "fb"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <section>
+            <Show
+                when={if model.on then Just model.n else Nothing}
+                keyed
+                fallback={<p>{boom model.n}</p>}
+            >
+                {λk → <b>{k}</b>}
+            </Show>
+        </section>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 0, on = False }, update = update, view = view }

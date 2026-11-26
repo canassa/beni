@@ -27,7 +27,7 @@ main = Io.run λ⊤ →
             Task.repeat (Schedule.while (Schedule.spaced (Duration.millis 10)) λm → m.input < 3) λ⊤ →
                 _ = counting ⊤
                 Ref.get count
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     _ = Debug.log "while: answer" (Task.join worker)
     Ref.set count 0
     _ =

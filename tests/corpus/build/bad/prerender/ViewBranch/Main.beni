@@ -1,0 +1,18 @@
+-- A prerendered `view` whose body is an `if`: a branch region on a page
+-- that prerenders is not compiled yet (docs/design/browser-inline.md §8.2,
+-- amended 2026-11-23; §5, class 1).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : Int → Html Int
+view n =
+    if n > 3 then
+        <main><output>{n}</output></main>
+    else
+        <section><button onClick={n + 1}>+</button></section>
+
+
+main : Tea.Program
+main = Browser.prerender (Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }) [ "/" ]

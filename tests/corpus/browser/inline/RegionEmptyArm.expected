@@ -1,0 +1,30 @@
+-- load
+<body>
+  <main>
+    <button id="name">"name"</button>
+    <button id="clear">"clear"</button>
+  </main>
+</body>
+-- click #name
+<body>
+  <main>
+    <button id="name">"name"</button>
+    <button id="clear">"clear"</button>
+    <p>"ada"</p>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="name">"name"</button>
+    <button id="clear">"clear"</button>
+  </main>
+</body>
+-- click #name
+<body>
+  <main>
+    <button id="name">"name"</button>
+    <button id="clear">"clear"</button>
+    <p>"ada"</p>
+  </main>
+</body>

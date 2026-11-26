@@ -1,0 +1,31 @@
+-- A set of subscriptions that does not read the model is the same for the
+-- page's life and ships none of the diff (browser-inline.md §3, amended
+-- 2026-11-23): the mount starts the listener once, and owns its remover;
+-- no handler makes the set again, and the runtime has no `settle`.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Resized Browser.Events.Size
+
+
+update : Msg, Int → Int × Cmd Msg
+update _ n = ( n + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <p>{n}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Browser.Events.onResize Resized
+        }

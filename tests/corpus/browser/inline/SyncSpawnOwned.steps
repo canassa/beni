@@ -1,0 +1,6 @@
+# No fiber for the body: its child is cancelled when it returns.
+click #direct
+# The same body in a fiber: the same.
+click #fibers
+# A joined child runs.
+click #joined

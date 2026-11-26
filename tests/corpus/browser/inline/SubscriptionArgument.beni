@@ -1,0 +1,61 @@
+-- A subscription whose argument the model changes (browser-inline.md §3,
+-- amended 2026-11-23). `Time.every`'s key is its interval, so a new
+-- interval is a new key: the old clock is cancelled and the new one
+-- starts from that moment. A tagger that changes is not a new key: the
+-- clock keeps running, and each tick takes the label of the moment it
+-- fired. Ticks at 100 and 200; at 250 the label changes, and the tick at
+-- 300 carries it; at 350 the interval becomes 300, so the next tick is at
+-- 650, not at 400 or 600.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Msg
+    = Tick String Time.Posix
+    | Relabel
+    | Slower
+
+
+type alias Model =
+    every : Int
+    label : String
+    log : List String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Tick label t →
+            ( { model | log = [ …model.log, "${label}@${Time.toMillis t}" ] }, Cmd.none )
+
+        Relabel →
+            ( { model | label = "b" }, Cmd.none )
+
+        Slower →
+            ( { model | every = 300 }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model = Time.every (Time.millis model.every) (Tick model.label _)
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <button id="slower" onClick={Slower}>slower</button>
+        <p>{String.join model.log " "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { every = 100, label = "a", log = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

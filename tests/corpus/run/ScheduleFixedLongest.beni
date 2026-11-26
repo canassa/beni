@@ -1,0 +1,64 @@
+-- run: `Schedule.fixed` computes its times as `Duration`s, so no delay is
+-- longer than the longest duration, 9007199254740991 ms
+-- (transparent-effects-proposal.md §17.8, amended 2026-11-24; #2022).
+-- Before the fix it added `Int`s with no bound: the second line was
+-- 9007199254740996, a `Duration` longer than the longest.
+--
+-- Each line is the delays of one `fixed` schedule, stepped by hand at the
+-- `elapsed` times given, with no clock.
+--
+--   - An interval of the longest duration, first stepped at 5 ms and then
+--     at 0 ms, an earlier time: the wait to the next multiple from 5 is
+--     the interval plus 5 ms, which is the longest duration. Stepped next
+--     at the longest duration, 5 ms are left.
+--   - An interval of 100 ms, at 50 ms and then at 20 ms, waits 130 ms, as
+--     before: the sum is the same where it fits.
+--   - An interval of the longest duration, first stepped at the longest
+--     duration: the run it asked for is due past every time, so the next
+--     step, at the same time, is not behind and waits a whole interval.
+--   - An interval of 100 ms, at 0 ms and then 250 ms: more than a whole
+--     interval behind, so the next run follows at once.
+import Duration exposing (Duration)
+import Node exposing (Program)
+import Schedule exposing (Continue, Schedule, Stop)
+
+
+longest : Int
+longest = 9007199254740991
+
+
+-- The delay of each step of `schedule`, one per `elapsed` time, as text.
+delays : Schedule ⊤, List Int, Int → String
+delays schedule times attempt =
+    case times of
+        [] →
+            "no step"
+
+        [ elapsed, …rest ] →
+            case
+                Schedule.step schedule
+                    { input = ⊤
+                    , attempt = attempt
+                    , elapsed = Duration.millis elapsed
+                    , random = 0.5
+                    }
+            of
+                Stop →
+                    "stop"
+
+                Continue delay next →
+                    waited = String.fromInt (Duration.toMillis delay)
+                    if List.isEmpty rest then
+                        waited
+                    else
+                        "${waited}, ${delays next rest (attempt + 1)}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ delays (Schedule.fixed (Duration.millis longest)) [ 5, 0, longest ] 1
+        , delays (Schedule.fixed (Duration.millis 100)) [ 50, 20 ] 1
+        , delays (Schedule.fixed (Duration.millis longest)) [ longest, longest ] 1
+        , delays (Schedule.fixed (Duration.millis 100)) [ 0, 250 ] 1
+        ]

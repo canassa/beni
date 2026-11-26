@@ -1,0 +1,6 @@
+# A new key appends a row.
+click #add
+# A row's own button sends its key: that row goes, the others stay.
+click li:nth-child(1)>button
+click #add
+click li:nth-child(2)>button

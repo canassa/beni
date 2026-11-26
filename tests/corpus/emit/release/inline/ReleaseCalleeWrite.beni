@@ -1,0 +1,49 @@
+-- emit/release/inline: the page is `browser/inline/ReleaseCalleeWrite`. The
+-- arm's pair is split into one binding per slot, and the model's slot,
+-- which nothing reads, keeps its call of `said`: the call writes the
+-- model in place (ownership-checker.md §31.10, amended 2026-11-24, #2642).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Later
+    | Got String
+
+
+type alias Model =
+    lines : List String
+
+
+said : Model, String → Model
+said model line = { model | lines = List.push model.lines line }
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Later →
+            ( said model "later", Cmd.perform λsend → send (Got "c") )
+
+        Got s →
+            ( said model s, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="later" onClick={Later}>later</button>
+        <p id="log">{String.join model.lines " | "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { lines = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

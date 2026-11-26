@@ -1,0 +1,6 @@
+store local "todos" "milk"
+click #save
+storage local
+click #forget
+click #session
+storage session

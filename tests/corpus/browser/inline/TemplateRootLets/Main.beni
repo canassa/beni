@@ -1,0 +1,36 @@
+-- Root helpers compile after derived lets, with the same substitution as
+-- a call within inline markup. This promotes the former ViewHelperBody refusal.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Toggle
+    | Quiet
+
+
+page : Bool → Html Msg
+page on =
+    <main>
+        <button id="toggle" onClick={Toggle}>{if on then "on" else "off"}</button>
+        <button id="quiet" onClick={Quiet}>quiet</button>
+    </main>
+
+
+view : { on : Bool } → Html Msg
+view model =
+    shown = not model.on
+    page shown
+
+
+update : Msg, { on : Bool } → { on : Bool }
+update msg model =
+    case msg of
+        Toggle →
+            { model | on = not model.on }
+        Quiet →
+            model
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { on = True }, update = update, view = view }

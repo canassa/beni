@@ -1,0 +1,56 @@
+-- load
+<body>
+  <main>
+    <button id="second">"drop second"</button>
+    <button id="slow">"drop slow"</button>
+    <p></p>
+  </main>
+</body>
+-- listeners window resize
+(listeners: 1)
+(the DOM did not change)
+-- timers
+(timers: 2)
+(the DOM did not change)
+-- event window resize
+<body>
+  <main>
+    <button id="second">"drop second"</button>
+    <button id="slow">"drop slow"</button>
+    <p>"first second"</p>
+  </main>
+</body>
+-- advance 300
+<body>
+  <main>
+    <button id="second">"drop second"</button>
+    <button id="slow">"drop slow"</button>
+    <p>"first second fast@100 fast@200 slow@300 fast@300"</p>
+  </main>
+</body>
+-- click #second
+(the DOM did not change)
+-- listeners window resize
+(listeners: 1)
+(the DOM did not change)
+-- event window resize
+<body>
+  <main>
+    <button id="second">"drop second"</button>
+    <button id="slow">"drop slow"</button>
+    <p>"first second fast@100 fast@200 slow@300 fast@300 first"</p>
+  </main>
+</body>
+-- click #slow
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- advance 300
+<body>
+  <main>
+    <button id="second">"drop second"</button>
+    <button id="slow">"drop slow"</button>
+    <p>"first second fast@100 fast@200 slow@300 fast@300 first fast@400 fast@500 fast@600"</p>
+  </main>
+</body>

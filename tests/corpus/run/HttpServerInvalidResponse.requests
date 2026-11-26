@@ -8,4 +8,5 @@
 {"method": "GET", "path": "/value"}
 {"method": "GET", "path": "/length"}
 {"method": "GET", "path": "/encoding"}
+{"method": "GET", "path": "/trailer"}
 {"method": "GET", "path": "/stop"}

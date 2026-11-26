@@ -1,0 +1,14 @@
+# Two Queue bodies, then a Restart: all three under the key; the first two
+# are cancelled, and only the Restart's body ends and sends.
+click #queue-restart
+advance 400
+# Three Queue bodies, then cancel: every one is cancelled.
+click #queue-three
+advance 50
+click #stop
+advance 400
+# The parent's key 1 survives the child's cancelAll under segment 1.
+click #parent
+click #child
+click #stop-child
+advance 100

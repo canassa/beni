@@ -1,0 +1,68 @@
+-- store local "todos" "milk"
+-- load
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="forget">"forget"</button>
+    <button id="session">"session"</button>
+    <ol>
+      <li>"todos = milk"</li>
+      <li>"draft unset"</li>
+    </ol>
+  </main>
+</body>
+-- click #save
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="forget">"forget"</button>
+    <button id="session">"session"</button>
+    <ol>
+      <li>"todos = milk"</li>
+      <li>"draft unset"</li>
+      <li>"written"</li>
+      <li>"draft = eggs"</li>
+    </ol>
+  </main>
+</body>
+-- storage local
+(localStorage: {"draft":"eggs","todos":"milk"})
+(the DOM did not change)
+-- click #forget
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="forget">"forget"</button>
+    <button id="session">"session"</button>
+    <ol>
+      <li>"todos = milk"</li>
+      <li>"draft unset"</li>
+      <li>"written"</li>
+      <li>"draft = eggs"</li>
+      <li>"todos unset"</li>
+      <li>"keys draft"</li>
+    </ol>
+  </main>
+</body>
+-- click #session
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="forget">"forget"</button>
+    <button id="session">"session"</button>
+    <ol>
+      <li>"todos = milk"</li>
+      <li>"draft unset"</li>
+      <li>"written"</li>
+      <li>"draft = eggs"</li>
+      <li>"todos unset"</li>
+      <li>"keys draft"</li>
+      <li>"written"</li>
+      <li>"tab = 1"</li>
+      <li>"draft unset"</li>
+    </ol>
+  </main>
+</body>
+-- storage session
+(sessionStorage: {"tab":"1"})
+(the DOM did not change)

@@ -29,5 +29,5 @@ main = Io.run λ⊤ →
             failing = Task.forEachOk [ 1, 2, 3, 4, 5 ] 2 check
             _ = Debug.log "answer" failing
             Task.forEachOk [ 1, 3 ] 2 check
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     Node.print (Debug.toString (Task.join caller))

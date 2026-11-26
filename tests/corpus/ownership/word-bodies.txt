@@ -66,7 +66,7 @@ platforms/node/Ssr.beni         Ssr.render          045f71e7ff0de60367e997ca719f
 # Entry protocols audited 2026-10-22: ownership-checker.md §24.8 and §30.3.
 platforms/browser/Browser.beni               Browser.program          a1a03d3bdb04728a2178b66cab64a4ee5b0a208a1df64457b3653f821d0980f8
 platforms/browser/Browser.beni               Browser.hosted           b60687d2b82a5f5c513e529c47f2bcf18fa63bb2aebd38360f9e5cc013dd5c62
-platforms/browser/Browser.beni               Browser.host             33c2cf0b8d1c38fdfc4b36fd6a3c91c2c6ce5b454d67af551bd2043e0cc71032
+platforms/browser/Browser.beni               Browser.host             74e8cc56c08a89a553cafddc1e832bb24313f81a05f65bd5cabf9d3d02727284
 platforms/browser-tea/Tea.beni               Tea.sandbox              8e3b27e500a7feac2eb34e69e9fcf30fa4f498653e306168d75936f47cf113e1
 platforms/browser-tea/Tea.beni               Tea.element              b4024695983c46b54e8cf3822573fbefcf65bc38cb76e55468e728e2bac6f523
 platforms/browser-tea/Tea.beni               Tea.document             1f37469ef95b2ebf4b679547bdc80d9432c4ea5b6169438bd44bb70b6aa58c29
@@ -229,8 +229,9 @@ core/Task.beni                Task.unlistFrom     244cb4d00ad6514878c07193e8a676
 core/Task.beni                Task.hasStopped     e2c4a42309f6e3359df8ed6261cb67571fb3853d4cc4764de629a601ab2d79d4
 core/Task.beni                Task.stoppedFor     a59eccbf97a56aa9ea12644dc28100cb7128f33645eee5f5b94516eb6ee2a9c3
 core/Task.beni                Task.hasEnded       45e9123e387e0fbc47be37d7a3492496b97c0c059ae826672c480cc1fa3da8aa
-core/Task.beni                Task.expiredFor     e8a380410afccc637f3e31d702ed8bb907fda25f77bb20b9dd7a462f7f2ed001
-core/Task.beni                Task.countCut       c2128b81b9d6cb80d457329434e2a1634ee513631bc144d438fa5f4fc8841f20
+core/Task.beni                Task.expiredOf      af46a081b334ffba1d91740e12a3ec0525a533fc0ee0f5f265773598ca183fe2
+core/Task.beni                Task.expiredFor     db6cd853f74e18be88301b4fe93fba710c5b0bd93564229544faf07566feefcc
+core/Task.beni                Task.countCut       ce4de3047ac07f3aaae0a0e55fb14eef60b04016f15e83522c292c9d57f59348
 core/Task.beni                Task.scheduleOn     986809c1a2f778b602f8d8c0148a86614d0025995e7ff3937fd3574260525505
 core/Task.beni                Task.requeue        7db618e3c4129eeae5772bfe9463f6deaf993e2f5c191a8d416d07bb9e1dadb6
 #
@@ -313,7 +314,7 @@ platforms/browser/Rt.beni                        Rt.delegated                   
 platforms/browser/Rt.beni                        Rt.listen                        1243d5a6e6b5b6928bfbebcc25820de2d99427d260a5ac9563114de5d5d2ca47
 platforms/browser/Rt.beni                        Rt.watchEdits                    20e5623383338d389c4ae2c01bd7d04cf7623ef5d8d2ed568c8e13455c07916d
 platforms/browser/Rt.beni                        Rt.crashScreen                   d52beb68c9c80b7f461581a9321cf9eb120b7d364baffe4f97c39e787016f29a
-platforms/browser/WebSocket.beni                 WebSocket.attach                 a9b8c1f44e84e971bc4c84e4bc969a6c2645fea2e280d524859382d7553bbfe6
+platforms/browser-base/WebSocket.beni            WebSocket.attach                 a9b8c1f44e84e971bc4c84e4bc969a6c2645fea2e280d524859382d7553bbfe6
 platforms/browser-inline/Inline.beni             Inline.on                        4db2e435823c8c64884b9194e762dda3287615a57b165a58200a8d77177d3085
 platforms/browser-inline/Inline.beni             Inline.onArm                     877b5d232990df7d722a976671c148d74fa0899becb4105b249dd4e486098986
 platforms/browser-inline/Inline.beni             Inline.listen                    02eb3db387e7d4343ff4dd3e68e9d459deb6bd86c0ee6c7efacfb0eb8adb216a
@@ -333,8 +334,8 @@ platforms/browser/Browser/Worker.beni Browser.Worker.installFatal c3b108ee115718
 platforms/browser/Browser/Worker.beni Browser.Worker.runDefinition b95f3e5501c78096d7f8a63c77c30143add183977c64c7438c0da36d9fc2a07d
 core/Js.beni                    Js.entryWindow      08f81b7e42b0d7af28376e83e95549f17491d5fbb371fed98aaad2adeba2900b
 src/js/Lower.zig                Js.entryWindow      a706f857621de12a7bf8c9485e34a314c7533d3ddc404c494b5e7f87d07dc209
-platforms/browser/Gpu/Engine.beni Gpu.Engine.watchUncaptured d72686cccd1ae9c195ba873e5847380f985004b272d073913f4dc49bd72f7df7
 core/Record.js                  Record.copy         8bd145ef71b742f4432ecff0c553ffeb09bef78a63efbed0d06d7c0661cb658c
+platforms/browser-base/Gpu/Engine.beni Gpu.Engine.watchUncaptured d72686cccd1ae9c195ba873e5847380f985004b272d073913f4dc49bd72f7df7
 
 # Renderer-independent guarded listener entry (browser-capability-base.md §4.1).
 platforms/browser-base/Listen.beni               Listen.on                       883bc0127d0e2b1c72b2766d947d12632b230cd41182ab6da45b9e49e78a11dd

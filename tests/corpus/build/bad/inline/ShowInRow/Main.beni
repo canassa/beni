@@ -1,0 +1,22 @@
+-- A `Show` in a `For`'s row: a `Show` is compiled only among the children
+-- of an element of the `view`'s own markup (browser-inline.md §8.2, amended
+-- 2026-11-23, *A `Show`*), class 1 (§5).
+import Html exposing (Html)
+import Tea
+
+
+view : List (Maybe String) → Html ⊤
+view rows =
+    <ul>
+        <For each={rows} keyed={False}>
+            {λrow →
+                <li>
+                    <Show when={row} keyed>{λs → <b>{s}</b>}</Show>
+                </li>
+            }
+        </For>
+    </ul>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → [ Just "a", Nothing ], update = λ_ m → m, view = view }

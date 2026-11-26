@@ -1,0 +1,7 @@
+# The body shows; bumps past the fallback's limit throw nothing.
+click #toggle
+click #bump
+click #bump
+click #bump
+# The fallback shows again, and throws.
+throws click #toggle

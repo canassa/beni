@@ -5589,7 +5589,8 @@ fn hoistCache(corrupt: enum { version, placement }) !void {
     try testing.expect(@as(u64, base) + len <= good.len);
     const table = good[base..][0..len];
     try testing.expectEqualStrings("BENIHOI\x00", table[0..8]);
-    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[8..12], .little));
+    // Hoists format 2: a read may be placed after a `let` item (§31.6).
+    try testing.expectEqual(@as(u32, 2), std.mem.readInt(u32, table[8..12], .little));
     // A module checked under enforcement with every demand accepted is
     // clean: its records are written in place (ownership-checker.md §31.10).
     try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[12..16], .little));

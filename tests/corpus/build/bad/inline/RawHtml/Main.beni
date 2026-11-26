@@ -1,0 +1,19 @@
+-- An attribute written as raw HTML (`innerHTML`) whose value changes
+-- (docs/design/browser-inline.md §8.2, *A class or style list*, amended
+-- 2026-11-23): still a limit of the compiler, class 1 (§5, §8.7), at the
+-- element.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : String → Html String
+view s =
+    <main>
+        <div innerHTML={s} />
+        <button onClick={"${s}<b>x</b>"}>more</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → "", update = λm _ → m, view = view }) "root"

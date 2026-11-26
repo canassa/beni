@@ -6,6 +6,7 @@
     <button id="replace">"replace"</button>
     <button id="bad">"bad"</button>
     <button id="none">"none"</button>
+    <button id="wrap">"wrap"</button>
     <button id="script">"script"</button>
     <ol></ol>
   </main>
@@ -18,6 +19,7 @@
     <button id="replace">"replace"</button>
     <button id="bad">"bad"</button>
     <button id="none">"none"</button>
+    <button id="wrap">"wrap"</button>
     <button id="script">"script"</button>
     <ol>
       <li>"changed to /a"</li>
@@ -35,6 +37,7 @@
     <button id="replace">"replace"</button>
     <button id="bad">"bad"</button>
     <button id="none">"none"</button>
+    <button id="wrap">"wrap"</button>
     <button id="script">"script"</button>
     <ol>
       <li>"changed to /a"</li>
@@ -53,6 +56,7 @@
     <button id="replace">"replace"</button>
     <button id="bad">"bad"</button>
     <button id="none">"none"</button>
+    <button id="wrap">"wrap"</button>
     <button id="script">"script"</button>
     <ol>
       <li>"changed to /a"</li>
@@ -72,6 +76,7 @@
     <button id="replace">"replace"</button>
     <button id="bad">"bad"</button>
     <button id="none">"none"</button>
+    <button id="wrap">"wrap"</button>
     <button id="script">"script"</button>
     <ol>
       <li>"changed to /a"</li>
@@ -89,6 +94,11 @@
 -- location
 (location: /r)
 (the DOM did not change)
+-- click #wrap
+(the DOM did not change)
+-- location
+(location: /r)
+(the DOM did not change)
 -- click #script
 <body>
   <main>
@@ -97,6 +107,7 @@
     <button id="replace">"replace"</button>
     <button id="bad">"bad"</button>
     <button id="none">"none"</button>
+    <button id="wrap">"wrap"</button>
     <button id="script">"script"</button>
     <ol>
       <li>"changed to /a"</li>
@@ -118,6 +129,7 @@
     <button id="replace">"replace"</button>
     <button id="bad">"bad"</button>
     <button id="none">"none"</button>
+    <button id="wrap">"wrap"</button>
     <button id="script">"script"</button>
     <ol>
       <li>"changed to /a"</li>

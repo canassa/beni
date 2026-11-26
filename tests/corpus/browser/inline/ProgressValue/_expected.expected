@@ -1,0 +1,18 @@
+-- load
+<body>
+  <main>
+    <progress max="100" value="30"></progress>
+    <meter min="0" max="100" value="30"></meter>
+    <output value="30">"30"</output>
+    <button>"increase"</button>
+  </main>
+</body>
+-- click button
+<body>
+  <main>
+    <progress max="100" value="50"></progress>
+    <meter min="0" max="100" value="50"></meter>
+    <output value="50">"50"</output>
+    <button>"increase"</button>
+  </main>
+</body>

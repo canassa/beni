@@ -1,0 +1,30 @@
+# The main button goes down.
+pointer #pad pointerdown 10 20 button:0 buttons:1
+# The secondary button goes down while the main one is held: a move.
+pointer #pad pointermove 12 22 button:2 buttons:3
+# A move with no change of a button.
+pointer #pad pointermove 14 24 button:-1 buttons:3
+# The secondary button comes up, then the main one.
+pointer #pad pointermove 14 24 button:2 buttons:1
+pointer #pad pointerup 14 24 button:0 buttons:0
+# The middle button, and a pen's eraser.
+pointer #pad pointerdown 1 1 button:1 buttons:4
+pointer #pad pointerdown 1 1 button:5 buttons:32 type:pen
+# A right-click on the dot: the press, then the menu. The dot is the
+# target and the pad has the handler: the point is in the pad's box. The
+# pad stops the browser's menu.
+pointer #dot pointerdown 55 25 button:2 buttons:2 box:#pad
+pointer #dot contextmenu 55 25 button:2 buttons:2 box:#pad
+pointer #dot pointerup 55 25 button:2 buttons:0 box:#pad
+# The browser's menu stays.
+pointer #native contextmenu 3 4 button:2
+# Stopped on the left half only.
+pointer #split contextmenu 10 5 button:2
+pointer #split contextmenu 80 5 button:2
+# A menu that no pointing device made, as the standard dispatches it.
+pointer #pad contextmenu 0 0 id:-1 type:none
+# The keyboard's menu as Chrome 153 dispatches it: the mouse's pointer, no
+# button, at the centre of the pad.
+pointer #pad contextmenu 100 50 button:-1
+# The mouse event of an older browser: no `pointerId` at all.
+mouse #pad contextmenu

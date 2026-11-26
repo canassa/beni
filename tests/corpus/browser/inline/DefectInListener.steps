@@ -1,0 +1,4 @@
+input #in "ok"
+# The handler's function throws on the payload: the page stops.
+throws input #in "boom"
+input #in "after"

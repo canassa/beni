@@ -1,0 +1,61 @@
+-- A `let` an event's handler reads, and one read by a hole and by a hole of an eager arm
+-- (docs/design/browser-inline.md §8.2, amended 2026-11-23). `sum` is read by two holes and by
+-- `Got sum`: a memo node, computed at the load and in each pass that writes `a`, and the
+-- handler sends the value the last pass computed. The arm that reads `sum` shows the current
+-- value when it is shown again after `sum` changed while it was hidden. `label` is read by one
+-- hole, and computed in that hole's binding.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    b : Int
+    shown : Bool
+    got : Int
+
+
+type Msg
+    = IncA
+    | IncB
+    | Toggle
+    | Got Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        IncA →
+            { model | a = model.a + 1 }
+
+        IncB →
+            { model | b = model.b + 1 }
+
+        Toggle →
+            { model | shown = not model.shown }
+
+        Got n →
+            { model | got = n }
+
+
+view : Model → Html Msg
+view model =
+    label = Debug.log "label" "a=${String.fromInt model.a}"
+    sum = Debug.log "sum" (model.a * 10)
+    <main>
+        <button id="a" onClick={IncA}>a</button>
+        <button id="b" onClick={IncB}>b</button>
+        <button id="t" onClick={Toggle}>t</button>
+        <button id="g" onClick={Got sum}>g</button>
+        <p id="one">{label}</p>
+        <p id="b">{model.b}</p>
+        {if model.shown then <p id="arm">{sum} {model.b}</p> else <></>}
+        <p id="sum">{sum}</p>
+        <p id="got">{model.got}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { a = 0, b = 0, shown = False, got = 0 }, update = update, view = view }

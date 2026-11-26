@@ -10,8 +10,7 @@ from the `html` platform (`api-html.md` lists all of it); the language knows non
   name (`mismatched_closing_tag` otherwise). `<p></p>` and `<p />` are the same.
 - `name="text"` is a string attribute. `name={expr}` is any typed value. A bare `name` is
   `name={True}`. Character references in text and quoted values are decoded.
-- Markup starts only where an operand starts: after `=`, `→`, `(`, `,`, in a hole, as an argument
-  in parentheses.
+- Markup starts only where an operand starts: after `=`, `→`, `(`, `,`, in a hole, as an argument in parentheses.
 - `value` on `<progress>`, `<meter>` and `<output>` takes a `String`. Use
   `String.fromInt` to show an integer value.
 - A child is text, a hole `{expr}`, or more markup. A hole holds a `String`, `Int`, `Float`,
@@ -64,17 +63,17 @@ An event attribute takes a **handler**: a message, or a function from the event'
 message. Which one is decided by the handler's type.
 
 - `onClick={Clicked}` sends `Clicked`.
-- `onInput={Typed}` calls `Typed` with the input's value, a `String`, and sends the result.
+- `onInput={Typed}` sends `Typed` with the `String` value of an `<input>`, `<select>` or `<textarea>`.
 - A text input shows the model's value. When `update` changes the typed text (for example, to upper
   case), the caret stays at the offset it had. If the new text is shorter, the offset is cut to its
-  length. The page does not map the caret through the change.
+  length. The page does not map the caret through the change. A file input (`type="file"`) accepts only the `value` `""`, which removes its files. The page does not write a different value.
 - A handler receives the raw `Html.Event` where the vocabulary says so (`onKeyDown`, `onSubmit`,
   `onClick` through a lambda). It can call `Html.preventDefault event` itself, as a statement,
   then return the message. `Html.key event`, `Html.targetValue event` and `Html.targetChecked event`
-  read it.
+  read it. These two give `Maybe String` and `Maybe Bool`: `Nothing` on a `<div>`, for example.
 - A handler must not wait. It returns a message and does nothing else.
-- On `browser-inline`, a handler in the program's own markup can be any function or message
-  value. In another module's markup, it must be a constructor that takes the payload or nothing.
+- On `browser-inline`, a handler can be any function or message value. In another module's
+  markup, a handler that is not a constructor alone must not read a `let` of that module's `view`.
 
 ```beni platform=html
 import Html exposing (Html)
@@ -100,63 +99,11 @@ submitted event =
     Submitted
 ```
 
-### Pointer input
+### Pointer input and the context menu
 
-The mouse, the pen and a touch screen use one set of events: `onPointerDown`, `onPointerMove`,
-`onPointerUp`, `onPointerCancel`, `onPointerEnter` and `onPointerLeave`. Each handler gets an
-`Html.Pointer`.
-
-- `Html.localX p` and `Html.localY p` are CSS pixels from the top-left corner of the border box of
-  the element that has the handler. A child under the pointer does not change this.
-- `Html.clientX p` and `Html.clientY p` are the viewport's coordinates.
-- `Html.pointerId p` is the same from a pointer's down to its up or cancel; each finger has its
-  own. `Html.pointerType p` is `"mouse"`, `"pen"`, `"touch"` or `""`. `Html.isPrimary p` is the
-  mouse or the first finger.
-- `Html.pointerEvent p` is the same event as an `Html.Event`, for `Html.preventDefault` and the
-  modifier keys.
-- A `Pointer` stays correct after the dispatch, so a message can carry it into `update`.
-- When an element and an element inside it both have a handler for the same pointer event, both
-  handlers run for one event, the inner one first, as for `onClick`. On the `browser` and
-  `browser-tea` platforms the page renders once after them, so each handler runs with the view that
-  was on the page when the event came. `onPointerEnter` and `onPointerLeave` do not bubble: each
-  element gets its own enter or leave event, so nested enter or leave handlers render once for each
-  element, and an inner handler runs with the view that the outer one's render wrote.
-- On the `browser` and `browser-tea` platforms, a pointer handler on a disabled control does not
-  run, as an `onClick` there does not.
-- The pointer events name their extractor `pointer` (`via pointer`). It is private to `Html`, so
-  a program cannot call it.
-- To stop scroll and zoom under a finger, put `touch-action: none` in the element's `style`.
-  `preventDefault` cannot stop them. On iOS, a double-tap still zooms an element with
-  `position: absolute` (WebKit bug 218015).
-- To stop a long press that selects text, write `user-select: none` and `-webkit-user-select: none`
-  (Safari) in the `style`. For iOS, also write `-webkit-touch-callout: none`: it stops the
-  long-press menu.
-- End a touch on `onPointerCancel` as on `onPointerUp`: the browser cancels a pointer when it
-  takes the gesture.
-
-```beni platform=html
-import Html exposing (Html)
-
-
-type Msg
-    = Aim Float Float
-    | Lift
-
-
-pub arena : Html Msg
-arena =
-    <div
-        style="position: relative; width: 600px; height: 400px; touch-action: none"
-        onPointerDown={aim}
-        onPointerMove={aim}
-        onPointerUp={λ_ → Lift}
-        onPointerCancel={λ_ → Lift}
-    />
-
-
-aim : Html.Pointer → Msg
-aim p = Aim (Html.localX p) (Html.localY p)
-```
+The mouse, the pen and a touch screen use one set of events, `onPointerDown` and the others.
+`onContextMenu` is the event of the context menu. Each handler gets an `Html.Pointer`, with the
+point, the pointer and the buttons. Read `references/pointer.md`.
 
 ## Components
 
@@ -187,7 +134,7 @@ done />` is `TodoItem.view { todo = t, done = True }`. `<Card.header title="x" /
   `Int`, `Float`, `Char` or `Bool`); `keyed={False}` by position; a bare `keyed`, or no `keyed`, by the
   item's identity, which a record update changes. `fallback` shows when the list is empty.
 - `Show` renders a `Maybe`. `when : Maybe a`; the child is `a → Html msg`; `keyed` remounts when
-  the identity (or the key `keyed={f}`) changes; `fallback` shows on `Nothing`.
+  the identity (or the key `keyed={f}`) changes; `fallback` shows on `Nothing`. A `fallback` runs only while it shows.
 - A row function whose body is markup is compiled in place; any other function is called per row.
 
 ## `Html.map` and the plain-call form
@@ -221,24 +168,80 @@ A render clones a template once and patches only the holes whose values changed,
 record update keeps the identity of every field it does not name, and an unchanged field costs
 nothing. Build the model with updates, and keep an untouched list as the same value.
 
-## String classes on `browser-inline`
-
-Scalar String `class` values may be constant or change with the model. Empty strings retain
-an empty attribute. Class-list syntax and style lists remain compiler limits on this platform.
-
 ## Helpers on `browser-inline`
 
 On `browser-inline`, a view can call a function of its own module that returns markup. The
-compiler writes that markup at the call. These are still compiler limitations:
+compiler writes that markup at the call, and writes a `let`, a constant or a helper argument
+whose value is markup at each hole that shows it. These are still compiler limitations:
 
-- markup that is held or passed as data;
-- a helper argument that has an effect and that more than one binding function reads.
+- markup held in the model, a list or a `Maybe`, and a markup `let` passed to a helper;
+- a helper argument that has an effect and that more than one binding function reads;
+- a class or style list held as a value, or with a name that is empty, repeats or has spaces.
 
 Keep the program as it is and report the limitation. Do not change its evaluation to make it
 compile. Only arm values that are proved pure and total are evaluated before their arm is shown.
 Other values are evaluated in the selected arm, from the current model. An argument that has an
 effect and that only an event reads is evaluated when its binding is refreshed, and a click does
-not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
-the markup-value diagnostic, and it never drops the export silently.
+not evaluate it again. A `pub` helper in a `--library` build is refused as a markup value.
 
-Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.4.7, §9.8.20; `docs/design/frontend.md` §10.1; `docs/design/browser-inline.md` §5, §8.2, §8.3, §8.4; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.
+`view` can have `let`s and statements before its markup. A `let` that more holes, an event or a
+branch read is computed one time when a value that it reads changes. A statement runs at the start
+and when a value that it reads changes. A pattern `let` must be pure and total.
+
+The body of `view`, a hole, or a helper body that a hole calls can be an `if` or a `case` of arms
+that are one element, `<></>` or a one-element helper call. Limits: a choice with an effect, an unused
+arm `let`, a `let` before a helper's branch, and a branch in an eager arm.
+A `Show` among the children of an element compiles: a body as a `For`'s row function below, and a fallback of one element or `Html.text`. A text hole can stand beside elements, `<p><b>{n}</b> left</p>`, except on a page that prerenders.
+
+## `For` on `browser-inline`
+
+On `browser-inline`, a `For` over a `List` compiles, keyed by a key function, by position
+(`keyed={False}`) or by reference. After each write of a value that the `For` reads, its rows are
+made to agree with the list by key: a row keeps its node while its key stays. The `set` of every
+row runs again. A row's `Debug.log` thus logs one time for each row.
+
+- The row function is a lambda, or a function of the module, whose body is one element, or an `if` or a `case` whose arms are each one element or `<></>`. An `if` or a `case` in it is chosen at each `set`. A `fallback` shows while the list is empty, in a row too.
+- Elements, text, holes, branches, a `Show` or another `For` can stand after a `For`, and in a row text can stand after a `For` or a branch.
+- A row's event can send the row's key: `onClick={Remove row.id}`.
+
+These are still compiler limitations: another module's function as a row function; a `For`
+beside other children of a control whose value changes; a markup hole that is no branch, a
+component or a `Show` in a row; a `For` in another module's markup; a `For` in a prerendered page;
+a `For` over a `Dict`.
+
+```beni platform=browser-inline
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Remove Int
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+update : Msg, List Row → List Row
+update msg rows =
+    case msg of
+        Remove id →
+            List.filter rows λr → r.id ≠ id
+
+
+view : List Row → Html Msg
+view rows =
+    <ul>
+        <For each={rows} keyed={.id}>
+            {λr → <li><span>{r.label}</span><button onClick={Remove r.id}>x</button></li>}
+        </For>
+    </ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ { id = 1, label = "one" } ], update = update, view = view }
+```
+
+Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.4.7, §9.8.20; `docs/design/frontend.md` §10.1; `docs/design/browser-inline.md` §5, §8.2, §8.3, §8.4, §9; `docs/design/backend.md` §15.3, §15.11; `platforms/html/Html.beni`.

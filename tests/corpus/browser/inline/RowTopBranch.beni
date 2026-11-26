@@ -1,0 +1,111 @@
+-- A `For` whose row is a branch (browser-inline.md §9, amended 2026-11-24):
+-- the row's node is the shown arm's — an element, or an empty comment for
+-- `<></>` — chosen with the row's item and position at every `set`. Keyed
+-- rows change arm in place, move with whichever node they show, and go
+-- with it; an arm's event sends the message its row last kept, and a
+-- position-keyed `case` row reads its position through a `let`. Its transcript is
+-- `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Flip Int
+    | Reverse
+    | Drop
+    | Add
+    | Bump
+
+
+type alias Model =
+    rows : List Int
+    lit : List Int
+    n : Int
+    next : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip id →
+            if List.member model.lit id then
+                { model | lit = List.filter model.lit λx → x ≠ id }
+            else
+                { model | lit = [ id, …model.lit ] }
+
+        Reverse →
+            { model | rows = List.reverse model.rows }
+
+        Drop →
+            { model | rows = List.filter model.rows λr → r ≠ 2 }
+
+        Add →
+            { model
+                | rows = List.push model.rows model.next
+                , next = model.next + 1
+            }
+
+        Bump →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <button id="drop" onClick={Drop}>drop</button>
+        <button id="add" onClick={Add}>add</button>
+        <button id="bump" onClick={Bump}>bump</button>
+        <ul id="keyed">
+            <For each={model.rows} keyed={λr → r}>
+                {λr →
+                    if List.member model.lit r then
+                        <li class="on">
+                            <button id="off${String.fromInt r}" onClick={Flip r}>
+                                {r}
+                            </button>
+                        </li>
+                    else if r == 3 then
+                        <></>
+                    else
+                        <li>
+                            <button id="on${String.fromInt r}" onClick={Flip r}>
+                                {"${String.fromInt r}/${String.fromInt model.n}"}
+                            </button>
+                        </li>
+                }
+            </For>
+        </ul>
+        <ol id="position">
+            <For each={model.rows} keyed={False}>
+                {λr i →
+                    turn = Int.mod (i + model.n) 3
+                    case turn of
+                        0 →
+                            <li>{"zero ${String.fromInt r}"}</li>
+
+                        1 →
+                            <></>
+
+                        _ →
+                            <li class="two">{r}</li>
+                }
+            </For>
+            <li>end</li>
+        </ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { rows = [ 1, 2, 3, 4 ]
+                , lit = [ 2 ]
+                , n = 0
+                , next = 5
+                }
+        , update = update
+        , view = view
+        }

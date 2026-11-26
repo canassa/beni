@@ -1,0 +1,52 @@
+-- A file input takes one `value` from a program, the empty string: a write
+-- of another one throws `InvalidStateError` (#2020). So a model's value
+-- that is not empty is one no file input can show (backend.md §15.3,
+-- *Controlled inputs*): the runtime does not write it, in a mount, a patch
+-- or a reconcile, and the input keeps what it shows. `fixed`'s type is
+-- written in the template; `first` and `last` take theirs from the model,
+-- before and after the value. A control that stops being a file input
+-- shows the model's value again, and `text` shows it always.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Other
+    | Clear
+    | Kind String
+
+
+type alias Model =
+    name : String
+    kind : String
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Other →
+            { m | name = "other.txt" }
+
+        Clear →
+            { m | name = "" }
+
+        Kind kind →
+            { m | kind = kind }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="other" onClick={Other}>other</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="as-text" onClick={Kind "text"}>text</button>
+        <button id="as-file" onClick={Kind "file"}>file</button>
+        <input id="fixed" type="file" value={m.name} />
+        <input id="first" type={m.kind} value={m.name} />
+        <input id="last" value={m.name} type={m.kind} />
+        <input id="text" value={m.name} />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { name = "bad", kind = "file" }, update = update, view = view }

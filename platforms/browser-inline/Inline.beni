@@ -11,6 +11,7 @@ import Hosted
 import Js
 import Listen
 import Schema exposing (Field, Index, Issue, PathSegment, Schema)
+import Sub exposing (Sub)
 import Task
 import Url exposing (Url)
 
@@ -125,6 +126,14 @@ defect ⊤ =
         crashScreen ⊤
 
 
+--| What a development entry calls when a module of the program throws
+--| while it loads, a top-level value that crashed: the page stops, as for
+--| a throw while it mounts. The throw goes on to the host, which reports
+--| it (`boundary.md` §9.8.10 (c), #1994).
+pub loadFailed : ⊤ → ⊤
+loadFailed ⊤ = defect ⊤
+
+
 -- An overlay above the page, which it leaves in place to inspect: the
 -- error's text arrives with the host's report of the throw, which reaches
 -- the window after the guard's `finally`.
@@ -232,8 +241,362 @@ commands cmd dispatch = List.foldl (Cmd.items cmd) ⊤ λitem _ →
                 Js.null
                 Js.undefined
 
+        Cmd.After work →
+            send
+                (Js.from λ_ → Hosted.callLater work λmsg → send dispatch msg Js.undefined)
+                Js.null
+                Js.undefined
+
+        Cmd.Keyed path policy job →
+            keyed dispatch path policy job
+
+        Cmd.KeyedNow path policy job →
+            keyedNow dispatch path policy job
+
+        Cmd.Cancel path →
+            cancelRuns dispatch (takeRuns (keyTable dispatch) path)
+
+        Cmd.CancelAll prefix →
+            table = keyTable dispatch
+            -- The keys of the component and of those it maps in: the paths
+            -- longer than `prefix` that start with it. A path that is
+            -- `prefix` itself is the key of the component that maps this
+            -- one, equal to its segment, and stays.
+            at = keyAt table prefix 0 (Js.to (Js.get table "length"))
+            from = if entryAt table prefix == at then at + 1 else at
+            gone =
+                Js.call table "splice"
+                    [ Js.from from, Js.from (prefixEnd table prefix from - from) ]
+            Js.each gone λrow → cancelRuns dispatch (Js.at row 1)
+
+
+-- ---- Keyed commands (`browser-inline.md` §4, amended 2026-11-23) -------
+--
+-- `browser-tea`'s command table, kept per program: the bodies running under
+-- each key path, and what a keyed command, `Cmd.cancel` and `Cmd.cancelAll`
+-- do to them (`boundary.md` §9.8.2). It differs from `browser-tea`'s in two
+-- points (#2627): `Queue` keeps the bodies it waits for under the path, and
+-- `Cmd.cancelAll` leaves the key equal to its prefix. The table is changed where `commands`
+-- reads the item, in the item's order, so a later item of the same command
+-- sees what an earlier one did; a body starts where an unkeyed one does,
+-- queued behind the dispatch or spawned there, in the order of its item.
+-- Each body sends through an outlet of its own, which a restart or a
+-- cancellation closes at once. Only a `Keyed` item makes an `InFiber`, so a
+-- program whose keyed bodies never wait reaches no code that waits for or
+-- cancels a fiber: every such step is in an `InFiber` arm (`backend.md` §9,
+-- *A `case` arm on a constructor nothing builds*).
+
+-- A keyed body that has not been forgotten, and its cell: `{ o, f }`, its
+-- outlet's state and its fiber, null until it is spawned, for a body that
+-- may wait; `{ o, p }`, its outlet's state and whether it has yet to run,
+-- for one that never does.
+type Run
+    = InFiber V
+    | Queued V
+
+
+-- Per program dispatcher: its table, an array of `[path, runs]` sorted by
+-- path, `runs` an array of `Run`s, oldest first. Null until the first keyed
+-- item of the page.
+keyTables : Js.Ref V
+keyTables = Js.ref Js.null
+
+
+keyTable : V → V
+keyTable dispatch =
+    if Js.isNull (Js.read keyTables) then
+        Js.write keyTables (Js.construct (Js.global "Map") [])
+    tables = Js.read keyTables
+    held = Js.call tables "get" [ dispatch ]
+    if Js.isUndefined held then
+        made = Js.array []
+        _ = Js.call tables "set" [ dispatch, made ]
+        made
+    else
+        held
+
+
+-- The first place whose path is not below `path`.
+keyAt : V, List Hosted.Key, Int, Int → Int
+keyAt table path lo hi =
+    if lo < hi then
+        mid = Js.shiftRight (lo + hi) 1
+        stored : List Hosted.Key
+        stored = Js.to (Js.at (Js.at table mid) 0)
+        if stored.compare path == LT then keyAt table path (mid + 1) hi else keyAt table path lo mid
+    else
+        lo
+
+
+-- The place of `path`'s entry, or -1.
+entryAt : V, List Hosted.Key → Int
+entryAt table path =
+    count : Int
+    count = Js.to (Js.get table "length")
+    i = keyAt table path 0 count
+    if i < count then
+        stored : List Hosted.Key
+        stored = Js.to (Js.at (Js.at table i) 0)
+        if stored == path then i else -1
+    else
+        -1
+
+
+-- The runs at `path` that have not ended, oldest first, in a new array.
+liveAt : V, List Hosted.Key → V
+liveAt table path =
+    live = Js.array []
+    i = entryAt table path
+    if i >= 0 then
+        Js.each (Js.at (Js.at table i) 1) λr →
+            if ongoing (Js.to r) then
+                _ = Js.call live "push" [ r ]
+                ⊤
+    live
+
+
+-- `path`'s runs are `runs` from now on.
+put : V, List Hosted.Key, V → ⊤
+put table path runs =
+    i = entryAt table path
+    if i >= 0 then
+        Js.setAt (Js.at table i) 1 runs
+    else
+        at = keyAt table path 0 (Js.to (Js.get table "length"))
+        _ = Js.call table "splice" [ Js.from at, Js.from 0, Js.array [ Js.from path, runs ] ]
+        ⊤
+
+
+-- `path`'s runs, its entry taken out of the table; an empty array when it
+-- has none.
+takeRuns : V, List Hosted.Key → V
+takeRuns table path =
+    i = entryAt table path
+    if i >= 0 then
+        Js.at (Js.at (Js.call table "splice" [ Js.from i, Js.from 1 ]) 0) 1
+    else
+        Js.array []
+
+
+-- The first place from `i` whose path does not start with `prefix`.
+prefixEnd : V, List Hosted.Key, Int → Int
+prefixEnd table prefix i =
+    if i < Js.to (Js.get table "length") && startsWith (Js.to (Js.at (Js.at table i) 0)) prefix then
+        prefixEnd table prefix (i + 1)
+    else
+        i
+
+
+startsWith : List Hosted.Key, List Hosted.Key → Bool
+startsWith path prefix =
+    case ( path, prefix ) of
+        ( _, [] ) →
+            True
+
+        ( [ p, …ps ], [ q, …qs ] ) →
+            if p == q then startsWith ps qs else False
+
         _ →
-            fault "a command the inline compiler did not compile"
+            False
+
+
+-- A keyed body that may wait.
+keyed : V, List Hosted.Key, Cmd.Policy, Hosted.Job V → ⊤
+keyed dispatch path policy job =
+    table = keyTable dispatch
+    old = liveAt table path
+    if Js.to (Js.get old "length") == 0 then
+        put table path (Js.array [ Js.from (spawned dispatch nothing job) ])
+    else
+        case policy of
+            Cmd.Restart →
+                closeRuns old
+                put table path (Js.array [ Js.from (spawned dispatch (λ⊤ → stopRuns old) job) ])
+
+            Cmd.Ignore →
+                ⊤
+
+            Cmd.Queue →
+                -- The bodies it waits for stay in the table, so a later
+                -- `Restart` or `Cmd.cancel` reaches every body queued under
+                -- the path (`boundary.md` §9.8.2).
+                before = Js.call old "slice" []
+                _ = Js.call old "push" [ Js.from (spawned dispatch (λ⊤ → waitRuns before) job) ]
+                put table path old
+            Cmd.Concurrent →
+                _ = Js.call old "push" [ Js.from (spawned dispatch nothing job) ]
+                put table path old
+
+
+-- A keyed body that never waits: queued as an unkeyed one is, unless a body
+-- it must wait for is in a fiber.
+keyedNow : V, List Hosted.Key, Cmd.Policy, Hosted.Job V → ⊤
+keyedNow dispatch path policy job =
+    table = keyTable dispatch
+    old = liveAt table path
+    if Js.to (Js.get old "length") == 0 then
+        put table path (Js.array [ Js.from (queued dispatch job) ])
+    else
+        case policy of
+            Cmd.Restart →
+                closeRuns old
+                put table path (Js.array [ Js.from (started policy old dispatch job 0) ])
+
+            Cmd.Ignore →
+                ⊤
+
+            Cmd.Queue →
+                before = Js.call old "slice" []
+                _ = Js.call old "push" [ Js.from (started policy before dispatch job 0) ]
+                put table path old
+            Cmd.Concurrent →
+                _ = Js.call old "push" [ Js.from (queued dispatch job) ]
+                put table path old
+
+
+-- A body that never waits, once `old` have ended (`Restart` having closed
+-- them): queued, when none is in a fiber — what is queued before it runs
+-- first — and otherwise in a fiber that cancels them (`Restart`) or waits
+-- for them (`Queue`) first, since only a fiber can wait. The fiber is
+-- reached only through an `InFiber` arm.
+started : Cmd.Policy, V, V, Hosted.Job V, Int → Run
+started policy old dispatch job i =
+    if i < Js.to (Js.get old "length") then
+        case Js.to (Js.at old i) of
+            InFiber _ →
+                spawned
+                    dispatch
+                    (λ⊤ →
+                        case policy of
+                            Cmd.Restart →
+                                stopRuns old
+
+                            _ →
+                                waitRuns old
+                    )
+                    job
+
+            Queued _ →
+                started policy old dispatch job (i + 1)
+    else
+        queued dispatch job
+
+
+-- A body in a fiber of the program's scope, spawned where an unkeyed one
+-- is, which first runs `beforeBody`.
+spawned : V, (⊤ → ⊤), Hosted.Job V → Run
+spawned dispatch beforeBody job =
+    cell = Js.object [ ( "o", Js.from True ), ( "f", Js.null ) ]
+    send
+        (Js.from λ_ →
+            fiber = Task.spawnIn (taskScope dispatch) λ⊤ →
+                beforeBody ⊤
+                Hosted.runJob job (outlet dispatch cell)
+            Js.set cell "f" (Js.from fiber)
+        )
+        Js.null
+        Js.undefined
+    InFiber cell
+
+
+-- A body that never waits, queued behind the dispatch as an unkeyed one is.
+queued : V, Hosted.Job V → Run
+queued dispatch job =
+    cell = Js.object [ ( "o", Js.from True ), ( "p", Js.from True ) ]
+    send
+        (Js.from λ_ →
+            Hosted.callJob job (outlet dispatch cell)
+            Js.set cell "p" (Js.from False)
+        )
+        Js.null
+        Js.undefined
+    Queued cell
+
+
+-- A run's `send`: the program's, until its cell is closed.
+outlet : V, V → Hosted.Send V
+outlet dispatch cell = λmsg → if Js.to (Js.get cell "o") then send dispatch msg Js.undefined
+
+
+ongoing : Run → Bool
+ongoing r =
+    case r of
+        InFiber cell →
+            fiber = Js.get cell "f"
+            Js.isNull fiber || Task.running (Js.to fiber)
+
+        Queued cell →
+            Js.to (Js.get cell "p")
+
+
+-- Close the outlets of `runs` now, so nothing they send after this lands.
+closeRuns : V → ⊤
+closeRuns runs = Js.each runs λr →
+    case Js.to r of
+        InFiber cell →
+            Js.set cell "o" (Js.from False)
+
+        Queued cell →
+            Js.set cell "o" (Js.from False)
+
+
+-- Close `runs` and cancel their fibers, in a fiber of the program's scope
+-- spawned where a body is, behind the bodies spawned before it. A body
+-- still queued runs to its end, as a fiber not yet started runs to its
+-- first wait before its cancellation can reach it.
+cancelRuns : V, V → ⊤
+cancelRuns dispatch runs =
+    closeRuns runs
+    cancelFrom dispatch runs 0
+
+
+-- The canceller, when a run of `runs` from `i` on is in a fiber.
+cancelFrom : V, V, Int → ⊤
+cancelFrom dispatch runs i =
+    if i < Js.to (Js.get runs "length") then
+        case Js.to (Js.at runs i) of
+            InFiber _ →
+                send
+                    (Js.from λ_ →
+                        _ = Task.spawnIn (taskScope dispatch) λ⊤ → stopRuns runs
+                        ⊤
+                    )
+                    Js.null
+                    Js.undefined
+
+            Queued _ →
+                cancelFrom dispatch runs (i + 1)
+
+
+-- Cancel each fiber and wait for its cleanup, the newest first.
+stopRuns : V → ⊤
+stopRuns runs = eachNewest runs λfiber → Task.cancel (Js.to fiber)
+
+
+-- Wait for each fiber to end, the newest first.
+waitRuns : V → ⊤
+waitRuns runs = eachNewest runs λfiber →
+    _ = Task.wait (Js.to fiber)
+    ⊤
+
+
+-- `f` applied to the fiber of each run of `runs` that has one, from the
+-- newest.
+eachNewest : V, (V → ⊤) → ⊤
+eachNewest runs f = newestFrom runs (Js.to (Js.get runs "length") - 1) f
+
+
+newestFrom : V, Int, (V → ⊤) → ⊤
+newestFrom runs i f =
+    if i >= 0 then
+        case Js.to (Js.at runs i) of
+            InFiber cell →
+                fiber = Js.get cell "f"
+                if not (Js.isNull fiber) then f fiber
+
+            Queued _ →
+                ⊤
+        newestFrom runs (i - 1) f
 
 
 -- A page reaches this map and the task kernel only when work can wait.
@@ -242,10 +605,27 @@ taskScopes : Js.Ref V
 taskScopes = Js.ref Js.null
 
 
--- A task-free page's defect path reaches no task kernel. Install cleanup
--- only when the first root is made; null needs no cleanup.
+-- What a defect releases besides stopping the page: the program's task
+-- roots, once the first is made, and its live subscriptions, once a set
+-- that depends on the model is made (`atDefect`). A task-free page's
+-- defect path reaches no task kernel; null needs no cleanup.
 taskStop : Js.Ref V
 taskStop = Js.ref Js.null
+
+
+-- `release` runs at a defect too, before what was registered earlier.
+atDefect : V → ⊤
+atDefect release =
+    before = Js.read taskStop
+    Js.write
+        taskStop
+        (if Js.isNull before then
+            release
+         else
+            Js.from λ⊤ →
+                _ = Js.apply release []
+                Js.to (Js.apply before [])
+        )
 
 
 -- A stopped page still lets its cancelled fibers run their finalizers.
@@ -259,7 +639,7 @@ taskScope : V → Task.Scope
 taskScope dispatch =
     if Js.isNull (Js.read taskScopes) then
         Js.write taskScopes (Js.construct (Js.global "Map") [])
-        Js.write taskStop (Js.from closeTasks)
+        atDefect (Js.from closeTasks)
         Task.onTurn taskTurn
         Task.onDefect defect
     scopes = Js.read taskScopes
@@ -286,12 +666,217 @@ closeTasks ⊤ =
 
 
 --| Start a statically declared subscription body in its program's scope.
---| Dynamic subscription sets remain a compiler limit; the mount closes
---| this scope when its fixed set ends, after stopping message delivery.
+--| The mount closes this scope when its fixed set ends, after stopping
+--| message delivery. A set that depends on the model is `settle`'s.
 pub startWork : V, V → V
 startWork dispatch body =
     _ = Task.spawnIn (taskScope dispatch) λ⊤ → Js.suspending λ⊤ → Js.to (Js.apply body [])
     Js.from nothing
+
+
+-- ---- Subscriptions that depend on the model (`browser-inline.md` §3,
+-- amended 2026-11-23) --------------------------------------------------
+--
+-- `browser-tea`'s subscription diff (`Tea.settle`), for a program whose
+-- set reads its model. The mount makes the program's table with
+-- `liveSet` and hands `settle` its set, and so does each handler whose
+-- writes conflict with what `subscriptions` reads, after its write pass.
+-- A key is its resource's identity, compared with `Hosted.compare`: a key
+-- that leaves is stopped at once, a key that stays keeps its listener or
+-- its fiber and takes the taggers of its current declarations, and a key
+-- that arrives starts, in the order of its first declaration. A value is
+-- tagged when it is applied, with the taggers current then, and dropped
+-- once its key has left, also when it was queued behind the dispatch that
+-- stopped it. Only `Sub.listen` makes a `Hosted.Waits`, so a page whose
+-- subscriptions all listen reaches no fiber through them: every step that
+-- spawns or cancels one is in a `Waits` arm (`backend.md` §9, *A `case`
+-- arm on a constructor nothing builds*).
+
+--| `(dispatch)`: a program's live subscriptions, none yet — an array of
+--| `[key, cell, kind]` sorted by key, a cell `{ o, t, x }`: whether the
+--| key is live, the taps of its current declarations, and its fiber or
+--| what removes its listener. The page's stop and a defect stop each one.
+pub liveSet : V → V
+liveSet dispatch =
+    live = Js.array []
+    release = Js.from λ⊤ → stopAll live
+    own release
+    atDefect release
+    live
+
+
+-- Every live key closed, its listener removed, and the table emptied. A
+-- fiber is the program scope's, which that scope's own teardown closes.
+stopAll : V → ⊤
+stopAll live = Js.each (Js.call live "splice" [ Js.from 0 ]) λrow →
+    cell = Js.at row 1
+    Js.set cell "o" (Js.from False)
+    case Js.to (Js.at row 2) of
+        Hosted.Waits →
+            ⊤
+
+        Hosted.Hears →
+            unhear cell
+
+
+-- A closed key's listener removed, once it has been added: one whose
+-- start has not run, or threw, has none, and its start never runs.
+unhear : V → ⊤
+unhear cell =
+    x = Js.get cell "x"
+    if not (Js.isNull x) then
+        Js.set cell "x" Js.null
+        Js.to (Js.apply x [])
+
+
+--| `(live, dispatch, sub)`: the program's live subscriptions made the set
+--| `sub` declares, `live` its table and `dispatch` its dispatcher.
+pub settle : V, V, Sub V → ⊤
+settle live dispatch sub =
+    wanted = Js.array []
+    order = Js.array []
+    List.foldl (Sub.taps sub) ⊤ λ( k, kind, tp ) _ → declare wanted order k kind tp
+    keepFrom live wanted dispatch 0
+    arriveFrom live order dispatch 0
+
+
+-- The first place in `table`, from `lo` to `hi`, whose key is not below `k`.
+place : V, Hosted.Key, Int, Int → Int
+place table k lo hi =
+    if lo < hi then
+        mid = Js.shiftRight (lo + hi) 1
+        if Hosted.compare (Js.to (Js.at (Js.at table mid) 0)) k == LT then
+            place table k (mid + 1) hi
+        else
+            place table k lo mid
+    else
+        lo
+
+
+-- The place of `k`'s row in `table`, or -1.
+rowOf : V, Hosted.Key → Int
+rowOf table k =
+    count : Int
+    count = Js.to (Js.get table "length")
+    i = place table k 0 count
+    if i < count && Hosted.compare (Js.to (Js.at (Js.at table i) 0)) k == EQ then i else -1
+
+
+-- One declaration of the set: its tap joins its key's row in `wanted`,
+-- sorted by key, a row `[key, kind, taps]`; the first declaration of a
+-- key makes the row, also put at the end of `order`.
+declare : V, V, Hosted.Key, Hosted.Kind, Hosted.Tap V → ⊤
+declare wanted order k kind tp =
+    i = rowOf wanted k
+    if i >= 0 then
+        _ = Js.call (Js.at (Js.at wanted i) 2) "push" [ Js.from tp ]
+        ⊤
+    else
+        row = Js.array [ Js.from k, Js.from kind, Js.array [ Js.from tp ] ]
+        at = place wanted k 0 (Js.to (Js.get wanted "length"))
+        _ = Js.call wanted "splice" [ Js.from at, Js.from 0, row ]
+        _ = Js.call order "push" [ row ]
+        ⊤
+
+
+-- From the `i`th live key on: one that stays takes its new taps, one that
+-- left is taken out of `live` and stopped now.
+keepFrom : V, V, V, Int → ⊤
+keepFrom live wanted dispatch i =
+    if i < Js.to (Js.get live "length") then
+        row = Js.at live i
+        j = rowOf wanted (Js.to (Js.at row 0))
+        if j >= 0 then
+            Js.set (Js.at row 1) "t" (Js.at (Js.at wanted j) 2)
+            keepFrom live wanted dispatch (i + 1)
+        else
+            _ = Js.call live "splice" [ Js.from i, Js.from 1 ]
+            leave dispatch row
+            keepFrom live wanted dispatch i
+
+
+-- A key that left: its cell is closed, so nothing it sends lands from now
+-- on, and its listener removed, or its fiber cancelled from a fiber of the
+-- program's scope.
+leave : V, V → ⊤
+leave dispatch row =
+    cell = Js.at row 1
+    Js.set cell "o" (Js.from False)
+    case Js.to (Js.at row 2) of
+        Hosted.Waits →
+            fiber = Js.get cell "x"
+            _ = Task.spawnIn (taskScope dispatch) λ⊤ → Task.cancel (Js.to fiber)
+            ⊤
+
+        Hosted.Hears →
+            unhear cell
+
+
+-- From the `i`th key of `order` on: one not live starts, with the body or
+-- the listener of its first declaration.
+arriveFrom : V, V, V, Int → ⊤
+arriveFrom live order dispatch i =
+    if i < Js.to (Js.get order "length") then
+        row = Js.at order i
+        k : Hosted.Key
+        k = Js.to (Js.at row 0)
+        if rowOf live k < 0 then
+            cell = Js.object [ ( "o", Js.from True ), ( "t", Js.at row 2 ), ( "x", Js.null ) ]
+            at = place live k 0 (Js.to (Js.get live "length"))
+            _ =
+                Js.call live "splice"
+                    [ Js.from at, Js.from 0, Js.array [ Js.from k, cell, Js.at row 1 ] ]
+            begin dispatch cell (Js.to (Js.at row 1))
+        arriveFrom live order dispatch (i + 1)
+
+
+-- A key's body run in a fiber of the program's scope, or its listener
+-- added with the program's event entry; each value it sends is passed on
+-- through the cell.
+begin : V, V, Hosted.Kind → ⊤
+begin dispatch cell kind =
+    body = Js.at (Js.at (Js.get cell "t") 0) 0
+    values = Js.from λvalue → passOn cell dispatch value
+    case kind of
+        Hosted.Waits →
+            fiber = Task.spawnIn (taskScope dispatch) λ⊤ →
+                Js.suspending λ⊤ → Js.to (Js.apply body [ values ])
+            Js.set cell "x" (Js.from fiber)
+
+        -- The listener is added where a fiber spawned now would first run,
+        -- in a microtask, through the guard: after the native event being
+        -- dispatched, which therefore never reaches it (`boundary.md`
+        -- §9.8.5, point 1). A key that left before then never adds it.
+        Hosted.Hears →
+            Js.to
+                (Js.apply (Js.global "queueMicrotask")
+                    [ Js.from λ_ →
+                        send
+                            (Js.from λ_ →
+                                if Js.to (Js.get cell "o") then
+                                    Js.set cell "x" (subscribe λ⊤ → Js.apply body [ values ])
+                            )
+                            Js.null
+                            Js.undefined
+                    ]
+                )
+
+
+-- One value a key's body or listener sent, while the key is live: through
+-- the tagger of each of its declarations current when it is sent, in
+-- order, each a dispatch of its own or queued behind the one running, as a
+-- fixed set's send is. One applied once the key has left is dropped.
+passOn : V, V, V → ⊤
+passOn cell dispatch value =
+    if Js.to (Js.get cell "o") then
+        Js.each (Js.get cell "t") λtp →
+            send
+                (Js.from λv →
+                    if Js.to (Js.get cell "o") then
+                        Js.to (Js.apply dispatch [ Js.apply (Js.at tp 1) [ v ] ])
+                )
+                value
+                Js.undefined
 
 
 --| One message update with the program's log context. Restore the caller
@@ -553,10 +1138,11 @@ text node shown =
 -- no selection (its `selectionStart` is null, or undefined on a `select`)
 -- and one without the focus are written and left alone. A `value` the
 -- control already shows is not written, and its selection is not touched.
+-- Nor is a `value` the control refuses (`refused`).
 writeProp : V, V, V → ⊤
 writeProp el member v =
     caret = if Js.same member (Js.from "value") then Js.get el "selectionStart" else Js.undefined
-    if Js.same member (Js.from "value") && Js.same (Js.get el member) v then
+    if Js.same member (Js.from "value") && (Js.same (Js.get el member) v || refused el v) then
         ⊤
     else if
         Js.isNullish caret || not (Js.same (Js.get (Js.global "document") "activeElement") el)
@@ -577,14 +1163,54 @@ writeProp el member v =
         ⊤
 
 
+-- Whether `el` refuses `v` as its `value`. A script can give an `input` of
+-- type `file` the empty string alone, which removes the chosen files: an
+-- assignment of another value throws `InvalidStateError` (#2020). Such a
+-- value is a model no page can show, so it is not written, and the input
+-- keeps what it shows (`browser-inline.md` §8.3, *Controlled inputs*). The
+-- `type` is the live one: it may come from the model, and it is read only
+-- for a value that is not empty. A test, with no `try`; `state` leaves a
+-- file input alone for the same reason.
+refused : V, V → Bool
+refused el v = not (Js.same v (Js.from "")) && Js.same (Js.get el "type") (Js.from "file")
+
+
 --| `(node, value, key)`: a property binding — the DOM property `key`, a
 --| control's `value` when `key` is not given, written when it differs
 --| from the node's live one, so a control the user edited shows the model.
+--| A file input's `value` that is not empty is not written (`refused`).
 pub prop : V, V, V → ⊤
 prop node value key =
     name = if Js.isUndefined key then Js.from "value" else key
     if not (Js.same (Js.get node name) value) then
         writeProp node name value
+
+
+--| `(node, name, flag)`: a class list entry's binding (`browser-inline.md`
+--| §8.2, *A class or style list*) — the class `name` on the node, or off
+--| it, as `flag` says, written when the node differs. `classList.toggle`
+--| with a flag writes nothing when the node agrees in the DOM Standard, but
+--| a DOM that runs the update steps then makes `class=""` on a node with no
+--| class (happy-dom does), so the compare is this function's, as every
+--| binding's is.
+pub toggle : V, V, Bool → ⊤
+toggle node name flag =
+    list = Js.get node "classList"
+    if Js.to (Js.call list "contains" [ name ]) ≠ flag then
+        _ = Js.call list "toggle" [ name, Js.from flag ]
+        ⊤
+
+
+--| `(node, name, value)`: a style list entry's binding (`browser-inline.md`
+--| §8.2, *A class or style list*) — the CSS property `name` set to `value`,
+--| an empty value removing it (`style.setProperty`), written when the value
+--| the node reads back differs.
+pub style : V, V, V → ⊤
+style node name value =
+    declaration = Js.get node "style"
+    if not (Js.same (Js.call declaration "getPropertyValue" [ name ]) value) then
+        _ = Js.call declaration "setProperty" [ name, value ]
+        ⊤
 
 
 --| `(url)`: the value a URL binding writes (`browser-inline.md` §10.5,
@@ -682,6 +1308,299 @@ allShown arms i =
         allShown arms (i + 1)
     else
         False
+
+
+-- ---- Rows: `For` (`browser-inline.md` §9, the simple form) --------------
+
+--| `(html)`: a `For`'s row template: `html` parsed once in a `template`
+--| element, whose content holds any element where it stands, and the node
+--| it makes, which each row of the `For` clones.
+pub forTemplate : String → V
+forTemplate html =
+    t = Js.call (Js.global "document") "createElement" [ Js.from "template" ]
+    Js.set t "innerHTML" (Js.from html)
+    Js.get (Js.get t "content") "firstChild"
+
+
+--| `(parent, end, list, key, make, set)`: the rows of a `For`, children of
+--| `parent` before `end` (null: its last children), made to agree with `list` (`browser-inline.md` §9, amended
+--| 2026-11-23). An item's key is its position when `key` is undefined, the
+--| item itself when it is null, and what `key` gives of it otherwise. Each
+--| item takes the row its key had, or, past the rows of that key, a new
+--| one `make` gives: rows that share a key are matched in order, by rank.
+--| Every row is then `set` with its item and its position, in order, kept
+--| or new: no row is skipped because its item is the same object, which a
+--| write in place keeps (§9.4, *Identity*). The rows of keys that left are
+--| removed, and only the rows outside a longest increasing subsequence of
+--| their old places are moved. A row is an object whose `n` is its node;
+--| the runtime keeps its key as its `k`, and the rows as the `$s` of `end`,
+--| or as the `$r` of `parent` when they are its last children: an element
+--| may be one `For`'s end and another's parent.
+pub forRows : V, V, V, V, V, V → ⊤
+forRows parent end list key make set =
+    items = listItems list
+    holder = if Js.isNull end then parent else end
+    slot = if Js.isNull end then "$r" else "$s"
+    held = Js.get holder slot
+    old = if Js.isUndefined held then Js.array [] else held
+    -- Each key's old places, in order.
+    index = Js.construct (Js.global "Map") []
+    _ =
+        Js.call old "forEach"
+            [ Js.from λrow j →
+                places = Js.call index "get" [ Js.get row "k" ]
+                if Js.isUndefined places then
+                    Js.call index "set" [ Js.get row "k", Js.array [ j ] ]
+                else
+                    Js.call places "push" [ j ]
+            ]
+    count : Int
+    count = Js.to (Js.get items "length")
+    next = Js.construct (Js.global "Array") [ Js.from count ]
+    from = Js.construct (Js.global "Array") [ Js.from count ]
+    claim items key make set old index next from 0 count
+    -- What no item took: the rows of keys that left.
+    _ =
+        Js.call index "forEach"
+            [ Js.from λplaces →
+                Js.each places λj → Js.to (Js.call (Js.get (Js.at old (Js.to j)) "n") "remove" [])
+            ]
+    holdFocus next from count
+    placeRows parent next (longest from count) (count - 1) end
+    Js.set holder slot next
+
+
+--| `(parent, before, text)`: a text node of a row whose element mixes
+--| elements and texts, made with `shown` and put before `before`, or at the
+--| end of `parent` when it is null. Returns it, for the row's `set`.
+pub rowText : V, V, V → V
+rowText parent before shown =
+    made = Js.call (Js.global "document") "createTextNode" [ shown ]
+    _ = Js.call parent "insertBefore" [ made, before ]
+    made
+
+
+-- ---- Branch regions (`browser-inline.md` §8.2, amended 2026-11-23) -----
+
+--| `(parent, before, owned)`: a branch region of `parent`, before the node
+--| `before` — the element after it, or an empty comment of its own when
+--| anything else follows it (`browser-inline.md` §8.2, amended 2026-11-24)
+--| — or at its end when that is null: the region's state, which holds where
+--| its arm stands and, once one is shown, the arm, `k`, and its made row,
+--| `r`. Nothing else stands between its arm and `before`. What the
+--| region holds at `stop` is taken out of the page when `owned`: a region at
+--| the mount node; one in an element goes with it.
+pub region : V, V, V → V
+region parent before owned =
+    regionState =
+        Js.object [ ( "p", parent ), ( "b", before ), ( "k", Js.undefined ), ( "r", Js.undefined ) ]
+    if Js.to owned then own (Js.from λ⊤ → dropArm regionState)
+    regionState
+
+
+--| `(state, k, make, set)`: arm `k` of the region shown and `set`. When
+--| another arm is shown, its node is removed and `make` gives arm `k`'s
+--| row, put where the region stands; `make` is null for an arm with no node.
+--| `set` is called with the row whatever it was, kept or made: no arm is
+--| skipped because a value is the same object (`browser-inline.md` §8.2).
+pub armShown : V, V, V, V → ⊤
+armShown regionState k make set =
+    if not (Js.same (Js.get regionState "k") k) then
+        dropArm regionState
+        Js.set regionState "k" k
+        if not (Js.isNull make) then
+            row = Js.apply make []
+            Js.set regionState "r" row
+            _ =
+                Js.call (Js.get regionState "p") "insertBefore"
+                    [ Js.get row "n", Js.get regionState "b" ]
+            ⊤
+    if not (Js.isNull set) then
+        _ = Js.apply set [ Js.get regionState "r" ]
+        ⊤
+
+
+--| `(state, k, key, make, set)`: `armShown` for a keyed `Show`
+--| (`browser-inline.md` §8.2, amended 2026-11-23, *A `Show`*): arm `k` — 0
+--| the fallback, 1 the body — shown and `set`, and made afresh, the shown
+--| arm's node removed, when `key` is not `===` the key the region last
+--| showed: the body remounts when its key changes. The key is kept as the
+--| state's `v`, apart from the arm's number.
+pub keyShown : V, V, V, V, V → ⊤
+keyShown regionState k key make set =
+    if not (Js.same (Js.get regionState "v") key) then
+        Js.set regionState "v" key
+        Js.set regionState "k" Js.undefined
+    armShown regionState k make set
+
+
+--| `()`: a row of a `For` whose top is a branch (`browser-inline.md` §9,
+--| amended 2026-11-24) before its `set` has chosen an arm: its node an empty
+--| comment, which is also the node of an arm with none (`<></>`), as
+--| `browser-tea` keeps one.
+pub emptyRow : ⊤ → V
+emptyRow ⊤ = Js.object [ ( "n", Js.call (Js.global "document") "createComment" [ Js.from "" ] ) ]
+
+
+--| `(row, k, make, set)`: arm `k` of a row whose top is a branch shown and
+--| `set`. When another arm is shown, `make` gives arm `k`'s row (null: an
+--| empty comment) and its node takes the place of the row's node in the
+--| page, if the row is in it; the row's node is then the arm's, which
+--| `forRows` moves and removes. `set` is called with the arm's row whatever
+--| it was, kept or made: no arm is skipped because a value is the same
+--| object (`browser-inline.md` §8.2).
+pub rowArm : V, V, V, V → ⊤
+rowArm row k make set =
+    if not (Js.same (Js.get row "a") k) then
+        Js.set row "a" k
+        made = if Js.isNull make then emptyRow ⊤ else Js.apply make []
+        _ = Js.call (Js.get row "n") "replaceWith" [ Js.get made "n" ]
+        Js.set row "n" (Js.get made "n")
+        Js.set row "r" made
+    if not (Js.isNull set) then
+        _ = Js.apply set [ Js.get row "r" ]
+        ⊤
+
+
+-- The shown arm's node out of the page.
+dropArm : V → ⊤
+dropArm regionState =
+    row = Js.get regionState "r"
+    if not (Js.isUndefined row) then
+        _ = Js.call (Js.get row "n") "remove" []
+        Js.set regionState "r" Js.undefined
+
+
+-- A list's elements: the array itself, or a view's plain copy (`backend.md`
+-- §4). Read, never written.
+listItems : V → V
+listItems list =
+    if Js.to (Js.call (Js.global "Array") "isArray" [ list ]) then
+        list
+    else
+        Js.call list "$plain" []
+
+
+-- Item `i` on: its row, taken from its key's old places or made, its old
+-- place in `from` (-1 for a new row), and `set` called with it.
+claim : V, V, V, V, V, V, V, V, Int, Int → ⊤
+claim items key make set old index next from i count =
+    if i < count then
+        item = Js.at items i
+        k =
+            if Js.isUndefined key then
+                Js.from i
+            else if Js.isNull key then
+                item
+            else
+                Js.apply key [ item ]
+        places = Js.call index "get" [ k ]
+        j = if Js.isUndefined places then Js.undefined else Js.call places "shift" []
+        row = if Js.isUndefined j then Js.apply make [] else Js.at old (Js.to j)
+        Js.setAt from i (if Js.isUndefined j then Js.from (-1) else j)
+        Js.set row "k" k
+        Js.setAt next i row
+        _ = Js.apply set [ row, item, Js.from i ]
+        claim items key make set old index next from (i + 1) count
+
+
+-- When the page's focus is in a kept row, the old places that cannot stay
+-- in order beside that row's are taken out of the subsequence, which then
+-- holds the row: its node is not moved, and keeps the focus a move would
+-- take (`language.md` §11.9: a row keeps its focus wherever it moved).
+holdFocus : V, V, Int → ⊤
+holdFocus next from count =
+    f = focusedRow next from (Js.get (Js.global "document") "activeElement") 0 count
+    if f >= 0 then
+        dropAround from f (Js.to (Js.at from f)) 0 count
+
+
+-- The kept row whose node holds `active`, or -1.
+focusedRow : V, V, V, Int, Int → Int
+focusedRow next from active i count =
+    if i >= count then
+        -1
+    else if
+        Js.to (Js.at from i) >= 0
+            && Js.to (Js.call (Js.get (Js.at next i) "n") "contains" [ active ])
+    then
+        i
+    else
+        focusedRow next from active (i + 1) count
+
+
+dropAround : V, Int, Int, Int, Int → ⊤
+dropAround from f v i count =
+    if i < count then
+        w : Int
+        w = Js.to (Js.at from i)
+        if (i < f && w > v) || (i > f && w < v) then
+            Js.setAt from i (Js.from (-1))
+        dropAround from f v (i + 1) count
+
+
+-- Rows `i` down to 0 put before the row after them, `anchor` (for the
+-- last, the rows' `end`; null: the parent's end), each but the ones `keep`
+-- marks.
+placeRows : V, V, V, Int, V → ⊤
+placeRows parent next keep i anchor =
+    if i >= 0 then
+        node = Js.get (Js.at next i) "n"
+        if not (Js.to (Js.at keep i)) then
+            _ = Js.call parent "insertBefore" [ node, anchor ]
+            ⊤
+        placeRows parent next keep (i - 1) node
+
+
+-- The places of a longest increasing subsequence of `from`'s old places,
+-- new rows (-1) left out, marked true in an array of `count`.
+longest : V, Int → V
+longest from count =
+    tails = Js.array []
+    prev = Js.construct (Js.global "Array") [ Js.from count ]
+    climb from tails prev 0 count
+    keep = Js.construct (Js.global "Array") [ Js.from count ]
+    _ = Js.call keep "fill" [ Js.from False ]
+    last : Int
+    last = Js.to (Js.get tails "length") - 1
+    if last >= 0 then
+        keptMark keep prev (Js.to (Js.at tails last))
+    keep
+
+
+-- Patience sorting: `tails[l]` is the place whose old place ends the
+-- smallest-ending increasing run of length `l + 1`, `prev` each place's
+-- predecessor in its run.
+climb : V, V, V, Int, Int → ⊤
+climb from tails prev i count =
+    if i < count then
+        v : Int
+        v = Js.to (Js.at from i)
+        if v >= 0 then
+            l = tailAt from tails v 0 (Js.to (Js.get tails "length"))
+            Js.setAt prev i (if l > 0 then Js.at tails (l - 1) else Js.from (-1))
+            Js.setAt tails l (Js.from i)
+        climb from tails prev (i + 1) count
+
+
+-- The first run in `tails` whose last old place is not below `v`.
+tailAt : V, V, Int, Int, Int → Int
+tailAt from tails v lo hi =
+    if lo < hi then
+        mid = Js.shiftRight (lo + hi) 1
+        if Js.to (Js.at from (Js.to (Js.at tails mid))) < v then
+            tailAt from tails v (mid + 1) hi
+        else
+            tailAt from tails v lo mid
+    else
+        lo
+
+
+keptMark : V, V, Int → ⊤
+keptMark keep prev i =
+    if i >= 0 then
+        Js.setAt keep i (Js.from True)
+        keptMark keep prev (Js.to (Js.at prev i))
 
 
 -- ---- Prerendered pages (`prerender.md` §4.3, §11) ----------------------

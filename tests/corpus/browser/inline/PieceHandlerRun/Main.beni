@@ -1,0 +1,54 @@
+-- A root with an event whose message goes through the dispatcher is not
+-- one of a run of roots mounted through one table (browser-inline.md §8.4,
+-- amended 2026-10-24 and 2026-11-24, #2063). `First`'s button has a
+-- function of the event as its handler, so its factory takes `send` and
+-- the program calls it on its own. `Second` and `Third` handle their keys
+-- themselves and stand next to it: they are the run. Were `First` in the
+-- run, its factory would get no `send`, and its click would stop the page.
+-- The transcript is `browser-tea`'s, but for the comment it writes after
+-- each of the three views.
+import First
+import Html exposing (Html)
+import Second
+import Tea
+import Third
+
+
+type alias Model =
+    a : First.Model
+    b : Second.Model
+    c : Third.Model
+
+
+type Msg
+    = A First.Msg
+    | B Second.Msg
+    | C Third.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        A sub →
+            { model | a = First.update sub model.a }
+
+        B sub →
+            { model | b = Second.update sub model.b }
+
+        C sub →
+            { model | c = Third.update sub model.c }
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { a = { n = 10 }, b = { n = 20 }, c = { n = 30 } }
+        , update = update
+        , view =
+            λmodel →
+                <main>
+                    {Html.map (First.view model.a) A}
+                    {Html.map (Second.view model.b) B}
+                    {Html.map (Third.view model.c) C}
+                </main>
+        }

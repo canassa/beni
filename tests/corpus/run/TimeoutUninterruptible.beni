@@ -24,6 +24,6 @@ main = Io.run λ⊤ →
                 Task.yieldNow ⊤
                 Debug.log "after the region" "late"
             Debug.log "answer at ${String.fromInt (Clock.now ⊤)}" answer
-    Clock.adjust clock (Duration.seconds 1)
+    _ = Clock.adjust clock (Duration.seconds 1)
     _ = Task.join caller
     Node.print "done"

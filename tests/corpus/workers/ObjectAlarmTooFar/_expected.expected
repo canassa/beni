@@ -1,0 +1,30 @@
+> GET /room/a/longest
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< too far: no alarm set
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host none, program none
+> GET /room/a/hour
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< alarm set
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host program, program set
+> GET /room/a/longest
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< too far: no alarm set
+> GET /room/a/__beni/alarms
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< host program, program set

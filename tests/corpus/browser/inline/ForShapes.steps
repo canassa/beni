@@ -1,0 +1,13 @@
+# Mark the nodes of both lists, and focus the middle keyed row's input.
+input #in1 "1"
+input #in2 "2"
+input #position>li:nth-child(2)>input "p2"
+focus #in2
+# Every row shows the new mark, and its button sends it.
+click #mark
+click #row3>button
+# The rows turn round: by key each keeps its node, the focused one in place;
+# by position the nodes stay and show other items.
+click #reverse
+# Each row's inner list grows by one, at its front.
+click #add

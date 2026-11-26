@@ -1,0 +1,45 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <output>"3"</output>
+      <span data-role="by">"0"</span>
+      <button data-role="inc">"+"</button>
+      <button data-role="dec">"-"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <output>"4"</output>
+      <span data-role="by">"1"</span>
+      <button data-role="inc">"+"</button>
+      <button data-role="dec">"-"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=dec]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <output>"3"</output>
+      <span data-role="by">"2"</span>
+      <button data-role="inc">"+"</button>
+      <button data-role="dec">"-"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=dec]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <output>"2"</output>
+      <span data-role="by">"2"</span>
+      <button data-role="inc">"+"</button>
+      <button data-role="dec">"-"</button>
+    </div>
+  </div>
+</body>

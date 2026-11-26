@@ -1,0 +1,33 @@
+-- load
+<body>
+  <main>
+    <p id="timer">"0 fibers at 0 ms, spread 0"</p>
+    <p id="frame">"0 fibers at 0 ms, spread 0"</p>
+    <button id="go">"go"</button>
+    <button id="arm">"arm"</button>
+  </main>
+</body>
+-- click #go
+(the DOM did not change)
+-- advance 20
+<body>
+  <main>
+    <p id="timer">"2000 fibers at 10 ms, spread 0"</p>
+    <p id="frame">"0 fibers at 0 ms, spread 0"</p>
+    <button id="go">"go"</button>
+    <button id="arm">"arm"</button>
+  </main>
+</body>
+-- click #arm
+(the DOM did not change)
+-- frame 2 10
+(frame at 30 ms: 1 callback)
+(frame at 40 ms: 0 callbacks)
+<body>
+  <main>
+    <p id="timer">"2000 fibers at 10 ms, spread 0"</p>
+    <p id="frame">"2000 fibers at 30 ms, spread 0"</p>
+    <button id="go">"go"</button>
+    <button id="arm">"arm"</button>
+  </main>
+</body>

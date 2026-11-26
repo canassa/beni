@@ -1,0 +1,402 @@
+-- load
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"1"</strong>
+      " item"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann"
+      " and "
+      <em>"more"</em>
+      " count "
+      "1"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "1"
+    </p>
+    <div id="arm">
+      "open "
+      "ann"
+      <hr>
+    </div>
+    <ul id="list">
+      "seen "
+      "1"
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann"
+      <i>"none"</i>
+      <hr>
+    </section>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"2"</strong>
+      " items"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann"
+      " and "
+      <em>"more"</em>
+      " count "
+      "2"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "2"
+    </p>
+    <div id="arm">
+      "open "
+      "ann"
+      <hr>
+    </div>
+    <ul id="list">
+      "seen "
+      "2"
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann"
+      <i>"none"</i>
+      <hr>
+    </section>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann!"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"2"</strong>
+      " items"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann!"
+      " and "
+      <em>"more"</em>
+      " count "
+      "2"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "2"
+    </p>
+    <div id="arm">
+      "open "
+      "ann!"
+      <hr>
+    </div>
+    <ul id="list">
+      "seen "
+      "2"
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann!"
+      <i>"none"</i>
+      <hr>
+    </section>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann!"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"2"</strong>
+      " items"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann!"
+      " and "
+      <em>"more"</em>
+      " count "
+      "2"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "2"
+    </p>
+    ""
+    <ul id="list">
+      "seen "
+      "2"
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann!"
+      <i>"none"</i>
+      <hr>
+    </section>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann!!"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"2"</strong>
+      " items"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann!!"
+      " and "
+      <em>"more"</em>
+      " count "
+      "2"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "2"
+    </p>
+    ""
+    <ul id="list">
+      "seen "
+      "2"
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann!!"
+      <i>"none"</i>
+      <hr>
+    </section>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann!!"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"2"</strong>
+      " items"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann!!"
+      " and "
+      <em>"more"</em>
+      " count "
+      "2"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "2"
+    </p>
+    <div id="arm">
+      "open "
+      "ann!!"
+      <hr>
+    </div>
+    <ul id="list">
+      "seen "
+      "2"
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann!!"
+      <i>"none"</i>
+      <hr>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann!!"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"2"</strong>
+      " items"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann!!"
+      " and "
+      <em>"more"</em>
+      " count "
+      "2"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "2"
+    </p>
+    <div id="arm">
+      "open "
+      "ann!!"
+      <hr>
+    </div>
+    <ul id="list">
+      "seen "
+      "2"
+      <li>"1"</li>
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann!!"
+      <span>"1"</span>
+      <hr>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann!!"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"2"</strong>
+      " items"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann!!"
+      " and "
+      <em>"more"</em>
+      " count "
+      "2"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "2"
+    </p>
+    <div id="arm">
+      "open "
+      "ann!!"
+      <hr>
+    </div>
+    <ul id="list">
+      "seen "
+      "2"
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann!!"
+      <span>"1"</span>
+      <hr>
+    </section>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="rename">"rename"</button>
+    <button id="toggle">"toggle"</button>
+    <button id="add">"add"</button>
+    <p id="before">
+      "ann!!"
+      <strong>"!"</strong>
+    </p>
+    <p id="after">
+      <strong>"3"</strong>
+      " items"
+    </p>
+    <p id="between">
+      "Hello, "
+      "ann!!"
+      " and "
+      <em>"more"</em>
+      " count "
+      "3"
+    </p>
+    <p id="number">
+      <b>"n"</b>
+      "3"
+    </p>
+    <div id="arm">
+      "open "
+      "ann!!"
+      <hr>
+    </div>
+    <ul id="list">
+      "seen "
+      "3"
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"end"</li>
+    </ul>
+    <section id="region">
+      "label "
+      "ann!!"
+      <span>"1"</span>
+      <hr>
+    </section>
+  </main>
+</body>

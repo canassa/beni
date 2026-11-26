@@ -1,0 +1,143 @@
+-- load
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"0"</output>
+      <output id="step">"1"</output>
+    </section>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"1"</output>
+      <output id="step">"1"</output>
+    </section>
+  </main>
+</body>
+-- click #pick
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"2"</output>
+      <output id="step">"1"</output>
+    </section>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"3"</output>
+      <output id="step">"1"</output>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"4"</output>
+      <output id="step">"1"</output>
+    </section>
+  </main>
+</body>
+-- click #faster
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"4"</output>
+      <output id="step">"2"</output>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"6"</output>
+      <output id="step">"2"</output>
+    </section>
+  </main>
+</body>
+-- click #pick
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"7"</output>
+      <output id="step">"2"</output>
+    </section>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"8"</output>
+      <output id="step">"2"</output>
+    </section>
+  </main>
+</body>
+-- click #faster
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"8"</output>
+      <output id="step">"4"</output>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <section>
+      <button id="inc">"inc"</button>
+      <button id="pick">"pick"</button>
+      <button id="add">"add"</button>
+      <button id="faster">"faster"</button>
+      <output id="count">"12"</output>
+      <output id="step">"4"</output>
+    </section>
+  </main>
+</body>

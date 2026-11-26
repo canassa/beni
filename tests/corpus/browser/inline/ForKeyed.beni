@@ -1,0 +1,55 @@
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Remove Int
+
+
+type alias Item =
+    id : Int
+    label : String
+
+
+type alias Model =
+    items : List Item
+    next : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model
+                | items =
+                    [ …model.items
+                    , { id = model.next, label = "item ${String.fromInt model.next}" }
+                    ]
+                , next = model.next + 1
+            }
+
+        Remove id →
+            { model | items = List.filter model.items λi → i.id ≠ id }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <ul>
+            <For each={model.items} keyed={.id}>
+                {λi → <li><span>{i.label}</span><button onClick={Remove i.id}>x</button></li>}
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { items = [ { id = 1, label = "one" }, { id = 2, label = "two" } ], next = 3 }
+        , update = update
+        , view = view
+        }

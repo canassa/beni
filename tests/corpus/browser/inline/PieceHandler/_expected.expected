@@ -1,0 +1,355 @@
+-- load
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"1"</output>
+      <output id="text"></output>
+      <output id="handled">"0"</output>
+    </nav>
+    <p id="request"></p>
+  </main>
+</body>
+-- click #handled
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"1"</output>
+      <output id="text"></output>
+      <output id="handled">"1"</output>
+    </nav>
+    <p id="request"></p>
+  </main>
+</body>
+-- click #plain
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"1"</output>
+      <output id="text"></output>
+      <output id="handled">"1"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"2"</output>
+      <output id="text"></output>
+      <output id="handled">"1"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #twice
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"4"</output>
+      <output id="text"></output>
+      <output id="handled">"1"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #first
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"1"</output>
+      <output id="text"></output>
+      <output id="handled">"1"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"2"</output>
+      <output id="text"></output>
+      <output id="handled">"1"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- input #shout "ab"
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="AB">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"2"</output>
+      <output id="text">"AB"</output>
+      <output id="handled">"1"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- input #shout "abcd"
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="AB">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"2"</output>
+      <output id="text">"AB"</output>
+      <output id="handled">"2"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- input #shout "abc"
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="ABC">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"2"</output>
+      <output id="text">"ABC"</output>
+      <output id="handled">"2"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="ABC">
+      <button id="toggle">"toggle"</button>
+      <button id="jump">"jump"</button>
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"2"</output>
+      <output id="text">"ABC"</output>
+      <output id="handled">"2"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #jump
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="ABC">
+      <button id="toggle">"toggle"</button>
+      <button id="jump">"jump"</button>
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"12"</output>
+      <output id="text">"ABC"</output>
+      <output id="handled">"2"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #jump
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="ABC">
+      <button id="toggle">"toggle"</button>
+      <button id="jump">"jump"</button>
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"22"</output>
+      <output id="text">"ABC"</output>
+      <output id="handled">"2"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="ABC">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"22"</output>
+      <output id="text">"ABC"</output>
+      <output id="handled">"2"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #handled
+(click's default prevented)
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="ABC">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"22"</output>
+      <output id="text">"ABC"</output>
+      <output id="handled">"3"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>
+-- click #submit
+<body>
+  <main>
+    <nav>
+      <a id="handled" href="/h">"handled"</a>
+      <a id="plain" href="/p">"plain"</a>
+      <button id="next">"next"</button>
+      <button id="first">"first"</button>
+      <button id="twice">"twice"</button>
+      <input id="shout" .value="ABC">
+      <button id="toggle">"toggle"</button>
+      ""
+      <form id="form">
+        <button id="submit">"submit"</button>
+      </form>
+      <output id="page">"122"</output>
+      <output id="text">"ABC"</output>
+      <output id="handled">"3"</output>
+    </nav>
+    <p id="request">"Internal /p"</p>
+  </main>
+</body>

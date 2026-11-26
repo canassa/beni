@@ -1,0 +1,176 @@
+-- load
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"0"</p>
+    <p id="log"></p>
+  </main>
+</body>
+-- click #later
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"2"</p>
+    <p id="log">"later | c"</p>
+  </main>
+</body>
+-- click #deep
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"5"</p>
+    <p id="log">"later | c | deep | again | d"</p>
+  </main>
+</body>
+-- click #cross
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"6"</p>
+    <p id="log">"later | c | deep | again | d | cross | ! | x"</p>
+  </main>
+</body>
+-- click #record
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"8"</p>
+    <p id="log">"later | c | deep | again | d | cross | ! | x | record | r"</p>
+  </main>
+</body>
+-- click #tuple
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"10"</p>
+    <p id="log">"later | c | deep | again | d | cross | ! | x | record | r | tuple | t 8"</p>
+  </main>
+</body>
+-- click #batch
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"13"</p>
+    <p id="log">"later | c | deep | again | d | cross | ! | x | record | r | tuple | t 8 | batch | b1 | b2"</p>
+  </main>
+</body>
+-- click #slept
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"14"</p>
+    <p id="log">"later | c | deep | again | d | cross | ! | x | record | r | tuple | t 8 | batch | b1 | b2 | slept"</p>
+  </main>
+</body>
+-- advance 10
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"15"</p>
+    <p id="log">"later | c | deep | again | d | cross | ! | x | record | r | tuple | t 8 | batch | b1 | b2 | slept | s"</p>
+  </main>
+</body>
+-- click #apply
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"17"</p>
+    <p id="log">"later | c | deep | again | d | cross | ! | x | record | r | tuple | t 8 | batch | b1 | b2 | slept | s | apply | p"</p>
+  </main>
+</body>
+-- click #handed
+<body>
+  <main>
+    <button id="later">"later"</button>
+    <button id="deep">"deep"</button>
+    <button id="cross">"cross"</button>
+    <button id="record">"record"</button>
+    <button id="tuple">"tuple"</button>
+    <button id="batch">"batch"</button>
+    <button id="slept">"slept"</button>
+    <button id="apply">"apply"</button>
+    <button id="handed">"handed"</button>
+    <p id="count">"19"</p>
+    <p id="log">"later | c | deep | again | d | cross | ! | x | record | r | tuple | t 8 | batch | b1 | b2 | slept | s | apply | p | handed | h"</p>
+  </main>
+</body>

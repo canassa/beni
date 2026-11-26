@@ -1,0 +1,19 @@
+-- A `Show` whose body is a branch with an arm of two elements, not one
+-- element or `<></>` (browser-inline.md §8.2, amended 2026-11-24, *A
+-- `Show`*: a body whose top is a branch is planned as a `For`'s row whose
+-- top is one), class 1 (§5).
+import Html exposing (Html)
+import Tea
+
+
+view : Maybe Int → Html ⊤
+view shown =
+    <main>
+        <Show when={shown} keyed>
+            {λn → if n > 1 then <><b>{n}</b><i>{n}</i></> else <i>{n}</i>}
+        </Show>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Just 1, update = λ_ m → m, view = view }

@@ -1,0 +1,82 @@
+-- A local function made in an arm reads a field of the model that the arm
+-- writes in place, and is called after the write (#2620;
+-- ownership-checker.md §31.6, amended 2026-11-24). The language reads the
+-- value the field had when `update` was called, so each line must carry the
+-- old count:
+--
+--   - `#after`: called once, after the write;
+--   - `#twice`: called before the write and after it;
+--   - `#deep`: a local function that calls another, after the write;
+--   - `#slept`: called in a command's body, after a sleep.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = After
+    | Twice
+    | Deep
+    | Slept
+    | Got String
+
+
+type alias Model =
+    count : Int
+    log : String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        After →
+            g s = s ++ " " ++ String.fromInt model.count
+            next = { model | count = model.count + 1 }
+            ( { next | log = next.log ++ " | " ++ g "after" }, Cmd.none )
+
+        Twice →
+            g s = s ++ " " ++ String.fromInt model.count
+            first = g "before"
+            next = { model | count = model.count + 10 }
+            ( { next | log = next.log ++ " | " ++ first ++ " | " ++ g "after" }, Cmd.none )
+
+        Deep →
+            g s = s ++ " " ++ String.fromInt model.count
+            h s = g (s ++ "!")
+            next = { model | count = model.count + 100 }
+            ( { next | log = next.log ++ " | " ++ h "deep" }, Cmd.none )
+
+        Slept →
+            g s = s ++ " " ++ String.fromInt model.count
+            ( { model | count = model.count + 1000 }
+            , Cmd.perform λsend →
+                Time.sleep (Time.millis 10)
+                send (Got (g "slept"))
+            )
+
+        Got s →
+            ( { model | log = model.log ++ " | " ++ s }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="after" onClick={After}>after</button>
+        <button id="twice" onClick={Twice}>twice</button>
+        <button id="deep" onClick={Deep}>deep</button>
+        <button id="slept" onClick={Slept}>slept</button>
+        <p id="count">{model.count}</p>
+        <p id="log">{model.log}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { count = 0, log = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

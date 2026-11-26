@@ -1,0 +1,46 @@
+-- A file input takes one `value` from a program, the empty string: a write
+-- of another one throws `InvalidStateError` (#2020). So a model's value
+-- that is not empty is one no file input can show (browser-inline.md §8.3,
+-- *Controlled inputs*): `prop` does not write it, in the first pass or in
+-- a handler's write pass, and the input keeps what it shows. `fixed`'s
+-- type is written in the markup; `first` and `last` take theirs from the
+-- model, before and after the value. `text` shows the model's value
+-- always.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Other
+    | Clear
+
+
+type alias Model =
+    name : String
+    kind : String
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Other →
+            { m | name = "other.txt" }
+
+        Clear →
+            { m | name = "" }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="other" onClick={Other}>other</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <input id="fixed" type="file" value={m.name} />
+        <input id="first" type={m.kind} value={m.name} />
+        <input id="last" value={m.name} type={m.kind} />
+        <input id="text" value={m.name} />
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { name = "bad", kind = "file" }, update = update, view = view }

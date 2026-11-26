@@ -1,0 +1,15 @@
+-- load
+<body>
+  <main>
+    <button id="on">"on"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- throws click #on
+(threw: Error: TODO: start threw)
+(the DOM did not change)
+-- listeners window resize
+(listeners: 0)
+(the DOM did not change)
+-- event window resize
+(the DOM did not change)

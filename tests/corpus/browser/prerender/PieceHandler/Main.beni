@@ -1,0 +1,43 @@
+-- Another module's view in a prerendered page, with events whose handler
+-- value is not one constructor (docs/design/browser-inline.md §8.4,
+-- amended 2026-11-24; docs/design/prerender.md §6.5): the client that
+-- takes the page over hands the root its dispatcher, and the root wires
+-- each such event through the runtime's `onTaken`, as it does an event of
+-- the constructor alone. The page taken over and the page with no view give
+-- one transcript.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (Counter.view model.c) CounterMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤ }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

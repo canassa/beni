@@ -1,0 +1,56 @@
+-- A listener a message adds never hears the event that sent the message
+-- (browser-inline.md §3, amended 2026-11-23; boundary.md §9.8.5 point 1).
+-- A keydown on the input turns on a document keydown subscription while
+-- that keydown is still bubbling; the listener is added after the event's
+-- dispatch, so only the next keydown reaches it.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Event, Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Open
+    | Heard
+
+
+type alias Model =
+    open : Bool
+    log : List String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Open →
+            ( { model | open = True, log = [ …model.log, "open" ] }, Cmd.none )
+
+        Heard →
+            ( { model | log = [ …model.log, "heard" ] }, Cmd.none )
+
+
+opened : Event → Msg
+opened _ = Open
+
+
+subscriptions : Model → Sub Msg
+subscriptions model = if model.open then Browser.Events.onKeyDown λ_ → Heard else Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <input id="t" onKeyDown={opened} />
+        <p>{String.join model.log " "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { open = False, log = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

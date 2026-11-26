@@ -1,0 +1,47 @@
+-- run: the `elapsed` a schedule is told is a `Duration`, so it is at most
+-- the longest duration, 9007199254740991 ms
+-- (transparent-effects-proposal.md §17.8, amended 2026-11-24; #2022).
+-- Before the fix `repeat` and `retry` subtracted two readings with no
+-- bound, and the third line was 9007199254741000: a `Duration` longer
+-- than the longest.
+--
+-- The clock begins at the first reading an `Int` holds, -9007199254740991.
+-- The work runs there, then at 0, the longest duration later, and then at
+-- 10. The time since the first run is 0 ms, then exactly the longest
+-- duration, then 10 ms more than any `Duration` holds, which is the
+-- longest duration.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Schedule exposing (Schedule)
+import Task
+
+
+longest : Int
+longest = 9007199254740991
+
+
+-- Print each step's `elapsed`; wait the longest duration after the first
+-- run and 10 ms after the second, and stop after the third.
+printing : ⊤ → Schedule Int
+printing ⊤ = Schedule.fromStep λm →
+    _ =
+        Debug.log
+            "after the run at ${String.fromInt m.input}, elapsed"
+            (Duration.toMillis m.elapsed)
+    if m.attempt == 1 then
+        Schedule.Continue (Duration.millis longest) (printing ⊤)
+    else if m.attempt == 2 then
+        Schedule.Continue (Duration.millis 10) (printing ⊤)
+    else
+        Schedule.Stop
+
+
+main : Program
+main = Io.run λ⊤ →
+    clock = Clock.virtual (negate longest)
+    worker = Task.spawn λ⊤ → Clock.run clock λ⊤ → Task.repeat (printing ⊤) Clock.now
+    _ = Debug.log "the longest duration" (Clock.adjust clock (Duration.millis longest))
+    _ = Debug.log "10 ms" (Clock.adjust clock (Duration.millis 10))
+    Node.print "the last run was at ${String.fromInt (Task.join worker)}"

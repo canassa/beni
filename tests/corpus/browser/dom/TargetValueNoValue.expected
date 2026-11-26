@@ -1,0 +1,24 @@
+-- load
+<body>
+  <main>
+    <p id="out">""</p>
+    <div id="d">"x"</div>
+    <input id="i" .value="typed">
+  </main>
+</body>
+-- click #d
+<body>
+  <main>
+    <p id="out">"Nothing"</p>
+    <div id="d">"x"</div>
+    <input id="i" .value="typed">
+  </main>
+</body>
+-- click #i
+<body>
+  <main>
+    <p id="out">"Just [typed]"</p>
+    <div id="d">"x"</div>
+    <input id="i" .value="typed">
+  </main>
+</body>

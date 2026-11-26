@@ -1,0 +1,37 @@
+-- `Html.targetChecked` reads the target's `checked` only when it is a
+-- boolean (boundary.md §4.3 (a), the owner, 2026-11-16, #1993). A `<div>`
+-- has no `checked`, so a click on it gives `Nothing`; a checkbox's click
+-- gives its new state. Before the fix the read was typed `Bool`, and
+-- `undefined` reached the program as one.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Got (Maybe Bool)
+
+
+show : Maybe Bool → String
+show v =
+    case v of
+        Just True →
+            "Just True"
+
+        Just False →
+            "Just False"
+
+        Nothing →
+            "Nothing"
+
+
+view : String → Html Msg
+view s =
+    <main>
+        <p id="out">{s}</p>
+        <div id="d" onClick={λev → Got (Html.targetChecked ev)}>x</div>
+        <input id="c" type="checkbox" onClick={λev → Got (Html.targetChecked ev)} />
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → "", update = λ(Got v) _ → show v, view = view }

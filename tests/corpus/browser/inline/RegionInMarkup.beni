@@ -1,0 +1,74 @@
+-- An `if` or a `case` in markup whose arm reads what the branch binds is a
+-- branch region (docs/design/browser-inline.md §8.2, amended 2026-11-23),
+-- standing before the element after it. Its `Just` arm reads `name`, holds
+-- a branch of its own — a region of the arm's unit — one arm of which is a
+-- `For`, and a handler whose message is built from `name`. `Pick` writes the
+-- choice and the list the new arm shows in one pass; the arm is made once,
+-- from the model that pass holds. Its transcript is `browser-tea`'s for the
+-- same source but for one difference: a text of several parts is one text node
+-- here, where `browser-tea` keeps a node per part.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick String
+    | Unpick
+    | Add
+    | Toggle
+
+
+type alias Model =
+    picked : Maybe String
+    items : List String
+    open : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick s →
+            { model | picked = Just s, items = List.push model.items s }
+
+        Unpick →
+            { model | picked = Nothing }
+
+        Add →
+            { model | items = List.push model.items "x" }
+
+        Toggle →
+            { model | open = not model.open }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="pick" onClick={Pick "ada"}>pick</button>
+        <button id="unpick" onClick={Unpick}>unpick</button>
+        <button id="add" onClick={Add}>add</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <div id="region">
+            {case model.picked of
+                Just name →
+                    <section>
+                        <p>{name}</p>
+                        {if model.open then
+                            <ul><For each={model.items} keyed={False}>{λs → <li>{s}</li>}</For></ul>
+                         else
+                            <em>closed {List.length model.items}</em>
+                        }
+                        <button id="rename" onClick={Pick "${name}!"}>rename</button>
+                    </section>
+
+                Nothing →
+                    <p>none</p>
+            }
+            <footer>end</footer>
+        </div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { picked = Nothing, items = [], open = False }, update = update, view = view }

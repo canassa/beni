@@ -1,0 +1,17 @@
+-- A top-level value that throws while its module loads is a defect
+-- (boundary.md §9.8.10 (c)): the page shows the crash screen in a
+-- development build, though `run` never started (#1994).
+import Browser
+import Html exposing (Html)
+
+
+bad : Int
+bad = Debug.todo "a top-level value crashed"
+
+
+view : Int → Html {}
+view n = <p>{String.fromInt n}</p>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → bad, update = λ_ m → m, view = view }

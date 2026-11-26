@@ -137,7 +137,7 @@ main =
 
 `init`, `view` and routes must be pure: the build and browser compute the same first render. Host, clock and random reads are `prerender_impure`, at the call.
 `Debug.log` is allowed, also in another module. A render that throws fails the build (`prerender_failed`), with the route.
-- An inline or local named init may return a pure model with `Cmd.none`, `Cmd.perform`, or a literal `Cmd.batch`. Only the client makes the command metadata and runs the body.
+- An inline or local named init may return a pure model with `Cmd.none`, `Cmd.perform`, `Cmd.afterRender`, or a literal `Cmd.batch`. Only the client makes the command metadata and runs the body: `Cmd.afterRender` can focus or measure (`Dom.focus`, `Dom.box`) the page it took over.
   Eager arguments and captures must be pure. Opaque helpers and metadata selecting the model remain compiler limits; host reads remain refused.
 - The build reads all the code that they can run, in each module of the program and its
   platforms. `init` can name a function of another module: `init = Counter.init`.
@@ -184,8 +184,8 @@ program gets each event in order, once, as a message to `update`. The control's 
 and selected option are the ones the user left. The browser does not run a default action again.
 
 - A page whose program listens to no event gets no script.
-- Pointer events (`Html.onPointerDown` and the others) are not recorded. Their position is read
-  while the event is dispatched. The `click` of a tap is recorded.
+- Pointer events (`Html.onPointerDown` and the others) and `Html.onContextMenu` are not recorded.
+  Their position is read while the event is dispatched. The `click` of a tap is recorded.
 - An event that no listener hears changes nothing. A control keeps the text the user typed after
   an event.
 - When the page differs from the program (below), the recorded events are dropped.

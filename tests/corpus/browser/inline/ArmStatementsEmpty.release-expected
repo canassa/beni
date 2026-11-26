@@ -1,0 +1,73 @@
+-- load
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="k">"k"</button>
+    <button id="stop">"stop"</button>
+    <p>
+      <i>"go"</i>
+    </p>
+    <section>
+      <b>"yes"</b>
+    </section>
+    <ul>
+      <li>"1"</li>
+    </ul>
+    <ol>
+      <li>
+        <b>"1"</b>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #a
+console.log: page empty arm: 0
+console.log: row empty arm: (1,0)
+console.log: inner empty arm: (1,0)
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="k">"k"</button>
+    <button id="stop">"stop"</button>
+    <p>
+      <i>"go"</i>
+    </p>
+    <section></section>
+    <ul>
+      <!---->
+    </ul>
+    <ol>
+      <li></li>
+    </ol>
+  </main>
+</body>
+-- click #k
+console.log: page empty arm: 1
+console.log: row empty arm: (1,1)
+console.log: inner empty arm: (1,1)
+(the DOM did not change)
+-- click #a
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="k">"k"</button>
+    <button id="stop">"stop"</button>
+    <p>
+      <i>"go"</i>
+    </p>
+    <section>
+      <b>"yes"</b>
+    </section>
+    <ul>
+      <li>"1"</li>
+    </ul>
+    <ol>
+      <li>
+        <b>"1"</b>
+      </li>
+    </ol>
+  </main>
+</body>
+-- throws click #stop
+(threw: Error: TODO: stopped)
+(the DOM did not change)

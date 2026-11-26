@@ -1,5 +1,5 @@
 import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
-import { Html$targetValue } from "./_platform/_html/Html.mjs";
+import { Html$controlValue } from "./_platform/_html/Html.mjs";
 import { String$fromInt, String$compare } from "./_core/String.mjs";
 const DomRowMount$t57 = Rt$template("<li><a> </a><input>");
 const DomRowMount$p59 = ($i$1, $v$2) => {
@@ -16,7 +16,7 @@ const DomRowMount$p59 = ($i$1, $v$2) => {
       if ($cx$10 !== null) {
         $w$12.$$cx = $cx$10;
       }
-      $w$14.$$inputX = Html$targetValue;
+      $w$14.$$inputX = Html$controlValue;
       if ($cx$10 !== null) {
         $w$14.$$cx = $cx$10;
       }

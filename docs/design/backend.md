@@ -5748,6 +5748,9 @@ day, and it is decided by lowering, not guessed by this pass:
   `Node.done` still pins nothing), a lambda, and a reference to a value. `Debug.log` and
   `Debug.todo` are `foreign impure` and are kept like any other impure call â one rule, no special
   case, and `run/ReleaseDeadDebug` no longer needs a `.release-expected`.
+  *Amended 2026-11-24 (#2642):* a pure call that writes a record in place is not droppable. The
+  checker accepted the write at the call, and the call is a store (`ownership-checker.md` §31.10,
+  *a call that writes is a store*). It is never dropped and moves past names and literals alone.
 - **One known gap, recorded rather than closed**: reading a top-level value with a `where` clause
   and no parameters runs its initialiser at the first use that needs it (`language.md` Â§6's table).
   A dropped binding whose right-hand side is only such a read moves that first run to the next
@@ -6131,6 +6134,29 @@ table: every `browser/` page smaller than before the step). Fixtures: `Rename.zi
 bodies, a used enclosing name stepped over), `run/NestingElseIf` (nested labelled blocks), every
 `browser/` page's release pass (`for(let a of a)` was found there), and every `emit/release/`
 golden.
+
+*Amended 2026-11-24 (#2663): every name is declared where it is read.* A scope only says which
+names a spelling must step around, so a local written OUTSIDE every scope that declares it is
+spelled too, and its spelling reads whatever else holds it there — the suspendable form's split
+did that to a closure naming a value below a suspension point (`undefined 1` printed, no
+diagnostic; `transparent-effects-proposal.md` §16.3). The safety build's self-check now also
+asks, once per scope and name, that each place a declared local is written has a declaration of
+it in that scope or one around it (`Rename.verifyBound`; a parameter, a `const`, a `let`, a
+function, an import, a label, a loop's or a `catch`'s binding). One that does not is an
+`internal` diagnostic naming it. Fixture: `run/ClosureNamesLocalAfterSuspension`'s release pass,
+which stops at build with the split put back as it was.
+
+*Amended 2026-11-24 (#2672): a local no place declares is refused in every build.* The check
+above asks only about a name the declaration declares somewhere. A local it writes and never
+declares at all was still given a spelling, and `browser-inline`'s named row path once emitted
+one (`w$18`, a `let` of the row function left unbound): the development build threw
+`ReferenceError` at load, the release build showed `[object Object]`. Now `Rename.enter` refuses
+such a name in every build, not only a safety one, since the test is one stamp per local: the
+build stops with the same `internal` diagnostic, so a release build never turns a
+`ReferenceError` into a wrong page. Proof: with the lowering's fix of #2673 reverted,
+`browser/inline/NamedRows` fails its development run and its `--release` build stops naming `w`;
+the unit test *a local the declaration reads and never declares is refused* pins the rule, since
+no beni program reaches it now.
 
 #### Item 3 â compact printing
 
@@ -12405,6 +12431,18 @@ no property â its content is markup the runtime owns, and an edit to it is 
 before; `open` on `<details>` and `<dialog>` is a plain attribute, compared with the value last
 written, not with the page. A vocabulary that declares `open` `stateful` must add `toggle` (which
 does not bubble, so only the capture listener sees it) to the names above.
+
+*Amended 2026-11-24 (#2020): a file input's `value`.* A script can give an `input` of type `file`
+one `value` only, the empty string, which removes the chosen files. An assignment of another value
+throws `InvalidStateError`. Thus a model's value that is not empty is a model no page can show,
+and for this one the browser sanitises nothing. The runtime does not make that write: `writeProp`,
+the step that each write of a control's property goes through (`control` and a reconcile), writes
+a `value` to an element whose `type` property is `file` only when the value is `""`. The test reads
+the live `type`, because a `type` can come from the model. The test comes after the comparison with
+the page, so a control that shows its value does not pay for it. The input keeps what it shows.
+When a write of `type` makes the control a different kind of input, that write marks the control
+(*The runtime's marks*, below), and the reconcile then writes the model's value.
+`browser/dom/FileInputValue` and `FileInputLiteral`.
 
 **Where the edited set stops**, each case with what it does (amended after review, 2026-10-08):
 

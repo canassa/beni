@@ -48,6 +48,12 @@ pub const Input = struct {
     /// §11.11, made precise 2026-10-04). Null: no call is exempt.
     debug_module: ?u32 = null,
     parameterised_templates: bool = false,
+    /// The lowering has no run-time markup value
+    /// (`Lowering.no_markup_values`): a `let` whose value is markup written
+    /// in place is a name for that root, entered where a hole names it, and
+    /// is never moved into another root as a value it evaluates
+    /// (`browser-inline.md` §8.2, amended 2026-11-23, *A markup value*).
+    named_markup_lets: bool = false,
 };
 
 /// How an `==` or `/=` compares (language.md §11.9, *a selector*).
@@ -1349,6 +1355,7 @@ const Builder = struct {
             if (payload.params_end != payload.params_start) continue;
             const rhs: Inst.Index = @fromBackingInt(@intCast(datas[def].rhs));
             if (tags[rhs.int()] == .lambda) continue;
+            if (b.in.named_markup_lets and tags[rhs.int()] == .markup) continue;
             // Outside the root, and the root within its scope with no
             // function between.
             if (mine.isSet(def - start)) continue;

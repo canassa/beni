@@ -1,0 +1,59 @@
+-- A keyed `For`, the simple form (browser-inline.md §9, amended
+-- 2026-11-23): the row's template parsed once at the mount; one binding entry
+-- whose read set is the `For`'s, which calls the runtime's `forRows` with
+-- the list, the key function, `make` (a clone, its elements, a listener
+-- that hands the dispatcher the message the row last kept) and `set` (the
+-- row's values, its writes and its kept message). The row's events go
+-- through the dispatcher, so the page has one.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Remove Int
+
+
+type alias Item =
+    id : Int
+    label : String
+
+
+type alias Model =
+    items : List Item
+    next : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model
+                | items = [ …model.items, { id = model.next, label = "new" } ]
+                , next = model.next + 1
+            }
+
+        Remove id →
+            { model | items = List.filter model.items λi → i.id ≠ id }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Add}>add</button>
+        <ul>
+            <For each={model.items} keyed={.id}>
+                {λi → <li><span>{i.label}</span><button onClick={Remove i.id}>x</button></li>}
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { items = [ { id = 1, label = "one" } ], next = 2 }
+        , update = update
+        , view = view
+        }

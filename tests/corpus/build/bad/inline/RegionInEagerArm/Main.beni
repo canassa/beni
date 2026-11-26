@@ -1,0 +1,33 @@
+-- A branch region inside an arm written eagerly (an `if` whose other arm is
+-- `<></>`): not compiled yet (docs/design/browser-inline.md §8.2, amended
+-- 2026-11-23; §5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+    name : Maybe String
+
+
+view : Model → Html {}
+view model =
+    <main>
+        {if model.open then
+            <div>
+                {case model.name of
+                    Just s →
+                        <b>{s}</b>
+
+                    Nothing →
+                        <i>none</i>
+                }
+            </div>
+         else
+            <></>
+        }
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { open = True, name = Nothing }, update = λ_ m → m, view = view }

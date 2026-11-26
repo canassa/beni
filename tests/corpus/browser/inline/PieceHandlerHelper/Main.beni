@@ -1,0 +1,34 @@
+-- An event in a view helper's call, in another module's markup, whose
+-- handler value is not one constructor (browser-inline.md §8.4, amended
+-- 2026-11-24, #2063): the root's `make` enters the helper's call with its
+-- argument, `model.step`, read from the model at the event, and gives
+-- `Add step`. The argument is proved pure and total; one that is not is
+-- refused (`build/bad/inline/PieceEventHelperArg/`). The transcript is
+-- `browser-tea`'s.
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    counter : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg sub →
+            { model | counter = Counter.update sub model.counter }
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { counter = { count = 0, step = 1 } }
+        , update = update
+        , view = λmodel → <main>{Html.map (Counter.view model.counter) CounterMsg}</main>
+        }

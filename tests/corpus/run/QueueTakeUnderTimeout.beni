@@ -30,7 +30,7 @@ main = Io.run λ⊤ →
             got = Task.timeout (Duration.millis 10) λ⊤ → Queue.take q
             _ = Debug.log "at ${String.fromInt (Clock.now ⊤)}" got
             Task.join producer
-    Clock.adjust clock (Duration.millis 100)
+    _ = Clock.adjust clock (Duration.millis 100)
     Task.join caller
     _ = Debug.log "size" (Queue.size q)
     _ = Debug.log "took" (Queue.take q)

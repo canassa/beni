@@ -283,6 +283,9 @@ pub const Failure = struct {
         reserved,
         /// A reference reached the printer with no assignment behind it.
         unresolved,
+        /// A name is written where no scope around it declares it: the
+        /// short name would read whatever else is in scope there.
+        unbound,
         /// A loop's variable was named as the loop's own, and the printer
         /// left its declaration in the scope around the loop.
         mispulled,
@@ -292,6 +295,7 @@ pub const Failure = struct {
                 .collision => "two names in one scope were given the same short spelling",
                 .reserved => "a short spelling is a reserved word or a host global",
                 .unresolved => "a reference has no short name behind it",
+                .unbound => "a reference names a local that no enclosing scope declares",
                 .mispulled => "a loop's variable was named as the loop's own, but its declaration was not written in the loop's head",
             };
         }
@@ -359,6 +363,11 @@ pub const Module = struct {
     /// `enter`'s, per local: the scope a name was last met in.
     last_scope: []u32 = &.{},
     last_stamp: []u32 = &.{},
+    /// Where each local is declared, as (scope, name): what `verifyBound` checks
+    /// every place a name is written against. Kept only in a safety build.
+    decls: std.ArrayList(Occurrence) = .empty,
+    /// Per local: equal to `current` when this declaration declares it.
+    decl_stamp: []u32 = &.{},
     /// The labels of the statements the walk is inside.
     labels: std.ArrayList(u32) = .empty,
     /// `collectExpr`'s explicit stack, shared by the walks it nests.
@@ -396,12 +405,25 @@ pub const Module = struct {
         m.current += 1;
         m.order.clearRetainingCapacity();
         m.occurs.clearRetainingCapacity();
+        m.decls.clearRetainingCapacity();
         m.scopes.clearRetainingCapacity();
         try m.scopes.append(m.gpa, .{ .parent = 0, .depth = 0 });
         m.scope = 0;
         var mentioned: std.ArrayList(u32) = .empty;
         defer mentioned.deinit(m.gpa);
         try m.collect(stmt, &mentioned);
+        // A local this declaration writes and never declares is free: a
+        // `ReferenceError` in a development build, while a short spelling
+        // would read whatever else has it there, a silently wrong value
+        // (#2672). Refused in every build, since it costs one stamp per
+        // local; whether each place is inside its declaration's scope is
+        // `verifyBound`'s, in a safety build only.
+        if (m.failure == null) for (m.order.items) |n| {
+            if (m.decl_stamp[n.unwrap().?] != m.current) {
+                m.failure = .{ .kind = .unbound, .name = n };
+                break;
+            }
+        };
 
         // The highest ordinal a local can need is one per local, so a global
         // at or above that bound is out of reach and need not be avoided.
@@ -492,6 +514,45 @@ pub const Module = struct {
             }
         }
         m.verify(mentioned.items, homed, blocked, busy);
+        try m.verifyBound();
+    }
+
+    /// The safety-build wall's second half: every place a local is
+    /// written has a declaration of it in its own scope or one around it.
+    /// A name written outside every scope that declares it is a
+    /// `ReferenceError` in a development build, and here a SILENT wrong
+    /// answer, since its short spelling resolves to whatever else is in
+    /// scope there (#2663). A name this declaration never declares is
+    /// `enter`'s, refused in every build (#2672). Each (scope, name)
+    /// pair is asked once, and an answer walks up at most the scopes the
+    /// pair is nested in.
+    fn verifyBound(m: *Module) Allocator.Error!void {
+        if (!std.debug.runtime_safety) return;
+        if (m.failure != null or m.decls.items.len == 0) return;
+        const key = struct {
+            fn of(scope: u32, name: u32) u64 {
+                return (@as(u64, scope) << 32) | name;
+            }
+        }.of;
+        var declared: std.AutoHashMapUnmanaged(u64, void) = .empty;
+        defer declared.deinit(m.gpa);
+        for (m.decls.items) |d| {
+            try declared.put(m.gpa, key(d.scope, d.name), {});
+        }
+        var asked: std.AutoHashMapUnmanaged(u64, void) = .empty;
+        defer asked.deinit(m.gpa);
+        for (m.occurs.items) |occ| {
+            if (m.decl_stamp[occ.name] != m.current) continue;
+            if ((try asked.getOrPut(m.gpa, key(occ.scope, occ.name))).found_existing) continue;
+            var s = occ.scope;
+            while (!declared.contains(key(s, occ.name))) {
+                if (s == 0) {
+                    m.failure = .{ .kind = .unbound, .name = @fromBackingInt(@intCast(occ.name)) };
+                    return;
+                }
+                s = m.scopes.items[s].parent;
+            }
+        }
     }
 
     /// Items bucketed by scope, each bucket in the items' order.
@@ -680,6 +741,16 @@ pub const Module = struct {
         try m.order.append(m.gpa, n);
     }
 
+    /// `see` for the place that declares `n` in the walk's scope.
+    fn declare(m: *Module, n: NameIndex, mentioned: *std.ArrayList(u32)) Allocator.Error!void {
+        try m.see(n, mentioned);
+        if (m.met != null) return;
+        const i = n.unwrap() orelse return;
+        if (i >= m.ir.names.len or m.ir.name(n).module != .none) return;
+        m.decl_stamp[i] = m.current;
+        if (std.debug.runtime_safety) try m.decls.append(m.gpa, .{ .scope = m.scope, .name = i });
+    }
+
     fn collect(m: *Module, stmt: Index, mentioned: *std.ArrayList(u32)) Allocator.Error!void {
         const d = m.ir.data(stmt);
         switch (m.ir.tag(stmt)) {
@@ -687,19 +758,19 @@ pub const Module = struct {
                 const imp = m.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Import);
                 // Only the `local` half: the `imported` one is the sibling's
                 // own export name and may not move (`boundary.md` §4).
-                for (m.ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| try m.see(spec.local, mentioned);
+                for (m.ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| try m.declare(spec.local, mentioned);
             },
             .export_stmt => for (m.ir.extraSlice(JsIr.inlineRange(d), NameIndex)) |n| try m.see(n, mentioned),
             .const_decl => {
-                try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                try m.declare(@fromBackingInt(@intCast(d.lhs)), mentioned);
                 try m.collectExpr(@fromBackingInt(@intCast(d.rhs)), mentioned);
             },
             .let_decl => {
-                try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                try m.declare(@fromBackingInt(@intCast(d.lhs)), mentioned);
                 if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try m.collectExpr(v, mentioned);
             },
             .func_decl, .gen_decl => {
-                try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                try m.declare(@fromBackingInt(@intCast(d.lhs)), mentioned);
                 try m.collectFunc(@fromBackingInt(@intCast(d.rhs)), mentioned);
             },
             .assign_stmt => {
@@ -715,7 +786,7 @@ pub const Module = struct {
             },
             .while_true, .block_stmt => {
                 const label: NameIndex = @fromBackingInt(@intCast(d.lhs));
-                try m.see(label, mentioned);
+                try m.declare(label, mentioned);
                 // A label may not be declared again inside its own
                 // statement: every scope there uses it (`push`).
                 const labelled = m.met == null and label.unwrap() != null and m.ir.name(label).module == .none;
@@ -733,7 +804,7 @@ pub const Module = struct {
                 // a of a)` reads the new `a`, before it is initialised.
                 const saved = try m.push();
                 defer m.leave(saved);
-                try m.see(@fromBackingInt(@intCast(d.lhs)), mentioned);
+                try m.declare(@fromBackingInt(@intCast(d.lhs)), mentioned);
                 try m.collectExpr(f.iterable, mentioned);
                 try m.collectList(f.body(), mentioned);
             },
@@ -762,7 +833,7 @@ pub const Module = struct {
                     // the binding's spelling in the block is an early error.
                     const saved = try m.push();
                     defer m.leave(saved);
-                    try m.see(t.catch_name, mentioned);
+                    try m.declare(t.catch_name, mentioned);
                     try m.collectList(t.catchBody(), mentioned);
                 }
                 const saved = try m.push();
@@ -803,6 +874,13 @@ pub const Module = struct {
                     const saved = try m.push();
                     defer m.leave(saved);
                     try m.see(n, mentioned);
+                    // The printer may leave the `let` in the scope around
+                    // the loop, so that is where `verifyBound` takes it to
+                    // stand: the loop's scope sees it either way.
+                    if (m.met == null) {
+                        m.decl_stamp[index] = m.current;
+                        if (std.debug.runtime_safety) try m.decls.append(m.gpa, .{ .scope = saved, .name = index });
+                    }
                     m.pulled_stamp[index] = m.current;
                     m.pulled_outer[index] = saved;
                     try m.collectList(m.ir.subRange(@fromBackingInt(@intCast(m.ir.data(list[i + 1]).rhs))), mentioned);
@@ -820,7 +898,7 @@ pub const Module = struct {
         // take a parameter's name.
         const saved = try m.push();
         defer m.leave(saved);
-        for (m.ir.extraSlice(f.params(), NameIndex)) |n| try m.see(n, mentioned);
+        for (m.ir.extraSlice(f.params(), NameIndex)) |n| try m.declare(n, mentioned);
         try m.collectList(f.body(), mentioned);
     }
 
@@ -857,6 +935,8 @@ pub fn begin(gpa: Allocator, ir: *const JsIr, globals: *const Globals) Allocator
     const last_scope = try gpa.alloc(u32, ir.names.len);
     const last_stamp = try gpa.alloc(u32, ir.names.len);
     @memset(last_stamp, 0);
+    const decl_stamp = try gpa.alloc(u32, ir.names.len);
+    @memset(decl_stamp, 0);
     return .{
         .ir = ir,
         .globals = globals,
@@ -868,6 +948,7 @@ pub fn begin(gpa: Allocator, ir: *const JsIr, globals: *const Globals) Allocator
         .pulled_stamp = pulled_stamp,
         .last_scope = last_scope,
         .last_stamp = last_stamp,
+        .decl_stamp = decl_stamp,
     };
 }
 
@@ -1041,15 +1122,16 @@ const deep_chain = 10_000;
 test "a function returning a && chain deeper than a recursive walk survives is named down to its deepest link" {
     // A derived `eq` is one left-nested `&&` as long as its record is wide.
     // The collecting walk keeps its own stack (`JsIr.pushOperands`), so
-    // the names are assigned on `small_stack`'s few pages. The one local
-    // that only the chain's deepest link reads is the second name met in
-    // the function's scope — after its parameter, which may take the
-    // function's own spelling since the body never names the function — so
-    // it is given ordinal 1 only if the walk reached the bottom first.
+    // the names are assigned on `small_stack`'s few pages. Every place the
+    // chain names a local is an occurrence, so their count shows the walk
+    // reached the deepest link; the local only that link reads, `z`, is the
+    // second name of the function's scope, after its parameter, which may
+    // take the function's own spelling since the body never names it.
     try small_stack.run(nameDeepChain, .{});
 }
 
-/// `function f(a) { return z && a && … && a; }`.
+/// `function f(a) { return z && a && … && a; function z(x) {} }`: `z` is
+/// declared after the chain, so it is met first at the chain's bottom.
 fn nameDeepChain() !void {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -1064,7 +1146,8 @@ fn nameDeepChain() !void {
         const pair = try b.addRecord(JsIr.Binary{ .left = chain, .right = operand });
         chain = try testNode(&b, .binary, @backingInt(pair), @backingInt(JsIr.BinaryOp.logical_and));
     }
-    const decl = try testFunc(&b, f, a, &.{try testNode(&b, .return_stmt, chain.int(), 0)});
+    const x = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const decl = try testFunc(&b, f, a, &.{ try testNode(&b, .return_stmt, chain.int(), 0), try testFunc(&b, z, x, &.{}) });
     const ir = try b.toOwned(try b.addRange(&.{decl}));
 
     var globals: Globals = .{};
@@ -1074,6 +1157,8 @@ fn nameDeepChain() !void {
     try testing.expectEqual(@as(?u32, 0), m.ordinal(f));
     try testing.expectEqual(@as(?u32, 0), m.ordinal(a));
     try testing.expectEqual(@as(?u32, 1), m.ordinal(z));
+    // `f`, `a`, the chain's `deep_chain` places, `z`'s declaration and `x`.
+    try testing.expectEqual(@as(usize, deep_chain + 4), m.occurs.items.len);
 }
 
 test "a declaration of 16 384 locals is named and self-checked in linear time" {
@@ -1144,6 +1229,28 @@ test "a loop's body reuses a spelling of the scope around it that it does not us
     try testing.expectEqual(@as(?u32, 1), m.ordinal(x));
     // The second uses `x2`: `y` takes `a`'s, which it does not use.
     try testing.expectEqual(@as(?u32, 0), m.ordinal(y));
+}
+
+test "a local the declaration reads and never declares is refused, in every build" {
+    // `function f(a) { const x = w; }`: `w` is free, a `ReferenceError` in a
+    // development build; a short spelling would read whatever has it here
+    // (#2672), so the renamer stops instead of naming it.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const gpa = arena_state.allocator();
+    var b: JsIr.Builder = .init(gpa);
+    const f = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const x = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const w = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const decl_x = try testNode(&b, .const_decl, x.int(), (try testNode(&b, .ident, w.int(), 0)).int());
+    const decl = try testFunc(&b, f, a, &.{decl_x});
+    const ir = try b.toOwned(try b.addRange(&.{decl}));
+
+    var globals: Globals = .{};
+    var m = try begin(gpa, &ir, &globals);
+    try m.enter(decl);
+    try testing.expectEqual(@as(?Failure, .{ .kind = .unbound, .name = w }), m.failure);
 }
 
 fn testNode(b: *JsIr.Builder, tag: Node.Tag, lhs: u32, rhs: u32) !Index {

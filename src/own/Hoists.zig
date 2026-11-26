@@ -6,7 +6,7 @@ const InternPool = @import("../InternPool.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Allocator = std.mem.Allocator;
 pub const none = std.math.maxInt(u32);
-pub const format_version: u32 = 1;
+pub const format_version: u32 = 2;
 const magic = "BENIHOI\x00";
 
 pub const Demand = struct {
@@ -36,7 +36,8 @@ pub const Read = struct {
     /// Prefix through the written field; full path for an eager capture.
     prefix_len: u32,
     placement: u32,
-    /// 0: before the instruction; 1: after its operands, before its stores.
+    /// 0: before the instruction; 1: after its operands, before its stores;
+    /// 2: after it, a `let` item (a local function's read, §31.6).
     phase: u32,
     /// Closure creation, or `none` for a direct read.
     capture: u32 = none,
@@ -84,6 +85,12 @@ pub const Table = struct {
             if (d.inst < inst) lo = mid + 1 else hi = mid;
         }
         return if (lo < t.demands.len and t.demands[lo].inst == inst) t.demands[lo] else null;
+    }
+
+    /// Whether the checker accepted a write in place at `inst`: a record
+    /// update, or a call whose callee writes a record argument (§31.7).
+    pub fn writesAt(t: Table, inst: Bir.Inst.Index) bool {
+        return t.accepted(inst.int()) != null;
     }
 
     pub fn name(t: Table, offset: u32) []const u8 {
@@ -275,9 +282,11 @@ pub fn read(gpa: Allocator, bytes: []const u8) (Allocator.Error || error{BadHois
         if (i > 0 and ds[i - 1].inst > d.inst) return error.BadHoists;
     }
     for (rs) |r| {
-        if (@as(u64, r.path_start) + r.path_len > np or r.prefix_len == 0 or r.prefix_len > r.path_len or r.phase > 1) return error.BadHoists;
+        if (@as(u64, r.path_start) + r.path_len > np or r.prefix_len == 0 or r.prefix_len > r.path_len or r.phase > 2) return error.BadHoists;
         if (r.demand == none) {
-            if (r.capture == none or r.placement != r.capture or r.phase != 0) return error.BadHoists;
+            // An eager read: at its closure's creation, or a local function's
+            // in its block, before an item or after one (§31.6).
+            if (r.capture == none or r.phase == 1) return error.BadHoists;
         } else {
             const d = out.accepted(r.demand) orelse return error.BadHoists;
             if (d.decl != r.decl) return error.BadHoists;

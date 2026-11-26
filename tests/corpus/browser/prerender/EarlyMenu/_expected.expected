@@ -1,0 +1,40 @@
+-- early event [data-role=pad] pointerdown
+-- early event [data-role=pad] contextmenu
+-- early click [data-role=go]
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <div data-role="pad">"pad"</div>
+      <button data-role="go">"Go"</button>
+      <output data-role="log"></output>
+    </section>
+  </div>
+  "\n  "
+</body>
+-- pointer [data-role=pad] pointerdown 3 4 button:2 buttons:2
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <div data-role="pad">"pad"</div>
+      <button data-role="go">"Go"</button>
+      <output data-role="log">" down 2 at 3.0, 4.0"</output>
+    </section>
+  </div>
+  "\n  "
+</body>
+-- pointer [data-role=pad] contextmenu 3 4 button:2 buttons:2
+(contextmenu's default prevented)
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <div data-role="pad">"pad"</div>
+      <button data-role="go">"Go"</button>
+      <output data-role="log">" down 2 at 3.0, 4.0 menu 2 at 3.0, 4.0"</output>
+    </section>
+  </div>
+  "\n  "
+</body>
