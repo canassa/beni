@@ -7617,7 +7617,11 @@ pub const Lowerer = struct {
     fn tryExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
-        const subject = try l.bindSubject(out, try l.expr(out, @fromBackingInt(@intCast(d.lhs))), p);
+        // Kept for its effect: once specialisation knows which constructor
+        // the operand gives, the failure test folds and nothing reads the
+        // subject.
+        const operand: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const subject = try l.bindSubjectOf(out, try l.expr(out, operand), operand, p);
         const shape = l.in.dispatch.tryShape(inst) orelse {
             try l.reportMissingTryShape(inst);
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -10463,6 +10467,9 @@ pub const Lowerer = struct {
             if (l.isRead(v.*)) continue;
             const n = try l.fresh(l.well.temp);
             try l.constDecl(out, n, v.*, l.pos(inst));
+            // Kept for its effect: specialisation may decide the test from
+            // what the operand is known to be, and then nothing reads it.
+            if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
             v.* = try l.ident(n, p);
         }
         const subject = if (on_right) values[0] else values[values.len - 1];
@@ -12419,15 +12426,11 @@ pub const Lowerer = struct {
                         }
                     }
                     const value = try l.expr(out, @fromBackingInt(@intCast(d.rhs)));
-                    const before = out.items.len;
-                    const subject = try l.bindSubject(out, value, p);
                     // `let _ = <an impure call>` is written for its effect, and a
                     // pattern whose names nothing reads evaluates its right-hand
                     // side all the same: the release optimiser keeps the subject
                     // (transparent-effects-proposal.md §16.5).
-                    if (out.items.len == before + 1 and l.mayHaveEffect(@fromBackingInt(@intCast(d.rhs)))) {
-                        try l.effect_keep.append(l.scratch, out.items[before]);
-                    }
+                    const subject = try l.bindSubjectOf(out, value, @fromBackingInt(@intCast(d.rhs)), p);
                     try l.bindings(out, @fromBackingInt(@intCast(d.lhs)), subject);
                 },
                 else => {},
@@ -13452,6 +13455,23 @@ pub const Lowerer = struct {
         return l.ident(n, p);
     }
 
+    /// `bindSubject` for `value`, lowered from `source`: the `const` it
+    /// writes is listed in `effect_keep` when `source` may be impure or
+    /// suspend. Any read of a bound subject is one a later pass may take
+    /// away — specialisation folds a tag test from what the callee is known
+    /// to return, and then nothing reads the name — and the release
+    /// optimiser drops an unread binding it was not told to keep, the call
+    /// and its effect with it (`backend.md` §9 item 1, `language.md` §6). A
+    /// subject is kept for what evaluating it does, never for whether
+    /// anything is left to read it.
+    fn bindSubjectOf(l: *Lowerer, out: *StmtList, value: Node.Index, source: Inst.Index, p: u32) !Node.Index {
+        const before = out.items.len;
+        const bound = try l.bindSubject(out, value, p);
+        if (out.items.len > before and l.mayHaveEffect(source))
+            try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
+        return bound;
+    }
+
     /// An atom, or a field read of one: evaluating it changes nothing and
     /// cannot throw, since every beni value is initialised before it is
     /// read and a field of a well-typed value exists.
@@ -13584,11 +13604,7 @@ pub const Lowerer = struct {
                 if (literalCondFan(c.tree)) |fan| {
                     if (fan.edgeCount() > 1 and !l.isRead(c.roots[0])) {
                         const roots = try l.scratch.dupe(Node.Index, c.roots);
-                        const before = out.items.len;
-                        roots[0] = try l.bindSubject(out, roots[0], c.p);
-                        const scrutinee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
-                        if (out.items.len > before and l.mayHaveEffect(scrutinee))
-                            try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
+                        roots[0] = try l.bindSubjectOf(out, roots[0], @fromBackingInt(@intCast(l.bir.instData(inst).lhs)), c.p);
                         c.roots = roots;
                     }
                 }
@@ -13777,15 +13793,8 @@ pub const Lowerer = struct {
                 break :blk value;
             } else if (reads == 1 and !spread)
                 value
-            else blk: {
-                const before = out.items.len;
-                const bound = try l.bindSubject(out, value, p);
-                // Specialisation can remove every later read of this subject.
-                // Its original evaluation must retain any checker-known effects.
-                if (out.items.len > before and l.mayHaveEffect(source))
-                    try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
-                break :blk bound;
-            };
+            else
+                try l.bindSubjectOf(out, value, source, p);
         }
 
         var shared: std.ArrayList(u32) = .empty;
@@ -19777,6 +19786,9 @@ pub const Lowerer = struct {
                             if (l.isAtom(value.*)) continue;
                             const n = try l.fresh(l.well.temp);
                             try l.constDecl(stmts, n, value.*, l.pos(arg));
+                            // Kept for its effect: an `update` arm may read nothing of
+                            // the message's field, and then nothing reads this binding.
+                            if (l.mayHaveEffect(arg)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
                             value.* = try l.ident(n, p);
                         }
                         const layers = try l.scratch.alloc(Layer, 1);
@@ -19878,6 +19890,9 @@ pub const Lowerer = struct {
                         if (l.isAtom(value.*)) continue;
                         const n = try l.fresh(l.well.temp);
                         try l.constDecl(stmts, n, value.*, l.pos(arg));
+                        // Kept for its effect: an `update` arm may read nothing of
+                        // the message's field, and then nothing reads this binding.
+                        if (l.mayHaveEffect(arg)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
                         value.* = try l.ident(n, p);
                     }
                     const layers = try l.scratch.alloc(Layer, out.layers.len + 1);
@@ -20180,6 +20195,9 @@ pub const Lowerer = struct {
                             if (l.isAtom(value.*)) continue;
                             const n = try l.fresh(l.well.temp);
                             try l.constDecl(stmts, n, value.*, l.pos(arg));
+                            // Kept for its effect: an `update` arm may read nothing of
+                            // the message's field, and then nothing reads this binding.
+                            if (l.mayHaveEffect(arg)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
                             value.* = try l.ident(n, p);
                         }
                         return .{ .key = .{ .key = found.key, .args = try l.messageArgs(found, callee, values, p) } };
@@ -20278,6 +20296,9 @@ pub const Lowerer = struct {
                         if (l.isAtom(f.*)) continue;
                         const n = try l.fresh(l.well.temp);
                         try l.constDecl(stmts, n, f.*, l.pos(arg));
+                        // Kept for its effect: an `update` arm may read nothing of
+                        // the message's field, and then nothing reads this binding.
+                        if (l.mayHaveEffect(arg)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
                         f.* = try l.ident(n, l.pos(arg));
                     }
                     try layers.append(l.scratch, .{ .ctor = callee, .fields = fields, .at = if (inner) |x| @intCast(x) else null });
