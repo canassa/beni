@@ -1,0 +1,36 @@
+-- load
+<body>
+  <main>
+    <button id="got">"got"</button>
+    <button id="two">"two"</button>
+    <button id="wrap">"wrap"</button>
+    <p>"0: "</p>
+  </main>
+</body>
+-- click #got
+<body>
+  <main>
+    <button id="got">"got"</button>
+    <button id="two">"two"</button>
+    <button id="wrap">"wrap"</button>
+    <p>"1: got"</p>
+  </main>
+</body>
+-- click #two
+<body>
+  <main>
+    <button id="got">"got"</button>
+    <button id="two">"two"</button>
+    <button id="wrap">"wrap"</button>
+    <p>"11: got,two"</p>
+  </main>
+</body>
+-- click #wrap
+<body>
+  <main>
+    <button id="got">"got"</button>
+    <button id="two">"two"</button>
+    <button id="wrap">"wrap"</button>
+    <p>"111: got,two,wrap"</p>
+  </main>
+</body>

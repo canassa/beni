@@ -1,0 +1,71 @@
+-- page: an argument of a message constructor in an event handler is
+-- evaluated for its effect in both builds (`language.md` §6: `--release`
+-- keeps any unread binding that may be impure or suspend; `backend.md` §9).
+-- `tick` updates a `Ref`, and each `update` arm reads nothing of the field
+-- it is given: a bare constructor, one beside a literal, and one inside
+-- another. Lowering binds each such argument, and the release build
+-- dropped every one of those bindings, so its log stayed empty.
+import Html exposing (Html)
+import List
+import Ref exposing (Ref)
+import String
+import Tea
+
+
+type Inner
+    = Hit Int
+
+
+type Msg
+    = Got Int
+    | Two Int Int
+    | Wrap Inner
+
+
+type alias Model =
+    log : Ref (List String)
+    ticks : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Got _ →
+            { model | ticks = model.ticks + 1 }
+
+        Two _ b →
+            { model | ticks = model.ticks + b }
+
+        Wrap _ →
+            { model | ticks = model.ticks + 100 }
+
+
+tick : Ref (List String), String → Int
+tick r s =
+    Ref.update r λxs → [ …List.copy xs, s ]
+    1
+
+
+render : Int, Ref (List String) → String
+render n r =
+    joined = String.join (Ref.get r) ","
+    "${String.fromInt n}: ${joined}"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="got" onClick={Got (tick model.log "got")}>got</button>
+        <button id="two" onClick={Two (tick model.log "two") 10}>two</button>
+        <button id="wrap" onClick={Wrap (Hit (tick model.log "wrap"))}>wrap</button>
+        <p>{render model.ticks model.log}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { log = Ref.make [], ticks = 0 }
+        , update = update
+        , view = view
+        }
