@@ -2810,6 +2810,49 @@ contents of a cell are locations, and that a call can change what a location of 
       at its own location, and the body may leave there, across a switch point, a value the caller
       does not name: the stored values of the bullet *What the body stored*, now with `outside` and
       the moved old cells.
+      *Amended 2026-11-26 (#2698): every version the call can show it.* **A writer or a reader that
+      can run inside a call (one made before the call, or made during it by the callee or by anything
+      the callee runs, at any depth) is judged at that call against every version of its cell that the
+      frame's loans can see while the call runs: the version before the call, the version after it,
+      and each version in between that the callee's contract names.** "The frame's latest version" is
+      the version after the call where the call renews the cell, and the writer runs at the callee's
+      own switch points, which can come before the callee's store: there it writes the old contents.
+      So, where the call is a switch point (`runBegin` keeps the latest version of each tracked root,
+      `runEnd`): a writer or a reader made in the call runs on the version before the call and on the
+      version after it; a writer or a reader made before the call ran on the version before it at
+      the call's switch point (`switchHere`), and runs on the version after it too where code the call
+      runs within it renewed its cell (a closure run within, item 11, or a writer's run:
+      `within_renews`), since the callee can park after that code ran and no contract of the callee
+      names that store; for the same reason the call is then a switch point on the version after it
+      for the frame's tracked parameters and captures too (`probeCells`, with *What the body stored*):
+      a closure run within that stores a list in a parameter's cell, then a callee that parks, is a
+      store followed by a switch point, and marks the handle for the caller's writers. A version in
+      between is one the callee made and then parked on: its own store
+      into its parameter's cell, which marks the handle where it parks (*What the body stored*), and so
+      refuses every writer of the cell (*Revocation*); a store by code it runs within it is one of the
+      two above. A run on the version before the call renews no version: the run on the version after
+      it keeps the old contents beside its renewal (`maybe`). Item 11 is the same rule for a closure
+      run within a call: it is judged at the version before the call's renewal, and the code that can
+      renew the cell inside the call before the closure runs holds the handle (an argument, another
+      closure's capture, a writer that is an operand), which is a second name of the cell at the
+      call: its write there is refused (`disjoint`). Before, a writer made in the call ran once, on
+      the version after it, and `forkThenSet r w = (Task.spawn w; Task.sleep 5 ms; Ref.set r [ 9 ])`
+      with a loan of the old contents held across the call was wholly accepted, and its writer pushed
+      onto the loan while the callee slept (code reader CR11's `writerAfterRenew`, through `Ref.update`,
+      a method, a wrapper, a local, a record cell; DIFF in place); and a writer made before a call
+      `runSleep s = (s ⊤; Task.sleep 5 ms)` handed a closure that stores a list the frame reads after
+      pushed onto that list while the callee slept, and so did the caller's writer where the frame's
+      parameter was the cell and the frame read the list after the call (`cells.mjs`' `renew.*`;
+      `run/CellWriterBeforeRenew` and its live twin). It is the pessimistic side: a writer made in a call is refused for a loan of
+      the old contents also where the callee parks only after its store, and a writer made before a
+      call whose closure run within renews the cell is judged on the renewed contents also where the
+      callee never parks after it; and a fiber whose `List.foldl` callback inserts a fresh list into
+      the cell it captured marks the handle, as two updates in a row do, so it is no writer
+      (`run/CellWriterStoresFreshLive`'s `dictFold`, accepted before through this hole).
+      *Amended 2026-11-26:* a call in a hole of markup that is a switch point runs where the markup
+      renders (*A switch point*), so no writer of the frame's cells runs in another fiber after it: a
+      closure the frame makes after such a call is no writer or reader (`registerWriter`). Before, only
+      the writers made by then were marked there.
     - **A probe** (`probeCells`): at each switch point, the contents of each handle of each tracked
       parameter and capture, as they are, against the call's operands (as above) and every escape so
       far, and at the end against every later read (`finishProbes`, with `Atom.ren`, below). A refused
