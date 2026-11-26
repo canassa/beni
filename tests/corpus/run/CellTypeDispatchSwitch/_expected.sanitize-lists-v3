@@ -1,0 +1,1 @@
+A return-type dispatch `a.make n` whose binding sleeps is a switch point; each fiber that runs while the method sleeps writes a copy of the cell's contents, so the list taken out before the dispatch is the one read after it: accepted, and every write runs in place (ownership-v3-kernel.md §13 item 12, *A switch point*; #2697). Its live twin is CellTypeDispatchSwitchLive.

@@ -2739,6 +2739,24 @@ contents of a cell are locations, and that a call can change what a location of 
       call that suspends: an impure call can run other fibers without one (`Task.fromHost` drains the
       fiber queue where its callback returns), so every `Ref` operation is one. A contract says
       whether its body has one (`Contract.switches`; a worded row's is true).
+      *Amended 2026-11-26 (#2697): every form that runs code is one, whatever its syntax.* Each
+      effect site the effect checker writes (`Effects.call`) runs code, and the walk asks at each
+      one, after its operands and before the code reads them, through one helper (`switchPoint`,
+      with `runBegin` and `runEnd` for the writers made in the call): a call (`call`), a method call
+      and an operator such as `==` and `<` (`methodCall`), a return-type dispatch `a.make n`
+      (`type_dispatch`, a call of the method the binding names), an entry (`entryCall`), and a
+      component, which the markup's runtime calls where the markup renders (its effect site is its
+      callee's), as a call in a hole of markup is. The runtime's call of a `For`'s or a `Show`'s
+      function where the markup renders has no effect site: it is a switch point there where the
+      function can run other fibers (`fnSwitches`), or is the frame's own function parameter, whose
+      caller judges only what the frame hands it, not the other cells the frame holds there. Interpolation and a `case` run no code: a part
+      of `${…}` is a `String`, `Int`, `Float`, `Bool` or `Char`, and a pattern tests a tag or a
+      literal. In safe builds `Check.checkCovered` fails on an effect site that a walk evaluated and
+      no form asked about, so a form that skips the question fails on its first program. Before, a
+      return-type dispatch asked nothing: in a generic that held a loan of a cell across `a.make n`,
+      bound to a method that sleeps, no writer ran there and no handle was probed, and the loan
+      saw the write of a fiber that ran while the method slept (`run/CellTypeDispatchSwitchLive`;
+      `cells.mjs`' `switch.*`).
     - **A writer** (`registerWriter`): such a closure, at a capture whose every handle is one of a
       tracked root the frame made (item 4: not a parameter's, a capture's or an answer's), not shared
       and not marked, where the closure writes the contents in place, lets neither them nor the handle
@@ -2866,7 +2884,10 @@ contents of a cell are locations, and that a call can change what a location of 
       function that can run other fibers while it holds them (`Fn.supply` naming a location below the
       handle, a function with `switches`, any function the walk does not know; the frame's own function
       parameter is judged by the frame's caller through the supply it publishes): `Ref.update r λl →
-      (Task.fromHost …; List.push l x)`.
+      (Task.fromHost …; List.push l x)`. *Amended 2026-11-26 (#2697):* a function value of no
+      claim (`outside`: a top-level value that computes a function, a function in top-level data,
+      (d)) is one the walk does not know, so `fnSwitches` answers that it can switch, as
+      `valRunsOn` and `flowUnknown` read it. Before, it answered that it could not.
     - **Revocation** (`revokeWriters`, at the end of the walk): a writer is refused where it went out of
       sight if its cell got another holder at any time (item 8), the frame answers its handle, or a
       holder of the cell has the mark. A reader is not revoked for another holder or an answer of

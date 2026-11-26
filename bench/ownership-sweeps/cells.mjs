@@ -1919,6 +1919,179 @@ main =${entry?.main ? lines(entry.main(push)) : ' Tea.element { init = init, upd
 `;
 }
 
+// #2697: every form that runs code the effect checker judges impure or suspending is a switch point
+// (kernel §13 item 12, *A switch point*). Programs are `switch.<form>.<shape>.<twin>`: `form` the code
+// that sleeps while a fiber writes the cell in place (`dispatch`, a return-type dispatch `a.make n`
+// bound to a method that sleeps; `pipe`, the same as `n ▷ a.make`; `method`, a method call `b.slow n`; `call`, a call of a function that
+// sleeps); `shape` where the loan and the writer are (`made`, a function that makes the cell, forks the
+// writer and reads a loan after the form; `peek`, a loan of the parameter's cell, the writer in the
+// caller; `stash`, a list stored in the parameter's cell and read after; `via`, `peek` reached through a
+// second function that hands its evidence on; `lambda`, the form in a closure that `List.map` runs over
+// a captured cell; `module`, `made` in a second module); the twin is `live` where the writer pushes onto
+// the cell's own list, `dead` where it pushes onto a copy. Each runs in a spawned fiber.
+const SWITCH_FORMS = {
+  dispatch: { sig: (t) => `${t}\n    where a.make : Int → a`, res: 'a', run: (n) => `a.make ${n}`, ann: 'Box' },
+  pipe: { sig: (t) => `${t}\n    where a.make : Int → a`, res: 'a', run: (n) => `${n} ▷ a.make`, ann: 'Box' },
+  method: { sig: (t) => t, res: 'Box', run: (n) => `(Box 0).slow ${n}`, ann: 'Box' },
+  call: { sig: (t) => t, res: 'Box', run: (n) => `make ${n}`, ann: 'Box' },
+};
+const SWITCH_SHAPES = ['made', 'peek', 'stash', 'via', 'lambda', 'module'];
+
+function switchWriter(live) {
+  return `t = Task.spawn λ⊤ →\n    Task.sleep (Duration.millis 1)\n    Ref.update r λk → List.push ${live ? 'k' : '(List.copy k)'} 5`;
+}
+
+function genSwitchFn(form, shape, live) {
+  const f = SWITCH_FORMS[form];
+  const R = f.res;
+  const sig = (params) => f.sig(`${params} → String × ${R}`);
+  switch (shape) {
+    case 'made':
+    case 'module':
+      return `${shape === 'module' ? 'pub ' : ''}made : ${sig('Int')}\nmade n =\n    r = Ref.make [ 1, 2 ]\n${ind(switchWriter(live), 4)}\n    l = Ref.get r\n    x = ${f.run('n')}\n    s = ints l\n    Task.join t\n    ( s, x )`;
+    case 'peek':
+    case 'via':
+      return `peek : ${sig('Ref (List Int), Int')}\npeek r n =\n    l = Ref.get r\n    x = ${f.run('n')}\n    ( ints l, x )` + (shape === 'via' ? `\n\n\nvia : ${sig('Ref (List Int), Int')}\nvia r n = peek r n` : '');
+    case 'stash':
+      return `stash : ${sig('Ref (List Int), Int')}\nstash r n =\n    mine = [ 7, 8 ]\n    Ref.set r mine\n    x = ${f.run('n')}\n    ( ints mine, x )`;
+    case 'lambda':
+      return `inLambda : ${sig('Int')}\ninLambda n =\n    r = Ref.make [ 1, 2 ]\n${ind(switchWriter(live), 4)}\n    ps = List.map [ n ] λk →\n        l = Ref.get r\n        x = ${f.run('k')}\n        ( ints l, x )\n    Task.join t\n    case ps of\n        [ p ] →\n            p\n\n        _ →\n            ( "none", ${f.run('0')} )`;
+  }
+}
+
+function genSwitch(form, shape, live) {
+  const caller = {
+    made: 'p = made 3',
+    module: 'p = Second.made 3',
+    lambda: 'p = inLambda 3',
+    peek: 'p = peek r 3',
+    via: 'p = via r 3',
+    stash: 'p = stash r 3',
+  }[shape];
+  const handed = ['peek', 'via', 'stash'].includes(shape);
+  const top = handed
+    ? `r = Ref.make [ 1, 2 ]\n${switchWriter(live)}\np : String × Box\n${caller}\nTask.join t\nshow p`
+    : `p : String × Box\n${caller}\nshow p`;
+  const own = shape === 'module' ? '' : `\n\n\n${genSwitchFn(form, shape, live)}`;
+  return `-- switch.${form}.${shape}: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+${shape === 'module' ? 'import Second\n' : ''}import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+pub type Box
+    = Box Int
+
+
+pub make : Int → Box
+make n =
+    Task.sleep (Duration.millis 5)
+    Box n
+
+
+pub slow : Box, Int → Box
+slow b n =
+    Task.sleep (Duration.millis 5)
+    Box n
+
+
+unbox : Box → Int
+unbox b =
+    case b of
+        Box n →
+            n
+
+
+show : String × Box → String
+show p =
+    ( s, b ) = p
+    s ++ " " ++ String.fromInt (unbox b)${own}
+
+
+body : ⊤ → String
+body ⊤ =
+${ind(top, 4)}
+
+
+main : Program
+main = Io.run λ⊤ →
+    t = Task.spawn body
+    Node.print (Task.join t)
+`;
+}
+
+// `switch.outside.<twin>`: `Ref.update r later`, where `later` is a top-level value that computes a
+// function (code the walk does not know, `outside`) that logs and answers its list, while a writer fiber that
+// pushes onto the cell runs: `fnSwitches` reads such a function as one that can run other fibers while it
+// holds the contents (kernel §13 item 12, *Marks reach the frame*). On Node a `sync` function runs no
+// other fiber, so both twins print the same: a conservative refusal.
+function genSwitchOutside(live) {
+  return `-- switch.outside: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+logged : List Int → List Int
+logged l =
+    Log.info "update"
+    l
+
+
+later : List Int → List Int
+later = if True then logged else logged
+
+
+body : ⊤ → String
+body ⊤ =
+    r = Ref.make [ 1, 2 ]
+${ind(switchWriter(live), 4)}
+    Ref.update r later
+    Task.join t
+    ints (Ref.get r)
+
+
+main : Program
+main = Io.run λ⊤ →
+    t = Task.spawn body
+    Node.print (Task.join t)
+`;
+}
+
+function genSwitchSecond(live) {
+  return `-- The second module of switch.dispatch.module: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import List
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+${genSwitchFn('dispatch', 'module', live)}
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -1987,5 +2160,13 @@ if (runon.some(([o, w]) => `runon.${o}.${w}`.includes(filter))) {
     emit(`runon.${other}.${writer}.${live ? 'live' : 'dead'}`, files);
   }
 }
+for (const form of Object.keys(SWITCH_FORMS)) for (const shape of SWITCH_SHAPES) for (const live of [true, false]) {
+  if (shape === 'module' && form !== 'dispatch') continue;
+  if (form === 'pipe' && !['made', 'peek'].includes(shape)) continue;
+  const files = { 'Main.beni': genSwitch(form, shape, live) };
+  if (shape === 'module') files['Second.beni'] = genSwitchSecond(live);
+  emit(`switch.${form}.${shape}.${live ? 'live' : 'dead'}`, files);
+}
+for (const live of [true, false]) emit(`switch.outside.${live ? 'live' : 'dead'}`, { 'Main.beni': genSwitchOutside(live) });
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);
