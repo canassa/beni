@@ -1,0 +1,7 @@
+# The live twin of CellTypeDispatchSwitch: a return-type dispatch `a.make n` whose binding sleeps is a switch point, so a list taken out of a cell before it and read after it is refused at the write of the fiber that runs while the method sleeps (the generic makes the cell, is handed it, stores its own list there, is of another module, is reached through a second generic, or dispatches in a `List.map` closure; ownership-v3-kernel.md §13 item 12, *A switch point*; #2697).
+23:10 list_still_used call
+56:10 list_still_used call
+88:9 list_still_used value
+114:9 list_still_used value
+126:9 list_still_used value
+145:9 list_still_used value

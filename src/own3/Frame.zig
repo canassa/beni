@@ -332,6 +332,11 @@ const Use = struct {
     /// use above; on the default use a lost holder makes, whether that
     /// holder forks or starts it): kernel §13 item 12, *A defect*, (d), *Up*.
     started_above: bool = false,
+    /// The default use of a function of an entry's record (`entryCall`):
+    /// the entry's own rows judge what it writes of its parameters (the
+    /// model), and every other judgment of a function the walk does not
+    /// follow is made (#2695).
+    entry: bool = false,
     site: *const Site,
     depth: u32 = 0,
     /// The function in the location, once `flow` knows which it is: a known
@@ -4802,9 +4807,17 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             for (m.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index)) |a| try vals.append(f.gpa, try f.ev(a.int()));
             // The code it runs, and what that calls, as a derived callee (kernel §6.11).
             const x = try f.evidenceAt(inst, true);
+            // It is a call of the method the binding names, which can be
+            // impure or suspend: a switch point as any call (kernel §13
+            // item 12; #2697). Before, no writer ran and no handle was
+            // probed here, and a loan read after `a.make n` saw the write of
+            // a fiber that ran while the method slept.
+            const run = try f.runBegin(inst, vals.items, null);
             try f.derivedEffect(inst, x, vals.items, &.{});
             for (vals.items) |v| try f.escape(v, inst);
-            return f.unknownResult(inst, vals.items);
+            const result = try f.unknownResult(inst, vals.items);
+            f.revokeAt(inst, false, try f.runEnd(inst, run, vals.items, null));
+            return result;
         },
         .markup => {
             var ops: std.ArrayList(Inst.Index) = .empty;
@@ -4847,6 +4860,10 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
                 if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) try held.appendSlice(f.gpa, f.call_vals);
                 rd[1] = @intCast(held.items.len);
             }
+            // A component is called where the markup renders: its effect
+            // site is its callee's, and it is a call in a hole of markup
+            // (kernel §13 item 12, *A switch point*).
+            try f.componentSwitches(@fromBackingInt(data.lhs));
             f.markup_reads = outer_reads;
             // The runtime calls the functions that the markup gives it with
             // items of the markup's own values (`boundary.md` §9.4.8): a
@@ -4988,6 +5005,31 @@ fn formCalls(f: *Frame, inst: u32, root: Bir.ExtraIndex, ops: []const Inst.Index
     }
 }
 
+/// Each component of the markup at `root` is rendered by a call of its
+/// callee, where the markup renders: a switch point there where the callee
+/// may be impure or suspend (`switchPoint`, with `markup_reads` set).
+fn componentSwitches(f: *Frame, root: Bir.ExtraIndex) Error!void {
+    // Each node of the markup is work (kernel §8).
+    _ = f.charge(1);
+    const bir = f.m.bir;
+    switch (bir.markupKind(root)) {
+        .element => {
+            const e = bir.extraData(root, Bir.MarkupElement);
+            for (bir.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex)) |c| try f.componentSwitches(c);
+        },
+        .fragment => {
+            const fr = bir.extraData(root, Bir.MarkupFragment);
+            for (bir.extraSlice(.{ .start = fr.children_start, .end = fr.children_end }, Bir.ExtraIndex)) |c| try f.componentSwitches(c);
+        },
+        .component => {
+            const c = bir.extraData(root, Bir.MarkupComponent);
+            try f.switchPoint(c.callee.int(), &.{}, null);
+            for (bir.extraSlice(.{ .start = c.children_start, .end = c.children_end }, Bir.ExtraIndex)) |ch| try f.componentSwitches(ch);
+        },
+        .text, .hole, .@"for", .show => {},
+    }
+}
+
 fn valOf(ops: []const Inst.Index, vals: []const Val, inst: u32) Val {
     for (ops, vals) |o, v| if (o.int() == inst) return v;
     unreachable; // every value of the markup is in `ops`
@@ -5005,6 +5047,12 @@ fn runtimeCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val, item: Val) Error!voi
         for (0..n.b) |ki| try f.runtimeCall(inst, fn_inst, f.lists.items[n.a + 2 * ki], item);
         return;
     }
+    // The run is a call where the markup renders: where the function can
+    // run other fibers (`fnSwitches`), a switch point there (kernel §13
+    // item 12, *A switch point*), as a call in a hole of markup is. The
+    // frame's own function parameter too: the caller judges only what the
+    // frame hands it, not the other cells the frame holds where it renders.
+    if (try f.fnSwitches(fv, 0) or f.isFnRoot(f.ownFnRoot(fv))) try f.switchHere(inst, &.{}, null, true);
     const ft = m.fnType(m.typeOfInst(fn_inst));
     const arity: usize = if (ft) |t| m.in.store.vars(t.params).len else 0;
     // The item, and for a row of two parameters its position, an `Int`.
@@ -7755,21 +7803,58 @@ fn switchAt(f: *const Frame, inst: u32) bool {
     return s.impure or s.own != .no;
 }
 
-/// At a call where another fiber can run, after its arguments are
-/// evaluated and before the call reads them (`ops`): each function that
-/// writes a cell the frame made and runs in another fiber runs
-/// (`runWriter`), and the contents of each tracked parameter's and
-/// capture's cells are probed and renamed (`probeCells`).
+/// Kernel §13 item 12, *A switch point*: every form that runs code at the
+/// effect site `inst` (a call, a method call or an operator, a return-type
+/// dispatch, an entry, a component that markup renders) asks here, after
+/// its operands are evaluated and before the code reads them (`ops`),
+/// whether another fiber can run there (`switchAt`). Where one can, each
+/// function that writes a cell the frame made and runs in another fiber
+/// runs (`runWriter`), and the contents of each tracked parameter's and
+/// capture's cells are probed and renamed (`probeCells`). In safe builds
+/// `Check.checkCovered` fails on an effect site that a walk evaluated and
+/// no form asked about (#2697).
 fn switchPoint(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract) Error!void {
+    if (safety and inst < f.m.routed.bit_length) f.m.routed.set(inst);
     if (!f.switchAt(inst)) return;
+    try f.switchHere(inst, ops, c, f.markup_reads != null);
+}
+
+/// What a form that runs code keeps from before the code runs to after it
+/// (`runBegin`, `runEnd`).
+const Run = struct { writers: usize, demands: usize };
+
+/// Before a form runs code at the effect site `inst`: the switch point
+/// (`switchPoint`), and what `runEnd` reads.
+fn runBegin(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract) Error!Run {
+    try f.switchPoint(inst, ops, c);
+    return .{ .writers = f.writers.items.len, .demands = f.demands.items.len };
+}
+
+/// After a form ran code at the effect site `inst`: a writer that went out
+/// of sight there can run within it (kernel §13 item 12), against the
+/// operands `ops`. Answers whether the code wrote something in place (a
+/// demand was made in it), for `revokeAt`.
+fn runEnd(f: *Frame, inst: u32, r: Run, ops: []const Val, c: ?*const Contract) Error!bool {
+    const wrote = f.demands.items.len > r.demands;
+    if (f.writers.items.len > r.writers and f.switchAt(inst)) {
+        const followed = try f.followedOps(ops.len, c);
+        defer f.gpa.free(followed);
+        for (r.writers..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, ops, followed);
+    }
+    return wrote;
+}
+
+/// `switchPoint` where another fiber can run; `at_render`: where the markup
+/// being evaluated renders, after what the walk sees next.
+fn switchHere(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract, at_render: bool) Error!void {
     f.switched = true;
-    if (f.markup_reads != null) f.markup_switched = true;
+    if (at_render) f.markup_switched = true;
     if (!f.cells_any) return;
     try f.flushShare();
     // A call in a hole of markup can run where the markup renders, after
     // what the walk sees next (kernel §6.12): every holder of a cell there
     // is marked, and no writer of the frame's cells runs in another fiber.
-    if (f.markup_reads != null) {
+    if (at_render) {
         for (f.params.items) |root| if (f.roots.items[root].tracked) {
             const r = f.roots.items[root];
             const cur = f.latestOf(root) orelse try f.rootVal(root);
@@ -8154,9 +8239,14 @@ fn applyMarks(f: *Frame, c: *const Contract, args: []const Val) Error!void {
 /// Whether the function value `v` can run other fibers when it runs: its
 /// code makes a call where another fiber can run (`Contract.switches`). The
 /// frame's own function parameter: no, here (its caller judges it). Any
-/// other function: yes.
+/// other function: yes, `outside` among them: a function value of no claim
+/// is code the walk does not know (a top-level value that computes a
+/// function, a function in top-level data; kernel §13 item 12 (d), #2674),
+/// as `valRunsOn` and `flowUnknown` read it. Before, it was read as code
+/// that cannot switch.
 fn fnSwitches(f: *Frame, v: Val, depth: u32) Error!bool {
-    if (v == v_none or v == v_outside) return false;
+    if (v == v_none) return false;
+    if (v == v_outside) return true;
     if (depth > 8) return true;
     const n = f.nodes.items[v];
     if (n.tag == .join) {
@@ -8501,7 +8591,30 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         // rule follows which code runs, so each of them goes to the `top` use.
         if (code == null and fn_root == none) try f.flowTop(callee_val, inst);
     }
-    if (code) |c| if (c.contract.entry and args.len == 1) return f.entryCall(inst, c.decl, args[0].int());
+    // A callee whose contract does not describe a run with these arguments:
+    // a top-level value whose body computes a function (`later = if c then
+    // masker else noop`, a `case`, a call's answer, a value of another
+    // module). Its contract is the value's, not the function's, and says
+    // nothing of what a run does: the call runs code the walk does not
+    // know, which can park the fiber masked or lent, switch, or keep what it
+    // is handed (kernel §13 item 12, *A defect*, (d), *The ways in*, row 8;
+    // #2696). Before, the value's contract was read as the run's.
+    if (code) |c| if (args.len != c.own_params) {
+        code = null;
+        js_callee = false;
+        primitive = false;
+        if (callee_val == v_none) callee_val = try f.eval(callee, .callee, false);
+        if (fn_root == none) try f.flowTop(callee_val, inst);
+    };
+    // An entry is a call of a known function too: what its contract says it
+    // can do to this fiber is noted as at any call (`knownRuns`).
+    if (code) |c| if (c.contract.entry and args.len == 1) {
+        const demands_before = f.demands.items.len;
+        const result = try f.entryCall(inst, c.decl, args[0].int());
+        try f.knownRuns(inst, c.contract);
+        f.revokeAt(inst, false, f.demands.items.len > demands_before);
+        return result;
+    };
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
     // A later argument of a callee that the lowering can short-circuit (`&&`,
@@ -8523,13 +8636,11 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         try f.joinCells(&.{ after, before }, &.{});
     }
     // Another fiber can run inside the call (kernel §13 item 12).
-    {
+    const run = blk: {
         try vals.append(f.gpa, callee_val);
         defer _ = vals.pop();
-        try f.switchPoint(inst, vals.items, if (code) |c| c.contract else null);
-    }
-    const writers_before = f.writers.items.len;
-    const demands_before = f.demands.items.len;
+        break :blk try f.runBegin(inst, vals.items, if (code) |c| c.contract else null);
+    };
     // A call in a hole of markup can run after the other holes (`markup`).
     f.call_inst = inst;
     f.call_vals = try f.gpa.dupe(Val, vals.items);
@@ -8551,22 +8662,15 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         try vals.append(f.gpa, callee_val);
         break :blk try f.unknownResult(inst, vals.items);
     };
-    // What the call wrote in place, before the runs of the writers it made.
-    const wrote = f.demands.items.len > demands_before;
-    // A writer that went out of sight at this call can run within it.
-    if (f.writers.items.len > writers_before and f.switchAt(inst)) {
-        const followed = try f.followedOps(vals.items.len, if (code) |c| c.contract else null);
-        defer f.gpa.free(followed);
-        for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items, followed);
-    }
+    // What the call wrote in place, before the runs of the writers it made,
+    // and the runs of a writer that went out of sight at this call.
+    const wrote = try f.runEnd(inst, run, vals.items, if (code) |c| c.contract else null);
     // A call that can park this fiber masked or under a scheduler of its
     // own (kernel §13 item 12, *A defect*, (d)): a callee with the bit, the
     // frame's own function parameter (the caller judges what it hands, so
     // the contract says nothing of it), or code the walk does not know.
     if (code) |c| {
-        if (c.contract.runs_on) try f.noteRunsOn(inst, true);
-        if (c.contract.hosts) try f.hostsCall(inst);
-        if (c.contract.hosts_forked) try f.noteHostsForked(inst);
+        try f.knownRuns(inst, c.contract);
     } else if (fn_root != none) {
         try f.noteRunsOn(inst, false);
     } else if (js_callee) {
@@ -8576,6 +8680,16 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     const named = m.tags[callee] == .top or m.tags[callee] == .ext_value;
     try f.noteJsSite(.{ if (named) callee else none, inst }, vals.items, result, f.casts and !casts_before);
     return result;
+}
+
+/// A call of known code whose contract is `c` that can park this fiber
+/// masked or under a scheduler of its own, or hosts a writer (kernel §13
+/// item 12, *A defect*, (d)): one fact for every form that applies a
+/// contract (`call`, `methodCall`, an entry).
+fn knownRuns(f: *Frame, inst: u32, c: *const Contract) Error!void {
+    if (c.runs_on) try f.noteRunsOn(inst, true);
+    if (c.hosts) try f.hostsCall(inst);
+    if (c.hosts_forked) try f.noteHostsForked(inst);
 }
 
 /// A call or a method call that the walk applied, kept with what it was
@@ -8823,9 +8937,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     }
     const derived = try f.evidence(inst);
     // Another fiber can run inside the call (kernel §13 item 12).
-    try f.switchPoint(inst, vals.items, if (code) |c| c.contract else null);
-    const writers_before = f.writers.items.len;
-    const demands_before = f.demands.items.len;
+    const run = try f.runBegin(inst, vals.items, if (code) |c| c.contract else null);
     const casts_before = f.casts;
     const result: Val = blk: {
         switch (target) {
@@ -8840,18 +8952,11 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         for (vals.items) |v| try f.escape(v, inst);
         break :blk try f.unknownResult(inst, vals.items);
     };
-    const wrote = f.demands.items.len > demands_before;
-    if (f.writers.items.len > writers_before and f.switchAt(inst)) {
-        const followed = try f.followedOps(vals.items.len, if (code) |c| c.contract else null);
-        defer f.gpa.free(followed);
-        for (writers_before..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, vals.items, followed);
-    }
+    const wrote = try f.runEnd(inst, run, vals.items, if (code) |c| c.contract else null);
     // As in `call` (kernel §13 item 12, *A defect*, (d)): code the
     // compiler derives is a well-known method, which cannot suspend.
     if (code) |c| {
-        if (c.contract.runs_on) try f.noteRunsOn(inst, true);
-        if (c.contract.hosts) try f.hostsCall(inst);
-        if (c.contract.hosts_forked) try f.noteHostsForked(inst);
+        try f.knownRuns(inst, c.contract);
     } else if (target != .reads) try f.noteRunsOn(inst, true);
     f.revokeAt(inst, false, wrote);
     try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
@@ -11751,22 +11856,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         if (lc.hosts) try f.hostsWithin(cu.site.inst);
         if (lc.hosts_forked) try f.noteHostsForked(cu.site.inst);
     }
-    // A writer of a cell it made runs at its switch points: where its
-    // fiber can be masked or under a scheduler of its own, or where a holder
-    // the walk does not follow can run it so, a throw of the writer leaves
-    // its code running on. That is every holder that no call of the frame
-    // runs it within and that starts it in no fiber of its own
-    // (`startedAt`): the default, one that loses it, one that answers it
-    // (a wrapper it answers runs where the frame calls the wrapper, which
-    // can be inside a mask) or lets it out of sight (`Fn.kept_out`), or one
-    // below any of them (kernel §13 item 12, *A defect*, (d), *Up*; #2622).
-    if (lc.hosts and (runsOnAt(&use) or (runsWithin(&use) == null and !try f.startedAt(&use)))) {
-        try f.refuse(&use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
-    } else if (lc.hosts and runsWithin(&use) == null) {
-        // Started in a fiber of its own: a stop of this fiber's ancestors
-        // does not stop it while one of them is masked (#2638).
-        try f.noteHostsForked(use.site.inst);
-    }
+    try f.judgeUp(lc, &use);
     if (runsOnAt(&use)) for (0..code.ncaps) |k| if (f.isWriter(code, k)) {
         try f.refuse(&use, .call, "a function that reads or writes a cell it captured in another fiber runs where its fiber can be masked or under a scheduler of its own, so it runs on after a throw");
         break;
@@ -11776,7 +11866,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // (kernel §6.8). It writes no parameter, and the holder hands each of
         // its function parameters a function in the default state, which
         // keeps what it is handed (`defaultParams`).
-        if (f.writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
+        if (!use.entry and f.writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
         // A capture of a cell the frame made, which the function writes or
         // renews only through the cell's rows, is a writer: it runs at the
         // frame's later switch points (kernel §13 item 12).
@@ -11851,6 +11941,29 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     try f.captureCells(v, code, &use);
     try f.flowRenews(code, &use, true);
     try f.flowCaptures(code, &use);
+}
+
+/// Kernel §13 item 12, *A defect*, (d), *Up*: a known function whose
+/// contract is `lc` meets `use`. A writer of a cell it made runs at its
+/// switch points: where its fiber can be masked or under a scheduler of its
+/// own, or where a holder the walk does not follow can run it so, a throw
+/// of the writer leaves its code running on. That is every holder that no
+/// call of the frame runs it within and that starts it in no fiber of its
+/// own (`startedAt`): the default, one that loses it, one that answers it
+/// (a wrapper it answers runs where the frame calls the wrapper, which can
+/// be inside a mask) or lets it out of sight (`Fn.kept_out`), or one below
+/// any of them (#2622). Every function value goes through it: `flowCode`,
+/// and the functions of an entry's record, which the runtime runs on the
+/// fiber that calls into it (`entryCall`, #2695).
+fn judgeUp(f: *Frame, lc: *const Contract, use: *const Use) Error!void {
+    if (!lc.hosts) return;
+    if (runsOnAt(use) or (runsWithin(use) == null and !try f.startedAt(use))) {
+        try f.refuse(use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
+    } else if (runsWithin(use) == null) {
+        // Started in a fiber of its own: a stop of this fiber's ancestors
+        // does not stop it while one of them is masked (#2638).
+        try f.noteHostsForked(use.site.inst);
+    }
 }
 
 /// Whether the contract of `code` has `flag_p` on a handle of one of its
@@ -13949,11 +14062,21 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
             // parameters. No row describes what the runtime hands on to a
             // function that it captured: those are in the default.
             for (codes.items[from..]) |c| {
+                // The runtime holds it and runs it where the walk does not
+                // follow, on whatever fiber calls into the program: `send`
+                // runs `update`, and the render after it `view`, at once, on
+                // the fiber that called `send`, which can be masked, lent to
+                // a scheduler of its own, or one a hosting fiber was started
+                // under. So it meets the default use, as every other function
+                // value the walk loses does (`flowCode`): what it captured
+                // has another holder, it may write no cell it captured, a
+                // hosting one is refused (kernel §13 item 12, *A defect*, (d),
+                // *Up*), and what the runtime hands a function parameter is
+                // the default (kernel §6.8). Only what it writes of its own
+                // parameters is the entry's rows' to judge, below (#2695).
                 const site: Site = .{ .inst = inst };
-                const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = c };
-                try f.flowCaptures(c, &top);
-                // What the runtime hands a function parameter is the default (kernel §6.8).
-                try f.defaultParams(c, &top);
+                const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = c, .entry = true };
+                try f.flowCode(v, c, &top);
             }
             const ty = m.typeOfInst(fd.value.int());
             const view = if (m.fnType(ty)) |ft| try m.isView(ft.result.toOptional(), 0) else false;
@@ -13965,6 +14088,9 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
         try f.escape(v, inst);
         no_fact = true;
     }
+    // The entry is a call (kernel §13 item 12, *A switch point*): where its
+    // callee may be impure or suspend, other fibers can run in it.
+    try f.switchPoint(inst, held.items, null);
     // The model: the type of the model parameter of a field that has one
     // (`update`). Its layout names the locations judged below.
     var model_ty: Var.Optional = .none;

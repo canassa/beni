@@ -1,0 +1,23 @@
+--! The second module of CellEntryHostsLive: a function that forks a fiber
+--! that reads a cell.
+
+import Duration
+import List
+import Ref
+import Task
+
+
+hosting : ⊤ → ⊤
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 5)
+        _ = List.length (Ref.get r)
+        ⊤
+    ⊤
+
+
+pub forkerM : ⊤ → ⊤
+forkerM ⊤ =
+    _ = Task.spawn hosting
+    ⊤

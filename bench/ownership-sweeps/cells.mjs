@@ -1359,7 +1359,80 @@ const RUNON_FRAMES = {
   // handed with the forker to one call (`topTup`) or a `Maybe` beside it in a started closure (`topMaybe`).
   topTup: () => ['case cfgT of', '    ( g, _ ) →', '        twoCallsI forker g', 'Task.sleep (Duration.millis 80)'],
   topMaybe: () => ['h = forker', 'case cfgM of', '    Just g →', '        _ = Task.spawn λ⊤ → twoCallsI h g', '        ⊤', '', '    Nothing →', '        ⊤', 'Task.sleep (Duration.millis 80)'],
+  // #2695 (code reader CR9; `RUNON_ENTRY`): the runtime runs a function of the entry record on the
+  // fiber that calls into it: `send` runs `update`, and the render after it `view`, at once, on the
+  // fiber that called `send`. That fiber is a root fiber that `Task.start` started and masks
+  // (`updStart`), the command's own fiber masked (`updMask`), a fiber lent to another scheduler
+  // (`updLend`), a child fiber masked (`updChild`), or one unmasked (`updPlain`: safe, and refused,
+  // the pessimistic side). `update` forks a hosting fiber itself (all of these), through a helper
+  // (`updHelper`), a helper of another module (`updMod`), a `where` method (`updWhere`) or a method
+  // call (`updMethod`); or `view` does, in a helper of a hole (`viewHost`), or `init` does, which the
+  // mount runs (`initHost`: safe, and refused, the pessimistic side).
+  updStart: () => ['Task.start', '    (λ⊤ →', '        Task.uninterruptible λ⊤ →', '            send Go', '            Task.sleep (Duration.millis 50)', '    )', '    λ_ → ⊤'],
+  updMask: () => ['Task.uninterruptible λ⊤ →', '    send Go', '    Task.sleep (Duration.millis 50)'],
+  updLend: () => ['Task.start', '    (λ⊤ →', '        Task.withScheduler sc λ⊤ →', '            send Go', '            Task.sleep (Duration.millis 50)', '    )', '    λ_ → ⊤'],
+  updChild: () => ['_ = Task.spawn λ⊤ →', '    Task.uninterruptible λ⊤ →', '        send Go', '        Task.sleep (Duration.millis 50)', 'Task.sleep (Duration.millis 80)'],
+  updPlain: () => ['send Go', 'Task.sleep (Duration.millis 50)'],
+  updHelper: () => RUNON_FRAMES.updStart(),
+  updMod: () => RUNON_FRAMES.updStart(),
+  updWhere: () => RUNON_FRAMES.updStart(),
+  updMethod: () => RUNON_FRAMES.updStart(),
+  viewHost: () => RUNON_FRAMES.updStart(),
+  initHost: () => ['Task.sleep (Duration.millis 50)'],
+  // The lane's reviewer: a function of the entry's record that writes the contents of a cell it
+  // captured (`main` makes the cell), which the runtime runs after a command read it: `update`
+  // (`capUpd`), through a helper (`capUpdHelper`), or `view` through a helper of a hole
+  // (`capView`). `work` is the command; `RUNON_ENTRY` gives `main`.
+  capUpd: () => ['Task.sleep (Duration.millis 50)'],
+  capUpdHelper: () => ['Task.sleep (Duration.millis 50)'],
+  capView: () => ['Task.sleep (Duration.millis 50)'],
 };
+// The entry functions of each shape of #2695: the lines of `update`'s `Go` arm before its answer,
+// and, where the shape changes them, `view`'s and `init`'s lines.
+const RUNON_ENTRY = {
+  updStart: { upd: ['forker ⊤'] },
+  updMask: { upd: ['forker ⊤'] },
+  updLend: { upd: ['forker ⊤'] },
+  updChild: { upd: ['forker ⊤'] },
+  updPlain: { upd: ['forker ⊤'] },
+  updHelper: { upd: ['forkVia ⊤'] },
+  updMod: { upd: ['Hoster.forkerM ⊤'] },
+  updWhere: { upd: ['runGo HF'] },
+  updMethod: { upd: ['hf = HF', 'hf.fgo'] },
+  viewHost: { upd: [], view: ['<p>{shown model}</p>'] },
+  initHost: { upd: [], init: ['forker ⊤', '( 0, Cmd.perform work )'] },
+  capUpd: { upd: [], main: (push) => capMain(['Ref.update c λl → ' + push], ['<p>{model}</p>']) },
+  capUpdHelper: { upd: [], main: () => capMain(['bumpQ c'], ['<p>{model}</p>']) },
+  capView: { upd: [], main: () => capMain([], ['<p>{shownCap c model}</p>']) },
+};
+// `main` of the capture shapes: a cell `c` of `main`, which a command reads, then sends `Go`, then
+// logs what it read; the `Go` arm of `update` runs `upd` first, and `view`'s body is `view`.
+const capMain = (upd, view) => [
+  'c = Ref.make [ 1, 2 ]',
+  'Tea.element',
+  '    { init =',
+  '        λ⊤ →',
+  '            ( 0',
+  '            , Cmd.perform λsend →',
+  '                Task.sleep (Duration.millis 1)',
+  '                old = Ref.get c',
+  '                send Go',
+  '                Task.sleep (Duration.millis 1)',
+  '                Log.info (ints old)',
+  '            )',
+  '    , update =',
+  '        λmsg model →',
+  '            case msg of',
+  '                Go →',
+  ...upd.map((x) => '                    ' + x),
+  '                    ( model + 1, Cmd.none )',
+  '',
+  '                Done →',
+  '                    ( model, Cmd.none )',
+  '    , view = λmodel → ' + view[0],
+  '    , subscriptions = λ_ → Sub.none',
+  '    }',
+];
 // The shapes whose `work` hosts: `Cmd.perform` would refuse them, so `init` starts `work` itself
 // (`Fn.starts` accepts a hosting function), and no `send` reaches it.
 const RUNON_STARTED = ['capFirst', 'capFirstLam', 'capFirstParam', 'sendLocal', 'sendAsp', 'sendParam', 'deferScope', 'hostThenMask', 'scopeHost', 'wrapOwn', 'twoCap', 'twoCapRev', 'twoCapDeep', 'twoCapParam', 'threeCap', 'mapCap', 'foldCap', 'listCap', 'modCap', 'topTup', 'topMaybe'];
@@ -1527,6 +1600,28 @@ evWriter x =
 forker ⊤ =
     _ = Task.spawn hosting
     ⊤`,
+  shownCap: `shownCap : Ref (List Int), Int → Int
+shownCap h model =
+    if model == 1 then bumpQ h
+    model`,
+  bumpQ: `bumpQ : Ref (List Int) → ⊤
+bumpQ h = Ref.update h λl → ${push}`,
+  shown: `shown : Int → Int
+shown model =
+    if model == 1 then forker ⊤
+    model`,
+  forkVia: `forkVia : ⊤ → ⊤
+forkVia ⊤ = forker ⊤`,
+  HF: `pub type HF
+    = HF`,
+  fgo: `pub fgo : HF → ⊤
+fgo h =
+    case h of
+        HF →
+            forker ⊤`,
+  runGo: `runGo : a → ⊤
+    where a.fgo : a → ⊤
+runGo x = x.fgo`,
   masker: `masker : Int → ⊤
 masker _ = Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 50)`,
   go2: `go2 : (⊤ → ⊤), (Int → ⊤) → ⊤
@@ -1640,6 +1735,12 @@ go h =
             hosting ⊤
 
 
+pub forkerM : ⊤ → ⊤
+forkerM ⊤ =
+    _ = Task.spawn hosting
+    ⊤
+
+
 pub twoCallsM : (⊤ → ⊤), (Int → ⊤) → ⊤
 twoCallsM f g =
     f ⊤
@@ -1685,6 +1786,20 @@ const RUNON_WAYS = {
   maskRace: [],
   maskSpawner: ['spawner'],
   capFirst: ['forker', 'masker'],
+  updStart: ['forker'],
+  updMask: ['forker'],
+  updLend: ['forker'],
+  updChild: ['forker'],
+  updPlain: ['forker'],
+  updHelper: ['forker', 'forkVia'],
+  updMod: [],
+  updWhere: ['forker', 'HF', 'fgo', 'runGo'],
+  updMethod: ['forker', 'HF', 'fgo'],
+  viewHost: ['forker', 'shown'],
+  initHost: ['forker'],
+  capUpd: [],
+  capUpdHelper: ['bumpQ'],
+  capView: ['bumpQ', 'shownCap'],
   capFirstLam: [],
   capFirstParam: ['go2', 'forker', 'masker'],
   sendLocal: ['masker'],
@@ -1706,7 +1821,7 @@ const RUNON_WAYS = {
   topTup: ['forker', 'masker', 'twoCallsI', 'cfgT'],
   topMaybe: ['forker', 'masker', 'twoCallsI', 'cfgM'],
 };
-const RUNON_MODULES = ['evMod', 'evModKeep', 'modCap'];
+const RUNON_MODULES = ['evMod', 'evModKeep', 'modCap', 'updMod'];
 const RUNON_HELD = ['stashRead', 'stashWrite', 'dataRead', 'maskListRead', 'boxRead', 'wrapRead', 'memoRead', 'wrapHost', 'wrapHostLocal', 'wrapHostTwice', 'wrapHostLambda', 'wrapHostApplied', 'lendThenHost', 'twoCallsHost', 'listThenHost', 'capturedThenHost'];
 
 function genRunOn(other, writer, live) {
@@ -1714,6 +1829,8 @@ function genRunOn(other, writer, live) {
   const shape = other === 'frame' ? RUNON_FRAMES[writer](push) : [...(RUNON_OTHERS[other] ?? []), ...RUNON_WRITERS[writer](push)];
   const started = other === 'frame' && RUNON_STARTED.includes(writer);
   const body = ['r = Ref.make [ 1, 2 ]', 'sc = Task.scheduler λ⊤ → ⊤', ...shape, ...(started ? [] : ['send Done'])];
+  const entry = other === 'frame' ? RUNON_ENTRY[writer] : undefined;
+  const lines = (xs) => xs.map((x) => (x === '' ? '\n' : '\n    ' + x)).join('');
   return `-- runon.${other}.${writer}: see bench/ownership-sweeps/cells.mjs.
 import Cmd exposing (Cmd)
 import Duration
@@ -1728,7 +1845,7 @@ import Tea${RUNON_MODULES.includes(writer) ? '\nimport Hoster' : ''}
 
 
 type Msg
-    = Done
+    = Done${entry ? '\n    | Go' : ''}
 
 
 ints : List Int → String
@@ -1783,22 +1900,195 @@ ${ind(body.join('\n'), 4)}
 
 
 init : ⊤ → Int × Cmd Msg
-init ⊤ =${started ? '\n    Task.start (λ⊤ → work λ_ → ⊤) λ_ → ⊤\n    ( 0, Cmd.none )' : ' ( 0, Cmd.perform work )'}
+init ⊤ =${entry?.init ? lines(entry.init) : started ? '\n    Task.start (λ⊤ → work λ_ → ⊤) λ_ → ⊤\n    ( 0, Cmd.none )' : ' ( 0, Cmd.perform work )'}
 
 
 update : Msg, Int → Int × Cmd Msg
 update msg model =
     case msg of
         Done →
-            ( model + 1, Cmd.none )
+            ( model + 1, Cmd.none )${entry ? '\n\n        Go →' + [...entry.upd, '( model + 1, Cmd.none )'].map((x) => '\n            ' + x).join('') : ''}
 
 
 view : Int → Html Msg
-view model = <p>{model}</p>
+view model =${entry?.view ? lines(entry.view) : ' <p>{model}</p>'}
 
 
 main : Tea.Program
-main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }
+main =${entry?.main ? lines(entry.main(push)) : ' Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }'}
+`;
+}
+
+// #2697: every form that runs code the effect checker judges impure or suspending is a switch point
+// (kernel §13 item 12, *A switch point*). Programs are `switch.<form>.<shape>.<twin>`: `form` the code
+// that sleeps while a fiber writes the cell in place (`dispatch`, a return-type dispatch `a.make n`
+// bound to a method that sleeps; `pipe`, the same as `n ▷ a.make`; `method`, a method call `b.slow n`; `call`, a call of a function that
+// sleeps); `shape` where the loan and the writer are (`made`, a function that makes the cell, forks the
+// writer and reads a loan after the form; `peek`, a loan of the parameter's cell, the writer in the
+// caller; `stash`, a list stored in the parameter's cell and read after; `via`, `peek` reached through a
+// second function that hands its evidence on; `lambda`, the form in a closure that `List.map` runs over
+// a captured cell; `module`, `made` in a second module); the twin is `live` where the writer pushes onto
+// the cell's own list, `dead` where it pushes onto a copy. Each runs in a spawned fiber.
+const SWITCH_FORMS = {
+  dispatch: { sig: (t) => `${t}\n    where a.make : Int → a`, res: 'a', run: (n) => `a.make ${n}`, ann: 'Box' },
+  pipe: { sig: (t) => `${t}\n    where a.make : Int → a`, res: 'a', run: (n) => `${n} ▷ a.make`, ann: 'Box' },
+  method: { sig: (t) => t, res: 'Box', run: (n) => `(Box 0).slow ${n}`, ann: 'Box' },
+  call: { sig: (t) => t, res: 'Box', run: (n) => `make ${n}`, ann: 'Box' },
+};
+const SWITCH_SHAPES = ['made', 'peek', 'stash', 'via', 'lambda', 'module'];
+
+function switchWriter(live) {
+  return `t = Task.spawn λ⊤ →\n    Task.sleep (Duration.millis 1)\n    Ref.update r λk → List.push ${live ? 'k' : '(List.copy k)'} 5`;
+}
+
+function genSwitchFn(form, shape, live) {
+  const f = SWITCH_FORMS[form];
+  const R = f.res;
+  const sig = (params) => f.sig(`${params} → String × ${R}`);
+  switch (shape) {
+    case 'made':
+    case 'module':
+      return `${shape === 'module' ? 'pub ' : ''}made : ${sig('Int')}\nmade n =\n    r = Ref.make [ 1, 2 ]\n${ind(switchWriter(live), 4)}\n    l = Ref.get r\n    x = ${f.run('n')}\n    s = ints l\n    Task.join t\n    ( s, x )`;
+    case 'peek':
+    case 'via':
+      return `peek : ${sig('Ref (List Int), Int')}\npeek r n =\n    l = Ref.get r\n    x = ${f.run('n')}\n    ( ints l, x )` + (shape === 'via' ? `\n\n\nvia : ${sig('Ref (List Int), Int')}\nvia r n = peek r n` : '');
+    case 'stash':
+      return `stash : ${sig('Ref (List Int), Int')}\nstash r n =\n    mine = [ 7, 8 ]\n    Ref.set r mine\n    x = ${f.run('n')}\n    ( ints mine, x )`;
+    case 'lambda':
+      return `inLambda : ${sig('Int')}\ninLambda n =\n    r = Ref.make [ 1, 2 ]\n${ind(switchWriter(live), 4)}\n    ps = List.map [ n ] λk →\n        l = Ref.get r\n        x = ${f.run('k')}\n        ( ints l, x )\n    Task.join t\n    case ps of\n        [ p ] →\n            p\n\n        _ →\n            ( "none", ${f.run('0')} )`;
+  }
+}
+
+function genSwitch(form, shape, live) {
+  const caller = {
+    made: 'p = made 3',
+    module: 'p = Second.made 3',
+    lambda: 'p = inLambda 3',
+    peek: 'p = peek r 3',
+    via: 'p = via r 3',
+    stash: 'p = stash r 3',
+  }[shape];
+  const handed = ['peek', 'via', 'stash'].includes(shape);
+  const top = handed
+    ? `r = Ref.make [ 1, 2 ]\n${switchWriter(live)}\np : String × Box\n${caller}\nTask.join t\nshow p`
+    : `p : String × Box\n${caller}\nshow p`;
+  const own = shape === 'module' ? '' : `\n\n\n${genSwitchFn(form, shape, live)}`;
+  return `-- switch.${form}.${shape}: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+${shape === 'module' ? 'import Second\n' : ''}import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+pub type Box
+    = Box Int
+
+
+pub make : Int → Box
+make n =
+    Task.sleep (Duration.millis 5)
+    Box n
+
+
+pub slow : Box, Int → Box
+slow b n =
+    Task.sleep (Duration.millis 5)
+    Box n
+
+
+unbox : Box → Int
+unbox b =
+    case b of
+        Box n →
+            n
+
+
+show : String × Box → String
+show p =
+    ( s, b ) = p
+    s ++ " " ++ String.fromInt (unbox b)${own}
+
+
+body : ⊤ → String
+body ⊤ =
+${ind(top, 4)}
+
+
+main : Program
+main = Io.run λ⊤ →
+    t = Task.spawn body
+    Node.print (Task.join t)
+`;
+}
+
+// `switch.outside.<twin>`: `Ref.update r later`, where `later` is a top-level value that computes a
+// function (code the walk does not know, `outside`) that logs and answers its list, while a writer fiber that
+// pushes onto the cell runs: `fnSwitches` reads such a function as one that can run other fibers while it
+// holds the contents (kernel §13 item 12, *Marks reach the frame*). On Node a `sync` function runs no
+// other fiber, so both twins print the same: a conservative refusal.
+function genSwitchOutside(live) {
+  return `-- switch.outside: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+logged : List Int → List Int
+logged l =
+    Log.info "update"
+    l
+
+
+later : List Int → List Int
+later = if True then logged else logged
+
+
+body : ⊤ → String
+body ⊤ =
+    r = Ref.make [ 1, 2 ]
+${ind(switchWriter(live), 4)}
+    Ref.update r later
+    Task.join t
+    ints (Ref.get r)
+
+
+main : Program
+main = Io.run λ⊤ →
+    t = Task.spawn body
+    Node.print (Task.join t)
+`;
+}
+
+function genSwitchSecond(live) {
+  return `-- The second module of switch.dispatch.module: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import List
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+${genSwitchFn('dispatch', 'module', live)}
 `;
 }
 
@@ -1864,10 +2154,19 @@ if (runon.some(([o, w]) => `runon.${o}.${w}`.includes(filter))) {
   man.platforms = [path.relative(plat, path.join(root, 'platforms/browser-base'))];
   fs.writeFileSync(path.join(plat, 'beni.json'), JSON.stringify(man, null, 2) + '\n');
   for (const [other, writer] of runon) for (const live of [true, false]) {
-    const files = { 'Main.beni': genRunOn(other, writer, live), PLATFORM: path.relative(root, plat) + '\n', steps: 'throws advance 2\nadvance 10\nadvance 100\n' };
+    const steps = other === 'frame' && RUNON_ENTRY[writer]?.main ? 'advance 2\nadvance 10\nadvance 100\n' : 'throws advance 2\nadvance 10\nadvance 100\n';
+    const files = { 'Main.beni': genRunOn(other, writer, live), PLATFORM: path.relative(root, plat) + '\n', steps };
     if (RUNON_MODULES.includes(writer)) files['Hoster.beni'] = RUNON_HOSTER(live ? 'List.push l 5' : 'List.push (List.copy l) 5');
     emit(`runon.${other}.${writer}.${live ? 'live' : 'dead'}`, files);
   }
 }
+for (const form of Object.keys(SWITCH_FORMS)) for (const shape of SWITCH_SHAPES) for (const live of [true, false]) {
+  if (shape === 'module' && form !== 'dispatch') continue;
+  if (form === 'pipe' && !['made', 'peek'].includes(shape)) continue;
+  const files = { 'Main.beni': genSwitch(form, shape, live) };
+  if (shape === 'module') files['Second.beni'] = genSwitchSecond(live);
+  emit(`switch.${form}.${shape}.${live ? 'live' : 'dead'}`, files);
+}
+for (const live of [true, false]) emit(`switch.outside.${live ? 'live' : 'dead'}`, { 'Main.beni': genSwitchOutside(live) });
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);

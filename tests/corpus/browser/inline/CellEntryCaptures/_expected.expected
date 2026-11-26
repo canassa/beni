@@ -1,0 +1,8 @@
+-- load
+<body>
+  <p>"0"</p>
+</body>
+-- advance 10
+<body>
+  <p>"72"</p>
+</body>

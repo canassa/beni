@@ -1,0 +1,60 @@
+-- The functions of the entry's record write the contents of a cell that
+-- `main` made and captured, while a command holds what it read of the cell
+-- before it sent the message: `update` directly and through a helper. Each
+-- writes a copy of the contents, so the command's list is not changed, and the
+-- page is accepted (ownership-v3-kernel.md §6.13, §13 item 12, *A defect*,
+-- (d), *The ways in, from the code*, item 12; #2695). The live shapes, which
+-- write in place, are refused at the entry (`cells.mjs`' `runon.frame.capUpd`,
+-- `capUpdHelper`, `capView`): a page cannot be built with them on
+-- `browser-inline`, whose own checker refuses the write first.
+import Cmd exposing (Cmd)
+import Duration
+import Html exposing (Html)
+import List
+import Ref exposing (Ref)
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Grow
+    | Again
+    | Seen Int
+
+
+grow : Ref (List Int) → ⊤
+grow h = Ref.update h λl → List.push (List.copy l) 7
+
+
+main : Tea.Program
+main =
+    c = Ref.make [ 1, 2 ]
+    Tea.element
+        { init =
+            λ⊤ →
+                ( 0
+                , Cmd.perform λsend →
+                    Task.sleep (Duration.millis 1)
+                    old = Ref.get c
+                    send Grow
+                    send Again
+                    Task.sleep (Duration.millis 1)
+                    send (Seen (List.length old))
+                )
+        , update =
+            λmsg model →
+                case msg of
+                    Grow →
+                        Ref.update c λl → List.push (List.copy l) 5
+                        ( model + List.length (Ref.get c), Cmd.none )
+
+                    Again →
+                        grow c
+                        ( model + List.length (Ref.get c), Cmd.none )
+
+                    Seen n →
+                        ( model * 10 + n, Cmd.none )
+        , view = λmodel → <p>{model}</p>
+        , subscriptions = λ_ → Sub.none
+        }

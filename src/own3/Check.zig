@@ -398,6 +398,9 @@ pub const Mod = struct {
     /// In safe builds, per instruction: a walk judged the evidence of its
     /// dispatch site (`Frame.evidenceAt`; `checkCovered`).
     judged: std.DynamicBitSetUnmanaged = .{},
+    /// In safe builds, per instruction: a walk asked whether its effect
+    /// site is a switch point (`Frame.switchPoint`; `checkCovered`).
+    routed: std.DynamicBitSetUnmanaged = .{},
     /// Each refusal line by its instruction, cause and detail: its index in `lines` (`addRefusal`).
     refusals: std.AutoHashMapUnmanaged(RefusalKey, u32) = .empty,
 
@@ -3954,6 +3957,19 @@ fn checkCovered(m: *Mod) void {
             if (s.evidence.len == 0 or m.judged.isSet(s.inst.int())) continue;
             std.debug.panic("ownership v3: instruction {d} ({t}) of {s} hands evidence that no walk judged (kernel §6.11)", .{ s.inst.int(), m.tags[s.inst.int()], m.names.declName(m.in.module, @intCast(di)) });
         }
+        // Every effect site that a walk evaluated, whatever its form (a
+        // call, a method or an operator, a return-type dispatch, a
+        // component that markup renders), went through the one test of
+        // whether another fiber can run there (kernel §13 item 12, *A
+        // switch point*): a form that runs code and skips it fails here on
+        // its first program, not in a blind test (#2697).
+        for (dt.effectsIn(d.inst_start.int(), d.inst_end.int())) |s| {
+            const i = s.inst.int();
+            // A function's own arrow is no call (`Effects.function`).
+            if (m.tags[i] == .lambda or m.tags[i] == .let_def) continue;
+            if (!(s.impure or s.own != .no) or !m.walked.isSet(i) or m.routed.isSet(i)) continue;
+            std.debug.panic("ownership v3: instruction {d} ({t}) of {s} runs code that may be impure or suspend, and no walk took it as a switch point (kernel §13 item 12)", .{ i, m.tags[i], m.names.declName(m.in.module, @intCast(di)) });
+        }
     }
 }
 
@@ -4062,6 +4078,8 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     defer if (std.debug.runtime_safety) m.walked.deinit(gpa);
     if (std.debug.runtime_safety) m.judged = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
     defer if (std.debug.runtime_safety) m.judged.deinit(gpa);
+    if (std.debug.runtime_safety) m.routed = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
+    defer if (std.debug.runtime_safety) m.routed.deinit(gpa);
     if (options.rows) {
         m.js_seen = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
         m.js_dirty = try std.DynamicBitSetUnmanaged.initEmpty(gpa, bir.insts.len);
