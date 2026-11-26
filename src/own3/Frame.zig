@@ -655,6 +655,10 @@ path_serial: u32 = 0,
 /// A call in a hole of markup was a switch point (kernel §13 item 12): a
 /// capture named after it is marked as the frame's parameters were there.
 markup_switched: bool = false,
+/// The renewals of the frame's cells made by code that a call runs within
+/// it (a closure run within, kernel §13 item 11; a writer's run, item 12):
+/// `runEnd` runs the frame's writers of each cell so renewed again.
+within_renews: u32 = 0,
 /// The shares that `shareAtoms` noted, `(root, entry, point)`, made by `flushShare`.
 share_pending: std.ArrayList([3]u32) = .empty,
 /// The frame follows some cell's contents: else no hook of kernel §13 does work.
@@ -7820,28 +7824,85 @@ fn switchPoint(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract) Erro
 }
 
 /// What a form that runs code keeps from before the code runs to after it
-/// (`runBegin`, `runEnd`).
-const Run = struct { writers: usize, demands: usize };
+/// (`runBegin`, `runEnd`): the writers and demands so far, the count of
+/// renewals made by code that the call runs within it (`within_renews`),
+/// and, where another fiber can run in it, the latest version of each
+/// tracked root before the code runs (`before`).
+const Run = struct { writers: usize, demands: usize, within: u32 = 0, before: ?[]const [2]u32 = null };
 
 /// Before a form runs code at the effect site `inst`: the switch point
 /// (`switchPoint`), and what `runEnd` reads.
 fn runBegin(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract) Error!Run {
     try f.switchPoint(inst, ops, c);
-    return .{ .writers = f.writers.items.len, .demands = f.demands.items.len };
+    var r: Run = .{ .writers = f.writers.items.len, .demands = f.demands.items.len, .within = f.within_renews };
+    if (f.switchAt(inst)) r.before = try f.latestNow();
+    return r;
 }
 
-/// After a form ran code at the effect site `inst`: a writer that went out
-/// of sight there can run within it (kernel §13 item 12), against the
-/// operands `ops`. Answers whether the code wrote something in place (a
-/// demand was made in it), for `revokeAt`.
+/// The latest version of each tracked root that a call renewed, `(root,
+/// value)`, as `saveCells` lists them.
+fn latestNow(f: *Frame) Error![]const [2]u32 {
+    var out: std.ArrayList([2]u32) = .empty;
+    for (f.cell_roots.items) |o| if (f.roots.items[o].latest != none) try out.append(f.gpa, .{ o, f.roots.items[o].latest });
+    // Each root listed is work (kernel §8).
+    _ = f.charge(f.cell_roots.items.len);
+    return out.items;
+}
+
+/// After a form ran code at the effect site `inst`, where another fiber
+/// can run in it: each writer or reader that can run within the code runs
+/// at every version of its cell that the frame's loans can see while the
+/// code runs (kernel §13 item 12, *A run of a writer*), against the
+/// operands `ops`. One made in the call (the callee forked it, or a
+/// function the callee runs did) runs on the version before the call and on
+/// the version after it: the callee can park before its own store, and
+/// after it. Each other writer whose cell the call renewed through code it
+/// runs within it (a closure run within, item 11; a writer's run) runs on
+/// the version after the call too: the callee can park after that code
+/// ran, and no contract of the callee names that store (the callee's own
+/// store is named by its mark, *What the body stored*). Answers whether the
+/// code wrote something in place (a demand was made in it), for `revokeAt`.
 fn runEnd(f: *Frame, inst: u32, r: Run, ops: []const Val, c: ?*const Contract) Error!bool {
     const wrote = f.demands.items.len > r.demands;
-    if (f.writers.items.len > r.writers and f.switchAt(inst)) {
-        const followed = try f.followedOps(ops.len, c);
-        defer f.gpa.free(followed);
+    const before = r.before orelse return wrote;
+    const made = f.writers.items.len > r.writers;
+    const within = f.within_renews != r.within;
+    if (!made and !within) return wrote;
+    try f.flushShare();
+    const followed = try f.followedOps(ops.len, c);
+    defer f.gpa.free(followed);
+    const after = try f.latestNow();
+    if (made) {
+        // On the version before the call. What these runs renew is no
+        // version after it: the runs below, on the version after the call,
+        // keep the old contents beside their renewal (`maybe`).
+        try f.restoreCells(before);
         for (r.writers..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, ops, followed);
+        try f.flushShare();
+        try f.restoreCells(after);
     }
+    // On the version after the call: each writer made in it, and each other
+    // one whose cell code run within the call renewed.
+    for (0..f.writers.items.len) |i| {
+        const w = f.writers.items[i];
+        if (i < r.writers and !(within and changedIn(before, after, w.o))) continue;
+        try f.runWriter(w, inst, ops, followed);
+    }
+    // A tracked parameter's or capture's cell that code run within the call
+    // renewed holds what that code stored while the callee can park after
+    // it, where the caller's writers run: the probe of a switch point there
+    // (`probeCells`, with what the body stored, *What the body stored*).
+    if (within) try f.probeCells(inst, ops, followed);
     return wrote;
+}
+
+/// Whether root `o`'s latest version differs between two lists of
+/// `latestNow`.
+fn changedIn(before: []const [2]u32, after: []const [2]u32, o: u32) bool {
+    const x = savedOf(before, o);
+    const y = savedOf(after, o);
+    if (x == null or y == null) return x != null or y != null;
+    return x.? != y.?;
 }
 
 /// `switchPoint` where another fiber can run; `at_render`: where the markup
@@ -8274,6 +8335,12 @@ fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
     const j: u32 = @intCast(code.own_params + k);
     if (j >= lc.arity or code.inst == none) return false;
     if (f.nodes.items[v].tag != .closure) return false;
+    // A call in a hole of markup was a switch point that runs where the
+    // markup renders, after what the walk sees next: no writer of the
+    // frame's cells runs in another fiber there (kernel §13 item 12, §6.12),
+    // also one the frame makes after the markup. Before, only the writers
+    // made by then were marked there.
+    if (f.markup_switched) return false;
     // A defect can run it, at any point (kernel §13 item 12, *A defect*).
     if (f.defectCode(code)) return false;
     if (m.isDraft(lc) or lc.casts or code.own_params + code.ncaps > lc.arity) return false;
@@ -8437,6 +8504,7 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
         }
         for (ks.items) |x| done.?[x] = true;
         try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, inst, &.{});
+        f.within_renews += 1;
     }
 }
 
@@ -12377,6 +12445,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                 }
                 for (ks.items) |x| done.?[x] = true;
                 try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, site.inst, &.{});
+                f.within_renews += 1;
             }
             continue;
         }

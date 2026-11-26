@@ -2092,6 +2092,133 @@ ${genSwitchFn('dispatch', 'module', live)}
 `;
 }
 
+// #2698: a writer or a reader that can run inside a call runs there at every version of its cell the
+// frame's loans can see (kernel §13 item 12, *A run of a writer*): the version before the call and the
+// version after it. Programs are `renew.<kind>.<store>.<via>.<twin>`: `kind` what runs in the call
+// (`forked`, the callee forks the writer, parks, then stores, while the caller holds a loan of the old
+// contents; `pushed`, the same, the caller writing the old contents in place before the call, no loan;
+// `reader`, `pushed` with a fiber that reads the cell; `pre`, a writer the caller forked before
+// the call, which runs a closure that stores a list the caller reads after, then parks; `param` and
+// `capture`, `pre` where the cell and the list are a helper's parameters or a closure's captures and
+// the writer is the caller's); `store` how
+// the cell is renewed (`set`, `update`, `modify`, `record`: a field of a record cell); `via` how
+// the callee is reached (`direct`, `method`, `wrapper`, `local`: the function bound to a local
+// first, `module`, `where`: through `where` evidence); the twin is `live` where the writer or the
+// frame writes the cell's own list, `dead` where it writes a copy.
+const RENEW_KINDS = ['forked', 'pushed', 'reader', 'pre', 'param', 'capture'];
+const RENEW_STORES = ['set', 'update', 'modify', 'record'];
+const RENEW_VIAS = ['direct', 'method', 'wrapper', 'local', 'module', 'where'];
+
+function renewParts(kind, store, live) {
+  const rec = store === 'record';
+  const C = rec ? '{ n : Int, xs : List Int }' : 'List Int';
+  const xsOf = (e) => (rec ? `(${e}).xs` : `(${e})`);
+  const cp = (e) => (live ? e : `(List.copy ${e})`);
+  const writer = rec
+    ? `λ⊤ → Ref.update r λo → { o | xs = List.push ${cp('o.xs')} 5 }`
+    : `λ⊤ → Ref.update r λk → List.push ${cp('k')} 5`;
+  const reader = `λ⊤ → Log.info (ints ${xsOf('Ref.get r')})`;
+  // What the callee or the closure stores: `v`, a value of the contents.
+  const put = (v) => ({
+    set: `Ref.set r ${v}`,
+    update: `Ref.update r λ_ → ${v}`,
+    modify: `_ = Ref.modify r λ_ → ( 0, ${v} )`,
+    record: `Ref.set r ${v}`,
+  }[store]);
+  const fresh = rec ? '{ n = 0, xs = [ 9 ] }' : '[ 9 ]';
+  const init = rec ? '{ n = 1, xs = [ 1, 2 ] }' : '[ 1, 2 ]';
+  if (kind === 'pre' || kind === 'param' || kind === 'capture') {
+    const v = rec ? '{ n = 0, xs = xs }' : 'xs';
+    const closure = `s = λ⊤ →\n    ${put(v)}${store === 'modify' ? '\n    ⊤' : ''}`;
+    return {
+      C,
+      sig: '(⊤ → ⊤) → ⊤',
+      params: 's',
+      callee: 's ⊤\nTask.sleep (Duration.millis 5)',
+      args: ['s'],
+      writer: `_ = Task.spawn ${writer}`,
+      before: kind === 'pre' ? `xs = [ 1, 2 ]\n_ = Task.spawn ${writer}\n${closure}` : closure,
+      after: 'ints xs',
+      init,
+    };
+  }
+  const loan = kind === 'forked' ? `l = ${xsOf('Ref.get r')}` : `l = List.push ${cp(xsOf('Ref.get r'))} 3`;
+  return {
+    C,
+    sig: `Ref ${rec ? C : `(${C})`}, (⊤ → ⊤) → ⊤`,
+    params: 'r w',
+    callee: `_ = Task.spawn w\nTask.sleep (Duration.millis 5)\n${put(fresh)}${store === 'modify' ? '\n⊤' : ''}`,
+    args: ['r', `(${kind === 'reader' ? reader : writer})`],
+    before: loan,
+    after: 'ints l',
+    init,
+  };
+}
+
+// The body of `main` after the cell is made: `param` and `capture` run the closure's store, the call
+// and the read in a helper over the cell's parameter, or in a closure over the cell.
+function renewBody(kind, q, call) {
+  const inner = `${q.before}\n${call}\n${q.after}`;
+  if (kind === 'param') return `${q.writer}\nNode.print (helper r [ 1, 2 ])`;
+  if (kind === 'capture') return `${q.writer}\nxs = [ 1, 2 ]\nh = λ⊤ →\n${ind(inner, 4)}\nNode.print (h ⊤)`;
+  return `${inner.slice(0, -q.after.length)}Node.print (${q.after})`;
+}
+
+function genRenew(kind, store, via, live) {
+  const q = renewParts(kind, store, live);
+  const callee = `${via === 'module' || via === 'method' || via === 'where' ? 'pub ' : ''}fts : ${via === 'method' || via === 'where' ? `Box, ${q.sig}` : q.sig}\nfts ${via === 'method' || via === 'where' ? '_ ' : ''}${q.params} =\n${ind(q.callee, 4)}`;
+  const args = q.args.join(' ');
+  const call = {
+    direct: `fts ${args}`,
+    method: `(Box 0).fts ${args}`,
+    wrapper: `outer ${args}`,
+    local: `g = ${q.args[q.args.length - 1]}\nfts ${[...q.args.slice(0, -1), 'g'].join(' ')}`,
+    module: `Second.fts ${args}`,
+    where: `viaEv (Box 0) ${args}`,
+  }[via];
+  const extra = {
+    wrapper: `\n\n\nouter : ${q.sig}\nouter ${q.params} = fts ${q.params}`,
+    where: `\n\n\nviaEv : a, ${q.sig}\n    where a.fts : a, ${q.sig}\nviaEv x ${q.params} = x.fts ${q.params}`,
+  }[via] ?? '';
+  const helper = kind === 'param' ? `\n\n\nhelper : Ref ${q.C === 'List Int' ? '(List Int)' : q.C}, List Int → String\nhelper r xs =\n${ind(`${q.before}\n${call}\n${q.after}`, 4)}` : '';
+  const main = `-- renew.${kind}.${store}.${via}: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+${via === 'module' ? 'import Second\n' : ''}import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+pub type Box
+    = Box Int${via === 'module' ? '' : `\n\n\n${callee}`}${extra}${helper}
+
+
+main : Program
+main = Io.run λ⊤ →
+    r = Ref.make ${q.init}
+${ind(renewBody(kind, q, call), 4)}
+`;
+  const files = { 'Main.beni': main };
+  if (via === 'module') {
+    files['Second.beni'] = `-- The second module of renew.${kind}.${store}.module: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Ref exposing (Ref)
+import Task
+
+
+pub ${callee.replace(/^pub /, '')}
+`;
+  }
+  return files;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -2168,5 +2295,8 @@ for (const form of Object.keys(SWITCH_FORMS)) for (const shape of SWITCH_SHAPES)
   emit(`switch.${form}.${shape}.${live ? 'live' : 'dead'}`, files);
 }
 for (const live of [true, false]) emit(`switch.outside.${live ? 'live' : 'dead'}`, { 'Main.beni': genSwitchOutside(live) });
+for (const kind of RENEW_KINDS) for (const store of RENEW_STORES) for (const via of RENEW_VIAS) for (const live of [true, false]) {
+  emit(`renew.${kind}.${store}.${via}.${live ? 'live' : 'dead'}`, genRenew(kind, store, via, live));
+}
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);

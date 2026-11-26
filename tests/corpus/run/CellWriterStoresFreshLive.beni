@@ -3,8 +3,9 @@
 -- that `Ref.update` runs writes that element in place, in a writer fiber or
 -- in the frame, and read after; a loan of an element stored back in the
 -- cell beside it, in a list of lists or a `Dict`, and written there in
--- place (the review of 2026-11-22). Each read sees the old value, so each
--- write is refused.
+-- place (the review of 2026-11-22); and, the pessimistic side, a writer
+-- fiber that inserts a fresh list in a fold (#2698). Each read in the others
+-- sees the old value. Each write is refused.
 import Dict exposing (Dict)
 import Io
 import List
@@ -71,6 +72,23 @@ dictStoredBack ⊤ =
     showD (Ref.get c)
 
 
+-- The pessimistic side (#2698): a writer fiber whose fold inserts a fresh
+-- list into the cell at each run stores a value in its captured cell that
+-- is there at the fold's next switch point, as two updates in a row are, so
+-- it is no writer and is refused where it is spawned (ownership-v3-kernel.md
+-- §13 item 12, *A run of a writer*, amended 2026-11-26). It is safe.
+dictFold : ⊤ → String
+dictFold ⊤ =
+    c = Ref.make (Dict.fromList [ ( 0, [ 0 ] ) ])
+    a = Task.spawn λ⊤ →
+        List.foldl (List.range 1 30) 0 λi acc →
+            Ref.update c λd → Dict.insert d (Int.mod i 3) [ i ]
+            acc + 1
+    x = Task.join a
+    "${String.fromInt x} ${showD (Ref.get c)}"
+
+
 main : Program
 main = Io.run λ⊤ →
-    Node.printLines [ elementInFiber ⊤, dictValue ⊤, elementHere ⊤, storedBack ⊤, dictStoredBack ⊤ ]
+    Node.printLines
+        [ elementInFiber ⊤, dictValue ⊤, elementHere ⊤, storedBack ⊤, dictStoredBack ⊤, dictFold ⊤ ]
