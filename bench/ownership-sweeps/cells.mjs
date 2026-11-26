@@ -2092,6 +2092,253 @@ ${genSwitchFn('dispatch', 'module', live)}
 `;
 }
 
+// #2698: a writer or a reader that can run inside a call runs there at every version of its cell the
+// frame's loans can see (kernel §13 item 12, *A run of a writer*): the version before the call and the
+// version after it. Programs are `renew.<kind>.<store>.<via>.<twin>`: `kind` what runs in the call
+// (`forked`, the callee forks the writer, parks, then stores, while the caller holds a loan of the old
+// contents; `pushed`, the same, the caller writing the old contents in place before the call, no loan;
+// `reader`, `pushed` with a fiber that reads the cell; `pre`, a writer the caller forked before
+// the call, which runs a closure that stores a list the caller reads after, then parks; `param` and
+// `capture`, `pre` where the cell and the list are a helper's parameters or a closure's captures and
+// the writer is the caller's); `store` how
+// the cell is renewed (`set`, `update`, `modify`, `record`: a field of a record cell); `via` how
+// the callee is reached (`direct`, `method`, `wrapper`, `local`: the function bound to a local
+// first, `module`, `where`: through `where` evidence); the twin is `live` where the writer or the
+// frame writes the cell's own list, `dead` where it writes a copy.
+const RENEW_KINDS = ['forked', 'pushed', 'reader', 'pre', 'param', 'capture'];
+const RENEW_STORES = ['set', 'update', 'modify', 'record'];
+const RENEW_VIAS = ['direct', 'method', 'wrapper', 'local', 'module', 'where'];
+
+function renewParts(kind, store, live) {
+  const rec = store === 'record';
+  const C = rec ? '{ n : Int, xs : List Int }' : 'List Int';
+  const xsOf = (e) => (rec ? `(${e}).xs` : `(${e})`);
+  const cp = (e) => (live ? e : `(List.copy ${e})`);
+  const writer = rec
+    ? `λ⊤ → Ref.update r λo → { o | xs = List.push ${cp('o.xs')} 5 }`
+    : `λ⊤ → Ref.update r λk → List.push ${cp('k')} 5`;
+  const reader = `λ⊤ → Log.info (ints ${xsOf('Ref.get r')})`;
+  // What the callee or the closure stores: `v`, a value of the contents.
+  const put = (v) => ({
+    set: `Ref.set r ${v}`,
+    update: `Ref.update r λ_ → ${v}`,
+    modify: `_ = Ref.modify r λ_ → ( 0, ${v} )`,
+    record: `Ref.set r ${v}`,
+  }[store]);
+  const fresh = rec ? '{ n = 0, xs = [ 9 ] }' : '[ 9 ]';
+  const init = rec ? '{ n = 1, xs = [ 1, 2 ] }' : '[ 1, 2 ]';
+  if (kind === 'pre' || kind === 'param' || kind === 'capture') {
+    const v = rec ? '{ n = 0, xs = xs }' : 'xs';
+    const closure = `s = λ⊤ →\n    ${put(v)}${store === 'modify' ? '\n    ⊤' : ''}`;
+    return {
+      C,
+      sig: '(⊤ → ⊤) → ⊤',
+      params: 's',
+      callee: 's ⊤\nTask.sleep (Duration.millis 5)',
+      args: ['s'],
+      writer: `_ = Task.spawn ${writer}`,
+      before: kind === 'pre' ? `xs = [ 1, 2 ]\n_ = Task.spawn ${writer}\n${closure}` : closure,
+      after: 'ints xs',
+      init,
+    };
+  }
+  const loan = kind === 'forked' ? `l = ${xsOf('Ref.get r')}` : `l = List.push ${cp(xsOf('Ref.get r'))} 3`;
+  return {
+    C,
+    sig: `Ref ${rec ? C : `(${C})`}, (⊤ → ⊤) → ⊤`,
+    params: 'r w',
+    callee: `_ = Task.spawn w\nTask.sleep (Duration.millis 5)\n${put(fresh)}${store === 'modify' ? '\n⊤' : ''}`,
+    args: ['r', `(${kind === 'reader' ? reader : writer})`],
+    before: loan,
+    after: 'ints l',
+    init,
+  };
+}
+
+// The body of `main` after the cell is made: `param` and `capture` run the closure's store, the call
+// and the read in a helper over the cell's parameter, or in a closure over the cell.
+function renewBody(kind, q, call) {
+  const inner = `${q.before}\n${call}\n${q.after}`;
+  if (kind === 'param') return `${q.writer}\nNode.print (helper r [ 1, 2 ])`;
+  if (kind === 'capture') return `${q.writer}\nxs = [ 1, 2 ]\nh = λ⊤ →\n${ind(inner, 4)}\nNode.print (h ⊤)`;
+  return `${inner.slice(0, -q.after.length)}Node.print (${q.after})`;
+}
+
+function genRenew(kind, store, via, live) {
+  const q = renewParts(kind, store, live);
+  const callee = `${via === 'module' || via === 'method' || via === 'where' ? 'pub ' : ''}fts : ${via === 'method' || via === 'where' ? `Box, ${q.sig}` : q.sig}\nfts ${via === 'method' || via === 'where' ? '_ ' : ''}${q.params} =\n${ind(q.callee, 4)}`;
+  const args = q.args.join(' ');
+  const call = {
+    direct: `fts ${args}`,
+    method: `(Box 0).fts ${args}`,
+    wrapper: `outer ${args}`,
+    local: `g = ${q.args[q.args.length - 1]}\nfts ${[...q.args.slice(0, -1), 'g'].join(' ')}`,
+    module: `Second.fts ${args}`,
+    where: `viaEv (Box 0) ${args}`,
+  }[via];
+  const extra = {
+    wrapper: `\n\n\nouter : ${q.sig}\nouter ${q.params} = fts ${q.params}`,
+    where: `\n\n\nviaEv : a, ${q.sig}\n    where a.fts : a, ${q.sig}\nviaEv x ${q.params} = x.fts ${q.params}`,
+  }[via] ?? '';
+  const helper = kind === 'param' ? `\n\n\nhelper : Ref ${q.C === 'List Int' ? '(List Int)' : q.C}, List Int → String\nhelper r xs =\n${ind(`${q.before}\n${call}\n${q.after}`, 4)}` : '';
+  const main = `-- renew.${kind}.${store}.${via}: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+${via === 'module' ? 'import Second\n' : ''}import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+pub type Box
+    = Box Int${via === 'module' ? '' : `\n\n\n${callee}`}${extra}${helper}
+
+
+main : Program
+main = Io.run λ⊤ →
+    r = Ref.make ${q.init}
+${ind(renewBody(kind, q, call), 4)}
+`;
+  const files = { 'Main.beni': main };
+  if (via === 'module') {
+    files['Second.beni'] = `-- The second module of renew.${kind}.${store}.module: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Ref exposing (Ref)
+import Task
+
+
+pub ${callee.replace(/^pub /, '')}
+`;
+  }
+  return files;
+}
+
+// #2701-#2703: a renewal that its holder can run again and again is read to its fixed point, the writers
+// that can run at one place run to a fixed point, and the callee value is an operand of the runs after a
+// call (kernel §13 item 12, amendment of 2026-11-26). Programs are `fixed.<shape>.<twin>`: `rot<N>.<via>`
+// rotates the N parts of a tuple cell (N = 3, 4, 5) and pushes onto the first, so that the part the frame
+// took out before reaches the written place after N - 1 runs (`via`: `fold` in the frame, `helper` a
+// helper's fold, `fiber` a fiber's fold, `fiberHelper` a fiber that runs the helper, `writer` one writer
+// fiber per run); `rec4.<via>` the same over a record's four fields; `chain4` moves the fourth part to
+// the second through the third and pushes onto the second (no loan: two parts hold the pushed list);
+// `oldNew`, `newOld`, `three1`, `three2` an older writer fiber that pushes onto a part a writer made in a
+// call moved there, in both orders, with two and three writers; `callee.<form>` a writer forked in a call
+// whose callee reads a loan of the cell after it slept (`closure`, `field`, `partial`, `nested`: a closure
+// that calls a closure over the loan); `kept.<runner>.<held>` (#2708) a closure that a call runs more than
+// once (`map`, `fold`, `twice` a helper that calls it twice, `indexed` `List.indexedMap`, `dict` `Dict.map`)
+// reads its captured cell's list (`list`, a record's field `record`, `length`) and writes it in place
+// without storing it back, so its next run reads the written value; `stored` stores it back with
+// `Ref.update` (safe both ways). The twin is `live` where the writes are in place, `dead` where each
+// writes a copy.
+const FIXED_SHAPES = [
+  ...[3, 4, 5].flatMap((n) => ['fold', 'helper', 'fiber', 'fiberHelper', 'writer'].map((v) => `rot${n}.${v}`)),
+  ...['fold', 'helper', 'writer'].map((v) => `rec4.${v}`),
+  'chain4', 'oldNew', 'newOld', 'three1', 'three2',
+  ...['closure', 'field', 'partial', 'nested'].map((f) => `callee.${f}`),
+  ...['map', 'fold', 'twice', 'indexed', 'dict'].flatMap((k) => ['list', 'record', 'length', 'stored'].map((h) => `kept.${k}.${h}`)),
+];
+
+function genFixed(shape, live) {
+  const cp = (e) => (live ? e : `(List.copy ${e})`);
+  const vs = ['a', 'b', 'c', 'd', 'q'];
+  const defs = [];
+  let body;
+  const [kind, via] = shape.split('.');
+  if (kind.startsWith('rot') || kind === 'rec4') {
+    const rec = kind === 'rec4';
+    const n = rec ? 4 : Number(kind.slice(3));
+    const xs = vs.slice(0, n);
+    const T = rec ? '{ a : List Int, b : List Int, c : List Int, d : List Int }' : xs.map(() => 'List Int').join(' × ');
+    const init = rec ? '{ a = [ 1 ], b = [ 2 ], c = [ 3 ], d = [ 4 ] }' : `( ${xs.map((_, i) => `[ ${i + 1} ]`).join(', ')} )`;
+    // new[0] = old[n-1], new[1] = push old[0], new[k] = old[k-1]: the old part 1 reaches part 0 after n - 1 runs.
+    const fn = rec
+      ? `λo → { a = o.d, b = List.push ${cp('o.a')} 0, c = o.b, d = o.c }`
+      : `λ( ${xs.join(', ')} ) → ( ${xs[n - 1]}, List.push ${cp('a')} 0, ${xs.slice(1, n - 1).join(', ')} )`;
+    const take = rec ? 'y = (Ref.get r).b' : `( _, y${', _'.repeat(n - 2)} ) = Ref.get r`;
+    const runs = Array.from({ length: n }, (_, i) => i + 1).join(', ');
+    const fold = `List.foldl [ ${runs} ] ⊤ λ_ _ → Ref.update r ${fn}`;
+    defs.push(`spinAll : Ref ${rec ? T : `(${T})`} → ⊤\nspinAll r = ${fold}`);
+    const run = {
+      fold,
+      helper: 'spinAll r',
+      fiber: `_ = Task.spawn λ⊤ → ${fold}\nTask.sleep (Duration.millis 5)`,
+      fiberHelper: '_ = Task.spawn λ⊤ → spinAll r\nTask.sleep (Duration.millis 5)',
+      writer: Array.from({ length: n }, () => `_ = Task.spawn λ⊤ → Ref.update r ${fn}`).join('\n') + '\nTask.sleep (Duration.millis 5)',
+    }[via];
+    body = `r = Ref.make ${init}\n${take}\n${run}\nNode.print (ints y)`;
+  } else if (kind === 'chain4') {
+    body = `r = Ref.make ( [ 1 ], [ 2 ], [ 3 ], [ 4 ] )\nList.foldl [ 1, 2, 3, 4 ] ⊤ λ_ _ → Ref.update r λ( a, b, c, d ) → ( List.push ${cp('b')} 0, c, d, d )\n( w, x, y, z ) = Ref.get r\nNode.print (ints w ++ "|" ++ ints x ++ "|" ++ ints y ++ "|" ++ ints z)`;
+  } else if (['oldNew', 'newOld', 'three1', 'three2'].includes(kind)) {
+    const C = 'Ref (List Int × List Int × List Int)';
+    defs.push(`late : ${C} → ⊤\nlate r =\n    Task.sleep (Duration.millis 2)\n    Ref.update r λ( a, b, c ) → ( List.push ${cp('a')} 0, b, c )`);
+    defs.push(`later : ${C} → ⊤\nlater r =\n    Task.sleep (Duration.millis 3)\n    Ref.update r λ( a, b, c ) → ( a, List.push ${cp('b')} 8, c )`);
+    defs.push('spawnSleep : (⊤ → ⊤) → ⊤\nspawnSleep w =\n    _ = Task.spawn w\n    Task.sleep (Duration.millis 5)');
+    const swap = `λ⊤ → Ref.update r λ( a, b, c ) → ( b, a, List.push ${cp('c')} 1 )`;
+    const rot = `λ⊤ → Ref.update r λ( a, b, c ) → ( c, a, List.push ${cp('b')} 1 )`;
+    const steps = {
+      oldNew: ['( _, y, _ ) = Ref.get r', '_ = Task.spawn λ⊤ → late r', `spawnSleep ${swap}`],
+      newOld: ['( _, y, _ ) = Ref.get r', `_ = Task.spawn ${swap}`, 'spawnSleep λ⊤ → late r'],
+      three1: ['( _, _, y ) = Ref.get r', '_ = Task.spawn λ⊤ → late r', '_ = Task.spawn λ⊤ → later r', `spawnSleep ${rot}`],
+      three2: ['( _, _, y ) = Ref.get r', `_ = Task.spawn ${rot}`, '_ = Task.spawn λ⊤ → later r', 'spawnSleep λ⊤ → late r'],
+    }[kind];
+    body = `r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )\n${steps.join('\n')}\nNode.print (ints y)`;
+  } else if (kind === 'kept') {
+    const held = shape.split('.')[2];
+    defs.push('twice : (⊤ → String) → List String\ntwice f =\n    a = f ⊤\n    b = f ⊤\n    [ a, b ]');
+    const init = held === 'record' ? '{ xs = [ 1 ], n = 0 }' : '[ 1 ]';
+    const step = {
+      list: `l = Ref.get r\ns = ints l\n_ = List.push ${cp('l')} 45\ns`,
+      record: `q = Ref.get r\ns = ints q.xs\n_ = List.push ${cp('q.xs')} 45\ns`,
+      length: `l = Ref.get r\nn = List.length l\n_ = List.push ${cp('l')} 45\nString.fromInt n`,
+      stored: `Ref.update r λl → List.push ${cp('l')} 45\nints (Ref.get r)`,
+    }[held];
+    const lam = (ps) => `λ${ps} →\n${ind(step, 4)}`;
+    const run = {
+      map: `out = List.map [ 1, 2 ] ${lam('_')}`,
+      fold: `out = List.foldl [ 1, 2 ] [] ${lam('_ acc').replace(/\n([^\n]*)$/, '\n    List.push acc ($1)').replace('List.push acc (    ', 'List.push acc (')}`,
+      twice: `out = twice ${lam('⊤')}`,
+      indexed: `out = List.indexedMap [ 1, 2 ] ${lam('_ _')}`,
+      dict: `out = Dict.values (Dict.map (Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ]) ${lam('_ _')})`,
+    }[via];
+    body = `r = Ref.make ${init}\n${run}\nNode.print (String.join out " ")`;
+  } else {
+    const w = `λ⊤ → Ref.update r λx → List.push ${cp('x')} 5`;
+    defs.push('runWith : List Int, (⊤ → ⊤) → Int\nrunWith l w =\n    _ = Task.spawn w\n    Task.sleep (Duration.millis 5)\n    List.length l');
+    const k = 'λw →\n    _ = Task.spawn w\n    Task.sleep (Duration.millis 5)\n    List.length l';
+    const call = {
+      closure: `k = ${k}\nn = k ${w}`,
+      field: `o = { run = ${k.replaceAll('\n', '\n    ')}\n    }\nn = o.run ${w}`,
+      partial: `k = runWith l _\nn = k ${w}`,
+      nested: `m = λ⊤ → List.length l\nk = λw →\n    _ = Task.spawn w\n    Task.sleep (Duration.millis 5)\n    m ⊤\nn = k ${w}`,
+    }[via];
+    body = `r = Ref.make [ 1, 2 ]\nl = Ref.get r\n${call}\nNode.print (String.fromInt n)`;
+  }
+  return `-- fixed.${shape}: see bench/ownership-sweeps/cells.mjs.
+${kind === 'kept' && via === 'dict' ? 'import Dict\n' : ''}import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+${defs.map((d) => `\n\n${d}\n`).join('')}
+
+main : Program
+main = Io.run λ⊤ →
+${ind(body, 4)}
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -2168,5 +2415,11 @@ for (const form of Object.keys(SWITCH_FORMS)) for (const shape of SWITCH_SHAPES)
   emit(`switch.${form}.${shape}.${live ? 'live' : 'dead'}`, files);
 }
 for (const live of [true, false]) emit(`switch.outside.${live ? 'live' : 'dead'}`, { 'Main.beni': genSwitchOutside(live) });
+for (const kind of RENEW_KINDS) for (const store of RENEW_STORES) for (const via of RENEW_VIAS) for (const live of [true, false]) {
+  emit(`renew.${kind}.${store}.${via}.${live ? 'live' : 'dead'}`, genRenew(kind, store, via, live));
+}
+for (const shape of FIXED_SHAPES) for (const live of [true, false]) {
+  emit(`fixed.${shape}.${live ? 'live' : 'dead'}`, { 'Main.beni': genFixed(shape, live) });
+}
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);

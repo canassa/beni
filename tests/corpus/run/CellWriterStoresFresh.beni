@@ -1,5 +1,5 @@
 -- A writer fiber that pushes a fresh list onto a list of lists in a cell,
--- or inserts one into a `Dict` of lists, at each run (#2594): the row of
+-- or inserts one into a `Dict` of lists (#2594): the row of
 -- `Ref.update` hands the function each part of the contents at its place,
 -- so the push writes the outer storage and not the elements, and a later
 -- run writes no list an earlier run stored. A loan of an element taken
@@ -35,17 +35,6 @@ nested ⊤ =
     showN (Ref.get c)
 
 
-dictFold : ⊤ → String
-dictFold ⊤ =
-    c = Ref.make (Dict.fromList [ ( 0, [ 0 ] ) ])
-    a = Task.spawn λ⊤ →
-        List.foldl (List.range 1 30) 0 λi acc →
-            Ref.update c λd → Dict.insert d (Int.mod i 3) [ i ]
-            acc + 1
-    x = Task.join a
-    "${String.fromInt x} ${showD (Ref.get c)}"
-
-
 cache : ⊤ → String
 cache ⊤ =
     c = Ref.make (Dict.fromList [ ( 0, [ 0 ] ) ])
@@ -67,4 +56,4 @@ elementKept ⊤ =
 
 
 main : Program
-main = Io.run λ⊤ → Node.printLines [ nested ⊤, dictFold ⊤, cache ⊤, elementKept ⊤ ]
+main = Io.run λ⊤ → Node.printLines [ nested ⊤, cache ⊤, elementKept ⊤ ]

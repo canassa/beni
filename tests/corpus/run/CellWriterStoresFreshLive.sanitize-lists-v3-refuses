@@ -1,10 +1,23 @@
-# The live twins of CellWriterStoresFresh: a loan of an element of a list of lists in a cell, or of a value of a `Dict` in a cell, taken before a function that `Ref.update` runs writes it in place, in a writer fiber or in the frame, and read after; a loan of an element stored back in the cell beside it, in a list of lists or a `Dict`, and written there in place. Each read sees the old value, so each write is refused.
-33:9 list_still_used call
-34:5 list_still_used call
-35:15 list_still_used call
-42:9 list_still_used call
-43:5 list_still_used call
-44:15 list_still_used call
-51:5 list_still_used call
-60:5 list_still_used call
-69:5 list_still_used call
+# The live twins of CellWriterStoresFresh: a loan of an element of a list of lists in a cell, or of a value of a `Dict` in a cell, taken before a function that `Ref.update` runs writes it in place, in a writer fiber or in the frame, and read after; a loan of an element stored back in the cell beside it, in a list of lists or a `Dict`, and written there in place. Each read sees the old value, so each write is refused; and, the pessimistic side, a writer fiber that inserts a fresh list into the cell in a fold, which stores a value there before the fold's next switch point (#2698).
+34:9 list_still_used call
+34:9 list_still_used call
+34:9 list_still_used call
+34:9 list_still_used call
+34:9 list_still_used call
+35:5 list_still_used call
+35:5 list_still_used call
+36:15 list_still_used call
+36:15 list_still_used call
+43:9 list_still_used call
+43:9 list_still_used call
+43:9 list_still_used call
+43:9 list_still_used call
+43:9 list_still_used call
+44:5 list_still_used call
+44:5 list_still_used call
+45:15 list_still_used call
+45:15 list_still_used call
+52:5 list_still_used call
+61:5 list_still_used call
+70:5 list_still_used call
+83:9 list_still_used value

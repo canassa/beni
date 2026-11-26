@@ -1,0 +1,289 @@
+-- The live twin of CellFixedPointRuns: a closure that a callee runs again and
+-- again, and writer fibers that run in any order, are read to their fixed point
+-- (ownership-v3-kernel.md §13 item 12, amendment of 2026-11-26, #2701-#2703). A
+-- fold rotates three, four or five parts of a cell's contents and pushes onto
+-- one: a later run pushes onto a part the frame took out before and prints after
+-- (in the frame, in a helper, and a record's fields); a renewal that moves the
+-- fourth part to the second through the third pushes onto a list two parts hold;
+-- a writer fiber made in a call moves a list that an older writer fiber then
+-- pushes onto, with two and three writers in both orders; and a writer forked in
+-- a call whose callee is a closure, or a record's field, that reads a loan of the
+-- cell after it slept. Each is refused. Before, a renewal was read for one run,
+-- the writers ran once each in the order they were made, and the callee was no
+-- operand of the runs after the call.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+type alias Q =
+    a : List Int
+    b : List Int
+    c : List Int
+    d : List Int
+
+
+rot : Q → Q
+rot o = { a = o.d, b = List.push o.a 0, c = o.b, d = o.c }
+
+
+rot3 : ⊤ → String
+rot3 ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    ( _, y, _ ) = Ref.get r
+    List.foldl [ 1, 2, 3 ] ⊤ λ_ _ → Ref.update r λ( a, b, c ) → ( c, List.push a 0, b )
+    ints y
+
+
+rot4 : ⊤ → String
+rot4 ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ], [ 4 ] )
+    ( _, _, y, _ ) = Ref.get r
+    List.foldl [ 1, 2, 3, 4 ] ⊤ λ_ _ → Ref.update r λ( a, b, c, d ) → ( d, List.push a 0, b, c )
+    ints y
+
+
+rot5 : ⊤ → String
+rot5 ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ], [ 4 ], [ 5 ] )
+    ( _, _, _, y, _ ) = Ref.get r
+    List.foldl [ 1, 2, 3, 4, 5 ] ⊤ λ_ _ →
+        Ref.update r λ( a, b, c, d, q ) → ( q, List.push a 0, b, c, d )
+    ints y
+
+
+rotRecord : ⊤ → String
+rotRecord ⊤ =
+    r = Ref.make { a = [ 1 ], b = [ 2 ], c = [ 3 ], d = [ 4 ] }
+    y = (Ref.get r).c
+    List.foldl [ 1, 2, 3, 4 ] ⊤ λ_ _ → Ref.update r rot
+    ints y
+
+
+spinAll : Ref (List Int × List Int × List Int) → ⊤
+spinAll r = List.foldl [ 1, 2, 3 ] ⊤ λ_ _ → Ref.update r λ( a, b, c ) → ( c, List.push a 0, b )
+
+
+rotHelper : ⊤ → String
+rotHelper ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    ( _, y, _ ) = Ref.get r
+    spinAll r
+    ints y
+
+
+chain : ⊤ → String
+chain ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ], [ 4 ] )
+    List.foldl [ 1, 2, 3, 4 ] ⊤ λ_ _ → Ref.update r λ( a, b, c, d ) → ( List.push b 0, c, d, d )
+    ( w, x, y, z ) = Ref.get r
+    ints w ++ "|" ++ ints x ++ "|" ++ ints y ++ "|" ++ ints z
+
+
+late : Ref (List Int × List Int × List Int) → ⊤
+late r =
+    Task.sleep (Duration.millis 2)
+    Ref.update r λ( a, b, c ) → ( List.push a 0, b, c )
+
+
+later : Ref (List Int × List Int × List Int) → ⊤
+later r =
+    Task.sleep (Duration.millis 3)
+    Ref.update r λ( a, b, c ) → ( a, List.push b 8, c )
+
+
+spawnSleep : (⊤ → ⊤) → ⊤
+spawnSleep w =
+    _ = Task.spawn w
+    Task.sleep (Duration.millis 5)
+
+
+oldThenNew : ⊤ → String
+oldThenNew ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    ( _, y, _ ) = Ref.get r
+    _ = Task.spawn λ⊤ → late r
+    spawnSleep λ⊤ → Ref.update r λ( a, b, c ) → ( b, a, List.push c 1 )
+    ints y
+
+
+newThenOld : ⊤ → String
+newThenOld ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    ( _, y, _ ) = Ref.get r
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( b, a, List.push c 1 )
+    spawnSleep λ⊤ → late r
+    ints y
+
+
+threeWriters : ⊤ → String
+threeWriters ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    ( _, _, y ) = Ref.get r
+    _ = Task.spawn λ⊤ → late r
+    _ = Task.spawn λ⊤ → later r
+    spawnSleep λ⊤ → Ref.update r λ( a, b, c ) → ( c, a, List.push b 1 )
+    ints y
+
+
+calleeClosure : ⊤ → String
+calleeClosure ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    k =
+        λw →
+            _ = Task.spawn w
+            Task.sleep (Duration.millis 5)
+            List.length l
+    String.fromInt (k λ⊤ → Ref.update r λx → List.push x 5)
+
+
+calleeField : ⊤ → String
+calleeField ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    o =
+        { run =
+            λw →
+                _ = Task.spawn w
+                Task.sleep (Duration.millis 5)
+                List.length l
+        }
+    String.fromInt (o.run λ⊤ → Ref.update r λx → List.push x 5)
+
+
+storeAfter : Ref (List Int), (⊤ → ⊤) → ⊤
+storeAfter r c =
+    c ⊤
+    Task.sleep (Duration.millis 5)
+    Ref.set r [ 9 ]
+
+
+pusher : Ref (List Int) → ⊤
+pusher r =
+    Task.sleep (Duration.millis 2)
+    Ref.update r λl → List.push l 0
+
+
+between : ⊤ → String
+between ⊤ =
+    r = Ref.make [ 1 ]
+    xs = List.push [ 7 ] 8
+    _ = Task.spawn λ⊤ → pusher r
+    storeAfter r λ⊤ → Ref.set r xs
+    ints xs
+
+
+forkAgain : (⊤ → ⊤), Ref (List Int) → ⊤
+forkAgain w r =
+    _ = Task.spawn w
+    Ref.set r [ 9 ]
+    Task.sleep (Duration.millis 5)
+
+
+reforked : ⊤ → String
+reforked ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    w = λ⊤ → Ref.update r λx → List.push x 5
+    _ = Task.spawn w
+    forkAgain w r
+    ints l
+
+
+twice : (⊤ → String) → List String
+twice f =
+    a = f ⊤
+    b = f ⊤
+    [ a, b ]
+
+
+type alias Qn =
+    xs : List Int
+    n : Int
+
+
+keptMap : ⊤ → String
+keptMap ⊤ =
+    r = Ref.make [ 1 ]
+    out = List.map [ 1, 2 ] λ_ →
+        l = Ref.get r
+        s = ints l
+        _ = List.push l 45
+        s
+    String.join out " "
+
+
+keptFold : ⊤ → String
+keptFold ⊤ =
+    r = Ref.make [ 1 ]
+    List.foldl [ 1, 2 ] "" λ_ acc →
+        l = Ref.get r
+        s = ints l
+        _ = List.push l 45
+        acc ++ s ++ ";"
+
+
+keptTwice : ⊤ → String
+keptTwice ⊤ =
+    r = Ref.make [ 1 ]
+    out = twice λ⊤ →
+        l = Ref.get r
+        s = ints l
+        _ = List.push l 45
+        s
+    String.join out " "
+
+
+keptRecord : ⊤ → String
+keptRecord ⊤ =
+    r = Ref.make { xs = [ 1 ], n = 0 }
+    out = List.map [ 1, 2 ] λ_ →
+        q = Ref.get r
+        s = ints q.xs
+        _ = List.push q.xs 45
+        s
+    String.join out " "
+
+
+keptLength : ⊤ → String
+keptLength ⊤ =
+    r = Ref.make [ 1 ]
+    out = List.map [ 1, 2 ] λ_ →
+        l = Ref.get r
+        n = List.length l
+        _ = List.push l 45
+        String.fromInt n
+    String.join out " "
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ rot3 ⊤
+        , rot4 ⊤
+        , rot5 ⊤
+        , rotRecord ⊤
+        , rotHelper ⊤
+        , chain ⊤
+        , oldThenNew ⊤
+        , newThenOld ⊤
+        , threeWriters ⊤
+        , calleeClosure ⊤
+        , calleeField ⊤
+        , between ⊤
+        , reforked ⊤
+        , keptMap ⊤
+        , keptFold ⊤
+        , keptTwice ⊤
+        , keptRecord ⊤
+        , keptLength ⊤
+        ]

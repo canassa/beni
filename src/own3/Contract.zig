@@ -458,16 +458,27 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
     const x = a orelse return b;
     const y = b orelse return a;
     if (x.arity != y.arity or !std.mem.eql(u32, x.layouts, y.layouts)) {
-        // Two readings of one type do not agree: nothing is known.
+        // Two readings of one type do not agree: nothing is known, and every
+        // fact takes its pessimistic side, of either. Before, `x`'s were
+        // kept but for some, so `y`'s `defect`, `ans_escapes`, `rewrites`
+        // and `called` were lost, and `x`'s `once` and `free` stayed.
         const out = try arena.create(Fn);
         out.* = x.*;
+        const free = try arena.alloc(bool, x.free.len);
+        @memset(free, false);
+        out.free = free;
+        out.called = true;
         out.lost = true;
+        out.ans_escapes = true;
+        out.rewrites = true;
+        out.once = false;
         out.single = false;
-        out.runs_on = x.runs_on or y.runs_on;
+        out.defect = true;
+        out.runs_on = true;
         out.forks = false;
         out.starts = false;
-        out.kept_out = x.kept_out or y.kept_out;
-        out.after_call = x.after_call or y.after_call;
+        out.kept_out = true;
+        out.after_call = true;
         return out;
     }
     const supply = try arena.alloc([]const Src, x.supply.len);
