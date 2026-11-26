@@ -2682,7 +2682,8 @@ contents of a cell are locations, and that a call can change what a location of 
       escape, the renewal of a cell it was handed: `handsContents`; the four last programs of
       `run/CellClosureWritesLive`);
       and since the callee can run it more than once, a later run writes in place what an earlier run
-      stored in the cell: the write is of each value the renewal names at the written location too (a
+      stored in the cell: the write is of each value the renewal names at the written location too,
+      after any number of runs (the closure of the renewal, item 12's amendment of 2026-11-26, (a)) (a
       capture's cells, another location of the cell's own contents, and `outside` for outside the
       frame or a value the callee handed; not a cell the closure made in its run,
       `run/CellClosureRunsTwiceLive`); and where that renewal holds one cell at two places of the
@@ -2853,6 +2854,75 @@ contents of a cell are locations, and that a call can change what a location of 
       renders (*A switch point*), so no writer of the frame's cells runs in another fiber after it: a
       closure the frame makes after such a call is no writer or reader (`registerWriter`). Before, only
       the writers made by then were marked there.
+      *Amended 2026-11-26 (#2701, #2702, #2703): to a fixed point, against every holder.* A run can
+      happen any number of times and in any order, so what the checker reads of the runs is the
+      join over every number and every order, never a fixed number of steps or one order:
+      (a) **A repeated run is read to its fixed point.** Where the code that runs a closure within a
+      call (item 11) or a writer (this item) can run it again, a location of the cell's contents
+      holds, after any number of runs, the old cells of every location the renewal reaches from it:
+      the closure of the renewal's location-to-location map (`renewReach`: an entry with no
+      renewal keeps its own cells; an entry of the code's own parameters, which its holder hands
+      it anew at each run, is not followed). So a later run's write of a location is of the cells
+      of every location it reaches (`storedAtoms`), and of each source those name (a cell the code
+      made and let escape, `twice`, `outside`); the version after a call that runs a closure within it holds at each location the
+      sources of every location it reaches (`closedSrcs`, `renewHandleOf`'s `closed`), and a
+      writer's versions reach the same closure a step a run, since (b) runs it again on the version
+      its run made; a cell that the written location and another one hold after the same number of
+      runs is a cell at two places (`heldTwiceAfterRuns`: a search of the pairs of locations, one
+      run back through both renewals at each step, `sameCellAt` at each step); and what the code
+      may hand its holder is every location the contents reach (`handsContents`). Before, one
+      application of the renewal was read: `Ref.update r λ( a, b, c ) → ( c, List.push a 0, b )`
+      run three times by `List.foldl` pushed in its third run onto the old `.1`, which the frame
+      held as a loan and printed after (code reader CR12's `rotWithin`, `rotHelper`, the record
+      `rotRecord`; TRAP and DIFF in place), and `( List.push b 0, c, d, d )` pushed in its third
+      run onto a list the third and fourth parts held too.
+      (b) **The writers that can run in one place run to a fixed point** (`runWritersFix`): at a
+      switch point, at a return point and in `runEnd`'s passes on the versions before and after a
+      call, each writer and reader runs where it has not run yet, and again wherever a run of
+      another one changed its cell (the atoms of its latest version, read by the cells they name:
+      a version is a new name of its origin's cells), until no run changes the cell of any writer.
+      Each run keeps the old contents beside its renewal (`maybe`), so a version only grows, and a
+      run that changed its own cell runs again; the result is the join over every order and every
+      number of runs. (One closed run of a writer, instead of a run a step, made each version hold
+      the sources of every location, which the next run read again at each location: the atoms grew
+      by the size of the reach at each run, past the budget for four fibers that each rotate four
+      parts.) Each round is work (§8): past the budget the walk gives up and accepts
+      nothing. Before, each writer ran once, in the order the frame made them, and `runEnd` read
+      whether code run within the call renewed the cell before any of its own runs: an older writer
+      never ran on what a writer made in the call moved into its cell (CR12's `oldAfterNew3`: a
+      fiber forked before `spawnSleep` pushed onto `.0` after the fiber `spawnSleep` forked moved
+      the old `.1` there, the loan of which the frame printed; TRAP and DIFF in place).
+      (c) **A run is judged against everything the call can run.** The operands a writer's run in
+      `runEnd` is judged against are those of the call's switch point in `runBegin`: the
+      arguments, the callee value (a closure the callee is reads its captures inside the call,
+      after a writer it forked ran), and the receiver of a method call. Evidence a call is handed is
+      a declared method, which captures no cell of the frame, or the frame's own function parameter,
+      which its caller judges. Before, `call` handed `runEnd` the arguments alone, and `k = λw →
+      (Task.spawn w; Task.sleep 5 ms; List.length l)`, with `l` a loan of the cell, called with a
+      writer that pushed onto it, counted the pushed list (CR12's `calleeCapture`; TRAP and DIFF in
+      place).
+      (d) **A later run reads what an earlier run wrote and left** (#2708). Where a call runs a
+      closure within it and can run it again (no holder on the way runs it once, `Fn.once`:
+      `runsOnce`), a write of a captured cell's contents at a location that no way of the closure
+      stores back (no renewal there: a store renews every location of the contents, item 3) leaves
+      the written value in the cell under its old name, and the closure's next run reads it there
+      as the old contents: the write is refused (`later_use`, `kept_written`), as two calls in a
+      row are. A write the closure stores back (`Ref.update r λl → List.push l x`) is read under
+      its new name by the next run, as plain code reads the value it stored. Before, the write was
+      judged once, against the call's other operands and the frame's later reads, and `List.map
+      [ 1, 2 ] λ_ → (l = Ref.get r; s = ints l; _ = List.push l 45; s)` printed `1 1,45` in place
+      for `1 1` (blind round DA: `List.map`, `foldl`, `indexedMap`, `Dict.map`, a helper that
+      calls twice, recursion, `Task.repeat`, `Task.retry`, `Semaphore.withPermit` and `Log.span` in
+      a map; lists, nested lists, record fields, `Dict`s and `Set`s; `cells.mjs`' `fixed.kept.*`).
+      A writer fiber that does the same is refused by its own runs at the frame's switch points.
+      Two shapes need no rule of their own. A version between a closure run within and the
+      callee's own later store into the same cell (`g r c = (c ⊤; Task.sleep …; Ref.set r [ 9 ])`)
+      needs two names of one handle at the call, the argument and the closure's capture, which item
+      11's apart-arguments rule refuses (`disjoint`) or shares (CR12's `between` programs). A
+      writer that the callee forks again where the frame registered it already runs on the version
+      before the call at `runBegin`, and a version after the callee's own store that a fiber could
+      see needs a park after the store, which is the mark (*What the body stored*) and revokes every
+      writer of the cell (`run/CellFixedPointRuns` pins both).
     - **A probe** (`probeCells`): at each switch point, the contents of each handle of each tracked
       parameter and capture, as they are, against the call's operands (as above) and every escape so
       far, and at the end against every later read (`finishProbes`, with `Atom.ren`, below). A refused
