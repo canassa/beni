@@ -7009,6 +7009,15 @@ fn tagPaths(f: *Frame, start: usize, ranges: []const [2]usize, ctxs: []const u32
 /// `claim`: the callee's claim that a run leaves each cell of the
 /// parameter at one location of it holds at this call (`renewCells`).
 fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, maybe: bool, claim: bool, inst: u32, path_ctx: []const u32) Error!void {
+    return f.renewHandleOf(base, c, j, h, ks, v, casts, maybe, false, claim, inst, path_ctx);
+}
+
+/// `renewHandle`; `closed`: the call runs the code within it any number of
+/// times (kernel §13 item 11), and each location holds what the closure of
+/// the renewal names there (`closedSrcs`). A writer's run reads one run
+/// (`runWriter`): `runWritersFix` runs it again on its own version until
+/// the version holds nothing new, which is the same closure, a step a run.
+fn renewHandleOf(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, ks: []const u32, v: Val, casts: bool, maybe: bool, closed: bool, claim: bool, inst: u32, path_ctx: []const u32) Error!void {
     const m = f.m;
     const sig = c.layouts[j];
     // A hole of markup can be evaluated where the markup is rendered, after
@@ -7107,9 +7116,17 @@ fn renewHandle(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32, 
                     } else false;
                 } else tested[k] = !by_claim;
             } else if (cr == Loc.all) {
-                for (ks) |sk| if (c.renewAt(c.off[j] + sk)) |srcs| try f.expandSrcs(base, srcs, sig, sk, xl, k, &st);
+                for (ks) |sk| if (c.renewAt(c.off[j] + sk)) |srcs| {
+                    const all = if (closed) try f.closedSrcs(c, base.args, j, sk) else srcs;
+                    defer if (closed) f.gpa.free(all);
+                    try f.expandSrcs(base, all, sig, sk, xl, k, &st);
+                };
             } else if (c.renewAt(c.off[j] + cr)) |srcs| {
-                try f.expandSrcs(base, srcs, sig, cr, xl, k, &st);
+                // A code its holder can run any number of times leaves here
+                // what the closure of its renewal names (`closedSrcs`).
+                const all = if (closed) try f.closedSrcs(c, base.args, j, cr) else srcs;
+                defer if (closed) f.gpa.free(all);
+                try f.expandSrcs(base, all, sig, cr, xl, k, &st);
                 // The answer of a function parameter, which the callee saw as
                 // an opaque root, is tested by its atoms.
                 tested[k] = if (ans_claim) opaque_at[k] else !by_claim or for (srcs) |s| {
@@ -7262,6 +7279,50 @@ fn selfRenew(c: *const Contract, j: u32, cr: u32) bool {
     const srcs = c.renewAt(c.off[j] + cr) orelse return true;
     for (srcs) |s| if (s.kind == .param and s.a == j and s.e == cr) return true;
     return false;
+}
+
+/// What entry `cr` of parameter `j` of `c` holds after any number of runs
+/// of a code its holder runs again and again (kernel §13 items 11 and 12,
+/// *a repeated run*): the sources of the renewal of each entry it reaches
+/// (`renewReach`, over the parameters `args` holds: the captures), and the
+/// old cells of each reached entry that has no renewal. Before, one run's
+/// renewal was read, and a rotation of three parts left the third part's
+/// old cell out of the first part's version after two runs. Owned by the
+/// caller.
+fn closedSrcs(f: *Frame, c: *const Contract, args: []const Val, j: u32, cr: u32) Error![]Src {
+    const follow = try f.gpa.alloc(bool, c.arity);
+    defer f.gpa.free(follow);
+    for (follow, 0..) |*x, a| x.* = a < args.len and args[a] != v_none;
+    var reached: std.ArrayList(u32) = .empty;
+    defer reached.deinit(f.gpa);
+    try f.renewReach(c, follow, c.off[j] + cr, &reached);
+    if (reached.items.len == 1) return f.gpa.dupe(Src, c.renewAt(c.off[j] + cr) orelse &.{});
+    var out: std.ArrayList(Src) = .empty;
+    errdefer out.deinit(f.gpa);
+    for (reached.items) |g| {
+        if (c.renewAt(g)) |srcs| {
+            for (srcs) |s| try addSrc(f, &out, s);
+        } else {
+            const a = paramOfEntry(c, g);
+            try addSrc(f, &out, .{ .kind = .param, .a = @intCast(a), .e = @intCast(g - c.off[a]) });
+        }
+    }
+    return out.toOwnedSlice(f.gpa);
+}
+
+/// `s` added to `out` once, a parameter's source beside the others of the
+/// same parameter: `expandSrcs` reads a run of them as one part.
+fn addSrc(f: *Frame, out: *std.ArrayList(Src), s: Src) Error!void {
+    for (out.items) |x| if (x.kind == s.kind and x.a == s.a and x.e == s.e and x.p == s.p) return;
+    var at = out.items.len;
+    if (s.kind == .param) {
+        var i = out.items.len;
+        while (i > 0) : (i -= 1) if (out.items[i - 1].kind == .param and out.items[i - 1].a == s.a) {
+            at = i;
+            break;
+        };
+    }
+    try out.insert(f.gpa, at, s);
 }
 
 const CellTarget = struct { o: u32, hx: u32 };
@@ -7872,22 +7933,25 @@ fn runEnd(f: *Frame, inst: u32, r: Run, ops: []const Val, c: ?*const Contract) E
     const followed = try f.followedOps(ops.len, c);
     defer f.gpa.free(followed);
     const after = try f.latestNow();
+    const first = try f.gpa.alloc(bool, f.writers.items.len);
+    defer f.gpa.free(first);
     if (made) {
-        // On the version before the call. What these runs renew is no
-        // version after it: the runs below, on the version after the call,
-        // keep the old contents beside their renewal (`maybe`).
+        // On the version before the call: each writer made in it, and each
+        // other one again where a run here changed its cell. What these
+        // runs renew is no version after it: the runs below, on the version
+        // after the call, keep the old contents beside their renewal
+        // (`maybe`).
         try f.restoreCells(before);
-        for (r.writers..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, ops, followed);
+        for (first, 0..) |*x, i| x.* = i >= r.writers;
+        try f.runWritersFix(inst, ops, followed, first);
         try f.flushShare();
         try f.restoreCells(after);
     }
-    // On the version after the call: each writer made in it, and each other
-    // one whose cell code run within the call renewed.
-    for (0..f.writers.items.len) |i| {
-        const w = f.writers.items[i];
-        if (i < r.writers and !(within and changedIn(before, after, w.o))) continue;
-        try f.runWriter(w, inst, ops, followed);
-    }
+    // On the version after the call: each writer made in it, each other one
+    // whose cell code run within the call renewed, and each one again where
+    // a run here changed its cell, to the fixed point (#2701).
+    for (first, 0..) |*x, i| x.* = i >= r.writers or (within and changedIn(before, after, f.writers.items[i].o));
+    try f.runWritersFix(inst, ops, followed, first);
     // A tracked parameter's or capture's cell that code run within the call
     // renewed holds what that code stored while the callee can park after
     // it, where the caller's writers run: the probe of a switch point there
@@ -7943,8 +8007,85 @@ fn switchHere(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract, at_re
     }
     const followed = try f.followedOps(ops.len, c);
     defer f.gpa.free(followed);
-    for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], inst, ops, followed);
+    try f.runWritersFix(inst, ops, followed, null);
     try f.probeCells(inst, ops, followed);
+}
+
+/// The writers and readers that can run at the switch point `inst` run
+/// there to a fixed point (kernel §13 item 12, *A run of a writer*): other
+/// fibers run in any order and any number of times while this one is
+/// parked, so a writer runs again on each version of its cell that another
+/// writer's run made, until no run changes the cell of any writer (the
+/// atoms of its latest version, `cellAtoms`). Each run keeps the old
+/// contents beside its renewal (`maybe`), so a version only grows, and a
+/// writer whose run renewed its cell runs again on the version it made, a
+/// step of its renewal a round: the versions reach the closure of the
+/// renewal (`renewReach`) and stop there. `first`: the writers that run whatever
+/// their cell holds (null: all of them); each other one ran on its cell as
+/// it is now. Before, each ran once, in the order they were made, and an
+/// older writer never ran on what a newer one moved into its cell (#2701).
+/// Each round is work (kernel §8): past the budget the walk gives up.
+fn runWritersFix(f: *Frame, inst: u32, ops: []const Val, followed: []const bool, first: ?[]const bool) Error!void {
+    const nw = f.writers.items.len;
+    if (nw == 0) return;
+    const seen = try f.gpa.alloc(?[]Atom, nw);
+    defer {
+        for (seen) |s| if (s) |x| f.gpa.free(x);
+        f.gpa.free(seen);
+    }
+    for (seen, 0..) |*s, i| s.* = if (first) |fs| (if (fs[i]) null else try f.cellAtoms(f.writers.items[i].o)) else null;
+    while (true) {
+        if (f.tick()) return;
+        var any = false;
+        for (0..nw) |i| {
+            const w = f.writers.items[i];
+            if (seen[i]) |s| {
+                const now = try f.cellAtoms(w.o);
+                defer f.gpa.free(now);
+                if (std.mem.eql(u8, std.mem.sliceAsBytes(s), std.mem.sliceAsBytes(now))) continue;
+            }
+            // What it runs on: where its own run renewed the cell, it runs
+            // again on the version it made, a step of its renewal a round.
+            const on = try f.cellAtoms(w.o);
+            try f.runWriter(w, inst, ops, followed);
+            try f.flushShare();
+            if (seen[i]) |s| f.gpa.free(s);
+            seen[i] = on;
+            any = true;
+        }
+        if (!any) return;
+    }
+}
+
+/// The atoms of the latest version of root `o`, sorted and once each: what
+/// `runWritersFix` compares.
+fn cellAtoms(f: *Frame, o: u32) Error![]Atom {
+    const v = f.latestOf(o) orelse try f.rootVal(o);
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    _ = try f.allLeaves(v, &f.atoms);
+    const xs = f.atoms.items[start..];
+    _ = f.charge(xs.len);
+    // A cell by its name, not by the way it was read: the version a run
+    // made is a new name of the cells it wrote (its origin's), and the
+    // versions an atom was read through (`via`) are no other cell.
+    for (xs) |*a| {
+        a.root = f.originOf(a.root);
+        a.via = none;
+        a.via_path = none;
+        a.via_e = none;
+        a.via2 = none;
+        a.via2_e = none;
+    }
+    std.mem.sort(Atom, xs, {}, atomLess);
+    var out: std.ArrayList(Atom) = .empty;
+    errdefer out.deinit(f.gpa);
+    for (xs, 0..) |a, i| if (i == 0 or !std.mem.eql(u8, std.mem.asBytes(&a), std.mem.asBytes(&xs[i - 1]))) try out.append(f.gpa, a);
+    return out.toOwnedSlice(f.gpa);
+}
+
+fn atomLess(_: void, a: Atom, b: Atom) bool {
+    return std.mem.order(u8, std.mem.asBytes(&a), std.mem.asBytes(&b)) == .lt;
 }
 
 /// Per operand of a call whose contract is `c` (or none: unknown code):
@@ -8371,7 +8512,7 @@ fn registerWriter(f: *Frame, v: Val, code: Code, k: u32, site: u32) Error!bool {
         if (lc.renewAt(lc.off[j] + e) != null) break false;
     } else true;
     if (!writes and !reader) return false;
-    if (handsContents(lc, j, inner) or !capturedSrcs(lc, j, code.own_params, inner)) return false;
+    if (try f.handsContents(lc, code.own_params, j, inner) or !capturedSrcs(lc, j, code.own_params, inner)) return false;
     // Its answer names nothing of the capture, nor does a renewal of another.
     for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j) return false;
     for (0..lc.arity) |a| if (a != j) for (lc.off[a]..lc.off[a + 1]) |i| if (lc.renewAt(i)) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j) return false;
@@ -8514,7 +8655,7 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
 fn writersAtReturn(f: *Frame, point: u32, v: Val) Error!void {
     if (f.writers.items.len == 0) return;
     try f.flushShare();
-    for (0..f.writers.items.len) |i| try f.runWriter(f.writers.items[i], point, &.{v}, &.{});
+    try f.runWritersFix(point, &.{v}, &.{}, null);
     // A reader can still be reading after the frame ends, at any later
     // time: what it reads here is held by it from then on (kernel §13 item
     // 12, the reader amendment), and escapes where the walk ends
@@ -8713,6 +8854,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     f.call_inst = inst;
     f.call_vals = try f.gpa.dupe(Val, vals.items);
     const casts_before = f.casts;
+    const n_ops = vals.items.len;
     const result: Val = blk: {
         if (code) |c| break :blk try f.apply(inst, callee, c, vals.items, args);
         if (fn_root != none) break :blk try f.callParam(inst, callee, fn_root, vals.items, args);
@@ -8731,8 +8873,15 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         break :blk try f.unknownResult(inst, vals.items);
     };
     // What the call wrote in place, before the runs of the writers it made,
-    // and the runs of a writer that went out of sight at this call.
+    // and the runs of a writer that went out of sight at this call. The
+    // callee value is an operand of those runs, as of the runs before the
+    // call (`runBegin`): a closure the callee is reads its captures inside
+    // the call, after a writer it forked ran (kernel §13 item 12, *A run of
+    // a writer*; #2703). Unknown code has it among its operands already.
+    const pushed = vals.items.len == n_ops;
+    if (pushed) try vals.append(f.gpa, callee_val);
     const wrote = try f.runEnd(inst, run, vals.items, if (code) |c| c.contract else null);
+    if (pushed) _ = vals.pop();
     // A call that can park this fiber masked or under a scheduler of its
     // own (kernel §13 item 12, *A defect*, (d)): a callee with the bit, the
     // frame's own function parameter (the caller judges what it hands, so
@@ -12387,7 +12536,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
         // what an earlier run gave it: the cell's contents, or a cell the
         // function stored there and gave it too. The demand at the call is
         // judged once, so such a write is refused.
-        if (wk and top != null and handsContents(lc, j, inner)) {
+        if (wk and top != null and try f.handsContents(lc, code.own_params, j, inner)) {
             try f.refuse(use, .disjoint, "a function writes the contents of a cell it captured and hands them, or what it stores there, to the code that runs it, which can run it again");
             continue;
         }
@@ -12395,6 +12544,15 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
             if (!inner[e] or lc.flags[lc.off[j] + e] & flag_w == 0) continue;
             if (held) {
                 try f.refuse(use, .disjoint, "a function writes the contents of a cell it captured, and the callee or another function on the way holds the cell too");
+                break;
+            }
+            // A write that no way of the code stores back (no renewal of the
+            // location: a store renews every location of the contents, item
+            // 3) leaves the written value in the cell under its old name, and
+            // the code's next run within the call reads it there: its own
+            // read of the contents is a later read of the write (#2708).
+            if (lc.renewAt(lc.off[j] + e) == null and !runsOnce(use)) {
+                try f.refuse(use, .later_use, kept_written);
                 break;
             }
             const w: u32 = @intCast(f.atoms.items.len);
@@ -12444,7 +12602,7 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                     @memset(done.?, false);
                 }
                 for (ks.items) |x| done.?[x] = true;
-                try f.renewHandle(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, false, site.inst, &.{});
+                try f.renewHandleOf(&base, lc, j, @intCast(h), ks.items, capv, lc.casts, true, true, false, site.inst, &.{});
                 f.within_renews += 1;
             }
             continue;
@@ -12460,6 +12618,20 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
         try f.shareAtoms(start, f.atoms.items.len, site.inst);
         f.atoms.shrinkRetainingCapacity(start);
         try f.flushShare();
+    }
+}
+
+const kept_written = "a function writes in place the contents of a cell it captured and stores nothing back, and it can run again: its next run reads the written value as the old one";
+
+/// Whether every holder from `use` up to the call that runs the function
+/// within it runs it at most once (`Fn.once`: `Ref.update`'s and
+/// `Ref.modify`'s function).
+fn runsOnce(use: *const Use) bool {
+    var u = use;
+    while (true) {
+        if (u.kind == .top or u.j == none or !u.fnc.once) return false;
+        if (u.kind == .call) return true;
+        u = u.up orelse return false;
     }
 }
 
@@ -12508,53 +12680,176 @@ fn freshElsewhere(f: *Frame, lc: *const Contract, j: u32, e: u32, a: u16) bool {
     return false;
 }
 
-/// Appended to `f.atoms`: what the renewal of capture `j` of `code` names
-/// at its entry `e`, which a later run of the code writes where it writes
-/// `e` (kernel §13 item 11): a capture's cells (another location of the
-/// cell's own contents among them), `outside` for outside the frame or a
-/// value the callee handed, and not a cell the code made in its run that no
-/// other holder has. One it let escape (a `Deferred`, a spawned fiber, a
-/// queue, a list the holder reads) is `outside` too, and noted; one the
-/// contract names at another location (`freshElsewhere`) is noted, and so
-/// is an old cell of the capture that the location and another one hold
-/// after the call.
+/// The parameter of contract `lc` whose entries hold the entry `i` of all
+/// of them (`lc.off`).
+fn paramOfEntry(lc: *const Contract, i: u32) u32 {
+    var a: u32 = 0;
+    while (a + 1 < lc.off.len and lc.off[a + 1] <= i) a += 1;
+    return a;
+}
+
+/// Kernel §13 items 11 and 12, *a repeated run*: the entries of `lc` (as
+/// indices of all its parameters' entries, `lc.off`) whose cells entry
+/// `start` can hold after any number of runs of the code, `start` first:
+/// the closure of the renewal's location-to-location map, to its fixed
+/// point. An entry with no renewal keeps its own cells; a source at an
+/// entry of a parameter `follow` does not name (one the code's holder hands
+/// it in each run) is no location that keeps cells from one run to the next,
+/// and is not followed. Each entry reached is work (kernel §8).
+fn renewReach(f: *Frame, lc: *const Contract, follow: []const bool, start: u32, out: *std.ArrayList(u32)) Error!void {
+    try out.append(f.gpa, start);
+    var i: usize = 0;
+    while (i < out.items.len) : (i += 1) {
+        if (f.charge(1)) return;
+        const srcs = lc.renewAt(out.items[i]) orelse continue;
+        for (srcs) |s| {
+            if (s.kind != .param or s.a >= lc.arity or s.a >= follow.len or !follow[s.a]) continue;
+            const g = lc.off[s.a] + s.e;
+            if (g >= lc.off[s.a + 1]) continue;
+            if (std.mem.indexOfScalar(u32, out.items, g) == null) try out.append(f.gpa, g);
+        }
+    }
+}
+
+/// Per parameter of the known function `code`: whether it is a capture,
+/// whose cells stay from one run of the code to the next (`renewReach`).
+fn captureMask(f: *Frame, code: Code) Error![]bool {
+    const lc = code.contract;
+    const out = try f.gpa.alloc(bool, lc.arity);
+    for (out, 0..) |*x, a| x.* = a >= code.own_params;
+    return out;
+}
+
+/// Appended to `f.atoms`: what the renewal of capture `j` of `code` leaves
+/// at its entry `e` after any number of runs (`renewReach`, the closure of
+/// the renewal), which a later run of the code writes where it writes `e`
+/// (kernel §13 item 11): a capture's cells (another location of the cell's
+/// own contents among them, at any number of steps: a rotation of three
+/// parts brings the third to the first after two runs), `outside` for
+/// outside the frame or a value the callee handed, and not a cell the code
+/// made in its run that no other holder has. One it let escape (a
+/// `Deferred`, a spawned fiber, a queue, a list the holder reads) is
+/// `outside` too, and noted; one the contract names at another location
+/// (`freshElsewhere`) is noted, and so is an old cell that the written
+/// location and another one hold after the same number of runs
+/// (`heldTwiceAfterRuns`).
 fn storedAtoms(f: *Frame, code: Code, j: u32, e: u32) Error!Stored {
     const lc = code.contract;
     var got: Stored = .{};
-    if (lc.renewAt(lc.off[j] + e)) |srcs| for (srcs) |s| switch (s.kind) {
-        .fresh => if (s.e != 0) {
-            got.escaped = true;
-            try f.atoms.append(f.gpa, outside_atom);
-        } else if (freshElsewhere(f, lc, j, e, s.a)) {
-            got.elsewhere = true;
-        },
-        .twice => got.twice = true,
-        .outside, .answer => try f.atoms.append(f.gpa, outside_atom),
-        .param => if (s.a == j and s.e == e) {} else if (s.a >= code.own_params and s.a < lc.arity) {
-            _ = try f.argLeaves(try f.capVal(code, s.a - code.own_params), lc.layouts[s.a], s.e, &.{}, false, &f.atoms);
-        } else try f.atoms.append(f.gpa, outside_atom),
-    };
-    // An old cell of the capture that the written location holds after the
-    // call (its renewal names it, or it keeps its own old contents) and that
-    // another location holds too (`( a, a )`, `( b, b )`, `{ o | b = o.a }`;
-    // a location with no renewal keeps its own): a later run's write of it
-    // is of a cell that the other location holds.
     const at = lc.off[j] + e;
-    const n = lc.off[j + 1] - lc.off[j];
-    const es = f.m.loc.layoutEntries(lc.layouts[j]);
-    if (lc.renew.len != 0) for (0..n) |x| {
-        const named = if (lc.renewAt(at)) |srcs| namesOld(srcs, j, @intCast(x)) else x == e;
-        if (!named or !f.sameCellAt(es, e, @intCast(x))) continue;
-        for (lc.renew, 0..) |ro, i| {
-            if (i == at) continue;
-            const hit = if (ro) |srcs| namesOld(srcs, j, @intCast(x)) else i == lc.off[j] + x;
-            if (!hit) continue;
-            if (i >= lc.off[j] and i < lc.off[j + 1] and !f.sameCellAt(es, @intCast(i - lc.off[j]), @intCast(x))) continue;
-            got.elsewhere = true;
-            return got;
+    const follow = try f.captureMask(code);
+    defer f.gpa.free(follow);
+    var reached: std.ArrayList(u32) = .empty;
+    defer reached.deinit(f.gpa);
+    try f.renewReach(lc, follow, at, &reached);
+    for (reached.items) |g| {
+        const a = paramOfEntry(lc, g);
+        const x = g - lc.off[a];
+        // The old cells of a location the written one comes to hold.
+        if (g != at) {
+            if (a >= code.own_params) {
+                _ = try f.argLeaves(try f.capVal(code, a - code.own_params), lc.layouts[a], x, &.{}, false, &f.atoms);
+            } else try f.atoms.append(f.gpa, outside_atom);
         }
-    };
+        if (lc.renewAt(g)) |srcs| for (srcs) |s| switch (s.kind) {
+            .fresh => if (s.e != 0) {
+                got.escaped = true;
+                try f.atoms.append(f.gpa, outside_atom);
+            } else if (freshElsewhere(f, lc, a, x, s.a)) {
+                got.elsewhere = true;
+            },
+            .twice => got.twice = true,
+            .outside, .answer => try f.atoms.append(f.gpa, outside_atom),
+            // A capture's location is reached above; a parameter the callee
+            // hands is outside the frame.
+            .param => if (s.a >= lc.arity or s.a >= follow.len or !follow[s.a]) try f.atoms.append(f.gpa, outside_atom),
+        };
+    }
+    if (try f.heldTwiceAfterRuns(lc, follow, at)) got.elsewhere = true;
     return got;
+}
+
+/// Whether, after some number of runs of a code whose contract is `lc`,
+/// the entry `at` holds an old cell that another entry holds after the same
+/// number of runs (kernel §13 item 11: `( a, a )`, `( b, b )`, `{ o | b =
+/// o.a }`, and `( List.push b 0, c, d, d )`, whose second part holds the
+/// fourth part's old cell after two runs, as the third does): a later run's
+/// write of `at` is of a cell another location holds. A search of the pairs
+/// of entries, each step one run back through both renewals (an entry with
+/// no renewal keeps its own cells), from `at` beside each other entry, for
+/// a pair that is one entry twice; an entry of the code's own parameters is
+/// the start of a pair only, since the callee hands it anew at each run. A
+/// step goes to a source the entry can hold (`sameCellAt`). Each pair
+/// visited is work (kernel §8); past the budget the walk gives up, and the
+/// answer is yes (the pessimistic side).
+fn heldTwiceAfterRuns(f: *Frame, lc: *const Contract, follow: []const bool, at: u32) Error!bool {
+    if (lc.renew.len == 0) return false;
+    const n: u32 = lc.off[lc.arity];
+    // Two entries come to hold one cell only through an entry that both
+    // hold after a run: a capture's entry that two entries' steps name (an
+    // entry with no renewal names itself). With none, no pair meets.
+    {
+        const named = try f.gpa.alloc(u8, n);
+        defer f.gpa.free(named);
+        @memset(named, 0);
+        var xs: std.ArrayList(u32) = .empty;
+        defer xs.deinit(f.gpa);
+        var meets = false;
+        for (0..n) |g| {
+            xs.clearRetainingCapacity();
+            try f.stepBack(lc, @intCast(g), &xs);
+            _ = f.charge(xs.items.len);
+            for (xs.items) |x| {
+                if (!follow[paramOfEntry(lc, x)]) continue;
+                named[x] +|= 1;
+                if (named[x] > 1) meets = true;
+            }
+        }
+        if (!meets) return false;
+    }
+    var seen: std.AutoHashMapUnmanaged([2]u32, void) = .empty;
+    defer seen.deinit(f.gpa);
+    var queue: std.ArrayList([2]u32) = .empty;
+    defer queue.deinit(f.gpa);
+    for (0..n) |b| if (b != at) {
+        try seen.put(f.gpa, .{ at, @intCast(b) }, {});
+        try queue.append(f.gpa, .{ at, @intCast(b) });
+    };
+    var i: usize = 0;
+    while (i < queue.items.len) : (i += 1) {
+        if (f.charge(Loc.lookup_units)) return true;
+        const p = queue.items[i];
+        var xs: std.ArrayList(u32) = .empty;
+        defer xs.deinit(f.gpa);
+        var ys: std.ArrayList(u32) = .empty;
+        defer ys.deinit(f.gpa);
+        try f.stepBack(lc, p[0], &xs);
+        try f.stepBack(lc, p[1], &ys);
+        for (xs.items) |x| for (ys.items) |y| {
+            // Only a capture's entries keep cells from one run to the next.
+            if (!follow[paramOfEntry(lc, x)] or !follow[paramOfEntry(lc, y)]) continue;
+            if (x == y) return true;
+            const got = try seen.getOrPut(f.gpa, .{ x, y });
+            if (!got.found_existing) try queue.append(f.gpa, .{ x, y });
+        };
+    }
+    return false;
+}
+
+/// The entries whose old cells entry `g` of `lc` holds after one run: its
+/// renewal's sources at a parameter's entry that `g` can hold
+/// (`sameCellAt`), or `g` itself where it has no renewal.
+fn stepBack(f: *Frame, lc: *const Contract, g: u32, out: *std.ArrayList(u32)) Error!void {
+    const srcs = lc.renewAt(g) orelse return out.append(f.gpa, g);
+    const a = paramOfEntry(lc, g);
+    const es = f.m.loc.layoutEntries(lc.layouts[a]);
+    for (srcs) |s| {
+        if (s.kind != .param or s.a >= lc.arity) continue;
+        const h = lc.off[s.a] + s.e;
+        if (h >= lc.off[s.a + 1]) continue;
+        if (s.a == a and !f.sameCellAt(es, g - lc.off[a], s.e)) continue;
+        if (std.mem.indexOfScalar(u32, out.items, h) == null) try out.append(f.gpa, h);
+    }
 }
 
 /// Whether entries `a` and `b` of one layout `es` can hold the same cell
@@ -12572,36 +12867,49 @@ fn sameCellAt(f: *Frame, es: []const Loc.Entry, a: u32, b: u32) bool {
     return !(nested and !x.kind.wide() and !y.kind.wide());
 }
 
-/// Whether `srcs` names entry `x` of parameter `j` as it was at the call.
-fn namesOld(srcs: []const Src, j: u32, x: u32) bool {
-    for (srcs) |s| if (s.kind == .param and s.a == j and s.e == x) return true;
-    return false;
-}
-
 /// Whether the contract `lc` lets the contents of capture parameter `j`
 /// (its entries `inner`), or a cell its renewal of them names, reach the
 /// code that runs it: its answer, an escape there, or
-/// a renewal of another parameter (kernel §13 item 11).
-fn handsContents(lc: *const Contract, j: u32, inner: []const bool) bool {
+/// a renewal of another parameter (kernel §13 item 11). The contents are
+/// every entry their renewal reaches after any number of runs
+/// (`renewReach`, its closure, with the parameters `own` the code's own):
+/// a cell of another capture that a run moves into the contents is
+/// written by a later run, so the code may hand it to no one either.
+fn handsContents(f: *Frame, lc: *const Contract, own: u32, j: u32, inner: []const bool) Error!bool {
+    const follow = try f.gpa.alloc(bool, lc.arity);
+    defer f.gpa.free(follow);
+    for (follow, 0..) |*x, p| x.* = p >= own;
+    var reached: std.ArrayList(u32) = .empty;
+    defer reached.deinit(f.gpa);
     const n = lc.off[j + 1] - lc.off[j];
-    for (0..n) |e| if (inner[e] and lc.flags[lc.off[j] + e] & flag_e != 0) return true;
+    for (0..n) |e| if (inner[e] and std.mem.indexOfScalar(u32, reached.items, lc.off[j] + @as(u32, @intCast(e))) == null) {
+        var one: std.ArrayList(u32) = .empty;
+        defer one.deinit(f.gpa);
+        try f.renewReach(lc, follow, lc.off[j] + @as(u32, @intCast(e)), &one);
+        for (one.items) |g| if (std.mem.indexOfScalar(u32, reached.items, g) == null) try reached.append(f.gpa, g);
+    };
+    const in = reached.items;
+    for (in) |g| if (lc.flags[g] & flag_e != 0) return true;
     const Named = struct {
-        fn hit(c: *const Contract, jj: u32, inn: []const bool, x: Src) bool {
+        fn hit(c: *const Contract, r: []const u32, x: Src) bool {
             switch (x.kind) {
-                .param => return x.a == jj and x.e < inn.len and inn[x.e],
+                .param => return x.a < c.arity and std.mem.indexOfScalar(u32, r, c.off[x.a] + x.e) != null,
                 .fresh => {
-                    const nn = c.off[jj + 1] - c.off[jj];
-                    for (0..nn) |e| if (inn[e]) if (c.renewAt(c.off[jj] + e)) |srcs| for (srcs) |y| if (y.kind == .fresh and y.a == x.a) return true;
+                    for (r) |g| if (c.renewAt(g)) |srcs| for (srcs) |y| if (y.kind == .fresh and y.a == x.a) return true;
                     return false;
                 },
                 .outside, .twice, .answer => return false,
             }
         }
     };
-    for (lc.res) |srcs| for (srcs) |x| if (Named.hit(lc, j, inner, x)) return true;
+    for (lc.res) |srcs| for (srcs) |x| if (Named.hit(lc, in, x)) return true;
+    // A renewal of another parameter that names the contents themselves.
+    var own_in: std.ArrayList(u32) = .empty;
+    defer own_in.deinit(f.gpa);
+    for (0..n) |e| if (inner[e]) try own_in.append(f.gpa, lc.off[j] + @as(u32, @intCast(e)));
     for (0..lc.arity) |a| {
         if (a == j) continue;
-        for (lc.off[a]..lc.off[a + 1]) |i| if (lc.renewAt(i)) |srcs| for (srcs) |x| if (Named.hit(lc, j, inner, x)) return true;
+        for (lc.off[a]..lc.off[a + 1]) |i| if (lc.renewAt(i)) |srcs| for (srcs) |x| if (Named.hit(lc, own_in.items, x)) return true;
     }
     return false;
 }

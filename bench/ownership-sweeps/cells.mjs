@@ -2219,6 +2219,126 @@ pub ${callee.replace(/^pub /, '')}
   return files;
 }
 
+// #2701-#2703: a renewal that its holder can run again and again is read to its fixed point, the writers
+// that can run at one place run to a fixed point, and the callee value is an operand of the runs after a
+// call (kernel §13 item 12, amendment of 2026-11-26). Programs are `fixed.<shape>.<twin>`: `rot<N>.<via>`
+// rotates the N parts of a tuple cell (N = 3, 4, 5) and pushes onto the first, so that the part the frame
+// took out before reaches the written place after N - 1 runs (`via`: `fold` in the frame, `helper` a
+// helper's fold, `fiber` a fiber's fold, `fiberHelper` a fiber that runs the helper, `writer` one writer
+// fiber per run); `rec4.<via>` the same over a record's four fields; `chain4` moves the fourth part to
+// the second through the third and pushes onto the second (no loan: two parts hold the pushed list);
+// `oldNew`, `newOld`, `three1`, `three2` an older writer fiber that pushes onto a part a writer made in a
+// call moved there, in both orders, with two and three writers; `callee.<form>` a writer forked in a call
+// whose callee reads a loan of the cell after it slept (`closure`, `field`, `partial`, `nested`: a closure
+// that calls a closure over the loan); `kept.<runner>.<held>` (#2708) a closure that a call runs more than
+// once (`map`, `fold`, `twice` a helper that calls it twice, `indexed` `List.indexedMap`, `dict` `Dict.map`)
+// reads its captured cell's list (`list`, a record's field `record`, `length`) and writes it in place
+// without storing it back, so its next run reads the written value; `stored` stores it back with
+// `Ref.update` (safe both ways). The twin is `live` where the writes are in place, `dead` where each
+// writes a copy.
+const FIXED_SHAPES = [
+  ...[3, 4, 5].flatMap((n) => ['fold', 'helper', 'fiber', 'fiberHelper', 'writer'].map((v) => `rot${n}.${v}`)),
+  ...['fold', 'helper', 'writer'].map((v) => `rec4.${v}`),
+  'chain4', 'oldNew', 'newOld', 'three1', 'three2',
+  ...['closure', 'field', 'partial', 'nested'].map((f) => `callee.${f}`),
+  ...['map', 'fold', 'twice', 'indexed', 'dict'].flatMap((k) => ['list', 'record', 'length', 'stored'].map((h) => `kept.${k}.${h}`)),
+];
+
+function genFixed(shape, live) {
+  const cp = (e) => (live ? e : `(List.copy ${e})`);
+  const vs = ['a', 'b', 'c', 'd', 'q'];
+  const defs = [];
+  let body;
+  const [kind, via] = shape.split('.');
+  if (kind.startsWith('rot') || kind === 'rec4') {
+    const rec = kind === 'rec4';
+    const n = rec ? 4 : Number(kind.slice(3));
+    const xs = vs.slice(0, n);
+    const T = rec ? '{ a : List Int, b : List Int, c : List Int, d : List Int }' : xs.map(() => 'List Int').join(' × ');
+    const init = rec ? '{ a = [ 1 ], b = [ 2 ], c = [ 3 ], d = [ 4 ] }' : `( ${xs.map((_, i) => `[ ${i + 1} ]`).join(', ')} )`;
+    // new[0] = old[n-1], new[1] = push old[0], new[k] = old[k-1]: the old part 1 reaches part 0 after n - 1 runs.
+    const fn = rec
+      ? `λo → { a = o.d, b = List.push ${cp('o.a')} 0, c = o.b, d = o.c }`
+      : `λ( ${xs.join(', ')} ) → ( ${xs[n - 1]}, List.push ${cp('a')} 0, ${xs.slice(1, n - 1).join(', ')} )`;
+    const take = rec ? 'y = (Ref.get r).b' : `( _, y${', _'.repeat(n - 2)} ) = Ref.get r`;
+    const runs = Array.from({ length: n }, (_, i) => i + 1).join(', ');
+    const fold = `List.foldl [ ${runs} ] ⊤ λ_ _ → Ref.update r ${fn}`;
+    defs.push(`spinAll : Ref ${rec ? T : `(${T})`} → ⊤\nspinAll r = ${fold}`);
+    const run = {
+      fold,
+      helper: 'spinAll r',
+      fiber: `_ = Task.spawn λ⊤ → ${fold}\nTask.sleep (Duration.millis 5)`,
+      fiberHelper: '_ = Task.spawn λ⊤ → spinAll r\nTask.sleep (Duration.millis 5)',
+      writer: Array.from({ length: n }, () => `_ = Task.spawn λ⊤ → Ref.update r ${fn}`).join('\n') + '\nTask.sleep (Duration.millis 5)',
+    }[via];
+    body = `r = Ref.make ${init}\n${take}\n${run}\nNode.print (ints y)`;
+  } else if (kind === 'chain4') {
+    body = `r = Ref.make ( [ 1 ], [ 2 ], [ 3 ], [ 4 ] )\nList.foldl [ 1, 2, 3, 4 ] ⊤ λ_ _ → Ref.update r λ( a, b, c, d ) → ( List.push ${cp('b')} 0, c, d, d )\n( w, x, y, z ) = Ref.get r\nNode.print (ints w ++ "|" ++ ints x ++ "|" ++ ints y ++ "|" ++ ints z)`;
+  } else if (['oldNew', 'newOld', 'three1', 'three2'].includes(kind)) {
+    const C = 'Ref (List Int × List Int × List Int)';
+    defs.push(`late : ${C} → ⊤\nlate r =\n    Task.sleep (Duration.millis 2)\n    Ref.update r λ( a, b, c ) → ( List.push ${cp('a')} 0, b, c )`);
+    defs.push(`later : ${C} → ⊤\nlater r =\n    Task.sleep (Duration.millis 3)\n    Ref.update r λ( a, b, c ) → ( a, List.push ${cp('b')} 8, c )`);
+    defs.push('spawnSleep : (⊤ → ⊤) → ⊤\nspawnSleep w =\n    _ = Task.spawn w\n    Task.sleep (Duration.millis 5)');
+    const swap = `λ⊤ → Ref.update r λ( a, b, c ) → ( b, a, List.push ${cp('c')} 1 )`;
+    const rot = `λ⊤ → Ref.update r λ( a, b, c ) → ( c, a, List.push ${cp('b')} 1 )`;
+    const steps = {
+      oldNew: ['( _, y, _ ) = Ref.get r', '_ = Task.spawn λ⊤ → late r', `spawnSleep ${swap}`],
+      newOld: ['( _, y, _ ) = Ref.get r', `_ = Task.spawn ${swap}`, 'spawnSleep λ⊤ → late r'],
+      three1: ['( _, _, y ) = Ref.get r', '_ = Task.spawn λ⊤ → late r', '_ = Task.spawn λ⊤ → later r', `spawnSleep ${rot}`],
+      three2: ['( _, _, y ) = Ref.get r', `_ = Task.spawn ${rot}`, '_ = Task.spawn λ⊤ → later r', 'spawnSleep λ⊤ → late r'],
+    }[kind];
+    body = `r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )\n${steps.join('\n')}\nNode.print (ints y)`;
+  } else if (kind === 'kept') {
+    const held = shape.split('.')[2];
+    defs.push('twice : (⊤ → String) → List String\ntwice f =\n    a = f ⊤\n    b = f ⊤\n    [ a, b ]');
+    const init = held === 'record' ? '{ xs = [ 1 ], n = 0 }' : '[ 1 ]';
+    const step = {
+      list: `l = Ref.get r\ns = ints l\n_ = List.push ${cp('l')} 45\ns`,
+      record: `q = Ref.get r\ns = ints q.xs\n_ = List.push ${cp('q.xs')} 45\ns`,
+      length: `l = Ref.get r\nn = List.length l\n_ = List.push ${cp('l')} 45\nString.fromInt n`,
+      stored: `Ref.update r λl → List.push ${cp('l')} 45\nints (Ref.get r)`,
+    }[held];
+    const lam = (ps) => `λ${ps} →\n${ind(step, 4)}`;
+    const run = {
+      map: `out = List.map [ 1, 2 ] ${lam('_')}`,
+      fold: `out = List.foldl [ 1, 2 ] [] ${lam('_ acc').replace(/\n([^\n]*)$/, '\n    List.push acc ($1)').replace('List.push acc (    ', 'List.push acc (')}`,
+      twice: `out = twice ${lam('⊤')}`,
+      indexed: `out = List.indexedMap [ 1, 2 ] ${lam('_ _')}`,
+      dict: `out = Dict.values (Dict.map (Dict.fromList [ ( 1, 1 ), ( 2, 2 ) ]) ${lam('_ _')})`,
+    }[via];
+    body = `r = Ref.make ${init}\n${run}\nNode.print (String.join out " ")`;
+  } else {
+    const w = `λ⊤ → Ref.update r λx → List.push ${cp('x')} 5`;
+    defs.push('runWith : List Int, (⊤ → ⊤) → Int\nrunWith l w =\n    _ = Task.spawn w\n    Task.sleep (Duration.millis 5)\n    List.length l');
+    const k = 'λw →\n    _ = Task.spawn w\n    Task.sleep (Duration.millis 5)\n    List.length l';
+    const call = {
+      closure: `k = ${k}\nn = k ${w}`,
+      field: `o = { run = ${k.replaceAll('\n', '\n    ')}\n    }\nn = o.run ${w}`,
+      partial: `k = runWith l _\nn = k ${w}`,
+      nested: `m = λ⊤ → List.length l\nk = λw →\n    _ = Task.spawn w\n    Task.sleep (Duration.millis 5)\n    m ⊤\nn = k ${w}`,
+    }[via];
+    body = `r = Ref.make [ 1, 2 ]\nl = Ref.get r\n${call}\nNode.print (String.fromInt n)`;
+  }
+  return `-- fixed.${shape}: see bench/ownership-sweeps/cells.mjs.
+${kind === 'kept' && via === 'dict' ? 'import Dict\n' : ''}import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+${defs.map((d) => `\n\n${d}\n`).join('')}
+
+main : Program
+main = Io.run λ⊤ →
+${ind(body, 4)}
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -2297,6 +2417,9 @@ for (const form of Object.keys(SWITCH_FORMS)) for (const shape of SWITCH_SHAPES)
 for (const live of [true, false]) emit(`switch.outside.${live ? 'live' : 'dead'}`, { 'Main.beni': genSwitchOutside(live) });
 for (const kind of RENEW_KINDS) for (const store of RENEW_STORES) for (const via of RENEW_VIAS) for (const live of [true, false]) {
   emit(`renew.${kind}.${store}.${via}.${live ? 'live' : 'dead'}`, genRenew(kind, store, via, live));
+}
+for (const shape of FIXED_SHAPES) for (const live of [true, false]) {
+  emit(`fixed.${shape}.${live ? 'live' : 'dead'}`, { 'Main.beni': genFixed(shape, live) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);
