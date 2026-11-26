@@ -8506,6 +8506,21 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         // rule follows which code runs, so each of them goes to the `top` use.
         if (code == null and fn_root == none) try f.flowTop(callee_val, inst);
     }
+    // A callee whose contract does not describe a run with these arguments:
+    // a top-level value whose body computes a function (`later = if c then
+    // masker else noop`, a `case`, a call's answer, a value of another
+    // module). Its contract is the value's, not the function's, and says
+    // nothing of what a run does: the call runs code the walk does not
+    // know, which can park the fiber masked or lent, switch, or keep what it
+    // is handed (kernel §13 item 12, *A defect*, (d), *The ways in*, row 8;
+    // #2696). Before, the value's contract was read as the run's.
+    if (code) |c| if (args.len != c.own_params) {
+        code = null;
+        js_callee = false;
+        primitive = false;
+        if (callee_val == v_none) callee_val = try f.eval(callee, .callee, false);
+        if (fn_root == none) try f.flowTop(callee_val, inst);
+    };
     if (code) |c| if (c.contract.entry and args.len == 1) return f.entryCall(inst, c.decl, args[0].int());
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
@@ -13962,11 +13977,6 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
             // parameters. No row describes what the runtime hands on to a
             // function that it captured: those are in the default.
             for (codes.items[from..]) |c| {
-                const site: Site = .{ .inst = inst };
-                const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = c, .entry = true };
-                try f.flowCode(v, c, &top);
-            }
-            const ty = m.typeOfInst(fd.value.int());
                 // The runtime holds it and runs it where the walk does not
                 // follow, on whatever fiber calls into the program: `send`
                 // runs `update`, and the render after it `view`, at once, on
@@ -13979,6 +13989,11 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                 // *Up*), and what the runtime hands a function parameter is
                 // the default (kernel §6.8). Only what it writes of its own
                 // parameters is the entry's rows' to judge, below (#2695).
+                const site: Site = .{ .inst = inst };
+                const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = c, .entry = true };
+                try f.flowCode(v, c, &top);
+            }
+            const ty = m.typeOfInst(fd.value.int());
             const view = if (m.fnType(ty)) |ft| try m.isView(ft.result.toOptional(), 0) else false;
             try fields.append(f.gpa, .{ .shape = s, .ty = ty, .from = from, .len = codes.items.len - from, .view = view });
         }

@@ -1,0 +1,13 @@
+# The live twin of CellTopValueCall: after a fork of a fiber in which a writer writes a cell in place, a call of a top-level function value whose body computes a function that masks or lends the fiber (an `if`, a `case`, a block, a pipe, a call's answer, `Maybe.withDefault`, inside a tuple, a `List.map` callback, a helper, a value of another module and its helper, a lend) runs code the walk does not know, and is refused at each call (ownership-v3-kernel.md §13 item 12, *A defect*, (d), *The ways in*, row 8; #2696).
+100:5 list_still_used value
+107:5 list_still_used value
+114:5 list_still_used value
+121:5 list_still_used value
+128:5 list_still_used value
+135:5 list_still_used value
+142:18 list_still_used value
+150:9 list_still_used value
+157:5 list_still_used value
+164:5 list_still_used value
+171:5 list_still_used value
+178:5 list_still_used value

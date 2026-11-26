@@ -1,0 +1,22 @@
+--! The second module of CellTopValueCall: a top-level function value
+--! whose body computes a function that masks the fiber, and a helper that
+--! calls it.
+
+import Duration
+import Task
+
+
+maskerM : ⊤ → ⊤
+maskerM ⊤ = Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 1)
+
+
+noopM : ⊤ → ⊤
+noopM ⊤ = ⊤
+
+
+pub laterM : ⊤ → ⊤
+laterM = if True then maskerM else noopM
+
+
+pub viaM : ⊤ → ⊤
+viaM ⊤ = laterM ⊤
