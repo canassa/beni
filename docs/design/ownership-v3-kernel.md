@@ -1479,7 +1479,17 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     a send of a list the sender did not own was a refusal, so each of Conduit's commands that sends a
     loaded feed stopped every write of its module, though no write rested on the message.* A function that is not a producer
     handed the model and writes a parameter is refused: the runtime hands it a value it does not own.
-    The record's functions escape; the program's value is `unknown` over the record.
+    The record's functions escape; the program's value is `unknown` over the record. *Amended
+    2026-11-26 (#2695):* each known function of the record meets the default use, as any function
+    value the walk loses does (`flowCode`, with `Use.entry`): the runtime holds it and runs it
+    where the walk does not follow, on whatever fiber calls into the program (`send` runs `update`
+    and the render), which can be masked or lent. So what it captured has another holder, a write of
+    the contents of a cell it captured is refused, and so is a function whose contract has `hosts`
+    (§13 item 12 (d), *Up*; *The ways in, from the code*, item 12). Only what it writes of its own
+    parameters is not judged there: the rows above judge that. Before, the record's functions got
+    only `flowCaptures` and `defaultParams`: an `update` that forked a hosting fiber, and an
+    `update` that wrote the contents of a cell `main` made and a command had read, were wholly
+    accepted and trapped (code reader CR9's `e_updstart`; the lane's reviewer's `capw`).
 
     *The argument.* "No other holder" of a model location is a universal statement over every
     function the runtime calls with the model and every function that makes it. It is derived only
@@ -3171,6 +3181,12 @@ contents of a cell are locations, and that a call can change what a location of 
         no code, data, a call's answer or a cell only through such a holder, so the rule at the
         holder covers them. It is the pessimistic side: `Task.spawn (wrap hosting)` is refused at
         `wrap`, though the wrapper is only forked after.
+        *Amended 2026-11-26 (#2695): every function value, the entry's too.* `flowCode` applies
+        the rule (`judgeUp`) wherever a known function meets a use, and `entryCall` now hands each
+        function of an entry's record to `flowCode` at the default use (§6.13), since the runtime
+        runs it on the fiber that calls into it (*The ways in, from the code*, item 12). Before,
+        `entryCall` gave it only its captures and parameters, and an `update` that forked a
+        hosting fiber was wholly accepted.
       - **Descendants of a masked fiber** (*added 2026-11-23, #2638*). A third kind of fiber runs
         program code after a throw elsewhere, beside a masked fiber and a fiber under another
         scheduler: a fiber that a fork started (`Task.spawn`, `spawnDetached`, a race's branch,
@@ -3252,7 +3268,7 @@ contents of a cell are locations, and that a call can change what a location of 
         | 5. `where` evidence, bound at a call or a reference (`evidence`; another module's method by `Mod.edgeEffect`) | none: evidence is a declaration, never a closure of the frame | **new**: hosting evidence is refused at the binding unless the callee is code the compiler derives, which runs it within (`evidenceAt`; `evMask`, `evAfter`, `evLend`, `evTwice`, `evRef`, `evKeep`, `evMod`, `evModKeep`) | `runs_on` evidence: `noteRunsOn` and `revokeAt` at the binding, before the arguments flow (`evidenceAt`) | that window refuses the callee's `hosts` and a hosting argument at the call, and gives the frame's own parameter there `runs_on` (`evWriter`) |
         | 6. Data and constructors (a record, a tuple, a list, a `Maybe`, a `Dict`) and cells (`Ref.make`, `Ref.set`) | `mention`, `flowTop`: no fork, so no writer (`stashRead`, `stashWrite`, `dataRead`, `boxRead`) | the default use: refused (`maybeHost`, `cellHost`) | read back, a value of no code: a call of it `noteRunsOn` (`call`), run within a call `flowUnknown` | as 3 |
         | 7. A call's answer | the holder answers it (`flag_a`, `answersFn`): no fork (`wrapRead`) | `startedAt` is false at `answersFn` (`ansHost`, `ansIf`, `wrapHost*`) | in the caller a value of no code, as 6 | as 3 |
-        | 8. Code the walk does not know: a value of no code, a function handed what its holder hands (`defaultParams`), JavaScript (`jsCode`), markup and the runtime | `flowTop`: no fork | the default use: refused (`ownCallHost`, `evArg`) | `noteRunsOn` (`call`), `noteRunsOnWithin` (`flowUnknown`, `defaultParams`, `jsArgsRunOn`) | as 3 |
+        | 8. Code the walk does not know: a value of no code, a function handed what its holder hands (`defaultParams`), JavaScript (`jsCode`), markup and the runtime | `flowTop`: no fork | the default use: refused (`ownCallHost`, `evArg`); **#2695**: the functions of an entry's record too, which the runtime runs on the fiber that calls into it (`entryCall` hands each to `flowCode`, `Use.entry`; `updStart`, `updMask`, `updLend`, `updChild`, `updPlain`, `updHelper`, `updMod`, `updWhere`, `updMethod`, `viewHost`, `initHost`, and a write of a captured cell's contents: `capUpd`, `capUpdHelper`, `capView`) | `noteRunsOn` (`call`), `noteRunsOnWithin` (`flowUnknown`, `defaultParams`, `jsArgsRunOn`) | as 3 |
         | 9. Core's holders: `spawn`, `spawnDetached`, races (`Fn.forks`), `start` (`Fn.starts`), masks and `withScheduler` (`Fn.runs_on`), hooks (`Fn.defect`), and every other walked parameter (`bracket`, `onExit`, `defer`, `par`, `forEach`, `timeout`, `restore`) | `forkedAt` (`Check.forksParam`, `forksParams`) | `startedAt` (`startsParams`); a walked contract says `lost`, `kept_out` or `runs_on` (`hookBracket`, `hookExit`, `hookDefer`, `hookDefect`, `parHost`, `forEachHost`, `restoreHost`); **new**: a start makes the frame hosting (`noteHostsForked`; `maskChild`, `maskRace`, `maskSpawner`) | `runsOnParams`, and the walked contracts; **#2653**: `Task.scope`, whose close runs the scope's deferred finalisers masked through a JavaScript reference (`runsOnBody`; `deferScope`, `scopeHost`) | **new**: no call that can mask or lend after a start of a hosting function (`hosts_forked`; `maskLater`) |
 
         The cells marked **new** were the holes (row 9's are *Descendants of a masked fiber*, above). *Row 5, Up*: before, `evidenceAt` only called
@@ -3338,8 +3354,12 @@ contents of a cell are locations, and that a call can change what a location of 
            `node`'s `Io.run` (`Task.start`, row 9), `WebSocket`, `ChildProcess` (`bracket`, item
            1), `Rt.rows`: the function is lost (rows 6 and 8: the default), so no writer, no
            reader and no hosting function arrives there. The runtime's `send` (`withSend`'s
-           `λmsg → …`) runs `update`, which is `sync`: it parks no fiber, and it is no exemption
-           (*Descendants of a masked fiber*, amended 2026-11-24).
+           `λmsg → …`) runs `update`; it is no exemption (*Descendants of a masked fiber*,
+           amended 2026-11-24), and what `update` does there is item 12.
+           *Corrected 2026-11-26 (#2695):* this item said that `update` "is `sync`: it parks no
+           fiber". That is true and not enough. A `sync` function can start a fiber
+           (`Task.spawn` does not park), and `send` can be called from a fiber the program masks or
+           lends, so a hosting fiber that `update` starts can have a masked ancestor (item 12).
         10. *Fibers the platforms start*: `spawnIn` in `Inline.commands` and `startWork`, in
            `node` `Http.Server.loop` and in `browser` `Worker` (its work is no writer or reader,
            *Down*); `spawnDetached` under `withScheduler` in `cloudflare` (`Fn.runs_on`, row 9);
@@ -3349,6 +3369,50 @@ contents of a cell are locations, and that a call can change what a location of 
            no deferred finalisers.
            What runs their branches is `begin`, `startIn` and `callAs` (row 9, `forksParams`,
            and the walked contracts).
+        12. *Program functions the runtime runs on the calling fiber* (*added 2026-11-26, #2695*).
+           The runtime runs some program functions in the same JavaScript call as the program
+           code that called into it, at once or queued behind the dispatch in progress and
+           applied before it ends. So they run in whatever state the program left its fibers
+           in: inside a fiber that the program masks (`Task.uninterruptible`), lends
+           (`withScheduler`), or started under a masked one, or while such a fiber is parked. A
+           function of that kind that starts a hosting fiber starts it where a masked ancestor can
+           keep the fiber running after a throw (*Descendants of a masked fiber*). The sites:
+           - `Inline.send` (the runtime's `send`, from `Hosted.withSend`, `Cmd.Now`'s `callJob`,
+             `eventEntry`, `run`) applies the program's dispatch: `update`, the render after it,
+             which runs `view`, the helpers of `view`'s holes and the row and key functions of
+             its `For` and `Show` forms (`formCalls`, `runtimeCall`), and `onUrlRequest` and
+             `onUrlChange`. `run` applies the mount: `init`, the first render, `subscriptions`.
+             These are the functions of the entry's record. `entryCall` hands each one to
+             `flowCode` at the default use (`Use.entry`, §6.13), as every other function value the
+             walk loses meets it: a function whose contract has `hosts` is refused there
+             (`judgeUp`, *Up*), and so is one that writes the contents of a cell it captured
+             (`writesCapturedBut`). A helper of a hole is a call in `view`'s frame, so its
+             `hosts` is `view`'s (`hostsCall`), and the default refuses `view`. A row or key
+             function of a `For` or a `Show` is a value of the markup's own: it meets the default
+             use where the markup is evaluated, and a hosting one is refused there (as before this
+             item). Before, the entry's functions got only `flowCaptures` and `defaultParams`,
+             and no rule read their `hosts` or their writes of captured cells: an `update` that
+             forked a hosting fiber, run by a `send` inside `Task.uninterruptible` in a fiber
+             that `Task.start` started, was wholly accepted, and the hosting fiber read the cell
+             its child's throw left half-written (code reader CR9's `e_updstart`, TRAP under
+             `--sanitize-lists`); and an `update` that wrote in place a list in a cell `main`
+             made, which a command had read before it sent the message, changed what the command
+             logged after (the lane's reviewer's `capw`, `cells.mjs`' `capUpd`, `capUpdHelper`,
+             `capView`). A record handed by name (`Tea.element app`, `app` top-level data) was
+             refused before: a function in top-level data meets the default use where the record
+             is made (row 6).
+           - An event's handler and its `via` reader (`Inline.on`, `send f event read`): a
+             value at a markup item that the runtime keeps (`keptItems`), lost to the default
+             (row 8). A DOM event can be dispatched inside a call the program makes.
+           - A `Log` sink (`Log.emit` runs it in the calling fiber), a hook, a finaliser, a
+             `Sub`'s or a `Cmd`'s function, a `map`'s function: each reaches the runtime through
+             a call, at a holder whose contract the walk reads (items 7 to 9, rows 8 and 9).
+           The pessimistic side: an `init` or a `view` that starts a hosting fiber is refused,
+           also where the runtime runs it at the mount, in no fiber; an `init` that hands a
+           hosting function to `Task.start` is refused (a start makes the frame hosting,
+           *Descendants of a masked fiber*), also where the root fiber has no masked ancestor;
+           and an `update` that starts one is refused, also where no `send` is ever made from a
+           masked or lent fiber.
         `browser-tea` and the `dom` lowering are out of this list's scope; `browser`'s `Worker`
         is listed where it calls `Task`.
       No function is refused as a value for having `Fn.runs_on` on a parameter (unlike (a)): a

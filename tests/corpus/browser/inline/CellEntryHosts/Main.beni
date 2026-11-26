@@ -1,0 +1,132 @@
+-- The functions of the entry's record start a fiber in which a writer of a
+-- cell runs, and the runtime runs them on the fiber that calls into it: `send`
+-- runs `update`, and the render after it `view`, inside a mask of a fiber
+-- that `Task.start` started. `update` forks the fiber directly, through a
+-- helper, a helper of another module, a method call and a `where` method;
+-- `view` through a helper of a hole, and `init` at the mount. Each writer
+-- writes a copy of the contents, so no function hosts, and the page is
+-- accepted (ownership-v3-kernel.md §13 item 12, *A defect*, (d), *The ways in,
+-- from the code*, item 12; #2695). Its live twin is CellEntryHostsLive.
+import Cmd exposing (Cmd)
+import Duration
+import Hoster
+import Html exposing (Html)
+import List
+import Ref
+import String
+import Sub exposing (Sub)
+import Task
+import Tea
+
+
+type Msg
+    = Done
+    | Direct
+    | Helper
+    | Other
+    | Method
+    | Evidence
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+hosting : ⊤ → ⊤
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λl → List.push (List.copy l) 5
+    Task.sleep (Duration.millis 5)
+    _ = ints (Ref.get r)
+    ⊤
+
+
+forker : ⊤ → ⊤
+forker ⊤ =
+    _ = Task.spawn hosting
+    ⊤
+
+
+forkVia : ⊤ → ⊤
+forkVia ⊤ = forker ⊤
+
+
+pub type HF
+    = HF
+
+
+pub fgo : HF → ⊤
+fgo h =
+    case h of
+        HF →
+            forker ⊤
+
+
+runGo : a → ⊤
+    where a.fgo : a → ⊤
+runGo x = x.fgo
+
+
+shown : Int → Int
+shown n =
+    if n == 3 then forker ⊤
+    n
+
+
+work : (Msg → ⊤) → ⊤
+work send =
+    Task.start
+        (λ⊤ →
+            Task.uninterruptible λ⊤ →
+                send Direct
+                send Helper
+                send Other
+                send Method
+                send Evidence
+                Task.sleep (Duration.millis 50)
+        )
+        λ_ → ⊤
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ =
+    forker ⊤
+    ( 0, Cmd.perform work )
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg model =
+    case msg of
+        Done →
+            ( model, Cmd.none )
+
+        Direct →
+            forker ⊤
+            ( model + 1, Cmd.none )
+
+        Helper →
+            forkVia ⊤
+            ( model + 1, Cmd.none )
+
+        Other →
+            Hoster.forkerM ⊤
+            ( model + 1, Cmd.none )
+
+        Method →
+            hf = HF
+            hf.fgo
+            ( model + 1, Cmd.none )
+
+        Evidence →
+            runGo HF
+            ( model + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <p>{shown n}</p>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }

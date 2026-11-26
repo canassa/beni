@@ -332,6 +332,11 @@ const Use = struct {
     /// use above; on the default use a lost holder makes, whether that
     /// holder forks or starts it): kernel §13 item 12, *A defect*, (d), *Up*.
     started_above: bool = false,
+    /// The default use of a function of an entry's record (`entryCall`):
+    /// the entry's own rows judge what it writes of its parameters (the
+    /// model), and every other judgment of a function the walk does not
+    /// follow is made (#2695).
+    entry: bool = false,
     site: *const Site,
     depth: u32 = 0,
     /// The function in the location, once `flow` knows which it is: a known
@@ -11751,22 +11756,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         if (lc.hosts) try f.hostsWithin(cu.site.inst);
         if (lc.hosts_forked) try f.noteHostsForked(cu.site.inst);
     }
-    // A writer of a cell it made runs at its switch points: where its
-    // fiber can be masked or under a scheduler of its own, or where a holder
-    // the walk does not follow can run it so, a throw of the writer leaves
-    // its code running on. That is every holder that no call of the frame
-    // runs it within and that starts it in no fiber of its own
-    // (`startedAt`): the default, one that loses it, one that answers it
-    // (a wrapper it answers runs where the frame calls the wrapper, which
-    // can be inside a mask) or lets it out of sight (`Fn.kept_out`), or one
-    // below any of them (kernel §13 item 12, *A defect*, (d), *Up*; #2622).
-    if (lc.hosts and (runsOnAt(&use) or (runsWithin(&use) == null and !try f.startedAt(&use)))) {
-        try f.refuse(&use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
-    } else if (lc.hosts and runsWithin(&use) == null) {
-        // Started in a fiber of its own: a stop of this fiber's ancestors
-        // does not stop it while one of them is masked (#2638).
-        try f.noteHostsForked(use.site.inst);
-    }
+    try f.judgeUp(lc, &use);
     if (runsOnAt(&use)) for (0..code.ncaps) |k| if (f.isWriter(code, k)) {
         try f.refuse(&use, .call, "a function that reads or writes a cell it captured in another fiber runs where its fiber can be masked or under a scheduler of its own, so it runs on after a throw");
         break;
@@ -11776,7 +11766,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // (kernel §6.8). It writes no parameter, and the holder hands each of
         // its function parameters a function in the default state, which
         // keeps what it is handed (`defaultParams`).
-        if (f.writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
+        if (!use.entry and f.writesOwn(lc, code.own_params)) try f.refuse(&use, .call, "a function that writes its parameter goes where the checker does not follow it");
         // A capture of a cell the frame made, which the function writes or
         // renews only through the cell's rows, is a writer: it runs at the
         // frame's later switch points (kernel §13 item 12).
@@ -11851,6 +11841,29 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     try f.captureCells(v, code, &use);
     try f.flowRenews(code, &use, true);
     try f.flowCaptures(code, &use);
+}
+
+/// Kernel §13 item 12, *A defect*, (d), *Up*: a known function whose
+/// contract is `lc` meets `use`. A writer of a cell it made runs at its
+/// switch points: where its fiber can be masked or under a scheduler of its
+/// own, or where a holder the walk does not follow can run it so, a throw
+/// of the writer leaves its code running on. That is every holder that no
+/// call of the frame runs it within and that starts it in no fiber of its
+/// own (`startedAt`): the default, one that loses it, one that answers it
+/// (a wrapper it answers runs where the frame calls the wrapper, which can
+/// be inside a mask) or lets it out of sight (`Fn.kept_out`), or one below
+/// any of them (#2622). Every function value goes through it: `flowCode`,
+/// and the functions of an entry's record, which the runtime runs on the
+/// fiber that calls into it (`entryCall`, #2695).
+fn judgeUp(f: *Frame, lc: *const Contract, use: *const Use) Error!void {
+    if (!lc.hosts) return;
+    if (runsOnAt(use) or (runsWithin(use) == null and !try f.startedAt(use))) {
+        try f.refuse(use, .call, "a function in which a writer of a cell it made runs in another fiber can run where its fiber is masked or under a scheduler of its own, so its code runs on after the writer throws");
+    } else if (runsWithin(use) == null) {
+        // Started in a fiber of its own: a stop of this fiber's ancestors
+        // does not stop it while one of them is masked (#2638).
+        try f.noteHostsForked(use.site.inst);
+    }
 }
 
 /// Whether the contract of `code` has `flag_p` on a handle of one of its
@@ -13950,12 +13963,22 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
             // function that it captured: those are in the default.
             for (codes.items[from..]) |c| {
                 const site: Site = .{ .inst = inst };
-                const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = c };
-                try f.flowCaptures(c, &top);
-                // What the runtime hands a function parameter is the default (kernel §6.8).
-                try f.defaultParams(c, &top);
+                const top: Use = .{ .kind = .top, .id = f.useId(), .key = inst, .site = &site, .code = c, .entry = true };
+                try f.flowCode(v, c, &top);
             }
             const ty = m.typeOfInst(fd.value.int());
+                // The runtime holds it and runs it where the walk does not
+                // follow, on whatever fiber calls into the program: `send`
+                // runs `update`, and the render after it `view`, at once, on
+                // the fiber that called `send`, which can be masked, lent to
+                // a scheduler of its own, or one a hosting fiber was started
+                // under. So it meets the default use, as every other function
+                // value the walk loses does (`flowCode`): what it captured
+                // has another holder, it may write no cell it captured, a
+                // hosting one is refused (kernel §13 item 12, *A defect*, (d),
+                // *Up*), and what the runtime hands a function parameter is
+                // the default (kernel §6.8). Only what it writes of its own
+                // parameters is the entry's rows' to judge, below (#2695).
             const view = if (m.fnType(ty)) |ft| try m.isView(ft.result.toOptional(), 0) else false;
             try fields.append(f.gpa, .{ .shape = s, .ty = ty, .from = from, .len = codes.items.len - from, .view = view });
         }
