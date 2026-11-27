@@ -1,6 +1,9 @@
--- Every form of a list write stays inside its arm: a dot-call, `++`,
--- `List.update`, `List.set` and a user function that pushes. Operands are
--- named values, not literals or lambdas, which are never hoisted anyway.
+-- Every form of a list write inside a case arm of markup: a dot-call, `++`,
+-- `List.update`, `List.set` and a user function that pushes. v3 refuses the
+-- first: the hole is a pure, total call, which the `inline` lowering may
+-- evaluate where the arm is not shown (kernel §6 rule 12, *A hole evaluated
+-- once*), so the markup still reads `xs` after the write. It was an
+-- `emit/inline` shape fixture while v1 judged `browser-inline`.
 import Browser
 import Html exposing (Html)
 import Tea

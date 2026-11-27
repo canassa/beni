@@ -210,7 +210,9 @@ pub const Common = struct {
     /// root under both. Absent from `usage`. Deleted with v1 (§8.3).
     /// `v3` is the step 0 prototype of research report 110 (`src/own3/`,
     /// research report 111): lists only, hidden and test-only as `v2` is.
-    ownership: OwnershipChecker = .v1,
+    /// Null when no flag names one: v1, or the checker the platform names
+    /// (`"ownership"`, `boundary.md` §5.2) for `check` and `build`.
+    ownership: ?OwnershipChecker = null,
 };
 
 /// The ownership checkers (`Common.ownership`).
@@ -1469,7 +1471,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
     if (s.specific.ownership_below and stage != .ownership) return .{ .usage = .init("beni: --ownership-below applies to --stage=ownership only", .{}) };
     if (s.specific.ownership_short_candidates and (stage != .ownership or s.common.ownership != .v2)) return .{ .usage = .init("beni: --ownership-short-candidates applies to --stage=ownership --ownership=v2 only", .{}) };
     if (s.specific.ownership_both and stage != .ownership) return .{ .usage = .init("beni: --ownership-both applies to --stage=ownership only", .{}) };
-    if (s.specific.ownership_both and (s.specific.ownership_flips != null or s.common.ownership != .v1)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2 or v3", .{}) };
+    if (s.specific.ownership_both and (s.specific.ownership_flips != null or (s.common.ownership orelse .v1) != .v1)) return .{ .usage = .init("beni: --ownership-both prints both checkers' reports; it takes neither --ownership-flips nor --ownership=v2 or v3", .{}) };
     if (s.common.ownership == .v3 and (s.specific.ownership_flips != null or s.specific.ownership_skew_sites or s.specific.ownership_below)) return .{ .usage = .init("beni: --ownership=v3 takes --ownership-totals only", .{}) };
     return .{ .command = .{ .dump = .{
         .common = s.common,

@@ -401,6 +401,12 @@ pub const Input = struct {
     /// Also the writers of `Dict` and `Set` (`ownership-v3-kernel.md` §12):
     /// only under it does a call of one go through the oracle.
     records_v3: bool = false,
+    /// A build of a chain the checker v3 judges (`"ownership": "v3"`,
+    /// `boundary.md` §5.2), with neither oracle: each record update v3's
+    /// channel accepted is written in place, with v3's reads read first, as
+    /// v1's clean table writes a module's (§31.10). Lists are written as
+    /// every build without an oracle writes them. With `records_v3`.
+    records_v3_plain: bool = false,
     /// The v3 oracle's reads read before an update's stores (`own3/Reads.zig`).
     v3_reads: []const V3Reads.Read = &.{},
     /// The specifier of `_core/_sanitize.mjs`, relative to this module's
@@ -7081,7 +7087,7 @@ pub const Lowerer = struct {
     /// read first*), whose updates `recordWrittenV3` writes. Null: none.
     fn hoistReads(l: *Lowerer) Allocator.Error!?[]const Hoists.Read {
         if (l.in.ownership.clean) return l.in.ownership.reads;
-        if (!l.in.records_v3 or !l.sanitizesLists()) return null;
+        if (!l.in.records_v3 or !(l.sanitizesLists() or l.in.records_v3_plain)) return null;
         if (l.in.list_writes == null) return null;
         // v3's rows, as v1's: a chain of field reads from a local, read
         // whole, and a closure's read where it is made (`capture`).
@@ -7274,7 +7280,7 @@ pub const Lowerer = struct {
     /// (`Input.records_v3`): a module whose list writes go through either
     /// oracle, and an update its channel lists as accepted.
     fn recordWrittenV3(l: *const Lowerer, inst: Inst.Index) bool {
-        if (!l.in.records_v3 or !l.sanitizesLists()) return false;
+        if (!l.in.records_v3 or !(l.sanitizesLists() or l.in.records_v3_plain)) return false;
         const channel = l.in.list_writes orelse return false;
         const w = channel.find(inst.int()) orelse return false;
         return w.kind == .update;

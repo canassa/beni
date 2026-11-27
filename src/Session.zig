@@ -204,6 +204,10 @@ pack_frontend: []?[]u8 = &.{},
 /// that edits lists in place, the chain optional
 /// (`ownership-checker.md` §28.3): this run enforces.
 enforce_ownership: bool = false,
+/// The chain named the checker v3 and no flag chose one (`"ownership":
+/// "v3"`, `boundary.md` §5.2): a build writes in place every record update
+/// v3 accepted (`Lower.Input.records_v3_plain`).
+ownership_v3_platform: bool = false,
 /// Owned. Per module, the summary block its cache entry carries
 /// (`ownership-checker.md` §28.4), or null; empty unless the pass wrote any.
 ownership_blocks: []?[]u8 = &.{},
@@ -416,6 +420,11 @@ pub const Options = struct {
     /// for `dump --stage=ownership`.
     ownership_v3: bool = false,
     ownership_v3_dump: ?struct { summaries: bool } = null,
+    /// A flag named the ownership checker (`--ownership=`), or the command
+    /// follows no platform's choice. False: a chain whose manifest names
+    /// `"ownership": "v3"` (`Chain.ownershipV3`, `boundary.md` §5.2) is
+    /// judged by the checker v3, as under `--ownership=v3`.
+    ownership_chosen: bool = true,
     /// `build --library`: host JavaScript calls every value the root
     /// package's modules export, with values that it may still hold
     /// (`Reach.collectRoots`). The checker v3 reads it (kernel §6.14).
@@ -630,7 +639,13 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     if (options.ownership_v2) session.options.cache = null;
     // The step 0 prototype writes no cache section and no block of the
     // checked core: it reads no cache and checks core from source.
-    if (options.ownership_v3) {
+    // A platform that names the checker v3 (`"ownership": "v3"`): its
+    // programs are judged by it, as under `--ownership=v3`.
+    if (!options.ownership_chosen and !options.ownership_v2) if (options.chain) |c| if (c.ownershipV3()) {
+        session.options.ownership_v3 = true;
+        session.ownership_v3_platform = true;
+    };
+    if (session.options.ownership_v3) {
         session.options.cache = null;
         session.options.no_pack = true;
     }

@@ -7323,7 +7323,7 @@ test "a browser-inline page builds the same with the edge lists the binary carri
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    _ = try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{"Main.beni"}, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{ "--ownership=v1", "Main.beni" }, false);
 }
 
 /// One fixture of the corpus, copied into the project at `to`.
@@ -8520,7 +8520,7 @@ test "root closures: warm, cold and cache-less builds agree after each owner, re
             for ([_][]const u8{ "warm", "cold", "none" }, &outs) |kind, *out| {
                 out.* = try std.fmt.allocPrint(arena, "{s}-{d}-{s}-{s}", .{ kind, si, mode, jobs });
                 var args: std.ArrayList([]const u8) = .empty;
-                try args.appendSlice(arena, &.{ "build", "--platform=browser-inline", jobs_arg, try std.fmt.allocPrint(arena, "--out={s}", .{out.*}) });
+                try args.appendSlice(arena, &.{ "build", "--platform=browser-inline", "--ownership=v1", jobs_arg, try std.fmt.allocPrint(arena, "--out={s}", .{out.*}) });
                 if (release) try args.append(arena, "--release");
                 if (std.mem.eql(u8, kind, "warm")) {
                     // One cache directory per mode and job count, kept across

@@ -1059,6 +1059,20 @@ and `browser-direct`'s manifest drops it. What a platform does owe instead:
 - **the direct row's obligations** that its runtime keeps: P1–P4 and P7, in
   `ownership-checker.md` §30.3 and `backend.md` §15.5's amendment of 2026-10-15.
 
+**Which ownership checker judges the chain's programs is `"ownership"`** (*added 2026-11-27, on the
+ownership checker v3's branch only, #2657*; [`ownership-v3-kernel.md`](ownership-v3-kernel.md)).
+`"ownership": "v3"` says that `check` and `build` of a program built for the chain judge its
+ownership with the checker v3 (`src/own3/`), as the hidden `--ownership=v3` does, and enforce
+what it refuses; a `--ownership=` flag still names the checker, and `dump` prints the one its flags
+name. Such a build writes in place each record update v3 accepted, with v3's reads read first
+(`Lower.Input.records_v3_plain`), as v1's build writes a clean module's (`ownership-checker.md`
+§31.10); its lists are written as every build without an oracle writes them. Under
+`--ownership=v3` on the command line, with no oracle flag, nothing is written in place: that build
+is the oracle's copying leg (`bench/ownership-sweeps/run.mjs`). v3 reads no cache and no block of
+the checked core, so these builds check core from source (*a cost, #2657*). No other value is accepted, and a chain that does not say it is judged by v1. Inherited
+first-found down the chain like every field (§9.1). `browser-inline` declares it
+(`Chain.ownershipV3`, `Session.Options.ownership_chosen`).
+
 **The entry file's named exports are part of that shape, and it is `"exports"`** (*added
 2026-10-20*, §9.12 (c)). A platform whose host finds code by the entry module's export names — a
 Durable Object class, under Cloudflare Workers — declares `"exports": "program"`: the entry file

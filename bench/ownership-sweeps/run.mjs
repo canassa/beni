@@ -84,23 +84,34 @@ async function judge(prog) {
       : run('node', [path.join(tmp, dir, '_main.mjs')], prog, 20_000);
     const build = (extra, out, ms) =>
       run(beni, ['build', '--no-cache', '--jobs=1', `--platform=${platform}`, ...extra, `--out=${path.join(tmp, out)}`, ...files], prog, ms);
-    const plain = await build([], 'p', 60_000);
-    if (plain.code !== 0) {
-      return plain.code === 1 && !plain.out.includes('panic:') ? `PLAINFAIL` : `CRASH plain ${plain.code}`;
-    }
-    const plainRun = await exec('p');
-    if (plainRun.timedOut) return 'TIMEOUT plain';
+    // On a platform of its own (`PLATFORM`), the plain build names the checker v3: a chain that names it
+    // (`"ownership": "v3"`, `boundary.md` §5.2) writes in place what v3 accepted, and `--ownership=v3` on
+    // the command line keeps the copying build, which is the oracle.
+    const plainFlags = opt.checker === 'v3' && fs.existsSync(pf) ? ['--ownership=v3'] : [];
     const oracle = mode === 'inplace' ? '--lists-in-place' : '--sanitize-lists';
     const flags = [`--ownership=${opt.checker}`, '--ownership-everywhere', oracle];
-    const checked = await build(flags, 's', 120_000);
-    if (checked.code !== 0) {
+    const refusal = (checked) => {
       if (checked.code !== 1 || checked.out.includes('panic:')) return `CRASH ${checked.code}`;
       // A limit of either checker: v2's `ownership_summary_size` and every `ownership_limit` line.
       if (checked.out.includes('ownership_summary_size') || checked.out.includes('OWNERSHIP CHECK TOO LARGE')) return 'LIMIT';
       const code = checked.out.match(/refused: ([a-z_-]+)/)?.[1] ?? '';
       const where = checked.out.match(/^-- [A-Z ]+ -+ (\S+:\d+:\d+)/m)?.[1] ?? '';
       return `REFUSED ${code} ${where}`.trim();
+    };
+    const plain = await build(plainFlags, 'p', 60_000);
+    if (plain.code !== 0) {
+      if (plain.code !== 1 || plain.out.includes('panic:')) return `CRASH plain ${plain.code}`;
+      // The plain build of a platform v3 judges enforces it: a program v3 refuses is REFUSED.
+      if (plainFlags.length > 0 && /refused: [a-z_-]+/.test(plain.out)) {
+        const checked = await build(flags, 's', 120_000);
+        if (checked.code !== 0) return refusal(checked);
+      }
+      return 'PLAINFAIL';
     }
+    const plainRun = await exec('p');
+    if (plainRun.timedOut) return 'TIMEOUT plain';
+    const checked = await build(flags, 's', 120_000);
+    if (checked.code !== 0) return refusal(checked);
     // A log line's `timestamp=` and each span's `label=Nms` are the clock's, not the program's: the two
     // fields of a `logfmt` line (`core/Log.beni`) are set aside, and nothing else of it.
     const clock = (line) => !/^timestamp=\S+ level=/.test(line) ? line
@@ -149,7 +160,7 @@ async function judge(prog) {
     // The release leg: the plain release build is its oracle, the in-place release build is judged against it.
     // `--allow-debug`: a program whose instrument is `Debug.log` is built as the corpus's release pass builds it.
     const rel = ['--release', '--allow-debug'];
-    const plainRel = await build(rel, 'pr', 60_000);
+    const plainRel = await build([...rel, ...plainFlags], 'pr', 60_000);
     if (plainRel.code !== 0) return `${pass} ip=${second} rip=${plainRel.code === 1 && !plainRel.out.includes('panic:') ? 'PLAINFAIL' : `CRASH-${plainRel.code}`}`;
     const plainRelRun = await exec('pr');
     if (plainRelRun.timedOut) return `${pass} ip=${second} rip=TIMEOUT-plain`;

@@ -1988,6 +1988,7 @@ const Case = struct {
         // Enforcement refusals use the same platform as their ownership dump.
         if ((c.kind == .check_bad or c.kind == .check_good) and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {
             if (c.fixture.platform) |name| try list.append(c.arena, try std.fmt.allocPrint(c.arena, "--platform={s}", .{name}));
+            if (c.goldenExists("ownership-v1")) try list.append(c.arena, "--ownership=v1");
         }
         if (c.fixture.markup and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) try list.append(c.arena, "--platform=html");
         if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build"))) {
@@ -2218,6 +2219,9 @@ const Case = struct {
                 "--platform=node",
         });
         if (c.fixture.everywhere) try args.append(c.arena, "--ownership-everywhere");
+        // A fixture of the checker v1 on a chain that names v3 (`.ownership-v1`,
+        // its reason): v1 judges it, as `--ownership=v1` says.
+        if (c.goldenExists("ownership-v1")) try args.append(c.arena, "--ownership=v1");
         // A prerendering build, whose `main` says `Browser.prerender`, runs
         // the suite's `node` (`prerender.md` §5.1, §5.2).
         const path: ?[]const u8 = if (c.fixture.prerender) try w.nodePath() else null;
@@ -3356,6 +3360,21 @@ const Case = struct {
         if (steps) |bytes| try c.w.write(steps_name, bytes);
         const script: Script = .{ .name = if (steps != null) steps_name else null, .bytes = steps orelse "" };
 
+        // A page that v3 must refuse (`.sanitize-lists-v3-refuses`), on a
+        // chain v3 judges (`"ownership": "v3"`, `boundary.md` §5.2): its
+        // plain build is refused, with exactly the writes the file names,
+        // and there is no page to run. On any other chain the page runs.
+        if (c.goldenExists("sanitize-lists-v3-refuses")) if (try c.ownershipRefusals(platform_arg, &.{}, sources)) |got| {
+            const want = try c.expectedRefusals("sanitize-lists-v3-refuses");
+            if (!std.mem.eql(u8, got, want)) {
+                detail("{s}: its build refuses, but not what sanitize-lists-v3-refuses names\n--- expected ---\n{s}--- refused ---\n{s}", .{ c.fixture.name, want, got });
+                because("[out] the build refuses other writes than sanitize-lists-v3-refuses names", .{});
+                return error.SanitisedRefusalDiffers;
+            }
+            _ = try c.v3Page(platform_arg, sources);
+            return;
+        };
+
         if (c.fixture.values) return c.valueFuzz(h, script, sources, platform_arg);
 
         // Both builds first, then every page that must run in one Node
@@ -4081,6 +4100,7 @@ const Case = struct {
         var args: std.ArrayList([]const u8) = .empty;
         const platform = if (own_platform) "platform" else c.fixture.platform orelse "node";
         try args.appendSlice(c.arena, &.{ "build", try std.fmt.allocPrint(c.arena, "--platform={s}", .{platform}), "--out=out" });
+        if (c.goldenExists("ownership-v1")) try args.append(c.arena, "--ownership=v1");
         if (!c.fixture.app) try args.append(c.arena, "--library");
         // `--allow-debug` rides with `--release` here for `run/`'s reason:
         // one rule for the whole corpus, so that a shape golden can be about
@@ -4267,7 +4287,10 @@ const Case = struct {
                 const platform = if (everywhere) name[0 .. name.len - everywhere_suffix.len] else name;
                 const flag = try std.fmt.allocPrint(c.arena, "--platform={s}", .{platform});
                 const flags: []const []const u8 = if (everywhere) &.{ flag, "--ownership-everywhere" } else &.{flag};
-                const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json" }, flags, &.{path} }));
+                // The report is v1's (`dump` prints the checker its flags
+                // name), so the check is v1's too, on a chain that names v3
+                // as on any other (`"ownership"`, `boundary.md` §5.2).
+                const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json", "--ownership=v1" }, flags, &.{path} }));
                 const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership" }, flags, &.{path} }));
                 try expectExit(0, r);
                 try c.ownershipCached(flags, path, checked);
@@ -4561,7 +4584,7 @@ const Case = struct {
         const trace = try std.fmt.allocPrint(c.arena, "ownership-trace-{s}.json", .{name});
         const profile = try std.fmt.allocPrint(c.arena, "--self-profile={s}/{s}", .{ project, trace });
         for ([_][]const u8{ "writes", "reads" }) |pass| {
-            const cmd = try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json" }, flags, if (c.fixture.core) &.{"--core"} else &.{}, &.{ dir, profile, path } });
+            const cmd = try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json", "--ownership=v1" }, flags, if (c.fixture.core) &.{"--core"} else &.{}, &.{ dir, profile, path } });
             const r = try c.w.runWith(cmd, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
             if (r.exit_code != checked.exit_code or !std.mem.eql(u8, r.stderr, checked.stderr)) {
                 detail("{s}: the check that {s} the cache disagrees with --no-cache (exit {d}, not {d})\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass, r.exit_code, checked.exit_code, r.stderr });

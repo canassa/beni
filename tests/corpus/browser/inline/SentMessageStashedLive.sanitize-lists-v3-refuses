@@ -1,0 +1,2 @@
+# A function the command is mapped with keeps the message: the list in it is not update's own, so the write is refused (ownership-v3-kernel.md §6 rule 13, *A message a command builds*).
+42:5 list_still_used entry

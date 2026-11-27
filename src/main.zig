@@ -202,6 +202,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .ownership_records_lost = common.ownership_records_lost,
         .ownership_v2 = common.ownership == .v2,
         .ownership_v3 = common.ownership == .v3,
+        .ownership_chosen = common.ownership != null,
     };
 }
 
@@ -248,6 +249,9 @@ fn onBigStack(comptime function: anytype, args: anytype) anyerror!void {
 
 fn runDump(gpa: std.mem.Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
     var options = sessionOptions(dump.common);
+    // A dump prints the checker its flags name, v1 by default, whatever the
+    // platform names (`"ownership"`, `boundary.md` §5.2).
+    options.ownership_chosen = true;
     // Only the interface dump resolves names, and only it needs core
     // alongside the file (checker.md §4). The other three stages are a
     // function of the file's own bytes, and loading ~2,800 lines of core
@@ -686,7 +690,7 @@ fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, std
 /// it (ownership-checker.md §9.1). An embedded core or platform module is
 /// included when the path names its directory, and never under `.`.
 fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, stderr: *Io.Writer, dump: Cli.Dump) u8 {
-    if (dump.common.ownership != .v1) return dumpOwnershipV2(gpa, session, stdout, stderr, dump);
+    if ((dump.common.ownership orelse .v1) != .v1) return dumpOwnershipV2(gpa, session, stdout, stderr, dump);
     const Ownership = beni.own.Ownership;
     var buffer: [SourceStore.max_path_bytes]u8 = undefined;
     const target = storePath(&buffer, dump.file);

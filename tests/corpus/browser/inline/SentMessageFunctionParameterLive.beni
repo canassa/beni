@@ -1,0 +1,59 @@
+-- A message a command builds holds one list at two places, or a list a
+-- function parameter answers: update's write of it is refused
+-- (ownership-v3-kernel.md §6 rule 13, *A message a command builds*).
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Start
+    | Again
+    | Items (List Int)
+    | Pair (List Int) (List Int)
+    | Show (List Int)
+
+
+top : List Int
+top = [ 1, 2 ]
+
+
+body : (⊤ → List Int), Cmd.Send Msg → ⊤
+body mk send = send (Items (mk ⊤))
+
+
+update : Msg, Int → Int × Cmd.Cmd Msg
+update msg n =
+    case msg of
+        Start →
+            ( n, Cmd.perform (body (λ⊤ → top) _) )
+
+        Again →
+            ( n, Cmd.perform (body (λ⊤ → top) _) )
+
+        Items xs →
+            ( n * 10 + List.length (List.push xs 3), Cmd.none )
+
+        Pair a b →
+            ( n * 100 + List.length (List.push a 3) * 10 + List.length b, Cmd.none )
+
+        Show xs →
+            ( n * 10 + List.length xs, Cmd.none )
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="start" onClick={Start}>start</button><button id="again" onClick={Again}>again</button><p id="n">{n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
