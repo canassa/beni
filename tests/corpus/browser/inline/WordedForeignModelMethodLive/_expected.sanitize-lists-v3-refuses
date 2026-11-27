@@ -1,0 +1,4 @@
+# A worded platform foreign called as a method of the model keeps the model as `this`: no location of the model is own (ownership-v3-kernel.md §6 rule 2, *A field called as a method*).
+43:5 list_still_used entry
+43:5 list_still_used entry
+43:5 list_still_used entry

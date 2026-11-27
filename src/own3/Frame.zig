@@ -7018,7 +7018,7 @@ fn knownFns(f: *Frame, v: Val, mode: KnownMode) Error!bool {
             return true;
         },
         .closure => return true,
-        .fnref => return !f.jsCode(.{ n.a, n.b }),
+        .fnref => return f.beniBody(.{ n.a, n.b }),
         .ref => {
             if (mode == .strict) return false;
             if (f.isFnRoot(f.ownFnRoot(v))) return mode == .result;
@@ -7842,7 +7842,7 @@ fn renewHandleOf(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32
                     tested[k] = true;
                 } else if (c.renewAt(c.off[j] + cr)) |srcs| {
                     tested[k] = if (ans_claim) opaque_at[k] else !by_claim or for (srcs) |s| {
-                        if (s.kind == .answer) break true;
+                        if (s.kind == .answer or s.kind == .held) break true;
                     } else false;
                 } else tested[k] = !by_claim;
             } else if (cr == Loc.all) {
@@ -7860,7 +7860,7 @@ fn renewHandleOf(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32
                 // The answer of a function parameter, which the callee saw as
                 // an opaque root, is tested by its atoms.
                 tested[k] = if (ans_claim) opaque_at[k] else !by_claim or for (srcs) |s| {
-                    if (s.kind == .answer) break true;
+                    if (s.kind == .answer or s.kind == .held) break true;
                 } else false;
             } else {
                 // A location of the contents that the callee leaves as it was.
@@ -7992,7 +7992,7 @@ fn answerClaim(f: *Frame, base: *const Use, c: *const Contract, j: u32, ks: []co
     // calls of one captured function can answer one cell), is tested by its
     // atoms, as at a call (§4.4).
     for (xks, lc.res) |k, srcs| opaque_at[k] = for (srcs) |s| {
-        if (s.kind == .answer) break true;
+        if (s.kind == .answer or s.kind == .held) break true;
     } else false;
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
@@ -10961,6 +10961,15 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
 /// contract answers it (`escapeAnswer`): the pessimistic side, for a
 /// contract that casts (research report 151's review).
 fn escapeHandedOff(f: *Frame, c: *const Contract, code: Code, args: []const Val, site: *const Site, inst: u32) Error!void {
+    // The answer of a function held in a value that the callee hands on or
+    // answers (kernel §6 rule 2, *A function held in a value*): every argument
+    // escapes, the pessimistic side.
+    const held_any = blk: {
+        for (c.res) |srcs| for (srcs) |s| if (s.kind == .held) break :blk true;
+        for (c.fns) |fo| if (fo) |g| for (g.supply) |srcs| for (srcs) |s| if (s.kind == .held) break :blk true;
+        break :blk false;
+    };
+    if (held_any) for (args) |v| try f.escape(v, inst);
     for (0..c.arity) |j| {
         const fnc = c.fns[j] orelse continue;
         _ = f.charge(Loc.scanUnits(fnc.supply.len));
@@ -11656,6 +11665,11 @@ fn partsOf(f: *Frame, v: Val, buf: *std.ArrayList(Atom), runs: *std.ArrayList([2
 /// What the expansion of a result entry's sources found beside the atoms
 /// (`expandSrcs`, `answerOfParam`).
 const SrcState = struct {
+    /// The answer in work is a function's held in a value (`answerOfHeld`):
+    /// it met no use but `top`, whose judgment of what its run stores is
+    /// not this call's, so a cell it made is the caller's only where its
+    /// contract names no other holder (`freshOwn`).
+    held_level: bool = false,
     /// One cell can be twice here: the atoms show it (two sources, or two
     /// parts of one, hold one cell), the callee's contract says `twice`, or
     /// an answer can be one cell in two runs (a captured cell; a cell the
@@ -11791,10 +11805,10 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
     if (total > share_small) {
         var runs: std.ArrayList([2]u32) = .empty;
         defer runs.deinit(f.gpa);
-        for (parts.items) |x| if (x.src.kind != .answer) try runs.append(f.gpa, .{ x.start, x.end });
+        for (parts.items) |x| if (x.src.kind != .answer and x.src.kind != .held) try runs.append(f.gpa, .{ x.start, x.end });
         if (try f.runsShare(f.atoms.items, runs.items, null)) st.twice = true;
         for (parts.items, 0..) |x, i| for (parts.items[0..i]) |y| {
-            if (x.src.kind != .answer and y.src.kind != .answer) continue;
+            if (x.src.kind != .answer and x.src.kind != .held and y.src.kind != .answer and y.src.kind != .held) continue;
             if (f.charge(1)) {
                 st.twice = true;
                 break;
@@ -12660,6 +12674,18 @@ fn startsParams(f: *const Frame) u32 {
 /// fiber in a mask nor lends one to a scheduler, since only `core/Task.beni`
 /// does (kernel §13 item 12, *A defect*, (d)); what it is handed is judged
 /// where it is handed.
+/// Whether declaration `t`'s body is beni (a `value`): one that is
+/// JavaScript, worded or not, is a host's (kernel §6 rule 2, *A field
+/// called as a method*).
+fn beniBody(f: *const Frame, t: [2]u32) bool {
+    const m = f.m;
+    if (t[0] >= m.in.birs.len or t[1] >= m.in.birs[t[0]].decls.len) return false;
+    return switch (m.in.birs[t[0]].decls[t[1]].kind) {
+        .value => true,
+        .foreign_value, .vocab_markup, .annotation_only, .type, .type_alias, .foreign_type, .schema, .vocab_element, .vocab_attribute, .vocab_event => false,
+    };
+}
+
 fn jsCode(f: *const Frame, t: [2]u32) bool {
     const m = f.m;
     if (t[0] >= m.in.birs.len or t[1] >= m.in.birs[t[0]].decls.len) return false;
@@ -15101,7 +15127,22 @@ fn answerOf(f: *Frame, v: Val, use: *const Use, ae: u32, st: *SrcState, depth: u
     // So do the functions held below one of its parameters or captures
     // (kernel §6 rule 2, *A function held in a value*).
     if (use.kind != .top) if (try f.heldOf(v)) |h| return f.ownAnswerDi(try f.heldDraftOf(h), use.fnc.layouts[use.fnc.arity], ae, st);
+    if (use.kind != .top and use.held != none) return f.heldLost(v, use, st, depth);
     return f.lostAnswer(use, st);
+}
+
+/// The answer of a function held in a value that no rule names (kernel §6
+/// rule 2, *A function held in a value*): it met the `top` use where it
+/// went into the value, so its answer has no claim and can hold what it
+/// captured and what `use` hands it, as unknown code's can; no other
+/// argument of the call.
+fn heldLost(f: *Frame, v: Val, use: *const Use, st: *SrcState, depth: u32) Error!void {
+    st.handed = true;
+    st.twice = true;
+    try f.atoms.append(f.gpa, outside_atom);
+    _ = try f.allLeaves(v, &f.atoms);
+    var sink: FlatSink = .{ .st = st, .depth = depth + 1 };
+    for (use.fnc.supply) |srcs| for (srcs) |s| try f.resolve(use, s, &.{}, true, &sink, depth + 1);
 }
 
 /// The answer of the functions held at parameter location `src.a` of
@@ -15124,6 +15165,9 @@ fn answerOfHeld(f: *Frame, level: *const Use, src: Src, st: *SrcState, depth: u3
     other.code = null;
     other.root = none;
     other.di = none;
+    const outer = st.held_level;
+    st.held_level = true;
+    defer st.held_level = outer;
     try f.answerOf(v, &other, src.e, st, depth);
 }
 
@@ -15238,7 +15282,13 @@ fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u3
         part_single = false;
         switch (ls.kind) {
             // A cell the function made: one root at this holder for its name (kernel §4.2).
-            .fresh => try f.freshAtom(use.key, code.id(), f.m.isDraft(lc), ls.a, ls.e != 0, use.site.inst, &f.atoms),
+            .fresh => if (st.held_level and !freshOwn(f.m, lc, @intCast(k), ls)) {
+                // A function held in a value that also keeps the cell it
+                // answers (a store into a cell, a function it hands it to):
+                // no claim (`SrcState.held_level`).
+                st.twice = true;
+                try f.atoms.append(f.gpa, outside_atom);
+            } else try f.freshAtom(use.key, code.id(), f.m.isDraft(lc), ls.a, ls.e != 0, use.site.inst, &f.atoms),
             .outside => try f.atoms.append(f.gpa, outside_atom),
             .twice => st.twice = true,
             .held => try f.lostAnswer(use, st),
