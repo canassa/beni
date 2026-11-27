@@ -628,10 +628,12 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     // a run under `--ownership=v2` reads and writes no cache, so it never
     // installs an entry v1 checked.
     if (options.ownership_v2) session.options.cache = null;
-    // The step 0 prototype writes no cache section and no block of the
-    // checked core: it reads no cache and checks core from source.
+    // The checker v3 has no block in the checked core: a run under
+    // `--ownership=v3` checks core from source, and the module cache keeps
+    // each module's block after that (`ownership-v3-kernel.md` §7.1). A
+    // dump's report is of the walk, so a dump reads and writes no cache.
     if (options.ownership_v3) {
-        session.options.cache = null;
+        if (options.ownership_v3_dump != null) session.options.cache = null;
         session.options.no_pack = true;
     }
     // Enforcement controls diagnostics. Summaries are computed on every
@@ -2236,7 +2238,9 @@ fn checkSerial(session: *Session) RunError!void {
 
     gpa.free(session.compare_keys);
     session.compare_keys = &.{};
-    if (session.options.cutoff_compare) {
+    // Under `--ownership=v3` the keys in use are the transitive ones
+    // (`Check.Cutoff.transitive`), which `compare_keys` holds.
+    if (session.options.cutoff_compare or session.options.ownership_v3) {
         session.compare_keys = try gpa.alloc(Key.Key, n);
         @memset(session.compare_keys, Key.none);
     }
@@ -2259,7 +2263,10 @@ fn checkSerial(session: *Session) RunError!void {
         .digest = session.digests,
         .hit = hit,
         .compare = session.compare_keys,
-        .ownership = session.enforce_ownership,
+        // v1's rule for an entry with no clean summary block. The checker
+        // v3 has its own block and its own rule (`own3/Enforce.restore`).
+        .ownership = session.enforce_ownership and !session.options.ownership_v3,
+        .transitive = session.options.ownership_v3,
     };
 
     session.checked.deinit(gpa);
@@ -2356,6 +2363,11 @@ fn storeEntries(session: *Session, cached: []const ?CacheEntry.Loaded) RunError!
         // rename per module — which is exactly the cost `plans/m4-1.md` §7
         // measurement 3 exists to watch.
         if (i < cached.len and cached[i] != null) continue;
+        // Under `--ownership=v3` an entry holds the block of the module's
+        // walk (`ownership-v3-kernel.md` §7.1). A module with no block is
+        // not stored: it was not walked, or its walk made a diagnostic,
+        // which the check can have dropped since (`Check.run`).
+        if (session.options.ownership_v3 and session.ownershipBlock(m).len == 0) continue;
 
         const entry = session.entryBytes(gpa, m) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
@@ -2416,6 +2428,18 @@ fn crossing(session: *const Session) bool {
     return false;
 }
 
+/// The `ownership` section of module `m`'s entry: v1's summary block
+/// (`ownership-checker.md` §28.4), or under `--ownership=v3` the block of
+/// the module's walk (`ownership-v3-kernel.md` §7.1); empty when the run
+/// made none.
+fn ownershipBlock(session: *const Session, m: Graph.Index) []const u8 {
+    if (session.options.ownership_v3) {
+        const state = session.ownership3 orelse return &.{};
+        return state.block(m.int()) orelse &.{};
+    }
+    return if (m.int() < session.ownership_blocks.len) session.ownership_blocks[m.int()] orelse &.{} else &.{};
+}
+
 fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error![]u8 {
     const record = try iface_bytes.write(gpa, &session.resolution.interfaces[m.int()], &session.interner);
     defer gpa.free(record);
@@ -2461,7 +2485,7 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
         .dispatch = sidecar,
         .schema_plan = plan,
         .diagnostics = diagnostics,
-        .ownership = if (m.int() < session.ownership_blocks.len) session.ownership_blocks[m.int()] orelse &.{} else &.{},
+        .ownership = session.ownershipBlock(m),
         .type_keys = keys,
         .hoists = hoists,
     });
@@ -2529,6 +2553,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
             .reported = reported,
             .embedded = embedded.items,
             .io = session.io,
+            .ownership3 = if (session.options.ownership_v3) .{ .enforce = session.enforce_ownership, .library = session.options.library } else null,
         },
     );
     worker.arena.reset(.keep_all);

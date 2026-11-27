@@ -322,6 +322,13 @@ pub const Cutoff = struct {
     /// `pack` publishes its interface hash folded with its own key, so an
     /// importer's key covers every block it can read.
     ownership: bool = false,
+    /// The run's keys are the transitive recipe (`fast-compiler.md` §8, *The
+    /// persistent cache, and its key*): an import gives its key, not its
+    /// interface hash and digest. A run under `--ownership=v3` sets it
+    /// (`ownership-v3-kernel.md` §7.1): a walk reads more of another module
+    /// than the cutoff's pair covers. `compare` then has a slot for each
+    /// module, and the key in use is the one it holds.
+    transitive: bool = false,
 };
 
 /// Type-check every module of `graph`, filling `interfaces` with schemes.

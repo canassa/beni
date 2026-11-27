@@ -469,8 +469,12 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
             const file = d.graph.moduleFile(m);
             const bir = d.artifacts.bir(file);
             const token_count: u32 = @intCast(d.artifacts.spans(file).len());
+            // Under `--ownership=v3` the entry's block is read last, in place
+            // of the module's walk (`ownership-v3-kernel.md` §7.1): a block
+            // that this session cannot read is a miss as the others are.
             if (loaded.hoists.verifyAgainstBir(bir, d.interner, &loaded.sidecar.table) and loaded.plan.verifyAgainstBir(bir, token_count) and
-                loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types))
+                loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types) and
+                (if (d.options.ownership3) |ctx| try @import("../own3/Enforce.zig").restore(ctx, d, m, loaded.ownership) else true))
                 return d.install(m, loaded);
             // A malformed or stale sidecar is a cache miss. Release the
             // entry here because the normal check below replaces it. The

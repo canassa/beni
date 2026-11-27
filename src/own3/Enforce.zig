@@ -3,9 +3,11 @@
 //! `--sanitize-lists`, and `dump --stage=ownership --ownership=v3`.
 //!
 //! A module's contracts go to its importers through `State.shared`, one slot
-//! for each module, written by the worker that checked it before any importer
-//! runs. Nothing is in the interface, the cache or the checked core: a run
-//! under `--ownership=v3` checks `core/` from its sources.
+//! for each module, written by the worker that checked it, or that read it
+//! from the module cache (`restore`), before any importer runs. Nothing is
+//! in the interface or the checked core: a run under `--ownership=v3` checks
+//! `core/` from its sources one time, and the module cache keeps each
+//! module's block after that (`Block.zig`, kernel §7.1).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -29,15 +31,22 @@ const InternPool = @import("../InternPool.zig");
 const MarkupTree = @import("../js/MarkupTree.zig");
 const Check = @import("Check.zig");
 const Contract = @import("Contract.zig");
+const Block = @import("Block.zig");
 const Prepass = @import("../own2/Prepass.zig");
+const SourceStore = @import("../SourceStore.zig");
 
 pub const Inputs = Enforce2.Inputs;
 pub const inputs = Enforce2.inputs;
 
-/// What one run keeps: each module's contracts, and its report when a dump asked for it.
+/// What one run keeps: each module's contracts, its report when a dump asked
+/// for it, and its block when the run has a cache to store it in.
 pub const State = struct {
     shared: Check.Shared,
     reports: []?*Report.Kept,
+    /// Per module, its block for the module cache (kernel §7.1), or null: the
+    /// module was not walked in this run, its walk made a diagnostic, or the
+    /// run stores nothing. Written by the worker that walked the module.
+    blocks: []?[]u8,
 
     pub fn init(gpa: Allocator, modules: usize) Allocator.Error!*State {
         const s = try gpa.create(State);
@@ -46,8 +55,11 @@ pub const State = struct {
         errdefer gpa.free(published);
         @memset(published, null);
         const reports = try gpa.alloc(?*Report.Kept, modules);
+        errdefer gpa.free(reports);
         @memset(reports, null);
-        s.* = .{ .shared = .{ .published = published }, .reports = reports };
+        const blocks = try gpa.alloc(?[]u8, modules);
+        @memset(blocks, null);
+        s.* = .{ .shared = .{ .published = published }, .reports = reports, .blocks = blocks };
         return s;
     }
 
@@ -56,7 +68,14 @@ pub const State = struct {
         gpa.free(s.shared.published);
         for (s.reports) |r| if (r) |k| k.deinit(gpa);
         gpa.free(s.reports);
+        for (s.blocks) |b| if (b) |bytes| gpa.free(bytes);
+        gpa.free(s.blocks);
         gpa.destroy(s);
+    }
+
+    /// Module `m`'s block for the cache, or null (`blocks`).
+    pub fn block(s: *const State, m: usize) ?[]const u8 {
+        return if (m < s.blocks.len) s.blocks[m] else null;
     }
 };
 
@@ -261,9 +280,181 @@ fn valueWriter(session: *const Session, birs: []const *const Bir, bir: *const Bi
     return null;
 }
 
+/// The names of a block over a session (`Block.Names`, `Block.Remap`;
+/// kernel §7.1): a field's text rank as its text, a `TypeId` as its
+/// package, its module and its name, and back.
+const BlockCtx = struct {
+    session: *const Session,
+    ins: *const Inputs,
+    types: *const Types,
+
+    fn field(ctx: *anyopaque, rank: u32) ?[]const u8 {
+        const c: *BlockCtx = @ptrCast(@alignCast(ctx));
+        if (rank >= c.ins.rank_names.len) return null;
+        const text = c.session.interner.slice(c.ins.rank_names[rank]);
+        // The reader finds the rank by the text: a text that does not give
+        // this rank back has no block.
+        if (rankOf(ctx, text) != rank) return null;
+        return text;
+    }
+
+    fn rankOf(ctx: *anyopaque, name: []const u8) ?u32 {
+        const c: *BlockCtx = @ptrCast(@alignCast(ctx));
+        const symbol = c.session.interner.find(name) orelse return null;
+        const i = @backingInt(symbol);
+        return if (i < c.ins.ranks.len) c.ins.ranks[i] else null;
+    }
+
+    fn typeName(ctx: *anyopaque, id: u32) ?Block.TypeName {
+        const c: *BlockCtx = @ptrCast(@alignCast(ctx));
+        if (id >= c.types.entries.len) return null;
+        const e = c.types.entries[id];
+        const name: Block.TypeName = .{ .package = @backingInt(e.package), .module = c.session.interner.slice(e.module_name), .name = c.session.interner.slice(e.name) };
+        // As a field: a name that does not give this id back (two types of
+        // one name in a module that has an error, a type that no module
+        // declares by a name) has no block.
+        if (typeId(ctx, name) != id) return null;
+        return name;
+    }
+
+    /// The type named `n`, as `Types.find` finds it. Not through
+    /// `Types.find`: that notes a read for the self-check of the cutoff key
+    /// (`check/reads.zig`), and a run under v3 has the transitive key, which
+    /// holds every source that a block can name.
+    fn typeId(ctx: *anyopaque, n: Block.TypeName) ?u32 {
+        const c: *BlockCtx = @ptrCast(@alignCast(ctx));
+        const package = std.enums.fromInt(SourceStore.Package, n.package) orelse return null;
+        const module = c.session.interner.find(n.module) orelse return null;
+        const name = c.session.interner.find(n.name) orelse return null;
+        const m = c.session.graph.find(package, module) orelse return null;
+        const types = c.types;
+        if (m.int() + 1 >= types.entry_offsets.len) return null;
+        const sorted = types.by_name[types.entry_offsets[m.int()]..types.entry_offsets[m.int() + 1]];
+        const Order = struct {
+            entries: []const Types.Entry,
+            name: InternPool.Symbol,
+            fn order(cx: @This(), id: Types.TypeId) std.math.Order {
+                return std.math.order(@backingInt(cx.name), @backingInt(cx.entries[id.int()].name));
+            }
+        };
+        const at = std.sort.lowerBound(Types.TypeId, sorted, Order{ .entries = types.entries, .name = name }, Order.order);
+        if (at < sorted.len and types.entries[sorted[at].int()].name == name) return sorted[at].int();
+        return null;
+    }
+
+    fn names(c: *BlockCtx) Block.Names {
+        return .{ .ctx = c, .field = field, .type = typeName };
+    }
+
+    fn remap(c: *BlockCtx) Block.Remap {
+        return .{ .ctx = c, .field = rankOf, .type = typeId };
+    }
+};
+
+/// Whether instruction `inst` is one of declaration `decl` of `bir`.
+fn inDecl(bir: *const Bir, decl: u32, inst: u32) bool {
+    if (decl >= bir.decls.len) return false;
+    const d = bir.decls[decl];
+    return inst >= d.inst_start.int() and inst < d.inst_end.int();
+}
+
+/// Whether what a block gave names only what module `bir` has: the lowering
+/// indexes the BIR with each number (`Lower.hoistReads`, as
+/// `own/Hoists.Table.verifyAgainstBir` checks v1's rows).
+fn fitsBir(bir: *const Bir, l: *const Block.Loaded) bool {
+    if (l.published) |p| if (p.contracts.len != bir.decls.len) return false;
+    for (l.channel.writes) |w| if (w.inst >= bir.insts.len) return false;
+    for (l.reads) |r| {
+        if (!inDecl(bir, r.decl, r.inst) or !inDecl(bir, r.decl, r.placement) or !inDecl(bir, r.decl, r.demand)) return false;
+        const decl = bir.decls[r.decl];
+        if (r.holder >= decl.locals_end - decl.locals_start) return false;
+        if (r.phase > 1) return false;
+        // A chain of `path_len` field reads, from the holder.
+        var at: Bir.Inst.Index = @fromBackingInt(r.inst);
+        var left = r.path_len;
+        while (left > 0) : (left -= 1) {
+            const tag = bir.instTag(at);
+            if (tag != .field_access and tag != .tuple_index) return false;
+            const below = bir.instData(at).lhs;
+            if (!inDecl(bir, r.decl, below)) return false;
+            at = @fromBackingInt(below);
+        }
+        if (bir.instTag(at) != .local or bir.instData(at).lhs != r.holder) return false;
+    }
+    return true;
+}
+
+/// A hit of the module cache (kernel §7.1): read module `m`'s block
+/// `bytes` in place of its walk. False when the bytes are no block that this
+/// session can read; the module is then checked and walked. On true the
+/// module's contracts, its channel and its reads are as its walk left them.
+pub fn restore(ctx: *const Context, d: *Driver, m: Graph.Index, bytes: []const u8) Allocator.Error!bool {
+    const gpa = d.gpa;
+    const mi = m.int();
+    if (mi >= ctx.state.shared.published.len or mi >= d.channels.len or mi >= d.hoist_reads.len or mi >= ctx.ins.birs.len) return false;
+    var bc: BlockCtx = .{ .session = ctx.session, .ins = ctx.ins, .types = d.types };
+    var loaded = Block.read(gpa, bytes, bc.remap()) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.BadBlock => return false,
+    };
+    if (!fitsBir(ctx.ins.birs[mi], &loaded)) {
+        loaded.deinit(gpa);
+        return false;
+    }
+    if (ctx.state.shared.published[mi]) |old| old.deinit(gpa);
+    ctx.state.shared.published[mi] = loaded.published;
+    d.channels[mi].deinit(gpa);
+    d.channels[mi] = loaded.channel;
+    gpa.free(d.hoist_reads[mi]);
+    d.hoist_reads[mi] = loaded.reads;
+    return true;
+}
+
 /// The Driver's hook: in the worker that checked module `m`, after its type
 /// check and before its interface is published.
 pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocator.Error!void {
+    const mi = m.int();
+    const before = if (mi < d.per_module.len) d.per_module[mi].items.len else 0;
+    try walkModule(ctx, d, m, tid);
+    try keepBlock(ctx, d, m, before);
+}
+
+/// Module `m`'s block, from what its walk left (kernel §7.1), when the run
+/// has a cache to store it in. A safe build makes it in every run, reads it
+/// back and compares: a block that is not what the walk made is a defect of
+/// `Block.zig`, found here and not at an importer of a later build.
+fn keepBlock(ctx: *const Context, d: *Driver, m: Graph.Index, before: usize) Allocator.Error!void {
+    const session = ctx.session;
+    const gpa = d.gpa;
+    const mi = m.int();
+    const stores = session.options.cache != null;
+    if (!stores and !std.debug.runtime_safety) return;
+    if (mi >= ctx.state.blocks.len or mi >= d.per_module.len or mi >= d.channels.len or mi >= d.hoist_reads.len) return;
+    // A module whose walk made a diagnostic is never stored: the check can
+    // drop the diagnostic later (another module's type error, `Check.run`),
+    // and an entry would then hide the line from each later build.
+    if (d.per_module[mi].items.len != before) return;
+    const module: Block.Module = .{
+        .published = ctx.state.shared.published[mi],
+        .channel = d.channels[mi],
+        .reads = d.hoist_reads[mi],
+    };
+    var bc: BlockCtx = .{ .session = session, .ins = ctx.ins, .types = d.types };
+    const bytes = (try Block.write(gpa, module, bc.names())) orelse return;
+    errdefer gpa.free(bytes);
+    if (std.debug.runtime_safety) {
+        var back = Block.read(gpa, bytes, bc.remap()) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.BadBlock => std.debug.panic("own3: the block of module {s} does not read back", .{ctx.ins.names[mi]}),
+        };
+        defer back.deinit(gpa);
+        if (!Block.same(module, &back)) std.debug.panic("own3: the block of module {s} reads back as another", .{ctx.ins.names[mi]});
+        if (!fitsBir(ctx.ins.birs[mi], &back)) std.debug.panic("own3: the block of module {s} does not fit its BIR", .{ctx.ins.names[mi]});
+    }
+    if (stores) ctx.state.blocks[mi] = bytes else gpa.free(bytes);
+}
+
+fn walkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocator.Error!void {
     const session = ctx.session;
     const gpa = d.gpa;
     const mi_u = m.int();
