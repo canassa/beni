@@ -2550,6 +2550,161 @@ test "ownership v3 (the step 0 prototype): a refusal is an error under enforceme
     try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
 }
 
+/// `through` is generic in its answer and answers what its function
+/// parameter answers. `run` hands it its own function parameter, whose answer
+/// has `n` constructors with two lists each, two times, reads both answers at
+/// each location, and pushes onto its list parameter.
+fn answerThrough(a: std.mem.Allocator, n: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype T\n");
+    for (0..n) |i| try out.print(a, "    {s} C{d} (List Int) (List Int)\n", .{ if (i == 0) "=" else "|", i });
+    try out.appendSlice(a,
+        \\
+        \\
+        \\through : (x → a), x → a
+        \\through f x = f x
+        \\
+        \\
+        \\size : T → Int
+        \\size t =
+        \\    case t of
+        \\
+    );
+    for (0..n) |i| try out.print(a, "        C{d} a b →\n            List.length a + List.length b\n\n", .{i});
+    try out.appendSlice(a,
+        \\
+        \\run : (Int → T), Int, List Int → List Int
+        \\run mk k xs =
+        \\    t = through mk k
+        \\    u = through mk (k + 1)
+        \\    List.push xs (size t + size u)
+        \\
+        \\
+        \\make : Int → T
+        \\make k = C0 [ k ] [ k, k ]
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (List.length (run make 3 [ 1, 2 ])))
+        \\
+    );
+    return out.items;
+}
+
+test "ownership v3: the answer of a function parameter, read at each of 512 locations, is judged" {
+    // The one wide location of `through`'s result holds the answer of `mk`,
+    // and `run` reads it at each of the 512 locations of `T`. Each of them
+    // built the same run of 512 atoms and removed its repeats: 262 144 atoms
+    // for each of the two calls, and the walk of `run` passed its budget from
+    // 192 constructors on (#2539). A call now keeps the run of the first
+    // location for the others (kernel §8, *An expansion that reads nothing of
+    // its location is made once for a call's result*).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try answerThrough(w.arena.allocator(), 256));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 2: accepted 2 (fresh 1, call 0, param 1,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 2: accepted 2 (fresh 1, call 0, param 1,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+test "ownership v3: the check of a shared run stops on no correct program" {
+    // Two programs that the first check of a shared run stopped the safe
+    // compiler on (the review of #2539). In the first, the answer of an
+    // unknown function is lost, and the argument is a join of two lists of
+    // the frame: the atoms of the kept run have the context of an arm, and
+    // a walk that counts no work gives them none, so the two runs are
+    // compared without contexts. In the second, the callee calls a function
+    // held in a record of 19 fields: the walk to it makes an index of the
+    // record's parts at its second step, which a check may not build, so
+    // such an expansion is not kept for the next location.
+    const programs = [_][]const u8{
+        \\import Node
+        \\
+        \\
+        \\through : (x → a), x → a
+        \\through f x = f x
+        \\
+        \\
+        \\swap : List Int → List Int × List Int
+        \\swap xs = ( [ 1 ], xs )
+        \\
+        \\
+        \\run : Bool, List Int, List Int → Int
+        \\run b xs ys =
+        \\    fs = [ swap, λvs → ( vs, [ 2 ] ) ]
+        \\    g = Maybe.withDefault (List.head fs) swap
+        \\    case through g (if b then xs else ys) of
+        \\        ( p, q ) →
+        \\            List.length p + List.length q
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (run True [ 1, 2 ] [ 3 ]))
+        \\
+        ,
+        \\import Node
+        \\
+        \\
+        \\type alias Big x a =
+        \\    { f : x → a
+        \\    , a1 : Int
+        \\    , a2 : Int
+        \\    , a3 : Int
+        \\    , a4 : Int
+        \\    , a5 : Int
+        \\    , a6 : Int
+        \\    , a7 : Int
+        \\    , a8 : Int
+        \\    , a9 : Int
+        \\    , a10 : Int
+        \\    , a11 : Int
+        \\    , a12 : Int
+        \\    , a13 : Int
+        \\    , a14 : Int
+        \\    , a15 : Int
+        \\    , a16 : Int
+        \\    , a17 : Int
+        \\    , a18 : Int
+        \\    }
+        \\
+        \\
+        \\runBox : Big x a, x → a
+        \\runBox box x =
+        \\    g = box.f
+        \\    g x
+        \\
+        \\
+        \\probe : (List Int → List Int × List Int), List Int → List Int × List Int
+        \\probe mk xs =
+        \\    runBox { f = mk, a1 = 1, a2 = 2, a3 = 3, a4 = 4, a5 = 5, a6 = 6, a7 = 7, a8 = 8, a9 = 9, a10 = 10, a11 = 11, a12 = 12, a13 = 13, a14 = 14, a15 = 15, a16 = 16, a17 = 17, a18 = 18 } xs
+        \\
+        \\
+        \\swap : List Int → List Int × List Int
+        \\swap xs = ( [ 1 ], xs )
+        \\
+        \\
+        \\main : Node.Program
+        \\main =
+        \\    case probe swap [ 1, 2 ] of
+        \\        ( p, q ) →
+        \\            Node.print (String.fromInt (List.length p + List.length q))
+        \\
+        ,
+    };
+    for (programs) |source| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("Main.beni", source);
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total ") == null) {
+            std.debug.print("wanted a dump and exit 0; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr[0..@min(r.stderr.len, 2000)] });
+            return error.TestUnexpectedVerdict;
+        }
+    }
+}
+
 // The first full run of the sanitiser corpus under the prototype accepted 19
 // programs that it must refuse (research report 111 §4.2). Each has a write
 // that changes a list in place while another holder reads it: a plain build

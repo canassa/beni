@@ -2441,6 +2441,41 @@ paths:
   ownership root moves but the three it gains). A contract that says "these sources at every location"
   once, which a caller would expand once, is not built.
 
+  **An expansion that reads nothing of its location is made once for a call's result** (#2539). A call
+  expands the sources of the callee's result at each location of the caller's reading (`expandSrcs`).
+  Two things of that location go into an expansion: the labels below the callee's entry (the suffix,
+  which the body of a known function reads to find the same part of its answer, `answerOfCode`), and
+  the location itself (which the pairing of an argument reads, `pairedLeaves`). An expansion that
+  reads neither (`SrcState.entry_read`) is the same at each location that the same entry of the
+  callee covers: the frame's own function parameter answers every location of its answer that the
+  callee's entry holds (`ownAnswer`), a lost answer holds each argument (§3.2), and a fresh cell and
+  `outside` are one atom each. An expansion that walks to a function held in a value (`answerOfHeld`,
+  `heldLost`; `SrcState.held_walk`) is not kept either: the walk makes a value at each step and an
+  index of a construction's parts, so the check of a safe build cannot repeat it with no effect, and
+  each of its locations keeps its own run. `applyAt` keeps the run of the last location that it
+  expanded, where the expansion read nothing of it and walked to no held function, with what the
+  expansion found (`twice`, `handed`, whether the run
+  holds a cell that is twice in the arguments). The next location takes that run where the same entry
+  of the callee covers it, for one unit: the two entries of the result name one range of the frame's
+  atoms, and a run never changes once its entry is made. A location that comes after a location of
+  another entry is expanded as before; one kept run, and not one for each entry, costs a call no
+  allocation. What is the location's own (`single`, and so `twice`) is computed for each
+  location as before. Only the run of an `alias` entry is kept: a written location has a name of its
+  own. A walk past its budget keeps no run.
+
+  The shape: a callee that is generic in its answer and answers what a function parameter answers
+  (`through f x = f x`), called with the frame's own function parameter. The one wide location of the
+  callee's result holds the answer, and the caller reads it at each of the N locations of its own
+  type. Each of them built the same run of N atoms and removed its repeats (none): N² atoms for a
+  call. `Gpu.Engine.checkedAwaitIn` has two such calls (`classified classify True value`, with the
+  712 locations of its `Result`): 505 524 atoms each, 6.1 of the 14.9 million units that its walk
+  needed, of which it earns 10.5 million.
+
+  The readers of such a result are not changed: a reader that takes the result location by location
+  (`rootLeaves`, `escapeOnly`) reads N atoms at each of N locations. A contract that pairs the answer
+  of a function parameter with the caller's location, as the answer of a known function is paired,
+  would make that N; it is a rule of §3.4 and not a limit of this section.
+
   **Whether a cell the frame made escaped is asked once for each cell** (`freshSrc`, research report 146).
   Each atom of a frame's result that names a cell the frame made asks whether an escape holds it, and
   the test compared the atom with every atom of every escape. A result whose every location holds the
@@ -2628,6 +2663,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a row of core outside `Js` whose words name a new cell at a type variable of its result is one of `Check.core_phantoms` (`List.builder`, `Dict.keyIndex`, `Dict.empty`, `Record.copy`, `Task.raceOk`, `Task.timeout`), each of which makes none there: the check of core's worded bodies reads such a cell as none (`Check.phantomAt`). With a row of core that answers a real cell at a type variable, that reading would let a false word of core pass. It counts no work | `Check.checkCorePhantoms`, in `wordedContract` | §6 rule 10 |
 | `slotHeld`'s index of a layout's record slots answers what a scan of the layout answers, for layouts of at most 256 entries | `Frame.slotHeld` | §3.4, §8 |
 | the atoms of an operand's location that a call kept for its later writes are the atoms that a new read of the location finds, for the first 256 copies of a call; the check counts no work | `Frame.otherLeaves` | §5, §8 |
+| the run that a location of a call's result took from an earlier location of the same entry of the callee is the run that the expansion at its own location makes, as sets of atoms without contexts, with the same `twice` and `handed`, and that expansion reads nothing of the location and walks to no held function, for the first 16 locations that take each run; the check counts no work | `Frame.checkSharedRun`, in `applyAt` | §8 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 | each check of this table that counts no work restores every count it could change (the declaration's steps, the module's units, `Loc.Table.units`, the walk's give-up), and builds nothing that a later step reads by key or by index: no entry of the location table (a location, a layout, a projection, a path, a map, a memo's answer; `Loc.Table.no_fill`), no place, and no node, root or memo entry of the frame: each list and map of `Frame.quiet_parts` keeps its length (an answer a check could write into a slot made before it is not compared; no check reaches one today). A walk of leaves inside such a check tags no atom with the context of a join's arm, so it builds no meeting of two arms (`meet`, an entry of `Frame.ctxs`); no check reads an atom's context. Nor does it keep a closure's atoms for the reads after `finish` (`Frame.whole_at`). A check that reads again what a step read walks it by that step's route: `Frame.checkMadeEscaped` reads a join arm by arm, each at its own place, as the escape it checks did (`Frame.madeLeaves`). Before, it read the join whole, at the join's place: where a `Js.Value` was made in two `if`s in a row it built the meeting of their arms, and where an arm was a list (`if c then Js.from [ x ] else Js.null`) a map of the two layouts, and safe builds panicked (`run/JsJoinAtVar`, `run/JsJoinOfList`; master's `browser-inline` code reaches the first in every build). A later lookup of an entry a check built would be free in the safe build and counted in a release build, so the two would read the budget differently. So a safe build reaches a release build's verdicts, limits included; a check that would build such an entry panics | `Check.Mod.quiet`, `Frame.quiet`, `Loc.Table.building` | §8 |
 

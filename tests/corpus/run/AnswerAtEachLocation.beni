@@ -1,0 +1,1062 @@
+-- `through` is generic in its answer and answers what its function parameter
+-- answers. `run` hands it its own function parameter `mk`, whose answer has 256
+-- constructors with two lists each, and reads the result at each of the 512
+-- locations of `T`. Before #2539 each of them built the same run of 512 atoms,
+-- and the walk of `run` passed its budget (ownership-v3-kernel.md §8, *An
+-- expansion that reads nothing of its location is made once for a call's
+-- result*). With one run for a call, `run` is judged and its push is accepted.
+import Node
+
+
+type T
+    = C0 (List Int) (List Int)
+    | C1 (List Int) (List Int)
+    | C2 (List Int) (List Int)
+    | C3 (List Int) (List Int)
+    | C4 (List Int) (List Int)
+    | C5 (List Int) (List Int)
+    | C6 (List Int) (List Int)
+    | C7 (List Int) (List Int)
+    | C8 (List Int) (List Int)
+    | C9 (List Int) (List Int)
+    | C10 (List Int) (List Int)
+    | C11 (List Int) (List Int)
+    | C12 (List Int) (List Int)
+    | C13 (List Int) (List Int)
+    | C14 (List Int) (List Int)
+    | C15 (List Int) (List Int)
+    | C16 (List Int) (List Int)
+    | C17 (List Int) (List Int)
+    | C18 (List Int) (List Int)
+    | C19 (List Int) (List Int)
+    | C20 (List Int) (List Int)
+    | C21 (List Int) (List Int)
+    | C22 (List Int) (List Int)
+    | C23 (List Int) (List Int)
+    | C24 (List Int) (List Int)
+    | C25 (List Int) (List Int)
+    | C26 (List Int) (List Int)
+    | C27 (List Int) (List Int)
+    | C28 (List Int) (List Int)
+    | C29 (List Int) (List Int)
+    | C30 (List Int) (List Int)
+    | C31 (List Int) (List Int)
+    | C32 (List Int) (List Int)
+    | C33 (List Int) (List Int)
+    | C34 (List Int) (List Int)
+    | C35 (List Int) (List Int)
+    | C36 (List Int) (List Int)
+    | C37 (List Int) (List Int)
+    | C38 (List Int) (List Int)
+    | C39 (List Int) (List Int)
+    | C40 (List Int) (List Int)
+    | C41 (List Int) (List Int)
+    | C42 (List Int) (List Int)
+    | C43 (List Int) (List Int)
+    | C44 (List Int) (List Int)
+    | C45 (List Int) (List Int)
+    | C46 (List Int) (List Int)
+    | C47 (List Int) (List Int)
+    | C48 (List Int) (List Int)
+    | C49 (List Int) (List Int)
+    | C50 (List Int) (List Int)
+    | C51 (List Int) (List Int)
+    | C52 (List Int) (List Int)
+    | C53 (List Int) (List Int)
+    | C54 (List Int) (List Int)
+    | C55 (List Int) (List Int)
+    | C56 (List Int) (List Int)
+    | C57 (List Int) (List Int)
+    | C58 (List Int) (List Int)
+    | C59 (List Int) (List Int)
+    | C60 (List Int) (List Int)
+    | C61 (List Int) (List Int)
+    | C62 (List Int) (List Int)
+    | C63 (List Int) (List Int)
+    | C64 (List Int) (List Int)
+    | C65 (List Int) (List Int)
+    | C66 (List Int) (List Int)
+    | C67 (List Int) (List Int)
+    | C68 (List Int) (List Int)
+    | C69 (List Int) (List Int)
+    | C70 (List Int) (List Int)
+    | C71 (List Int) (List Int)
+    | C72 (List Int) (List Int)
+    | C73 (List Int) (List Int)
+    | C74 (List Int) (List Int)
+    | C75 (List Int) (List Int)
+    | C76 (List Int) (List Int)
+    | C77 (List Int) (List Int)
+    | C78 (List Int) (List Int)
+    | C79 (List Int) (List Int)
+    | C80 (List Int) (List Int)
+    | C81 (List Int) (List Int)
+    | C82 (List Int) (List Int)
+    | C83 (List Int) (List Int)
+    | C84 (List Int) (List Int)
+    | C85 (List Int) (List Int)
+    | C86 (List Int) (List Int)
+    | C87 (List Int) (List Int)
+    | C88 (List Int) (List Int)
+    | C89 (List Int) (List Int)
+    | C90 (List Int) (List Int)
+    | C91 (List Int) (List Int)
+    | C92 (List Int) (List Int)
+    | C93 (List Int) (List Int)
+    | C94 (List Int) (List Int)
+    | C95 (List Int) (List Int)
+    | C96 (List Int) (List Int)
+    | C97 (List Int) (List Int)
+    | C98 (List Int) (List Int)
+    | C99 (List Int) (List Int)
+    | C100 (List Int) (List Int)
+    | C101 (List Int) (List Int)
+    | C102 (List Int) (List Int)
+    | C103 (List Int) (List Int)
+    | C104 (List Int) (List Int)
+    | C105 (List Int) (List Int)
+    | C106 (List Int) (List Int)
+    | C107 (List Int) (List Int)
+    | C108 (List Int) (List Int)
+    | C109 (List Int) (List Int)
+    | C110 (List Int) (List Int)
+    | C111 (List Int) (List Int)
+    | C112 (List Int) (List Int)
+    | C113 (List Int) (List Int)
+    | C114 (List Int) (List Int)
+    | C115 (List Int) (List Int)
+    | C116 (List Int) (List Int)
+    | C117 (List Int) (List Int)
+    | C118 (List Int) (List Int)
+    | C119 (List Int) (List Int)
+    | C120 (List Int) (List Int)
+    | C121 (List Int) (List Int)
+    | C122 (List Int) (List Int)
+    | C123 (List Int) (List Int)
+    | C124 (List Int) (List Int)
+    | C125 (List Int) (List Int)
+    | C126 (List Int) (List Int)
+    | C127 (List Int) (List Int)
+    | C128 (List Int) (List Int)
+    | C129 (List Int) (List Int)
+    | C130 (List Int) (List Int)
+    | C131 (List Int) (List Int)
+    | C132 (List Int) (List Int)
+    | C133 (List Int) (List Int)
+    | C134 (List Int) (List Int)
+    | C135 (List Int) (List Int)
+    | C136 (List Int) (List Int)
+    | C137 (List Int) (List Int)
+    | C138 (List Int) (List Int)
+    | C139 (List Int) (List Int)
+    | C140 (List Int) (List Int)
+    | C141 (List Int) (List Int)
+    | C142 (List Int) (List Int)
+    | C143 (List Int) (List Int)
+    | C144 (List Int) (List Int)
+    | C145 (List Int) (List Int)
+    | C146 (List Int) (List Int)
+    | C147 (List Int) (List Int)
+    | C148 (List Int) (List Int)
+    | C149 (List Int) (List Int)
+    | C150 (List Int) (List Int)
+    | C151 (List Int) (List Int)
+    | C152 (List Int) (List Int)
+    | C153 (List Int) (List Int)
+    | C154 (List Int) (List Int)
+    | C155 (List Int) (List Int)
+    | C156 (List Int) (List Int)
+    | C157 (List Int) (List Int)
+    | C158 (List Int) (List Int)
+    | C159 (List Int) (List Int)
+    | C160 (List Int) (List Int)
+    | C161 (List Int) (List Int)
+    | C162 (List Int) (List Int)
+    | C163 (List Int) (List Int)
+    | C164 (List Int) (List Int)
+    | C165 (List Int) (List Int)
+    | C166 (List Int) (List Int)
+    | C167 (List Int) (List Int)
+    | C168 (List Int) (List Int)
+    | C169 (List Int) (List Int)
+    | C170 (List Int) (List Int)
+    | C171 (List Int) (List Int)
+    | C172 (List Int) (List Int)
+    | C173 (List Int) (List Int)
+    | C174 (List Int) (List Int)
+    | C175 (List Int) (List Int)
+    | C176 (List Int) (List Int)
+    | C177 (List Int) (List Int)
+    | C178 (List Int) (List Int)
+    | C179 (List Int) (List Int)
+    | C180 (List Int) (List Int)
+    | C181 (List Int) (List Int)
+    | C182 (List Int) (List Int)
+    | C183 (List Int) (List Int)
+    | C184 (List Int) (List Int)
+    | C185 (List Int) (List Int)
+    | C186 (List Int) (List Int)
+    | C187 (List Int) (List Int)
+    | C188 (List Int) (List Int)
+    | C189 (List Int) (List Int)
+    | C190 (List Int) (List Int)
+    | C191 (List Int) (List Int)
+    | C192 (List Int) (List Int)
+    | C193 (List Int) (List Int)
+    | C194 (List Int) (List Int)
+    | C195 (List Int) (List Int)
+    | C196 (List Int) (List Int)
+    | C197 (List Int) (List Int)
+    | C198 (List Int) (List Int)
+    | C199 (List Int) (List Int)
+    | C200 (List Int) (List Int)
+    | C201 (List Int) (List Int)
+    | C202 (List Int) (List Int)
+    | C203 (List Int) (List Int)
+    | C204 (List Int) (List Int)
+    | C205 (List Int) (List Int)
+    | C206 (List Int) (List Int)
+    | C207 (List Int) (List Int)
+    | C208 (List Int) (List Int)
+    | C209 (List Int) (List Int)
+    | C210 (List Int) (List Int)
+    | C211 (List Int) (List Int)
+    | C212 (List Int) (List Int)
+    | C213 (List Int) (List Int)
+    | C214 (List Int) (List Int)
+    | C215 (List Int) (List Int)
+    | C216 (List Int) (List Int)
+    | C217 (List Int) (List Int)
+    | C218 (List Int) (List Int)
+    | C219 (List Int) (List Int)
+    | C220 (List Int) (List Int)
+    | C221 (List Int) (List Int)
+    | C222 (List Int) (List Int)
+    | C223 (List Int) (List Int)
+    | C224 (List Int) (List Int)
+    | C225 (List Int) (List Int)
+    | C226 (List Int) (List Int)
+    | C227 (List Int) (List Int)
+    | C228 (List Int) (List Int)
+    | C229 (List Int) (List Int)
+    | C230 (List Int) (List Int)
+    | C231 (List Int) (List Int)
+    | C232 (List Int) (List Int)
+    | C233 (List Int) (List Int)
+    | C234 (List Int) (List Int)
+    | C235 (List Int) (List Int)
+    | C236 (List Int) (List Int)
+    | C237 (List Int) (List Int)
+    | C238 (List Int) (List Int)
+    | C239 (List Int) (List Int)
+    | C240 (List Int) (List Int)
+    | C241 (List Int) (List Int)
+    | C242 (List Int) (List Int)
+    | C243 (List Int) (List Int)
+    | C244 (List Int) (List Int)
+    | C245 (List Int) (List Int)
+    | C246 (List Int) (List Int)
+    | C247 (List Int) (List Int)
+    | C248 (List Int) (List Int)
+    | C249 (List Int) (List Int)
+    | C250 (List Int) (List Int)
+    | C251 (List Int) (List Int)
+    | C252 (List Int) (List Int)
+    | C253 (List Int) (List Int)
+    | C254 (List Int) (List Int)
+    | C255 (List Int) (List Int)
+
+
+through : (x → a), x → a
+through f x = f x
+
+
+size : T → Int
+size t =
+    case t of
+        C0 a b →
+            List.length a + List.length b
+
+        C1 a b →
+            List.length a + List.length b
+
+        C2 a b →
+            List.length a + List.length b
+
+        C3 a b →
+            List.length a + List.length b
+
+        C4 a b →
+            List.length a + List.length b
+
+        C5 a b →
+            List.length a + List.length b
+
+        C6 a b →
+            List.length a + List.length b
+
+        C7 a b →
+            List.length a + List.length b
+
+        C8 a b →
+            List.length a + List.length b
+
+        C9 a b →
+            List.length a + List.length b
+
+        C10 a b →
+            List.length a + List.length b
+
+        C11 a b →
+            List.length a + List.length b
+
+        C12 a b →
+            List.length a + List.length b
+
+        C13 a b →
+            List.length a + List.length b
+
+        C14 a b →
+            List.length a + List.length b
+
+        C15 a b →
+            List.length a + List.length b
+
+        C16 a b →
+            List.length a + List.length b
+
+        C17 a b →
+            List.length a + List.length b
+
+        C18 a b →
+            List.length a + List.length b
+
+        C19 a b →
+            List.length a + List.length b
+
+        C20 a b →
+            List.length a + List.length b
+
+        C21 a b →
+            List.length a + List.length b
+
+        C22 a b →
+            List.length a + List.length b
+
+        C23 a b →
+            List.length a + List.length b
+
+        C24 a b →
+            List.length a + List.length b
+
+        C25 a b →
+            List.length a + List.length b
+
+        C26 a b →
+            List.length a + List.length b
+
+        C27 a b →
+            List.length a + List.length b
+
+        C28 a b →
+            List.length a + List.length b
+
+        C29 a b →
+            List.length a + List.length b
+
+        C30 a b →
+            List.length a + List.length b
+
+        C31 a b →
+            List.length a + List.length b
+
+        C32 a b →
+            List.length a + List.length b
+
+        C33 a b →
+            List.length a + List.length b
+
+        C34 a b →
+            List.length a + List.length b
+
+        C35 a b →
+            List.length a + List.length b
+
+        C36 a b →
+            List.length a + List.length b
+
+        C37 a b →
+            List.length a + List.length b
+
+        C38 a b →
+            List.length a + List.length b
+
+        C39 a b →
+            List.length a + List.length b
+
+        C40 a b →
+            List.length a + List.length b
+
+        C41 a b →
+            List.length a + List.length b
+
+        C42 a b →
+            List.length a + List.length b
+
+        C43 a b →
+            List.length a + List.length b
+
+        C44 a b →
+            List.length a + List.length b
+
+        C45 a b →
+            List.length a + List.length b
+
+        C46 a b →
+            List.length a + List.length b
+
+        C47 a b →
+            List.length a + List.length b
+
+        C48 a b →
+            List.length a + List.length b
+
+        C49 a b →
+            List.length a + List.length b
+
+        C50 a b →
+            List.length a + List.length b
+
+        C51 a b →
+            List.length a + List.length b
+
+        C52 a b →
+            List.length a + List.length b
+
+        C53 a b →
+            List.length a + List.length b
+
+        C54 a b →
+            List.length a + List.length b
+
+        C55 a b →
+            List.length a + List.length b
+
+        C56 a b →
+            List.length a + List.length b
+
+        C57 a b →
+            List.length a + List.length b
+
+        C58 a b →
+            List.length a + List.length b
+
+        C59 a b →
+            List.length a + List.length b
+
+        C60 a b →
+            List.length a + List.length b
+
+        C61 a b →
+            List.length a + List.length b
+
+        C62 a b →
+            List.length a + List.length b
+
+        C63 a b →
+            List.length a + List.length b
+
+        C64 a b →
+            List.length a + List.length b
+
+        C65 a b →
+            List.length a + List.length b
+
+        C66 a b →
+            List.length a + List.length b
+
+        C67 a b →
+            List.length a + List.length b
+
+        C68 a b →
+            List.length a + List.length b
+
+        C69 a b →
+            List.length a + List.length b
+
+        C70 a b →
+            List.length a + List.length b
+
+        C71 a b →
+            List.length a + List.length b
+
+        C72 a b →
+            List.length a + List.length b
+
+        C73 a b →
+            List.length a + List.length b
+
+        C74 a b →
+            List.length a + List.length b
+
+        C75 a b →
+            List.length a + List.length b
+
+        C76 a b →
+            List.length a + List.length b
+
+        C77 a b →
+            List.length a + List.length b
+
+        C78 a b →
+            List.length a + List.length b
+
+        C79 a b →
+            List.length a + List.length b
+
+        C80 a b →
+            List.length a + List.length b
+
+        C81 a b →
+            List.length a + List.length b
+
+        C82 a b →
+            List.length a + List.length b
+
+        C83 a b →
+            List.length a + List.length b
+
+        C84 a b →
+            List.length a + List.length b
+
+        C85 a b →
+            List.length a + List.length b
+
+        C86 a b →
+            List.length a + List.length b
+
+        C87 a b →
+            List.length a + List.length b
+
+        C88 a b →
+            List.length a + List.length b
+
+        C89 a b →
+            List.length a + List.length b
+
+        C90 a b →
+            List.length a + List.length b
+
+        C91 a b →
+            List.length a + List.length b
+
+        C92 a b →
+            List.length a + List.length b
+
+        C93 a b →
+            List.length a + List.length b
+
+        C94 a b →
+            List.length a + List.length b
+
+        C95 a b →
+            List.length a + List.length b
+
+        C96 a b →
+            List.length a + List.length b
+
+        C97 a b →
+            List.length a + List.length b
+
+        C98 a b →
+            List.length a + List.length b
+
+        C99 a b →
+            List.length a + List.length b
+
+        C100 a b →
+            List.length a + List.length b
+
+        C101 a b →
+            List.length a + List.length b
+
+        C102 a b →
+            List.length a + List.length b
+
+        C103 a b →
+            List.length a + List.length b
+
+        C104 a b →
+            List.length a + List.length b
+
+        C105 a b →
+            List.length a + List.length b
+
+        C106 a b →
+            List.length a + List.length b
+
+        C107 a b →
+            List.length a + List.length b
+
+        C108 a b →
+            List.length a + List.length b
+
+        C109 a b →
+            List.length a + List.length b
+
+        C110 a b →
+            List.length a + List.length b
+
+        C111 a b →
+            List.length a + List.length b
+
+        C112 a b →
+            List.length a + List.length b
+
+        C113 a b →
+            List.length a + List.length b
+
+        C114 a b →
+            List.length a + List.length b
+
+        C115 a b →
+            List.length a + List.length b
+
+        C116 a b →
+            List.length a + List.length b
+
+        C117 a b →
+            List.length a + List.length b
+
+        C118 a b →
+            List.length a + List.length b
+
+        C119 a b →
+            List.length a + List.length b
+
+        C120 a b →
+            List.length a + List.length b
+
+        C121 a b →
+            List.length a + List.length b
+
+        C122 a b →
+            List.length a + List.length b
+
+        C123 a b →
+            List.length a + List.length b
+
+        C124 a b →
+            List.length a + List.length b
+
+        C125 a b →
+            List.length a + List.length b
+
+        C126 a b →
+            List.length a + List.length b
+
+        C127 a b →
+            List.length a + List.length b
+
+        C128 a b →
+            List.length a + List.length b
+
+        C129 a b →
+            List.length a + List.length b
+
+        C130 a b →
+            List.length a + List.length b
+
+        C131 a b →
+            List.length a + List.length b
+
+        C132 a b →
+            List.length a + List.length b
+
+        C133 a b →
+            List.length a + List.length b
+
+        C134 a b →
+            List.length a + List.length b
+
+        C135 a b →
+            List.length a + List.length b
+
+        C136 a b →
+            List.length a + List.length b
+
+        C137 a b →
+            List.length a + List.length b
+
+        C138 a b →
+            List.length a + List.length b
+
+        C139 a b →
+            List.length a + List.length b
+
+        C140 a b →
+            List.length a + List.length b
+
+        C141 a b →
+            List.length a + List.length b
+
+        C142 a b →
+            List.length a + List.length b
+
+        C143 a b →
+            List.length a + List.length b
+
+        C144 a b →
+            List.length a + List.length b
+
+        C145 a b →
+            List.length a + List.length b
+
+        C146 a b →
+            List.length a + List.length b
+
+        C147 a b →
+            List.length a + List.length b
+
+        C148 a b →
+            List.length a + List.length b
+
+        C149 a b →
+            List.length a + List.length b
+
+        C150 a b →
+            List.length a + List.length b
+
+        C151 a b →
+            List.length a + List.length b
+
+        C152 a b →
+            List.length a + List.length b
+
+        C153 a b →
+            List.length a + List.length b
+
+        C154 a b →
+            List.length a + List.length b
+
+        C155 a b →
+            List.length a + List.length b
+
+        C156 a b →
+            List.length a + List.length b
+
+        C157 a b →
+            List.length a + List.length b
+
+        C158 a b →
+            List.length a + List.length b
+
+        C159 a b →
+            List.length a + List.length b
+
+        C160 a b →
+            List.length a + List.length b
+
+        C161 a b →
+            List.length a + List.length b
+
+        C162 a b →
+            List.length a + List.length b
+
+        C163 a b →
+            List.length a + List.length b
+
+        C164 a b →
+            List.length a + List.length b
+
+        C165 a b →
+            List.length a + List.length b
+
+        C166 a b →
+            List.length a + List.length b
+
+        C167 a b →
+            List.length a + List.length b
+
+        C168 a b →
+            List.length a + List.length b
+
+        C169 a b →
+            List.length a + List.length b
+
+        C170 a b →
+            List.length a + List.length b
+
+        C171 a b →
+            List.length a + List.length b
+
+        C172 a b →
+            List.length a + List.length b
+
+        C173 a b →
+            List.length a + List.length b
+
+        C174 a b →
+            List.length a + List.length b
+
+        C175 a b →
+            List.length a + List.length b
+
+        C176 a b →
+            List.length a + List.length b
+
+        C177 a b →
+            List.length a + List.length b
+
+        C178 a b →
+            List.length a + List.length b
+
+        C179 a b →
+            List.length a + List.length b
+
+        C180 a b →
+            List.length a + List.length b
+
+        C181 a b →
+            List.length a + List.length b
+
+        C182 a b →
+            List.length a + List.length b
+
+        C183 a b →
+            List.length a + List.length b
+
+        C184 a b →
+            List.length a + List.length b
+
+        C185 a b →
+            List.length a + List.length b
+
+        C186 a b →
+            List.length a + List.length b
+
+        C187 a b →
+            List.length a + List.length b
+
+        C188 a b →
+            List.length a + List.length b
+
+        C189 a b →
+            List.length a + List.length b
+
+        C190 a b →
+            List.length a + List.length b
+
+        C191 a b →
+            List.length a + List.length b
+
+        C192 a b →
+            List.length a + List.length b
+
+        C193 a b →
+            List.length a + List.length b
+
+        C194 a b →
+            List.length a + List.length b
+
+        C195 a b →
+            List.length a + List.length b
+
+        C196 a b →
+            List.length a + List.length b
+
+        C197 a b →
+            List.length a + List.length b
+
+        C198 a b →
+            List.length a + List.length b
+
+        C199 a b →
+            List.length a + List.length b
+
+        C200 a b →
+            List.length a + List.length b
+
+        C201 a b →
+            List.length a + List.length b
+
+        C202 a b →
+            List.length a + List.length b
+
+        C203 a b →
+            List.length a + List.length b
+
+        C204 a b →
+            List.length a + List.length b
+
+        C205 a b →
+            List.length a + List.length b
+
+        C206 a b →
+            List.length a + List.length b
+
+        C207 a b →
+            List.length a + List.length b
+
+        C208 a b →
+            List.length a + List.length b
+
+        C209 a b →
+            List.length a + List.length b
+
+        C210 a b →
+            List.length a + List.length b
+
+        C211 a b →
+            List.length a + List.length b
+
+        C212 a b →
+            List.length a + List.length b
+
+        C213 a b →
+            List.length a + List.length b
+
+        C214 a b →
+            List.length a + List.length b
+
+        C215 a b →
+            List.length a + List.length b
+
+        C216 a b →
+            List.length a + List.length b
+
+        C217 a b →
+            List.length a + List.length b
+
+        C218 a b →
+            List.length a + List.length b
+
+        C219 a b →
+            List.length a + List.length b
+
+        C220 a b →
+            List.length a + List.length b
+
+        C221 a b →
+            List.length a + List.length b
+
+        C222 a b →
+            List.length a + List.length b
+
+        C223 a b →
+            List.length a + List.length b
+
+        C224 a b →
+            List.length a + List.length b
+
+        C225 a b →
+            List.length a + List.length b
+
+        C226 a b →
+            List.length a + List.length b
+
+        C227 a b →
+            List.length a + List.length b
+
+        C228 a b →
+            List.length a + List.length b
+
+        C229 a b →
+            List.length a + List.length b
+
+        C230 a b →
+            List.length a + List.length b
+
+        C231 a b →
+            List.length a + List.length b
+
+        C232 a b →
+            List.length a + List.length b
+
+        C233 a b →
+            List.length a + List.length b
+
+        C234 a b →
+            List.length a + List.length b
+
+        C235 a b →
+            List.length a + List.length b
+
+        C236 a b →
+            List.length a + List.length b
+
+        C237 a b →
+            List.length a + List.length b
+
+        C238 a b →
+            List.length a + List.length b
+
+        C239 a b →
+            List.length a + List.length b
+
+        C240 a b →
+            List.length a + List.length b
+
+        C241 a b →
+            List.length a + List.length b
+
+        C242 a b →
+            List.length a + List.length b
+
+        C243 a b →
+            List.length a + List.length b
+
+        C244 a b →
+            List.length a + List.length b
+
+        C245 a b →
+            List.length a + List.length b
+
+        C246 a b →
+            List.length a + List.length b
+
+        C247 a b →
+            List.length a + List.length b
+
+        C248 a b →
+            List.length a + List.length b
+
+        C249 a b →
+            List.length a + List.length b
+
+        C250 a b →
+            List.length a + List.length b
+
+        C251 a b →
+            List.length a + List.length b
+
+        C252 a b →
+            List.length a + List.length b
+
+        C253 a b →
+            List.length a + List.length b
+
+        C254 a b →
+            List.length a + List.length b
+
+        C255 a b →
+            List.length a + List.length b
+
+
+run : (Int → T), Int, List Int → List Int
+run mk k xs =
+    t = through mk k
+    u = through mk (k + 1)
+    List.push xs (size t + size u)
+
+
+make : Int → T
+make k = C0 [ k ] [ k, k ]
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Node.Program
+main = Node.print (ints (run make 3 [ 1, 2 ]))
