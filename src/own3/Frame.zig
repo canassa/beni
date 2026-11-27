@@ -2332,6 +2332,11 @@ fn unknownOf(f: *Frame, place: PlaceId, vs: []const Val) Error!Val {
     for (vs) |v| if (v != v_none and v != v_outside) try f.lists.append(f.gpa, v);
     const count: u32 = @intCast(f.lists.items.len - start);
     if (count == 0) return v_outside;
+    // A value of no claim made of parts can hold any of their cells at any
+    // of its locations, a part read at no place among them: no location of
+    // the frame is at the same place (kernel §3.4, *a walked body's own type
+    // variables*).
+    f.tainted_all = true;
     return f.node(.{ .tag = .unknown, .place = place, .a = start, .b = count });
 }
 
@@ -10539,6 +10544,13 @@ fn cellArgs(f: *const Frame, args: []const Val) usize {
 /// the frame are read as one cell: the outside names no cell apart.
 fn holdsDuplicated(f: *const Frame, xs: []const Atom, dups: []const Atom) bool {
     if (xs.len > share_small) return true;
+    for (xs) |x| switch (f.roots.items[x.root].kind) {
+        // The answer of the frame's own function parameter is one opaque
+        // root: its atom names no cell it was handed, a duplicated one
+        // among them (kernel §4.4).
+        .answer => return true,
+        .outside, .param, .capture, .local, .fresh => {},
+    };
     for (xs) |x| {
         // Each comparison made is work (kernel §8); past the budget it can.
         if (f.charge(dups.len)) return true;

@@ -186,7 +186,9 @@ as a pair: both parts are `x`). Four facts that rest on "apart" are read so:
   is, at that place, the value one of its sources has there, as it is. A call can where its type,
   read in the body's variables, names `b` (`Frame.taintCall`): unknown code, markup, an entry's
   call, a decoding run, an identity that answers `unknown`, a row other than a cell's, and a walked
-  callee one of whose sources at a location of its answer is not at the same place. So can a call
+  callee one of whose sources at a location of its answer is not at the same place; and a value of
+  no claim made of parts (`unknownOf`: a part the place graph does not name) can be at any location,
+  so it takes the mark off every variable. So can a call
   that hands a function value to a callee whose supply at a location of a parameter of that function
   is not at the same place (that parameter's type there), or whose own answer is not (its answer's
   type), or that hands it where no contract follows it. A call of the frame's own function parameter
@@ -679,7 +681,9 @@ say its own parts are apart (`partsOf` fails, or `argsSplit`), and every cell of
 hold one cell (`dupOverlap`); and a result entry is read as before (no claim: `twice` where two
 sources or an answer that holds a handed cell feed a summary entry, and tested by its atoms for
 `linear`) only where one of its atoms can be one of those cells (`holdsDuplicated`, two atoms outside
-the frame read as one). The atoms of an entry name every cell it can hold (§2), so an entry none of
+the frame read as one), or where one is the answer of the frame's own function parameter, an opaque
+root whose atom names none of the cells it was handed (a duplicated one among them: `List.map [ l, l ]
+g` with `g` a parameter). The atoms of an entry name every other cell it can hold (§2), so an entry none of
 whose atoms is such a cell holds each cell of it as the callee's claims say; the result is `linear`
 where the callee is not `nonlinear`, and its other entries are tested by their atoms. Past the budget
 every entry is read as before. *Before, one cell at two places of an argument took every claim of the
