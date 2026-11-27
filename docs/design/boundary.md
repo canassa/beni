@@ -2729,6 +2729,13 @@ default keeps every handler, and the ownership checker then reads the handler as
 keeps. `inline` targets 1.43 and says it reads at the event each handler of an element its root reaches
 through elements and fragments alone, in a root with no `let`.
 
+**Version 1.45** (*added 2026-11-27*, additive, gated on nothing; #2729): `Program.HoleFacts.selector_group`
+of a `Show` keyed by identity — the read set of its payload's identity alone (`write-sets.md`, *a `Show`
+keyed by identity*) — where 1.19 gave it only for a branch hole. A key whose writes conflict with it may
+make the shown value another object, so a lowering that keeps no such value (§9.4.8) remounts the body at
+that key's pass. A lowering that targets 1.44 sees null, as before; `inline` targets 1.45 (`browser-inline.md`
+§8.2, amended 2026-11-27).
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -2865,6 +2872,17 @@ particular, a runtime must not:
 A runtime that needs a value from one render in the next keeps a value that holds no list. If it
 cannot, the compiler must not treat the program's lists as unshared; the rule is changed in this
 section first.
+
+*Amended 2026-11-27 (#2729): what `inline` kept and no longer keeps.* The `inline` runtime kept the value
+a `Show` keyed by identity showed, a record, to compare with the next pass's by `===`, and a `For` keyed
+by reference kept each item to match its rows — both of the kinds this section forbids, found when the
+build users get (records written in place where v3 accepts them) printed another page than the build that
+copies (`browser/inline/ShowAndBranches`). Now the `Show` keeps such a value only when it holds no record
+and no list, and otherwise remounts at a key whose write set may make it another object (§9.4.6 version
+1.45; `browser-inline.md` §8.2, amended 2026-11-27); the `For` is refused over items that are not
+primitive-`eq` (`browser-inline.md` §9, amended 2026-11-27). The tests are
+`browser/inline/ShowIdentityWrites` and `ShowAndBranches` (one page in every build) and
+`build/bad/inline/ForByReferenceRecord/`.
 
 **What a lowering keeps** (*added 2026-11-14*, research report 134). The rule above is the runtime's.
 A lowering that evaluates a root's values itself (`groups`, §9.4.6 version 1.5) can keep more: the

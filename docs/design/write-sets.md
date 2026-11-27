@@ -2050,6 +2050,22 @@ Two read sets the pass under-recorded, each found by a page that went stale on `
   handler sends changes (`browser/direct/LetMarkupHandler`); no hole is recorded for it. Conduit's
   `writes/` golden widened by exactly those reads.
 
+### *Amended 2026-11-27 (#2729):* a `Show` keyed by identity
+
+A `Show` keyed by identity (`keyed`, `keyed={True}`) remounts its body when its value is another
+object (`language.md` §11.18). A runtime may not keep a value that holds a record or a list to
+compare it (`boundary.md` §9.4.8), so the pass says instead when the value may be another
+object. The `Show`'s edge (*Producer-entry facts*) records a **selector**, as a branch hole's
+is (`Hole.selector`): the anchored reads of the `Just`'s payload alone — the value term the body
+is applied to, not the `when`'s other reads, its fallback or its body
+(`Writes.recordEdgeSelector`). By §1.3, a key whose write set does not conflict with it leaves
+the payload the very same object; one whose write set does may make it another, an arm's write
+in place included, since the write set is the source's and not the build's. The emitter numbers
+it as a group of its own (`Direct.Hole.selector_group`), and `programHole` hands it to the
+lowering for a `Show`, though for no other producer (interface 1.45; `browser-inline.md` §8.2,
+amended 2026-11-27). A `Show` keyed by a key function records none: its key is primitive-`eq`,
+compared by value.
+
 ### *Amended 2026-10-14:* subscription conflicts
 
 An effectful program records the anchored reads of its subscriptions result,

@@ -819,6 +819,33 @@ beni over `Js` in `Inline.beni`:
     so the body is not remounted where `browser-tea` remounts it: the table of `language.md`
     §11.18 read with §9's *Identity*, and the same listed difference as a `For` keyed by
     reference. By key, the two agree.
+    *Amended 2026-11-27 (#2729): **a `Show` keyed by identity**; the bullet above is
+    superseded.* It kept the shown record as its key and compared it by `===`, a breach of
+    `boundary.md` §9.4.8 and of rule 8: once `update` wrote the record in place, the build users
+    get kept the body that the build that copies, and `browser-tea`, made anew
+    (`browser/inline/ShowAndBranches`, whose golden had held the in-place page). Now the runtime
+    keeps no value that may hold a record or a list. By identity over a value that is
+    primitive-`eq` (`Show.value_is_primitive`) or identity-safe (`Tree.identitySafe`: it holds no
+    record and no list, so nothing writes it in place), the key is still the value, kept and
+    compared by `keyShown`, which `boundary.md` §9.4.8 allows. **Over any other value, the
+    write set decides**: the `Show` has no key, its entry shows its arms by `armShown`, and a
+    **renewal entry** of its own stands just before it, in the read set of the payload's
+    identity alone (`HoleFacts.selector_group` of the `Show`, interface 1.45; `write-sets.md`,
+    *a `Show` keyed by identity*): the `Just`'s payload, not what the body or the fallback
+    reads. A key whose writes conflict with that read set may make the payload another object
+    (`write-sets.md` §1.3), so its pass runs the renewal entry first, which marks a shown body
+    (`renew(state)`); the `Show`'s entry, which the same pass runs, then removes it and makes a
+    new one, or shows the fallback. A shown fallback is kept, as it was. Where the pass gives no
+    such read set, the `Show`'s whole read set stands for it: the body is a new one at every pass
+    of the entry. So whether the body is a new one depends on the source and the message, never
+    on whether the arm wrote the record in place or copied it: both builds print the same page.
+    Against `browser-tea`, which compares the record by identity at every render, it differs only
+    where the write set over-approximates — an arm that may give back the very same record, as
+    `Maybe.map model.user (λu → u)` does, makes a new body — and where a `when` builds a new
+    record at each evaluation from what no key writes, which `browser-tea` remounts at every
+    render and `browser-inline` never. Pages `browser/inline/ShowIdentityWrites` and
+    `browser/tea/ShowIdentityWrites` (the listed difference in their headers) and
+    `browser/inline/ShowAndBranches`, whose golden is the page the copying build prints.
   - **What stays refused** (class 1, at the `Show`): a `Show` that is not among an element's
     children in the `view`'s own markup — at the `view`'s top, in a fragment, in a `For`'s row, in
     a region's arm, in a helper's or another module's markup; one followed by text, a hole or a
@@ -2392,6 +2419,18 @@ The simple form is S2c's row unit with none of S2d's edits:
   Keyed by reference, an item an arm wrote in place is the same object, so its row is kept: the
   table of `language.md` §11.9 (*the very same item value is in both lists*), where `browser-tea`
   made a new row.
+  *Amended 2026-11-27 (#2729, #2504): the sentence above is withdrawn.* To match rows by
+  reference, `forRows` keeps each item from one pass to the next and compares it by identity,
+  which `boundary.md` §9.4.8 allows only for a value that holds no record and no list: a record
+  an arm wrote in place is the same object where the copying build makes another, so the two
+  builds print different pages. No write set can stand in for it, since the rows are matched by
+  which item is which, and a filter or a sort keeps the items of the copying build. So `forRows`
+  keys a row by its item (`key` null) only over a `String`, a number, a `Char`, a `Bool` or an
+  `Order` (`For.item_is_primitive`), whose identity is its value. **A `For` keyed by reference
+  over any other item type is class 1**, refused at the `For` with a key function
+  (`keyed={.id}`) or position (`keyed={False}`) to write instead (`build/bad/inline/ForByReferenceRecord/`).
+  The permanent answer is the owner's (#2504: a refusal, a warning with another behaviour, or keys
+  by value); no page of the corpus keys such a `For` by reference.
 - **Row events.** A row's event goes through the program's dispatcher (§8.3, amended
   2026-11-05): the row's `set` evaluates the event's handler value with the row's values, as a
   binding evaluates any value (§8.2, #466), and the listener hands the dispatcher that message —

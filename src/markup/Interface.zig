@@ -138,7 +138,10 @@ const std = @import("std");
 /// the lowering evaluates at most once in each evaluation of the function
 /// the root is the body of, and never again from what an earlier
 /// evaluation read (`boundary.md` §9.4.8, *A hole evaluated once*).
-pub const version: Version = .{ .major = 1, .minor = 44 };
+/// Version 1.45: `Program.HoleFacts.selector_group` of a `Show` keyed by
+/// identity, the read set of its payload's identity alone (`boundary.md`
+/// §9.4.6, `write-sets.md` *a `Show` keyed by identity*).
+pub const version: Version = .{ .major = 1, .minor = 45 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -619,7 +622,10 @@ pub const Program = struct {
         /// read set of choosing its arm alone — its scrutinee and the facts
         /// each arm is taken under, not what the arms' values read — as a
         /// group number, as `group` is. Null when the pass has none: then
-        /// choosing the arm is taken to read all of `group`.
+        /// choosing the arm is taken to read all of `group`. 1.45: of a
+        /// `Show` keyed by identity, the read set of its payload's identity
+        /// alone: a key whose writes conflict with it may make the payload
+        /// another object (`write-sets.md` §1.3).
         selector_group: ?u32 = null,
     };
 
