@@ -2550,6 +2550,65 @@ test "ownership v3 (the step 0 prototype): a refusal is an error under enforceme
     try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
 }
 
+/// `through` is generic in its answer and answers what its function
+/// parameter answers. `run` hands it its own function parameter, whose answer
+/// has `n` constructors with two lists each, two times, reads both answers at
+/// each location, and pushes onto its list parameter.
+fn answerThrough(a: std.mem.Allocator, n: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype T\n");
+    for (0..n) |i| try out.print(a, "    {s} C{d} (List Int) (List Int)\n", .{ if (i == 0) "=" else "|", i });
+    try out.appendSlice(a,
+        \\
+        \\
+        \\through : (x → a), x → a
+        \\through f x = f x
+        \\
+        \\
+        \\size : T → Int
+        \\size t =
+        \\    case t of
+        \\
+    );
+    for (0..n) |i| try out.print(a, "        C{d} a b →\n            List.length a + List.length b\n\n", .{i});
+    try out.appendSlice(a,
+        \\
+        \\run : (Int → T), Int, List Int → List Int
+        \\run mk k xs =
+        \\    t = through mk k
+        \\    u = through mk (k + 1)
+        \\    List.push xs (size t + size u)
+        \\
+        \\
+        \\make : Int → T
+        \\make k = C0 [ k ] [ k, k ]
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (List.length (run make 3 [ 1, 2 ])))
+        \\
+    );
+    return out.items;
+}
+
+test "ownership v3: the answer of a function parameter, read at each of 512 locations, is judged" {
+    // The one wide location of `through`'s result holds the answer of `mk`,
+    // and `run` reads it at each of the 512 locations of `T`. Each of them
+    // built the same run of 512 atoms and removed its repeats: 262 144 atoms
+    // for each of the two calls, and the walk of `run` passed its budget from
+    // 192 constructors on (#2539). A call now keeps the run of the first
+    // location for the others (kernel §8, *An expansion that reads nothing of
+    // its location is made once for a call's result*).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try answerThrough(w.arena.allocator(), 256));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 2: accepted 2 (fresh 1, call 0, param 1,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 2: accepted 2 (fresh 1, call 0, param 1,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
 // The first full run of the sanitiser corpus under the prototype accepted 19
 // programs that it must refuse (research report 111 §4.2). Each has a write
 // that changes a list in place while another holder reads it: a plain build

@@ -11471,6 +11471,13 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     f.paired_gen = f.next_paired_gen;
     f.next_paired_gen += 1;
     defer f.paired_gen = outer_gen;
+    // The run of the first location that an entry of the callee's result
+    // covers, where its expansion read nothing of the location: each later
+    // location that the entry covers has the same run (kernel §8, *An
+    // expansion that reads nothing of its location*). A column by the
+    // callee's entry, and one more for `Loc.all`; made at the first run.
+    var shared: ?[]?SharedRun = null;
+    defer if (shared) |x| f.gpa.free(x);
     for (0..es.len) |e| {
         const cr = cov[e];
         const start: u32 = @intCast(f.atoms.items.len);
@@ -11485,6 +11492,20 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
             has_answer[e] = true;
             continue;
         }
+        const col = if (cr == Loc.all) c.res.len else cr;
+        if (shared) |sh| if (sh[col]) |*kept| if (!f.charge(1)) {
+            const sr = kept.*;
+            // A check counts no work, so it has a bound of its own: the
+            // first locations that take the run (kernel §9).
+            if (sr.checked < shared_checks_max) {
+                kept.checked += 1;
+                try f.checkSharedRun(&base, cr, layout, @intCast(e), !casts, inst, sr);
+            }
+            const twice = !es[e].single and (sr.twice or (sr.tainted and (sr.sources > 1 or (sr.answers and sr.handed))));
+            f.rents.items[ent0 + e] = .{ .kind = .alias, .start = sr.start, .len = sr.len, .twice = twice };
+            has_answer[e] = sr.answers or sr.tainted;
+            continue;
+        };
         var sources: u32 = 0;
         var answers = false;
         if (cr == Loc.all) {
@@ -11530,6 +11551,15 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // An entry that can hold such a cell is tested by its atoms, as an
         // answer's is: the callee's claim does not cover it.
         has_answer[e] = answers or tainted;
+        if (es.len > 1 and !st.entry_read and kind == .alias and !m.steps_over) {
+            const sh = shared orelse blk: {
+                const x = try f.gpa.alloc(?SharedRun, c.res.len + 1);
+                @memset(x, null);
+                shared = x;
+                break :blk x;
+            };
+            if (sh[col] == null) sh[col] = .{ .start = start, .len = @intCast(f.atoms.items.len - start), .twice = st.twice, .handed = st.handed, .tainted = tainted, .sources = sources, .answers = answers };
+        }
     }
     // The callee's claim is about its own locations. Two locations of the
     // caller at one wide location of the callee's result (a type variable,
@@ -11568,6 +11598,49 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     try f.deriveLinearSplit(root, !c.nonlinear and (args_apart or dups_known), has_answer, split);
     try f.cellResult(root, roots_before, inst);
     return f.rootVal(root);
+}
+
+/// The run that `applyAt` keeps for an entry of the callee's result whose
+/// expansion read nothing of the caller's location (`SrcState.entry_read`),
+/// with what the expansion and the tests of the run found: `twice` and
+/// `handed` of the expansion's state, whether the run holds a cell that is
+/// twice in the arguments (`tainted`), the count of the entry's sources that
+/// can hold a cell, and whether one of them is an answer.
+const SharedRun = struct { start: u32, len: u32, twice: bool, handed: bool, tainted: bool, sources: u32, answers: bool, checked: u32 = 0 };
+
+/// The locations that take one kept run and that a safe build expands again
+/// (`checkSharedRun`). Each expansion is the work that the kept run saves,
+/// and no budget counts it: without a bound a safe build did, for a result
+/// of N locations, the N expansions that the walk no longer does.
+const shared_checks_max = 16;
+
+/// In safe builds: the run `sr` that location `e` of a call's result took
+/// from an earlier location of entry `cr` of the callee's result is the run
+/// that the expansion at `e` makes, atom for atom, with the same `twice`
+/// and `handed`, and that expansion reads nothing of `e` (kernel §9). It
+/// counts no work, and a check that passed the budget read nothing to
+/// compare. The caller runs it for the first `shared_checks_max` locations
+/// that take a run.
+fn checkSharedRun(f: *Frame, base: *const Use, cr: u32, layout: u32, e: u32, typed: bool, inst: u32, sr: SharedRun) Error!void {
+    if (!safety or f.m.steps_over) return;
+    const q = f.quiet();
+    defer f.loud(q);
+    const c = base.c;
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    var st: SrcState = .{ .inst = inst, .typed = typed };
+    if (cr == Loc.all) {
+        for (c.res, 0..) |srcs, ri| try f.expandSrcs(base, srcs, c.layouts[c.arity], @intCast(ri), layout, e, &st);
+    } else try f.expandSrcs(base, c.res[cr], c.layouts[c.arity], cr, layout, e, &st);
+    try f.uniqueTail(&f.atoms, start);
+    if (f.m.steps_over) return;
+    const again = f.atoms.items[start..];
+    const kept = f.atoms.items[sr.start..][0..sr.len];
+    var same = !st.entry_read and !st.written and st.twice == sr.twice and st.handed == sr.handed and again.len == kept.len;
+    if (same) for (kept, again) |x, y| {
+        if (!atomEql(x, y)) same = false;
+    };
+    if (!same) std.debug.panic("own3: the run that a location of a call's result took from another location is not what its own expansion makes (kernel §8)", .{});
 }
 
 /// The cells that can be at two places of the arguments `args` of a call of
@@ -12414,6 +12487,14 @@ const SrcState = struct {
     /// only cells the function made in its run, captured cells (`twice`) and
     /// cells outside the frame (`apply`).
     handed: bool = false,
+    /// The expansion read something of the caller's location: the location
+    /// itself (the pairing of an argument, `pairedLeaves`) or the labels
+    /// below the callee's entry (`suffix`, which the body of a known
+    /// function reads, `answerOfCode`). One that read neither is the same
+    /// at each location that the same entry of the callee covers (kernel §8,
+    /// *An expansion that reads nothing of its location*). A new reader of
+    /// either sets it; `checkSharedRun` finds one that does not.
+    entry_read: bool = false,
     fn visit(st: *SrcState, use: *const Use, k: u32, code: Code) enum { new, old, full } {
         // The code and its captures: two closures of one lambda are two functions.
         const id = std.hash.Wyhash.hash(code.id(), std.mem.asBytes(&[2]u32{ code.caps, code.ncaps }));
@@ -12485,6 +12566,7 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
             .fresh => try f.freshAtom(base.key, base.holder, f.m.isDraft(c), s.a, s.e != 0, st.inst, &f.atoms),
             .outside => try f.atoms.append(f.gpa, outside_atom),
             .param => {
+                st.entry_read = true;
                 // A parameter the call did not hand (a contract of another
                 // arity): nothing is known of it, so each argument.
                 if (s.a >= args.len) {
@@ -16196,6 +16278,7 @@ fn heldVal(f: *Frame, v: Val, sig: u32, e: u32) Error!Val {
 
 /// What the known function `code`, in the location of `use`, answers at the entry `ae`.
 fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, depth: u32) Error!void {
+    st.entry_read = true;
     if (f.tick()) return;
     const m = f.m;
     if (use.kind == .top or depth > 8 or code.own_params != use.fnc.arity) return f.lostAnswer(use, st);
