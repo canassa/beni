@@ -23,7 +23,8 @@
 //! - a module whose contract answers one of its own declarations is installed
 //!   in a session where it has another module index;
 //! - a platform that chooses v3 in its manifest, with no ownership flag: the
-//!   record writes that the lowering reads off the walk.
+//!   record writes that the lowering reads off the walk, and the corpus's own
+//!   page for a write inside a callee under `--release`.
 //!
 //! The counters of `--self-profile` say whether the cache did anything: a
 //! scenario that compared two cold runs would pass with no cache at all.
@@ -827,5 +828,41 @@ test "a platform that chooses v3 in its manifest: a build with no ownership flag
         const edited = try run(&w, arena, base, &.{ "--cache-dir=cache", "--out=out-edited" });
         try expectSame(&w, arena, oracle2, "out-oracle2", edited, "out-edited");
         try testing.expectEqual(@as(u64, 1), edited.counters.checked);
+    }
+}
+
+test "the page of a write inside a callee: a release build from the cache keeps each call that writes" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // `browser/inline/ReleaseCalleeWrite` (#2642): a handler's call writes a
+    // record inside its callee and the model's slot has no read, so the
+    // release optimiser keeps the call only because the lowering marks it as
+    // a store, from the calls that the walk publishes
+    // (`Driver.record_calls`). A module that the cache gives has them from
+    // its block. Without them the warm release build drops writes that the
+    // build with no cache keeps.
+    const dir = "tests/corpus/browser/inline/ReleaseCalleeWrite/";
+    const main = try std.Io.Dir.cwd().readFileAlloc(testing.io, dir ++ "Main.beni", arena, .limited(1 << 20));
+    const notes = try std.Io.Dir.cwd().readFileAlloc(testing.io, dir ++ "Notes.beni", arena, .limited(1 << 20));
+    for ([_][]const []const u8{ &.{"build"}, &.{ "build", "--release" } }) |base| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("beni.json", inline_manifest);
+        try w.write("src/Notes.beni", notes);
+        try w.write("src/Main.beni", main);
+        const oracle = try run(&w, arena, base, &.{ "--no-cache", "--out=out-oracle" });
+        try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
+        const cold = try run(&w, arena, base, &.{ "--cache-dir=cache", "--out=out-cold" });
+        try expectSame(&w, arena, oracle, "out-oracle", cold, "out-cold");
+        const warm = try run(&w, arena, base, &.{ "--cache-dir=cache", "--out=out-warm" });
+        try expectSame(&w, arena, oracle, "out-oracle", warm, "out-warm");
+        try testing.expectEqual(warm.counters.modules, warm.counters.hits);
+        // `Notes` is walked again, and `Main` with it: each comes from a
+        // walk, against the blocks of core and the platform.
+        try w.write("src/Notes.beni", try std.mem.concat(arena, u8, &.{ notes, "\n-- walked again\n" }));
+        const oracle2 = try run(&w, arena, base, &.{ "--no-cache", "--out=out-oracle2" });
+        const edited = try run(&w, arena, base, &.{ "--cache-dir=cache", "--out=out-edited" });
+        try expectSame(&w, arena, oracle2, "out-oracle2", edited, "out-edited");
     }
 }
