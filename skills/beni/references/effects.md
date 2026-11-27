@@ -93,6 +93,8 @@ apart left right =
   `d` and wakes each fiber whose sleep ends. It gives a `Result`: `Err (Clock.TooFar left)` when
   the new reading is more than 9007199254740991, the largest `Int`. The clock then does not move.
   A test that does not use the result writes `_ = Clock.adjust clock d`.
+- On a virtual clock, a `Task.sleep` that ends after 9007199254740991 never wakes: the fiber waits
+  until it is cancelled. A `Task.timeout` of such a duration puts no limit on its work.
 - `Clock.elapsed ⊤` is a `Float` of milliseconds since a start that the host chooses. It never goes
   back, so `Clock.elapsed ⊤ - start` is how long the work took. Compare it only with another
   `elapsed` reading. On a virtual clock it is that clock's reading.

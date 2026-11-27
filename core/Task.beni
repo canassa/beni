@@ -1984,7 +1984,9 @@ onExit work cleanup =
 --| other ready fiber run first, as `yieldNow` does — Effect's
 --| `sleep(0)`. Inside `Clock.run` the clock is a virtual one: the fiber
 --| waits until `Clock.adjust` moves that clock past the wake time, and a
---| `zero` wait returns at once.
+--| `zero` wait returns at once. A wake time past 9007199254740991, the
+--| last reading of a virtual clock, is one that clock never reaches: the
+--| wait then never ends, and the fiber waits until it is cancelled.
 pub sleep : Duration → ⊤
 sleep duration =
     ms = Duration.toMillis duration
@@ -2889,13 +2891,28 @@ virtualClock epoch = Js.from { now = epoch, sleepers = Js.array [] }
 -- Wait on the virtual clock `clock` until it reads `ms` later than now.
 -- Sleepers are kept ordered by wake time, and by the order they began to
 -- sleep among equal times; a cancelled one is taken out.
+--
+-- A wake time past the last millisecond an `Int` holds is one the clock
+-- never reads, because `adjustClock` refuses each move past it. Such a
+-- wait never wakes: it is not put among the sleepers, and it ends only
+-- when its fiber is cancelled (§17.6, amended 2026-11-27). The test comes
+-- before the sum, so no wake time leaves the `Int` range.
 virtualSleep : V, Int → ⊤
 virtualSleep clock ms = callback λwake →
-    at : Int
-    at = Js.to (Js.get clock "now") + ms
-    entry = Js.from { at = at, wake = Js.from wake }
+    now : Int
+    now = Js.to (Js.get clock "now")
     sleepers = Js.get clock "sleepers"
-    _ = Js.call sleepers "splice" [ Js.from (insertAt sleepers at 0), Js.from 0, entry ]
+
+    -- `null` for a wait that never wakes: nothing to take out when it is
+    -- cancelled.
+    entry =
+        if pastLast now ms then
+            Js.null
+        else
+            at = now + ms
+            made = Js.from { at = at, wake = Js.from wake }
+            _ = Js.call sleepers "splice" [ Js.from (insertAt sleepers at 0), Js.from 0, made ]
+            made
 
     λ⊤ →
         i : Int
@@ -3538,6 +3555,9 @@ errorOf o =
 --| takes, and `work` that cannot be interrupted when the time passes runs
 --| to its next point of suspension first. A `zero` duration answers `Nothing` without
 --| starting `work`. Effect's `timeoutOption`.
+--|
+--| On a virtual clock, a `duration` that ends past 9007199254740991, the
+--| clock's last reading, never passes: `work` then has no limit.
 --|
 --|     Task.timeout (Duration.seconds 5) (λ⊤ → Http.get url)
 --|         ▷ Maybe.withDefault (Err Http.Timeout)
