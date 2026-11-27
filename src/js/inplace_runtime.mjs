@@ -158,7 +158,12 @@ export const same = (a, b) => a === b;
 // A record update under the sanitiser (research report 142). In place the
 // lowering writes the stores itself and never calls this: it is here so that
 // the two runtimes have one set of exports.
-export const record = (base, copy) => copy;
+export const record = (base, values) => {
+  const copy = {};
+  for (const key of Object.keys(base)) copy[key] = Object.hasOwn(values, key) ? values[key] : base[key];
+  for (const key of Object.keys(values)) if (!Object.hasOwn(copy, key)) copy[key] = values[key];
+  return copy;
+};
 
 // A writer of `Dict` or `Set` that takes evidence first (`sortBy`): its base
 // is argument `k`, and takes the written storage.

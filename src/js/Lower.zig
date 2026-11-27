@@ -7298,7 +7298,8 @@ pub const Lowerer = struct {
             base = try l.ident(n, p);
         }
         var properties: std.ArrayList(Node.Index) = .empty;
-        try properties.append(l.scratch, try l.add(.spread_property, p, base.int(), Node.Data.unused));
+        // The fields named; the runtime copies the others out of the base,
+        // and reads none of these of it (`ownership-v3-kernel.md` §11 item 3).
         for (fields, values[1..]) |f, value| {
             try properties.append(l.scratch, try l.fieldProperty(l.bir.symbol(f.name), value, p));
         }

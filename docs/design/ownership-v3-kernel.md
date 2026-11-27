@@ -2311,8 +2311,16 @@ cells, and an update is a write of some of them.
 3. **An update writes the slots of the fields it names** (`Frame.recordUpdate`). `{ r | f₁ = v₁, … }`
    evaluates `r`, then each value, then writes: a demand (op `update`) of `r`'s atoms at the slots
    `f₁ …`, with each value as another operand (a value that holds `r` would see the store). It reads
-   each slot of `r` at the same time (a copy reads every field, and a name older than an earlier write
-   of the object reads a slot that changed). Its answer is the same object: each slot is `r`'s under a
+   each slot of `r` that it does not name at the same time (the answer holds those fields, and a name
+   older than an earlier write of the object reads a slot that changed). *Amended 2026-11-27 (#2657):*
+   a slot that it names it writes and reads nothing of: in place the store replaces it, and in the
+   copying program the new record takes the new value there, so neither reads the old one. Before, the
+   update read every slot, and `{ model | items = [ n ], count = n }` after `next = { model | count =
+   n }` refused the first update as read again (`browser/inline/RecordUpdateCompare`). The
+   sanitiser's copy reads the same fields (`record(base, values, site)` copies the fields the update
+   does not name out of the base, and none that it names, `sanitize_runtime.mjs`): before, its spread
+   `{ ...base, f: v }` read a named field that an earlier copy had poisoned, and trapped where an
+   in-place run reads nothing. Its answer is the same object: each slot is `r`'s under a
    new name (`version`, §5.1), each field it does not name holds `r`'s part, each field it names the new
    value. An update is not a new object (`makesObject`): a function that answers one answers an object
    that was there before (`Contract.old_result`). An update of a base of no cell (a number read as a

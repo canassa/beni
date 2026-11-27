@@ -5592,10 +5592,12 @@ fn recordUpdate(f: *Frame, inst: u32) Error!Val {
     const os = try f.gpa.alloc(Other, tmp.items.len);
     for (os, tmp.items) |*o, k| o.* = .{ .v = k.val };
     try f.demand(w, .{ .point = inst, .op = .update, .kind = .update, .base_inst = data.lhs, .others = os });
-    // The base whole is read here: a copy reads each field of it, and a
-    // name of the record older than a write of it reads a slot that changed
-    // (the sanitiser's copy traps there).
-    try f.readSlots(base, &.{}, inst);
+    // The base's other fields are read here: the record answered holds them,
+    // and a name of the record older than a write of it reads a slot that
+    // changed (the sanitiser's copy traps there). A field it names it writes
+    // and reads nothing of (kernel §11 item 3): no copy and no store reads
+    // the old value there.
+    try f.readOtherSlots(base, ranks, inst);
     // The update copies the record: each other field is the base's.
     const bplace = f.placeOfVal(base) orelse place;
     const st = m.places.steps(bplace);
@@ -5888,6 +5890,28 @@ fn findGroups(f: *Frame, bindings: []const Inst.Index) Error!void {
             },
             .pattern => last = @max(last, @max(m.datas[b].lhs, m.datas[b].rhs)),
             .stmt => last = @max(last, m.datas[b].rhs),
+/// A read of every field slot of the record `v` but those of the fields
+/// `named` (`recordUpdate`): a value whose slots are not known by its
+/// place, or a field the place has no slot for, reads it whole.
+fn readOtherSlots(f: *Frame, v: Val, named: []const u32, point: u32) Error!void {
+    if (v == v_none or v == v_outside) return;
+    const place = f.placeOfVal(v) orelse return;
+    if (whole(f.nodes.items[v].tag)) return f.readAll(v, point);
+    var es: std.ArrayList(u32) = .empty;
+    defer es.deinit(f.gpa);
+    if (!try f.slotEntries(place, &.{}, &es)) return f.readAll(v, point);
+    for (named) |rank| {
+        const e = try f.slotEntry(place, rank);
+        if (e == none) return f.readAll(v, point);
+        if (std.mem.indexOfScalar(u32, es.items, e)) |at| _ = es.orderedRemove(at);
+    }
+    const start: u32 = @intCast(f.lists.items.len);
+    try f.lists.appendSlice(f.gpa, es.items);
+    const nmask: u32 = @intCast(f.lists.items.len - start);
+    if (nmask == 0) return;
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
+}
+
             .not_a_binding => f.failed = true,
         }
         const first = (if (k == 0) b else @max(prev, b)) + 1;
