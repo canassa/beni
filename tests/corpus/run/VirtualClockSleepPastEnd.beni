@@ -9,11 +9,14 @@
 -- the last reading and wakes there. A 6 ms sleep is due 1 ms later: no
 -- `adjust` reaches it, and it ends only when it is cancelled, its release
 -- run. A `timeout` of 6 ms never passes, so work that ends at the last
--- reading gives its value. A sleep of `zero` at the last reading returns.
+-- reading gives its value. A `repeat` with a delay of 6 ms runs its work
+-- one time and does not run it again (§17.8). A sleep of `zero` at the
+-- last reading returns.
 import Clock
 import Duration
 import Io
 import Node exposing (Program)
+import Schedule
 import Task
 
 
@@ -41,6 +44,11 @@ main = Io.run λ⊤ →
             Task.timeout (Duration.millis 6) λ⊤ →
                 Task.sleep (Duration.millis 5)
                 Clock.now ⊤
+
+    again = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.repeat (Schedule.spaced (Duration.millis 6)) λ⊤ →
+                Debug.log "the repeated work ran at" (Clock.now ⊤)
     _ = Debug.log "5 ms" (Clock.adjust clock (Duration.millis 5))
     _ = Debug.log "1 ms more" (Clock.adjust clock (Duration.millis 1))
     _ = Task.join near
@@ -48,6 +56,9 @@ main = Io.run λ⊤ →
     _ = Debug.log "the 6 ms sleeper" (Task.poll far)
     Task.cancel far
     _ = Debug.log "the 6 ms sleeper, cancelled" (Task.wait far)
+    _ = Debug.log "the repeat" (Task.poll again)
+    Task.cancel again
+    _ = Debug.log "the repeat, cancelled" (Task.wait again)
     Clock.run clock λ⊤ → Task.sleep Duration.zero
     _ = Debug.log "a sleep of zero at the last reading" "returned"
     Node.print "the clock reads ${String.fromInt (Clock.run clock Clock.now)}"
