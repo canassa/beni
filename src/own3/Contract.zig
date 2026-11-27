@@ -204,6 +204,12 @@ pub const Fn = struct {
     /// answer must be the function's own, as a fold's callback's is (kernel
     /// §6 rule 8, `answerOwn`). The caller that knows the function judges it.
     ans_own: bool = false,
+    /// The owner calls a function held here as a method of the parameter's
+    /// record (`r.f a`, which JavaScript runs with `r` as `this`): a host
+    /// function there can read and keep the record, so the caller lets the
+    /// argument escape unless each function there is beni code (kernel §6
+    /// rule 2, *A function held in a value*, *A field called as a method*).
+    receiver: bool = false,
 };
 
 pub const Contract = struct {
@@ -312,6 +318,12 @@ pub const Contract = struct {
     /// fact; a caller reads the answer as a function it does not know. A
     /// group's rounds start from none (`Check.emptyContract`).
     answers: ?[]const Made = null,
+    /// Per result entry, or empty for none: every function the body answers
+    /// at that entry (a location of a function type) is beni code, or the
+    /// function at a parameter location that it passes on, which a `param`
+    /// source there names (kernel §6 rule 2, *A field called as a method*).
+    /// No host function is there unless an argument holds one.
+    fn_known: []const bool = &.{},
 
     /// The renewal of location `i` of `flags`, or null.
     pub fn renewAt(c: *const Contract, i: usize) ?[]const Src {
@@ -389,6 +401,15 @@ fn joinMade(arena: Allocator, ao: ?[]const Made, bo: ?[]const Made) Allocator.Er
         } else try out.append(arena, y);
     }
     return out.items;
+}
+
+/// `fn_known` of a join: where both say so. A bottom contract (a group's
+/// rounds start there) answers no function, so each of its entries is known.
+fn joinKnown(arena: Allocator, a: []const bool, b: []const bool) Allocator.Error![]const bool {
+    if (a.len != b.len) return &.{};
+    const out = try arena.alloc(bool, a.len);
+    for (out, a, b) |*o, x, y| o.* = x and y;
+    return out;
 }
 
 /// One path of a body (kernel §13 item 13): a run through one arm of the
@@ -510,7 +531,7 @@ fn union2(arena: Allocator, a: []const Src, b: []const Src) Allocator.Error![]co
 fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
     const x = a orelse return b == null;
     const y = b orelse return false;
-    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.single != y.single or x.defect != y.defect or x.runs_on != y.runs_on or x.forks != y.forks or x.starts != y.starts or x.kept_out != y.kept_out or x.after_call != y.after_call or x.ans_own != y.ans_own) return false;
+    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.single != y.single or x.defect != y.defect or x.runs_on != y.runs_on or x.forks != y.forks or x.starts != y.starts or x.kept_out != y.kept_out or x.after_call != y.after_call or x.ans_own != y.ans_own or x.receiver != y.receiver) return false;
     if (!std.mem.eql(u32, x.layouts, y.layouts) or !std.mem.eql(bool, x.free, y.free)) return false;
     for (x.supply, y.supply) |s, t| if (!srcsEql(s, t)) return false;
     return true;
@@ -532,7 +553,13 @@ pub fn eql(a: *const Contract, b: *const Contract) bool {
     if (a.paths.len != b.paths.len) return false;
     for (a.paths, b.paths) |p, q| if (!pathEql(p, q)) return false;
     if (!madeEql(a.answers, b.answers)) return false;
+    if (!std.mem.eql(bool, a.fn_known, b.fn_known)) return false;
     return true;
+}
+
+/// Whether contract `c` says each function it answers at result entry `e` is known (`fn_known`).
+pub fn fnKnownAt(c: *const Contract, e: usize) bool {
+    return e < c.fn_known.len and c.fn_known[e];
 }
 
 fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*const Fn {
@@ -561,6 +588,7 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
         out.kept_out = true;
         out.after_call = true;
         out.ans_own = true;
+        out.receiver = true;
         return out;
     }
     const supply = try arena.alloc([]const Src, x.supply.len);
@@ -568,7 +596,7 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
     for (supply, x.supply, y.supply) |*s, p, q| s.* = try union2(arena, p, q);
     for (free, x.free, y.free) |*f, p, q| f.* = p and q;
     const out = try arena.create(Fn);
-    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .single = x.single and y.single, .defect = x.defect or y.defect, .runs_on = x.runs_on or y.runs_on, .forks = x.forks and y.forks, .starts = x.starts and y.starts, .kept_out = x.kept_out or y.kept_out, .after_call = x.after_call or y.after_call, .ans_own = x.ans_own or y.ans_own };
+    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .single = x.single and y.single, .defect = x.defect or y.defect, .runs_on = x.runs_on or y.runs_on, .forks = x.forks and y.forks, .starts = x.starts and y.starts, .kept_out = x.kept_out or y.kept_out, .after_call = x.after_call or y.after_call, .ans_own = x.ans_own or y.ans_own, .receiver = x.receiver or y.receiver };
     return out;
 }
 
@@ -615,7 +643,7 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
         renew = rn;
     }
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .held = held, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .runs_on = a.runs_on or b.runs_on, .hosts = a.hosts or b.hosts, .hosts_forked = a.hosts_forked or b.hosts_forked, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b), .answers = try joinMade(arena, a.answers, b.answers) };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .held = held, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .runs_on = a.runs_on or b.runs_on, .hosts = a.hosts or b.hosts, .hosts_forked = a.hosts_forked or b.hosts_forked, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b), .answers = try joinMade(arena, a.answers, b.answers), .fn_known = try joinKnown(arena, a.fn_known, b.fn_known) };
     return out;
 }
 
@@ -670,7 +698,7 @@ fn dupFn(a: Allocator, f: *const Fn) Allocator.Error!*const Fn {
     const supply = try a.alloc([]const Src, f.supply.len);
     for (supply, f.supply) |*s, x| s.* = try a.dupe(Src, x);
     const out = try a.create(Fn);
-    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .single = f.single, .defect = f.defect, .runs_on = f.runs_on, .forks = f.forks, .starts = f.starts, .kept_out = f.kept_out, .after_call = f.after_call, .ans_own = f.ans_own };
+    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .single = f.single, .defect = f.defect, .runs_on = f.runs_on, .forks = f.forks, .starts = f.starts, .kept_out = f.kept_out, .after_call = f.after_call, .ans_own = f.ans_own, .receiver = f.receiver };
     return out;
 }
 
@@ -690,7 +718,7 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
         answers = ys;
     }
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .held = held, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .runs_on = c.runs_on, .hosts = c.hosts, .hosts_forked = c.hosts_forked, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths), .answers = answers };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .held = held, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .runs_on = c.runs_on, .hosts = c.hosts, .hosts_forked = c.hosts_forked, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths), .answers = answers, .fn_known = try a.dupe(bool, c.fn_known) };
     return out;
 }
 

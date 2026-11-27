@@ -281,6 +281,8 @@ const FnDraft = struct {
     held: u32 = none,
     /// What it answers is handed to a function that writes it (`Fn.ans_own`).
     ans_own: bool = false,
+    /// It is called as a method of the parameter's record (`Fn.receiver`).
+    receiver: bool = false,
     arity: u32,
     places: []const PlaceId,
     layouts: []const u32,
@@ -3365,8 +3367,11 @@ fn capHeld(f: *Frame, code: Code, k: usize, out: *std.ArrayList(Atom)) Error!voi
     // The scan of the capture's flags, of the answer's sources and of the
     // renewals is work (kernel §8).
     _ = f.charge(Loc.scanUnits(n) + Loc.scanUnits(lc.flags.len));
+    // A capture whose function the code calls as a method of it hands the
+    // whole record as `this` (`Fn.receiver`): every location of it is reached.
+    const recv = receiverAt(lc, j);
     for (0..n) |e| {
-        var touched = lc.flags[lc.off[j] + e] != 0 or handsOn(lc, j, @intCast(e));
+        var touched = recv or lc.flags[lc.off[j] + e] != 0 or handsOn(lc, j, @intCast(e));
         if (!touched) for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j and s.e == e) {
             touched = true;
         };
@@ -6926,6 +6931,7 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         const fnc = try m.arena.create(CMod.Fn);
         fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0), .runs_on = dr.runs_on or (idx < 32 and (f.runsOnParams() >> @intCast(idx)) & 1 != 0), .forks = (dr.lost and !dr.not_forks and !dr.called) or (idx < 32 and (f.forksParams() >> @intCast(idx)) & 1 != 0), .starts = idx < 32 and (f.startsParams() >> @intCast(idx)) & 1 != 0, .kept_out = dr.kept_out and !(idx < 32 and ((f.startsParams() | f.forksParams()) >> @intCast(idx)) & 1 != 0), .after_call = dr.after_call, .single = dr.calls <= 1 and !dr.handed and !dr.lost };
         fnc.ans_own = dr.ans_own;
+        fnc.receiver = dr.receiver;
         if (dr.held != none) {
             // Many functions can be there, and one of them at many places.
             fnc.single = false;
@@ -6966,9 +6972,65 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     // The functions the body answers as its whole result (kernel §6 rule 2,
     // *A function a body answers*).
     const answers = try f.answersOf(result, result_place);
+    const fn_known = try f.fnKnown(result, result_place, layouts[arity]);
     const c = try m.arena.create(Contract);
-    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .held = held, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .runs_on = f.runs_on or f.runsOnParams() != 0 or f.runsOnBody(), .hosts = f.hosts, .hosts_forked = f.hosts_forked, .renew = renew, .renew_shared = renew_shared, .paths = paths, .answers = answers };
+    c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .held = held, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .runs_on = f.runs_on or f.runsOnParams() != 0 or f.runsOnBody(), .hosts = f.hosts, .hosts_forked = f.hosts_forked, .renew = renew, .renew_shared = renew_shared, .paths = paths, .answers = answers, .fn_known = fn_known };
     return c;
+}
+
+/// `Contract.fn_known` of the frame's result `v` (kernel §6 rule 2, *A
+/// field called as a method*): per entry of the result's layout `rl` of a
+/// function type, whether each function there is beni code (`knownFns`).
+fn fnKnown(f: *Frame, v: Val, place: PlaceId, rl: u32) Error![]const bool {
+    const m = f.m;
+    if (f.failed or m.steps_over) return &.{};
+    _ = place;
+    const es = m.loc.layoutEntries(rl);
+    const out = try m.arena.alloc(bool, es.len);
+    @memset(out, false);
+    var any = false;
+    for (es, 0..) |re, e| {
+        if (re.kind != .closure) continue;
+        any = true;
+        out[e] = v == v_none or try f.knownFns(try f.heldVal(v, rl, @intCast(e)), .result);
+    }
+    if (!any) return &.{};
+    return out;
+}
+
+/// Whether each function `v` can be is beni code: a closure, a constructor
+/// or a declaration whose body is beni, or a function at a parameter or a
+/// capture location of this frame, its own or one held below it (whose
+/// caller says what it is). A declaration whose body is JavaScript, or a
+/// value no rule names (a cast, a host's), is not. `.result`: the frame's
+/// own functions are known, as its caller says what they are; `.mark`: so
+/// are the functions held below its parameters and captures, which are
+/// asked `receiver` (`Fn.receiver`), and its own function parameter is
+/// not; `.strict`: neither.
+const KnownMode = enum { result, mark, strict };
+fn knownFns(f: *Frame, v: Val, mode: KnownMode) Error!bool {
+    if (v == v_none) return true;
+    if (f.tick()) return false;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .join => {
+            for (0..n.b) |ki| if (!try f.knownFns(f.lists.items[n.a + 2 * ki], mode)) return false;
+            return true;
+        },
+        .closure => return true,
+        .fnref => return !f.jsCode(.{ n.a, n.b }),
+        .ref => {
+            if (mode == .strict) return false;
+            if (f.isFnRoot(f.ownFnRoot(v))) return mode == .result;
+            if (try f.heldOf(v)) |h| {
+                if (mode == .mark) f.drafts.items[try f.heldDraftOf(h)].receiver = true;
+                return true;
+            }
+            return false;
+        },
+        .none, .outside, .built, .unknown => return false,
+        .later => unreachable, // read through `capVal` only
+    }
 }
 
 /// The functions the frame answers as its whole result `v`, at `place`
@@ -9927,7 +9989,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     const data = m.datas[inst];
     const mc = m.bir.extraData(@fromBackingInt(data.rhs), Bir.MethodCall);
     const args = m.bir.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index);
-    const Target = enum { decl, reads, unknown };
+    const Target = enum { decl, reads, field, unknown };
     var target: Target = .unknown;
     var code: ?Code = null;
     if (m.in.dispatch) |dt| if (dt.siteOf(@fromBackingInt(inst))) |site| if (site.callee.unwrap()) |ti| switch (dt.term(ti)) {
@@ -9944,7 +10006,8 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
         // under `where a.eq`) is a function the caller handed, and judged
         // at that call. So the read is all that is left.
         .derived, .ext_derived, .codec, .primitive, .undetermined, .param => target = .reads,
-        .field, .identity, .text => {},
+        .field => target = .field,
+        .identity, .text => {},
     };
     var vals: std.ArrayList(Val) = .empty;
     defer vals.deinit(f.gpa);
@@ -9968,6 +10031,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
                 try f.derivedEffect(inst, derived, vals.items, all.items);
                 break :blk try f.unknownResult(inst, vals.items);
             },
+            .field => break :blk try f.fieldCall(inst, mc, vals.items, all.items),
             .decl, .unknown => {},
         }
         if (code) |c| break :blk try f.apply(inst, inst, c, vals.items, all.items);
@@ -9983,6 +10047,44 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     f.revokeAt(inst, false, wrote);
     try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
     return result;
+}
+
+/// A field called as a method, `r.f a` (kernel §6 rule 2, *A field called
+/// as a method*): JavaScript runs the function with the record `r` as
+/// `this`. Beni code reads no `this`, so where each function the field can
+/// hold is beni code (`knownFns`) the call is a call of the function, and
+/// the record is no operand of it. A function held below a parameter or a
+/// capture of the frame, called as a method of that root, is the caller's
+/// to name (`Fn.receiver`). Any other function can be a host's, which can
+/// read the record and keep it: the record escapes, as at unknown code.
+fn fieldCall(f: *Frame, inst: u32, mc: Bir.MethodCall, vals: []const Val, all: []const Inst.Index) Error!Val {
+    const m = f.m;
+    const recv = vals[0];
+    const argv = vals[1..];
+    const rank: u32 = @intCast(m.fieldRank(mc.name));
+    if (recv != v_none) {
+        try f.readSlots(recv, &.{rank}, inst);
+        const fv = try f.project(recv, .{ .kind = .field, .payload = @intCast(rank) });
+        const rn = f.nodes.items[recv];
+        if (try f.heldOf(fv)) |h| if (rn.tag == .ref and rn.a == h.root) {
+            const di = try f.heldDraftOf(h);
+            f.drafts.items[di].receiver = true;
+            return f.callHeld(inst, inst, di, fv, argv, all[1..]);
+        };
+        if (try f.knownFns(fv, .strict)) {
+            if (try f.codeOf(fv)) |code| if (code.own_params == argv.len) return f.apply(inst, inst, code, argv, all[1..]);
+            // Several, or one of another arity: unknown code, of the
+            // function and its arguments.
+            var in_sight: std.ArrayList(Val) = .empty;
+            defer in_sight.deinit(f.gpa);
+            try in_sight.appendSlice(f.gpa, argv);
+            try in_sight.append(f.gpa, fv);
+            for (in_sight.items) |v| try f.escape(v, inst);
+            return f.unknownResult(inst, in_sight.items);
+        }
+    }
+    for (vals) |v| try f.escape(v, inst);
+    return f.unknownResult(inst, vals);
 }
 
 /// Code that the checker does not follow at the dispatch site `inst` (kernel
@@ -10625,6 +10727,12 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         const use: Use = .{ .kind = .call, .id = f.useId(), .key = inst, .holder = code.id(), .c = c, .fnc = hf, .j = j, .held = @intCast(i), .args = args, .site = &site };
         var seen: Seen = .{};
         try f.fnsAnswerOwn(try f.heldVal(args[j], c.layouts[j], @intCast(i - c.off[j])), &use, &seen);
+    };
+    // A function held below an argument that the callee calls as a method
+    // of it: where one can be a host's, the argument escapes (`Fn.receiver`).
+    for (0..c.flags.len) |i| if (c.heldAt(i)) |hf| if (hf.receiver) {
+        const j = paramOfLoc(c, @intCast(i)).?;
+        if (!try f.knownFns(try f.heldVal(args[j], c.layouts[j], @intCast(i - c.off[j])), .mark)) try f.escape(args[j], inst);
     };
     // The handles the callee marks, or hands to a function that can run
     // other fibers while it holds their contents (kernel §13 item 12).
@@ -12997,8 +13105,12 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         // kept the answer of the function it was handed (`λq → Ref.set holder
         // (q ⊤)`, `List.map [ λ⊤ → y ]`) let `y` be written in place.
         const ans_esc = if (lc.fns[k]) |lf| lf.ans_escapes else false;
+        // A function held below the parameter that the function calls as a
+        // method of it: the holder can hand a host's there, which keeps the
+        // record (`Fn.receiver`).
+        const recv = receiverAt(lc, k);
         for (0..n) |le| {
-            const fl = lc.flags[lc.off[k] + le] | (if (ans_esc) flag_e else 0);
+            const fl = lc.flags[lc.off[k] + le] | (if (ans_esc or recv) flag_e else 0);
             if (fl & flag_w != 0) {
                 var seen: Seen = .{};
                 try f.ownSupply(&use, code, @intCast(k), @intCast(le), &seen);
@@ -13967,10 +14079,23 @@ fn flowCaptures(f: *Frame, code: Code, use: *const Use) Error!void {
             var seen: Seen = .{};
             try f.fnsAnswerOwn(try f.heldVal(try f.capVal(code, k), lc.layouts[j], @intCast(i - lc.off[j])), &inner, &seen);
         };
+        // One it calls as a method of the capture (`Fn.receiver`).
+        if (receiverAt(lc, j)) for (lc.off[j]..lc.off[j + 1]) |i| if (lc.heldAt(i)) |hf| if (hf.receiver) {
+            const cv = try f.capVal(code, k);
+            if (!try f.knownFns(try f.heldVal(cv, lc.layouts[j], @intCast(i - lc.off[j])), .mark)) try f.escape(cv, use.site.inst);
+        };
         const lf = lc.fns[j] orelse continue;
         const inner = try f.innerUse(code, @intCast(j), lf, use);
         try f.flow(try f.capVal(code, k), &inner);
     }
+}
+
+/// Whether contract `lc` calls a function held below parameter `j` as a
+/// method of it (`Fn.receiver`).
+fn receiverAt(lc: *const Contract, j: usize) bool {
+    if (j >= lc.arity) return false;
+    for (lc.off[j]..lc.off[j + 1]) |i| if (lc.heldAt(i)) |x| if (x.receiver) return true;
+    return false;
 }
 
 /// Whether the known function `code` asks of a function its holder hands
@@ -16071,6 +16196,44 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
             }
         }
     }
+    // A function held in the model that a function of the record calls as a
+    // method of the model (`Fn.receiver`; kernel §6 rule 2, *A field called
+    // as a method*): JavaScript hands it the model as `this`. The model's
+    // functions are those its producers answer, each beni code or the
+    // model's own passed on (`Contract.fn_known`, and no `param` source but
+    // the model's); where a producer does not say so, one can be a host's,
+    // which can keep the model, and no location of it is `own`.
+    recv: {
+        var asks = false;
+        for (fields.items) |fd| for (codes.items[fd.from..][0..fd.len]) |c0| {
+            if (fd.shape.model_param != none and receiverAt(c0.contract, fd.shape.model_param)) asks = true;
+        };
+        if (!asks) break :recv;
+        const known = blk: for (fields.items) |fd| {
+            const at: u32 = switch (fd.shape.answer) {
+                .none => continue,
+                .whole => 0,
+                .index => try m.loc.extend(0, .{ .kind = .index, .payload = @intCast(fd.shape.index), .cyc = false, .head = 0 }),
+            };
+            const ft = m.fnType(fd.ty) orelse break :blk false;
+            const rl = try m.loc.layoutOf(try m.placeOf(ft.result.toOptional()));
+            for (codes.items[fd.from..][0..fd.len]) |c0| {
+                const c = c0.contract;
+                for (mes) |me| {
+                    if (me.kind != .closure) continue;
+                    const want = if (at == 0) me.loc else try m.loc.concat(at, me.loc);
+                    const wi = m.loc.indexOf(rl, want);
+                    if (wi == none) break :blk false;
+                    if (!try f.meetsOf(rl, wi, c.layouts[c.arity], &ris)) break :blk false;
+                    for (ris.items) |ri| {
+                        if (!CMod.fnKnownAt(c, ri)) break :blk false;
+                        for (c.res[ri]) |s| if (s.kind == .param and s.a != fd.shape.model_param) break :blk false;
+                    }
+                }
+            }
+        } else true;
+        if (!known) @memset(own, false);
+    }
     if (over) {
         @memset(own, false);
     } else {
@@ -16154,6 +16317,9 @@ fn msgOwn(f: *Frame, fields: anytype, codes: []const Code, mes: []const Loc.Entr
     const c = u.code.contract;
     const mp = u.fd.shape.msg_param;
     if (mp >= c.arity) return null;
+    // A function in the message that `update` calls as a method of it: a
+    // host's can keep the message (`Fn.receiver`).
+    if (receiverAt(c, mp)) return null;
     // The message's type: a type of this module, with no type parameter.
     const ft = m.fnType(u.fd.ty) orelse return null;
     const pv = m.in.store.vars(ft.params);

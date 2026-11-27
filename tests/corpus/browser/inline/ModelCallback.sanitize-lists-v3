@@ -1,0 +1,1 @@
+v3 knows that the model's `next` holds only beni code, so its call as a method hands the model as `this` to no host (ownership-v3-kernel.md §6 rule 2, *A field called as a method*): `update` writes `n` in place.

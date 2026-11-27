@@ -1979,8 +1979,11 @@ pub const Mod = struct {
         const fns = @constCast(c.fns);
         for (fns, tys) |*f, ty| f.* = try m.bottomFn(ty);
         // A body that answers no function yet (kernel §6 rule 2, *A function
-        // a body answers*).
+        // a body answers*, *A field called as a method*).
         c.answers = &.{};
+        const known = try m.arena.alloc(bool, c.res.len);
+        @memset(known, true);
+        c.fn_known = known;
         return c;
     }
 
@@ -4074,7 +4077,7 @@ pub const Mod = struct {
             // The functions held below the parameter (kernel §6 rule 2, *A
             // function held in a value*).
             for (m.loc.layoutEntries(c.layouts[j]), 0..) |e, k| if (c.heldAt(c.off[j] + k)) |fnc| {
-                w.print(" π{d}{s} held{d}{s}{s}", .{ j + 1, try m.locText(e.loc), c.off[j] + k, if (fnc.called) " called" else "", if (fnc.ans_own) " answer-own" else "" }) catch return error.OutOfMemory;
+                w.print(" π{d}{s} held{d}{s}{s}{s}", .{ j + 1, try m.locText(e.loc), c.off[j] + k, if (fnc.called) " called" else "", if (fnc.ans_own) " answer-own" else "", if (fnc.receiver) " receiver" else "" }) catch return error.OutOfMemory;
             };
         }
         // The body's paths (kernel §13 item 13): what each writes and renews.
