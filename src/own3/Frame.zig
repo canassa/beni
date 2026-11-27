@@ -4956,12 +4956,22 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             var handed: std.ArrayList(u32) = .empty;
             defer handed.deinit(f.gpa);
             try f.keptItems(@fromBackingInt(data.lhs), &unrendered, &handed);
+            // A handler that the lowering reads where its event fires, in a
+            // root of a function named only as a program's `view` (kernel
+            // §6 rule 12, *A handler read at the event*): no closure of
+            // this render is kept, and the handler is a call made then.
+            const view_root = try m.viewRoot(inst);
             for (ops.items, vals, reads) |o, v, rd| {
                 if (std.mem.indexOfScalar(u32, handed.items, o.int()) != null) {
                     for (held.items[rd[0]..rd[1]]) |x| try f.escape(x, inst);
                     continue;
                 }
-                const kept = std.mem.indexOfScalar(u32, unrendered.items, o.int()) != null or try f.keptHole(v);
+                const unrendered_item = std.mem.indexOfScalar(u32, unrendered.items, o.int()) != null;
+                if (unrendered_item and view_root and m.handlerAtEvent(o.int())) {
+                    try f.eventCall(inst, o.int(), v);
+                    continue;
+                }
+                const kept = unrendered_item or try f.keptHole(v);
                 if (kept) try f.escape(v, inst) else try f.readAll(v, inst);
             }
             return f.unknownOf(try m.placeOfInst(inst), held.items);
@@ -5139,6 +5149,34 @@ fn runtimeCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val, item: Val) Error!voi
     }
     try f.escape(item, inst);
     try f.escape(fv, inst);
+}
+
+/// The handler `fv`, the value of `fn_inst`, of an event of the markup
+/// `inst` that the lowering reads where the event fires (kernel §6 rule 12,
+/// *A handler read at the event*): it evaluates the handler then, from the
+/// values the `view` is handed then, and keeps nothing of this render. So
+/// the handler is no holder of what it reads: its run is a call, applied
+/// as at a call site with the event's payload, which holds no cell of the
+/// frame, and the message it answers escapes — the runtime sends it to
+/// `update`, and can queue it behind a dispatch. A message that is no
+/// function is that answer itself. A function that no rule follows, or of
+/// another arity, is kept as before: it escapes whole.
+fn eventCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val) Error!void {
+    const m = f.m;
+    const n = f.nodes.items[fv];
+    if (n.tag == .join) {
+        // Each arm is work (kernel §8); past the budget the join is kept.
+        if (f.charge(n.b)) return f.escape(fv, inst);
+        for (0..n.b) |ki| try f.eventCall(inst, fn_inst, f.lists.items[n.a + 2 * ki]);
+        return;
+    }
+    const ft = m.fnType(m.typeOfInst(fn_inst)) orelse return f.escape(fv, inst);
+    if (m.in.store.vars(ft.params).len != 1) return f.escape(fv, inst);
+    const code = (try f.codeOf(fv)) orelse return f.escape(fv, inst);
+    if (code.own_params != 1) return f.escape(fv, inst);
+    const args = [1]Val{v_outside};
+    const answer = try f.applyAt(inst, fn_inst, code, &args, &.{}, try m.placeOf(ft.result.toOptional()));
+    try f.escape(answer, inst);
 }
 
 /// The values of the items of the markup at `root` that the runtime can keep

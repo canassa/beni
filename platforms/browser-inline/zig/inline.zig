@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 41 },
+    .targets = .{ .major = 1, .minor = 43 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -179,6 +179,9 @@ pub const lowering: m.Lowering = .{
     // functions would read is refused (`letsOnce`). No `let` is kept from one
     // pass to the next (`boundary.md` §9.4.8, *What a lowering keeps*).
     .keeps_let = m.keepsNoLet,
+    // A handler of an element of a `view`'s own markup, reached through
+    // elements alone, is read at the event (`readsHandlerAtEvent`).
+    .reads_handler_at_event = readsHandlerAtEvent,
     .programs = &.{
         .{ .module = "Tea", .name = "sandbox" },
         .{ .module = "Tea", .name = "element" },
@@ -239,6 +242,47 @@ const no_markup_values =
     \\where a hole shows it (`docs/design/browser-inline.md` §8.2; §5, class 1). Show this markup
     \\in a hole of the `view` or of a helper, or build this program with `--platform=browser-tea`.
 ;
+
+/// `Lowering.reads_handler_at_event` (`boundary.md` §9.4.8, *A handler read
+/// at the event*): an event of an element that the root's markup reaches
+/// through elements and fragments alone, in a root with no `let`. Such a
+/// root, of a function named only as a program's `view`, is written in two
+/// places: as the page of that program (`program`), and as pieces of
+/// another module's program (`piece`), which stand where no `if`, `case`,
+/// row or helper's call is around them (`pieceHole`; `RowBuild.namedRow`
+/// and `helper` take no other module's function). The element is then in
+/// the page's or the piece's own context, with no helper's call around it,
+/// so its listener keeps no argument (`Event.captures` is empty), and no
+/// arm, row, region or `Show` holds it, so no closure of a render is kept
+/// for it (`RowBuild.item`'s `$row.h…`). Its listener evaluates the handler
+/// value where the event fires, from the model the page holds then or the
+/// piece's holders (`plan`, `pieceMake`, Q1), and the root has no `let` for
+/// a memo node to keep (`memos`).
+fn readsHandlerAtEvent(tree: *const m.Tree, index: m.Root.Index, item: u32) bool {
+    const r = tree.root(index);
+    if (r.kind != .expression or r.lets.len != 0) return false;
+    return elementsReach(tree, r.node, item);
+}
+
+/// Whether item `item` is on an element that `n` reaches through elements
+/// and fragments alone.
+fn elementsReach(tree: *const m.Tree, n: m.Node.Index, item: u32) bool {
+    switch (tree.kind(n)) {
+        .element => {
+            const e = tree.element(n);
+            if (item >= e.items.start and item < e.items.start + e.items.len) return true;
+            for (tree.childrenOf(e.children)) |c| if (elementsReach(tree, c, item)) return true;
+            return false;
+        },
+        .fragment => {
+            for (tree.childrenOf(tree.fragment(n).children)) |c| if (elementsReach(tree, c, item)) return true;
+            return false;
+        },
+        // A hole (an arm, a helper's call, another module's pieces), a
+        // `For`, a `Show`, a component: the handlers below it are kept.
+        else => return false,
+    }
+}
 
 fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {
     _ = cx;

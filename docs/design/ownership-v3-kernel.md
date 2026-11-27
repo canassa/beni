@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1397,6 +1397,40 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     write of it, or of a cell it shares, runs in place, in that call or a later one. The lowering
     says which `let`s it keeps; the checker does not guess.
 
+    **A handler read at the event** (*added 2026-11-27, #2657*; `eventCall`, `Mod.viewRoot`,
+    `Enforce.keptByLowering`). A handler that the runtime keeps is a closure made at the render, and
+    it reads what it captured when the event fires, after `update` wrote it: so it escapes. A
+    lowering can instead evaluate the handler where the event fires, from the values the `view` is
+    handed then, and keep nothing of the render for it. Then the closure of the render is never run,
+    and the handler holds none of what it reads: its run is a call, made at the event, whose answer,
+    the message, escapes (the runtime sends it to `update`, and can queue it behind a dispatch). The
+    checker reads an event so where three positive facts hold, and keeps the handler otherwise:
+    1. the markup is the whole body of a function — a declaration, or a lambda — whose module
+       names it only as a field, whose type answers markup, of a record written as the one
+       argument of a call of an entry (rule 13): no other instruction names the declaration, no
+       method call or evidence of the module names it (the `Dispatch` terms), no `via` keeps a
+       name unresolved, and the build is not `--library`;
+    2. the lowering says, of that event, that it reads the handler where the event fires
+       wherever it writes such a root (`Lowering.reads_handler_at_event`, `boundary.md` §9.4.8,
+       *A handler read at the event*; its default keeps every handler). `inline` says so of an
+       event on an element that the root reaches through elements and fragments alone, in a root
+       with no `let`: the page of a program, or the pieces another module's program shows, where
+       no row, arm, region, `Show` or helper's call keeps a closure or an argument of a render
+       (`browser-inline.md` §8.3, §8.4);
+    3. the handler is a known function of one parameter: it is applied to the event's payload,
+       which holds no cell of the frame, as at a call site (`applyAt`), and what it answers
+       escapes. A message that is no function escapes as it is; a function that no rule follows
+       escapes whole, as before.
+
+    The handler stays in the default use where it is evaluated (`mention`), so one that writes
+    what it is handed or a cell it captured is refused as before. *Before, every handler escaped,
+    and a write by `update` of a field that a `view`'s handler read was refused, though the
+    handler read the field again at the event (`browser/inline/KeptHandlerSameField`,
+    `PointerInput`, `PieceHandler`, `PieceHandlerCell`, `PieceHandlerReplaced`). An earlier
+    attempt read every handler so, and was withdrawn: a keyed `For` row, a keyed
+    `Show` body and a helper shown in an arm keep the closure made at the render, which a removed
+    row still runs after `update`.*
+
     *The argument.* The runtime is a holder that the walk does not follow, and it does two things
     with markup: it reads the values the markup holds while it renders, and it calls code the markup
     gives it. The first is covered by the markup holding every value its holes can read until it is
@@ -1582,7 +1616,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     | the program's own body | a function, with the arguments written | rule 2 |
     | a function of `core/` or a platform, walked or worded, or a `foreign` (a callback of `List.map`, `Ref.update`, `Task`, `Cmd`, `Sub`, `Io`, `Hosted`, `Browser.Worker.program`, a Cloudflare `Worker.program`) | the function it was handed, with what its contract says | rules 2 and 8 (the contract, or the default where it loses it), rule 10 (words; no word is unknown code) |
     | the markup runtime | a `For`'s row and key function and a `Show`'s body and key function, with items of the markup's values | rule 12: applied as at a call site |
-    | the markup runtime | an event's handler, `Html.map`'s function, a component's function (the module's `view`), with an event, a message or the props | rule 12: each is a value at an item of markup, so it goes to the `top` use (rule 8) and writes nothing; the props and what the handlers capture escape |
+    | the markup runtime | an event's handler, `Html.map`'s function, a component's function (the module's `view`), with an event, a message or the props | rule 12: each is a value at an item of markup, so it goes to the `top` use (rule 8) and writes nothing; the props and what the handlers capture escape, but for a handler the lowering reads at the event, which is applied there as a call whose message escapes (*A handler read at the event*) |
     | the markup runtime | a top-level function in a hole (a helper, `language.md` §11.6), re-made where it renders | rule 12: the markup holds what the call is handed |
     | the entry's runtime | each function of the entry's record, with the model, a message or what it makes | rule 13 |
     | derived `eq` and `compare`, `==` and `<`, a method call, return-type dispatch, `where` evidence, `core/`'s derived JavaScript (`listEq` calls the element's comparator) | the methods the dispatch table names, with the operands or their parts | rule 11 |

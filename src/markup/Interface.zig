@@ -130,7 +130,11 @@ const std = @import("std");
 /// Version 1.42 adds `Lowering.keeps_let`: which `let`s of a grouped root
 /// the lowering keeps beyond the call of the function that made them
 /// (`boundary.md` §9.4.8, *What a lowering keeps*).
-pub const version: Version = .{ .major = 1, .minor = 42 };
+/// Version 1.43 adds `Lowering.reads_handler_at_event`: which events of a
+/// root the lowering reads the handler of where the event fires, from the
+/// values the root's function holds then (`boundary.md` §9.4.8, *A handler
+/// read at the event*).
+pub const version: Version = .{ .major = 1, .minor = 43 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -254,6 +258,20 @@ pub const Lowering = struct {
     /// immutable, so it holds no cell that can be written in place), and
     /// what the platform rule of §9.4.8 lets a runtime keep.
     keeps_let: *const fn (tree: *const Tree, root: Root.Index, k: u32) bool = keepsEveryLet,
+    /// 1.43 (`boundary.md` §9.4.8, *A handler read at the event*): whether,
+    /// for root `root`, when it is the whole body of a function that its
+    /// module names only as the `view` of a program's record, the lowering
+    /// reads the handler of event `item` (an index into `Tree.items`)
+    /// where the event fires, wherever it writes the root: it evaluates
+    /// the handler's value then, from the function's parameters as they
+    /// are then, and keeps no value of a render for it — no closure made at
+    /// a render, no argument of a helper's call, no `let` kept in a slot.
+    /// The ownership checker then reads the handler as a call made where
+    /// the event fires, whose message escapes, and not as a closure that
+    /// the runtime keeps. **The default is that the lowering keeps every
+    /// handler**: a lowering that says nothing is read on the side that
+    /// refuses.
+    reads_handler_at_event: *const fn (tree: *const Tree, root: Root.Index, item: u32) bool = keepsEveryHandler,
 
     pub const Effects = struct {
         sub: []const u8,
@@ -291,6 +309,15 @@ pub fn keepsEveryLet(tree: *const Tree, root: Root.Index, k: u32) bool {
     _ = root;
     _ = k;
     return true;
+}
+
+/// 1.43: `Lowering.reads_handler_at_event`'s default: every handler is kept
+/// from the render that made it.
+pub fn keepsEveryHandler(tree: *const Tree, root: Root.Index, item: u32) bool {
+    _ = tree;
+    _ = root;
+    _ = item;
+    return false;
 }
 
 /// 1.42: `Lowering.keeps_let` of a lowering that evaluates a `let` again in

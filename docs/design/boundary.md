@@ -2707,6 +2707,13 @@ keeps every one, and the ownership checker refuses every write of a kept `let`. 
 keeps (`keepsLet`), `inline` that it keeps none (`keepsNoLet`). A lowering that does not set `keeps_let` is read as
 keeping every `let` its root evaluates.
 
+**Version 1.43** (*added 2026-11-27*, additive, gated on nothing; #2657): `Lowering.reads_handler_at_event`,
+whether the lowering reads an event's handler where the event fires, for a root that is the whole body of
+a function its module names only as a program's `view` (§9.4.8, *A handler read at the event*). Its
+default keeps every handler, and the ownership checker then reads the handler as a closure the runtime
+keeps. `inline` targets 1.43 and says it reads at the event each handler of an element its root reaches
+through elements and fragments alone, in a root with no `let`.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -2858,6 +2865,24 @@ on every call, before anything reads it, is not kept: the `dom` root makes a `le
 when it reads a path whose value is not identity-safe. The test is `browser/dom/KeptLetInPlace` and
 `browser/tea/KeptLetInPlace` (a `.sanitize-lists-v3-refuses` page: the push of a kept `let` is refused),
 and `browser/dom/KeptLetRemade` (its safe twin, written in place under the sanitiser).
+
+**A handler read at the event** (*added 2026-11-27*, #2657). The rule above lets a runtime keep an
+event's function and call it after `update` ran; then what the function captured is read late, and the
+checker counts it as escaped where the markup is made. A lowering that evaluates the handler where the
+event fires, from the values the `view` is handed then, keeps nothing of the render for it, and reads
+nothing late. It says so through the interface: `Lowering.reads_handler_at_event` names each event of a
+root, for a root that is the whole body of a function its module names only as the `view` of a program's
+record, whose handler it reads so wherever it writes that root — no closure made at a render, no
+argument of a helper's call and no `let` in a slot is kept for it. Its default is that it keeps every
+handler. The ownership checker reads such a handler as a call made where the event fires, whose message
+escapes (`ownership-v3-kernel.md` §6.12, *A handler read at the event*). `inline` reads at the event the
+handler of each element that the root reaches through elements and fragments alone, in a root with no
+`let`: its listener evaluates the message from the model the page holds, or from a piece's holders
+(`browser-inline.md` §8.3, §8.4). A row, an arm, a region, a `Show` body and a helper's markup keep the
+closure, or the arguments, of the render that made them. The tests are `browser/inline/KeptHandlerSameField`,
+`PointerInput`, `PieceHandler`, `PieceHandlerCell` and `PieceHandlerReplaced` (pages written in place
+under the sanitiser), and `browser/inline/KeptHandlerNamedTwice` (a `.sanitize-lists-v3-refuses` page:
+the `view` is named again in a helper, so its handler is kept).
 
 **What the checker concludes from the rule** (`ownership-v3-kernel.md` §6.12, §6.13). The rule is
 about the runtime, so the checker uses it only where the program gives markup to the runtime:

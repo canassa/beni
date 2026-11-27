@@ -193,8 +193,13 @@ pub const Options = struct {
     library: bool = false,
     /// The `let_def` instructions whose values the build's markup lowering
     /// keeps beyond the call that made them, ascending (kernel §6.14,
-    /// `Enforce.keptLets`): each is held by the root that keeps it.
+    /// `Enforce.keptByLowering`): each is held by the root that keeps it.
     kept_lets: []const u32 = &.{},
+    /// The handler instructions that the build's markup lowering reads where
+    /// their event fires, ascending (kernel §6 rule 12, *A handler read at the
+    /// event*; `Enforce.keptByLowering`): each is a call made at the event
+    /// in a root of a function named only as a program's `view` (`Mod.viewRoot`).
+    handlers_at_event: []const u32 = &.{},
     /// The build's schema plans, as the backend reads them: which decoding
     /// runs answer what their workers build (kernel §6 rule 14, *What a
     /// decoding run answers*). Null: no run is known to.
@@ -292,6 +297,12 @@ pub const Mod = struct {
     markup_type: ?MarkupType = null,
     /// `Options.kept_lets`.
     kept_lets: []const u32 = &.{},
+    /// `Options.handlers_at_event`.
+    handlers_at_event: []const u32 = &.{},
+    /// Per instruction, whether it is a `markup` root that is the whole body
+    /// of a function its module names only as a program's `view`
+    /// (`viewRoot`), made once.
+    view_roots: ?[]bool = null,
     /// `Options.schema_graph`.
     schema_graph: ?*const SchemaGraph = null,
     /// Per definition, whether its decoding runs answer what their workers
@@ -1619,6 +1630,87 @@ pub const Mod = struct {
         const b = try g.buildsFresh(scratch.allocator(), ref);
         try m.builds_fresh.put(m.gpa, key, b);
         return b;
+    }
+
+    /// Kernel §6 rule 12, *A handler read at the event*: whether the `markup`
+    /// instruction `inst` is the whole body of a function that the module
+    /// names only as the `view` of a program's record — a declaration whose
+    /// body, or whose lambda's body, is `inst`, every reference to which is
+    /// the value of a field of a record written as the one argument of a
+    /// call of an entry (a function whose contract is `entry`), where the
+    /// field's type answers markup; or a lambda written as that value. The
+    /// lowering's answer (`Options.handlers_at_event`) is for such a root
+    /// alone: anywhere else a lowering can write the root inside a row, an
+    /// arm or a helper's call, where it keeps what a render made. No
+    /// method call or evidence of the module may name the declaration
+    /// (`Dispatch` terms), a `via` that keeps a name unresolved
+    /// (`schema_value_ref`, `schema_expr_ref`) may name any, and in a
+    /// `--library` build host JavaScript calls what the module exports: then
+    /// no root is one.
+    pub fn viewRoot(m: *Mod, inst: u32) Allocator.Error!bool {
+        if (m.handlers_at_event.len == 0 or m.library) return false;
+        const roots = m.view_roots orelse blk: {
+            const r = try m.arena.alloc(bool, m.tags.len);
+            @memset(r, false);
+            m.view_roots = r;
+            // The values of the fields of an entry's record whose type
+            // answers markup.
+            const field = try m.arena.alloc(bool, m.tags.len);
+            @memset(field, false);
+            var unresolved = false;
+            for (m.tags, m.datas) |t, data| switch (t) {
+                .call => {
+                    const callee = m.calleeOf(data.lhs) orelse continue;
+                    // An entry is a platform's function, never one of this module.
+                    if (callee[0] == m.in.module) continue;
+                    const c = (try m.declContract(callee)) orelse continue;
+                    if (!c.entry) continue;
+                    const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
+                    if (args.len != 1 or m.tags[args[0].int()] != .record) continue;
+                    for (m.bir.extraSlice(Bir.inlineRange(m.datas[args[0].int()]), Bir.Field)) |fd| {
+                        const ft = m.fnType(m.typeOfInst(fd.value.int())) orelse continue;
+                        if (m.isMarkup(ft.result.toOptional())) field[fd.value.int()] = true;
+                    }
+                },
+                .schema_value_ref, .schema_expr_ref => unresolved = true,
+                else => {},
+            };
+            if (unresolved) break :blk r;
+            // A declaration named anywhere else is no view's.
+            const named = try m.arena.alloc(bool, m.bir.decls.len);
+            @memset(named, false);
+            for (m.tags, m.datas, 0..) |t, data, i| if (t == .top and data.lhs < named.len and !field[i]) {
+                named[data.lhs] = true;
+            };
+            if (m.in.dispatch) |dt| for (dt.terms) |term| switch (term) {
+                .top => |u| if (u.decl.int() < named.len) {
+                    named[u.decl.int()] = true;
+                },
+                .param, .ext, .derived, .ext_derived, .primitive, .undetermined, .field, .identity, .text, .codec => {},
+            };
+            for (m.bir.decls, 0..) |d, di| {
+                if (d.kind != .value or named[di]) continue;
+                const body = (d.body.unwrap() orelse continue).int();
+                const root = if (d.params != 0) body else if (m.tags[body] == .lambda) m.datas[body].rhs else continue;
+                if (root < r.len and m.tags[root] == .markup) r[root] = true;
+            }
+            for (field, 0..) |is, i| if (is and m.tags[i] == .lambda) {
+                const root = m.datas[i].rhs;
+                if (root < r.len and m.tags[root] == .markup) r[root] = true;
+            };
+            break :blk r;
+        };
+        return inst < roots.len and roots[inst];
+    }
+
+    /// Whether the build's markup lowering reads the handler `inst` where its
+    /// event fires (`Options.handlers_at_event`).
+    pub fn handlerAtEvent(m: *const Mod, inst: u32) bool {
+        return std.sort.binarySearch(u32, m.handlers_at_event, inst, struct {
+            fn order(a: u32, b: u32) std.math.Order {
+                return std.math.order(a, b);
+            }
+        }.order) != null;
     }
 
     /// Kernel §7, *A constant read once*: the one instruction of the module
@@ -4230,6 +4322,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .shared = shared,
         .markup_type = options.markup_type,
         .kept_lets = options.kept_lets,
+        .handlers_at_event = options.handlers_at_event,
         .schema_graph = options.schema_graph,
         .library = options.library,
         .deps = options.deps,
