@@ -1,0 +1,253 @@
+-- One cell at two places of a cell's contents is decided on cells
+-- (ownership-v3-kernel.md §13 item 12; #2710, #2709): the shapes of
+-- CellOneCellTwoPlacesLive, where each renewal that would put one list at two
+-- parts stores a copy at the second, and each writer fiber whose mover is
+-- another fiber pushes onto a copy. The writers whose parts hold two lists
+-- push in place, and every program is accepted.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+yields : Int → ⊤
+yields k =
+    if k > 0 then
+        Task.yieldNow ⊤
+        yields (k - 1)
+    else
+        ⊤
+
+
+type alias Book =
+    done : List Int
+    audit : List Int
+
+
+type alias Three =
+    x : List Int
+    y : List Int
+    z : List Int
+
+
+pair : (List Int × List Int) → String
+pair ( p, q ) = ints p ++ " " ++ ints q
+
+
+triple : (List Int × List Int × List Int) → String
+triple ( a, b, c ) = ints a ++ " " ++ ints b ++ " " ++ ints c
+
+
+frameTuple : ⊤ → String
+frameTuple ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    a = Task.spawn λ⊤ → Ref.update r λ( x, y ) → ( List.push x 5, y )
+    b = Task.spawn λ⊤ → Ref.update r λ( x, y ) → ( x, List.push y 6 )
+    Ref.update r λ( x, _ ) → ( x, (List.copy x) )
+    Task.join a
+    Task.join b
+    pair (Ref.get r)
+
+
+frameRecord : ⊤ → String
+frameRecord ⊤ =
+    r = Ref.make { done = [ 1 ], audit = [ 2 ] }
+    a = Task.spawn λ⊤ →
+        yields 3
+        Ref.update r λk → { k | done = List.push k.done 5 }
+    b = Task.spawn λ⊤ → Ref.update r λk → { k | audit = List.push k.audit 6 }
+    Ref.update r λk → { k | audit = (List.copy k.done) }
+    Task.join a
+    Task.join b
+    o = Ref.get r
+    ints o.done ++ " " ++ ints o.audit
+
+
+thirdAfter : ⊤ → String
+thirdAfter ⊤ =
+    r = Ref.make { done = [ 1 ], audit = [ 2 ] }
+    a = Task.spawn λ⊤ →
+        yields 3
+        Ref.update r λk → { k | done = List.push (List.copy k.done) 5 }
+    b = Task.spawn λ⊤ → Ref.update r λk → { k | audit = List.push (List.copy k.audit) 6 }
+    c = Task.spawn λ⊤ → Ref.update r λk → { k | audit = k.done }
+    Task.join a
+    Task.join b
+    Task.join c
+    o = Ref.get r
+    ints o.done ++ " " ++ ints o.audit
+
+
+thirdBefore : ⊤ → String
+thirdBefore ⊤ =
+    r = Ref.make { done = [ 1 ], audit = [ 2 ] }
+    c = Task.spawn λ⊤ → Ref.update r λk → { k | audit = k.done }
+    a = Task.spawn λ⊤ →
+        yields 3
+        Ref.update r λk → { k | done = List.push (List.copy k.done) 5 }
+    b = Task.spawn λ⊤ → Ref.update r λk → { k | audit = List.push (List.copy k.audit) 6 }
+    Task.join a
+    Task.join b
+    Task.join c
+    o = Ref.get r
+    ints o.done ++ " " ++ ints o.audit
+
+
+raceBranch : ⊤ → String
+raceBranch ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    wa = λ⊤ → Ref.update r λ( x, y ) → ( List.push x 5, y )
+    wb = λ⊤ → Ref.update r λ( x, y ) → ( x, List.push y 6 )
+    Ref.update r λ( x, _ ) → ( x, (List.copy x) )
+    Task.race wa wb
+    pair (Ref.get r)
+
+
+raceMover : ⊤ → String
+raceMover ⊤ =
+    r = Ref.make { done = [ 1 ], audit = [ 2 ] }
+    a = Task.spawn λ⊤ →
+        yields 3
+        Ref.update r λk → { k | done = List.push (List.copy k.done) 5 }
+    Task.race (λ⊤ → Ref.update r λk → { k | audit = List.push (List.copy k.audit) 6 }) λ⊤ → yields 1
+    Task.race (λ⊤ → Ref.update r λk → { k | audit = k.done }) λ⊤ → yields 1
+    Task.join a
+    o = Ref.get r
+    ints o.done ++ " " ++ ints o.audit
+
+
+raceMoverWrites : ⊤ → String
+raceMoverWrites ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    f0 = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( List.push (List.copy a) 5, b, c )
+    f1 = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( a, List.push (List.copy b) 6, c )
+    Task.race (λ⊤ → Ref.update r λ( a, _, c ) → ( a, (List.copy a), List.push (List.copy c) 0 )) λ⊤ →
+        yields 3
+    Task.join f0
+    Task.join f1
+    triple (Ref.get r)
+
+
+beforeStore : ⊤ → String
+beforeStore ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( List.push a 1, b, c )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( a, b, List.push c 3 )
+    Ref.update r λ( a, b, _ ) → ( a, b, (List.copy a) )
+    Task.sleep (Duration.millis 5)
+    triple (Ref.get r)
+
+
+dupFirst : Ref (List Int × List Int × List Int) → ⊤
+dupFirst c = Ref.update c λ( a, b, _ ) → ( a, b, (List.copy a) )
+
+
+helperStore : ⊤ → String
+helperStore ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( List.push a 1, b, c )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( a, b, List.push c 3 )
+    dupFirst r
+    Task.sleep (Duration.millis 5)
+    triple (Ref.get r)
+
+
+foldStore : ⊤ → String
+foldStore ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( List.push a 1, b, c )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( a, b, List.push c 3 )
+    List.foldl [ 1 ] ⊤ λ_ _ → Ref.update r λ( a, b, _ ) → ( a, b, (List.copy a) )
+    Task.sleep (Duration.millis 5)
+    triple (Ref.get r)
+
+
+recordFold : ⊤ → String
+recordFold ⊤ =
+    r = Ref.make { x = [ 1 ], y = [ 2 ], z = [ 3 ] }
+    _ = Task.spawn λ⊤ →
+        List.foldl [ 1, 2 ] ⊤ λi _ →
+            Ref.update r λo → { o | x = List.push o.x i }
+            Task.yieldNow ⊤
+    _ = Task.spawn λ⊤ → Ref.update r λo → { o | z = List.push o.z 3 }
+    Ref.update r λo → { o | z = (List.copy o.x) }
+    Task.sleep (Duration.millis 5)
+    fin = Ref.get r
+    ints fin.x ++ " " ++ ints fin.y ++ " " ++ ints fin.z
+
+
+threeWriters : ⊤ → String
+threeWriters ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( List.push a 1, b, c )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( a, List.push b 2, c )
+    _ = Task.spawn λ⊤ → Ref.update r λ( a, b, c ) → ( a, b, List.push c 3 )
+    Ref.update r λ( a, b, _ ) → ( a, b, (List.copy a) )
+    Task.sleep (Duration.millis 5)
+    triple (Ref.get r)
+
+
+oneWriterBoth : ⊤ → String
+oneWriterBoth ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    a = Task.spawn λ⊤ → Ref.update r λ( x, y ) → ( List.push x 5, List.push y 6 )
+    Ref.update r λ( x, _ ) → ( x, (List.copy x) )
+    Task.join a
+    pair (Ref.get r)
+
+
+foldWithin : ⊤ → String
+foldWithin ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    Ref.update r λ( x, _ ) → ( x, (List.copy x) )
+    List.foldl [ 1, 2 ] ⊤ λi _ → Ref.update r λ( x, y ) → ( List.push x i, y )
+    pair (Ref.get r)
+
+
+foldRotate : ⊤ → String
+foldRotate ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ], [ 3 ] )
+    Ref.update r λ( a, b, _ ) → ( a, b, b )
+    List.foldl [ 1, 2 ] ⊤ λ_ _ → Ref.update r λ( a, b, c ) → ( c, List.push (List.copy a) 0, b )
+    triple (Ref.get r)
+
+
+condStore : ⊤ → String
+condStore ⊤ =
+    r = Ref.make [ 1 ]
+    out = List.map [ 1, 2 ] λi →
+        l = Ref.get r
+        s = ints l
+        _ = List.push (List.copy l) 45
+        if i > 5 then Ref.set r [ 0 ] else ⊤
+        s
+    String.join out " "
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ frameTuple ⊤
+        , frameRecord ⊤
+        , thirdAfter ⊤
+        , thirdBefore ⊤
+        , raceBranch ⊤
+        , raceMover ⊤
+        , raceMoverWrites ⊤
+        , beforeStore ⊤
+        , helperStore ⊤
+        , foldStore ⊤
+        , recordFold ⊤
+        , threeWriters ⊤
+        , oneWriterBoth ⊤
+        , foldWithin ⊤
+        , foldRotate ⊤
+        , condStore ⊤
+        ]

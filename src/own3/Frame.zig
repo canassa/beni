@@ -8548,55 +8548,86 @@ fn switchHere(f: *Frame, inst: u32, ops: []const Val, c: ?*const Contract, at_re
 fn runWritersFix(f: *Frame, inst: u32, ops: []const Val, followed: []const bool, first: ?[]const bool) Error!void {
     const nw = f.writers.items.len;
     if (nw == 0) return;
-    const seen = try f.gpa.alloc(?[]Atom, nw);
+    // The state of each writer's cell when it last ran (null: it runs
+    // whatever its cell holds). The states are read once for each root
+    // between two runs (`memo`, which owns them): no run, no change.
+    const seen = try f.gpa.alloc(?[]const Atom, nw);
+    defer f.gpa.free(seen);
+    var memo: std.ArrayList(struct { o: u32, epoch: u32, atoms: []Atom }) = .empty;
     defer {
-        for (seen) |s| if (s) |x| f.gpa.free(x);
-        f.gpa.free(seen);
+        for (memo.items) |x| f.gpa.free(x.atoms);
+        memo.deinit(f.gpa);
     }
-    for (seen, 0..) |*s, i| s.* = if (first) |fs| (if (fs[i]) null else try f.cellAtoms(f.writers.items[i].o)) else null;
+    var epoch: u32 = 0;
+    const State = struct {
+        fn of(fr: *Frame, m: anytype, o: u32, ep: u32) Error![]const Atom {
+            // The entries are in the order of their epochs: only the last
+            // ones are of this one.
+            var k = m.items.len;
+            while (k > 0) {
+                k -= 1;
+                const x = m.items[k];
+                if (x.epoch != ep) break;
+                if (x.o == o) return x.atoms;
+            }
+            const xs = try fr.cellAtoms(o);
+            errdefer fr.gpa.free(xs);
+            try m.append(fr.gpa, .{ .o = o, .epoch = ep, .atoms = xs });
+            return xs;
+        }
+    };
+    for (seen, 0..) |*s, i| s.* = if (first) |fs| (if (fs[i]) null else try State.of(f, &memo, f.writers.items[i].o, epoch)) else null;
     while (true) {
         if (f.tick()) return;
         var any = false;
         for (0..nw) |i| {
             const w = f.writers.items[i];
-            if (seen[i]) |s| {
-                const now = try f.cellAtoms(w.o);
-                defer f.gpa.free(now);
-                if (std.mem.eql(u8, std.mem.sliceAsBytes(s), std.mem.sliceAsBytes(now))) continue;
-            }
             // What it runs on: where its own run renewed the cell, it runs
             // again on the version it made, a step of its renewal a round.
-            const on = try f.cellAtoms(w.o);
+            const now = try State.of(f, &memo, w.o, epoch);
+            if (seen[i]) |s| if (std.mem.eql(u8, std.mem.sliceAsBytes(s), std.mem.sliceAsBytes(now))) continue;
             try f.runWriter(w, inst, ops, followed);
             try f.flushShare();
-            if (seen[i]) |s| f.gpa.free(s);
-            seen[i] = on;
+            epoch += 1;
+            seen[i] = now;
             any = true;
         }
         if (!any) return;
     }
 }
 
-/// The atoms of the latest version of root `o`, sorted and once each: what
-/// `runWritersFix` compares.
+/// The atoms of the latest version of root `o` at each of its locations,
+/// keyed by the location, sorted and once each: what `runWritersFix`
+/// compares.
 fn cellAtoms(f: *Frame, o: u32) Error![]Atom {
     const v = f.latestOf(o) orelse try f.rootVal(o);
+    const r = f.roots.items[o];
+    const n = f.m.loc.layouts.items[r.layout].len;
     const start = f.atoms.items.len;
     defer f.atoms.shrinkRetainingCapacity(start);
-    _ = try f.allLeaves(v, &f.atoms);
+    // The state is the map from each location to the cells it holds, not
+    // the set of cells of the whole value: a run that only moves a cell
+    // to another location changes it (kernel §13 item 12, (b); code
+    // reader CR13's U1). Each atom is keyed by the location that holds it
+    // (`via`, cleared below).
+    for (0..n) |k| {
+        const s = f.atoms.items.len;
+        _ = try f.leavesAs(v, r.place, @intCast(k), &f.atoms);
+        for (f.atoms.items[s..]) |*a| {
+            // A cell by its name, not by the way it was read: the version
+            // a run made is a new name of the cells it wrote (its
+            // origin's), and the versions an atom was read through
+            // (`via`) are no other cell.
+            a.root = f.originOf(a.root);
+            a.via = @intCast(k);
+            a.via_path = none;
+            a.via_e = none;
+            a.via2 = none;
+            a.via2_e = none;
+        }
+    }
     const xs = f.atoms.items[start..];
     _ = f.charge(xs.len);
-    // A cell by its name, not by the way it was read: the version a run
-    // made is a new name of the cells it wrote (its origin's), and the
-    // versions an atom was read through (`via`) are no other cell.
-    for (xs) |*a| {
-        a.root = f.originOf(a.root);
-        a.via = none;
-        a.via_path = none;
-        a.via_e = none;
-        a.via2 = none;
-        a.via2_e = none;
-    }
     std.mem.sort(Atom, xs, {}, atomLess);
     var out: std.ArrayList(Atom) = .empty;
     errdefer out.deinit(f.gpa);
@@ -9127,6 +9158,11 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
         if (stored.escaped or stored.elsewhere) {
             f.atoms.shrinkRetainingCapacity(wa);
             if (stored.escaped) try f.m.addRefusal(f, inst, .escaped, stored_escaped) else try f.m.addRefusal(f, inst, .disjoint, stored_elsewhere);
+            break;
+        }
+        if (try f.heldAtOther(capv, sig, @intCast(e), inner)) {
+            f.atoms.shrinkRetainingCapacity(wa);
+            try f.m.addRefusal(f, inst, .disjoint, held_at_other);
             break;
         }
         try f.demand(wa, .{
@@ -13218,6 +13254,11 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                 if (stored.escaped) try f.refuse(use, .escaped, stored_escaped) else try f.refuse(use, .disjoint, stored_elsewhere);
                 break;
             }
+            if (try f.heldAtOther(capv, sig, @intCast(e), inner)) {
+                f.atoms.shrinkRetainingCapacity(w);
+                try f.refuse(use, .disjoint, held_at_other);
+                break;
+            }
             try f.demand(w, .{
                 .point = site.inst,
                 .callee_inst = site.callee,
@@ -13267,6 +13308,8 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
         try f.flushShare();
     }
 }
+
+const held_at_other = "a function writes in place a location of the contents of a cell it captured, and another location of the contents holds the same cell: the write changes both";
 
 const kept_written = "a function writes in place the contents of a cell it captured and stores nothing back, and it can run again: its next run reads the written value as the old one";
 
@@ -13412,9 +13455,82 @@ fn storedAtoms(f: *Frame, code: Code, j: u32, e: u32) Error!Stored {
             .param => if (s.a >= lc.arity or s.a >= follow.len or !follow[s.a]) try f.atoms.append(f.gpa, outside_atom),
         };
     }
-    if (try f.heldTwiceAfterRuns(lc, follow, at)) got.elsewhere = true;
+    var sc = try StartCells.init(f, code);
+    defer sc.deinit(f);
+    if (try f.heldTwiceAfterRuns(lc, follow, at, &sc)) got.elsewhere = true;
     return got;
 }
+
+/// The cells each entry of the captures of `code` holds now, read once each
+/// (`heldTwiceAfterRuns`): two entries hold one cell where an atom of one
+/// and an atom of the other name it (`sameCell`), whatever their names.
+const StartCells = struct {
+    code: Code,
+    /// Per entry of `code.contract` (`lc.off`): its atoms in `buf`, or none yet.
+    rng: [][2]u32,
+    buf: std.ArrayList(Atom) = .empty,
+
+    fn init(f: *Frame, code: Code) Error!StartCells {
+        const rng = try f.gpa.alloc([2]u32, code.contract.off[code.contract.arity]);
+        @memset(rng, .{ none, none });
+        return .{ .code = code, .rng = rng };
+    }
+
+    fn deinit(s: *StartCells, f: *Frame) void {
+        f.gpa.free(s.rng);
+        s.buf.deinit(f.gpa);
+    }
+
+    fn of(s: *StartCells, f: *Frame, g: u32) Error![]const Atom {
+        if (s.rng[g][0] == none) {
+            const lc = s.code.contract;
+            const a = paramOfEntry(lc, g);
+            const start = f.atoms.items.len;
+            defer f.atoms.shrinkRetainingCapacity(start);
+            if (a >= s.code.own_params and a - s.code.own_params < s.code.ncaps)
+                _ = try f.argLeaves(try f.capVal(s.code, a - s.code.own_params), lc.layouts[a], g - lc.off[a], &.{}, false, &f.atoms);
+            const b: u32 = @intCast(s.buf.items.len);
+            try s.buf.appendSlice(f.gpa, f.atoms.items[start..]);
+            s.rng[g] = .{ b, @intCast(s.buf.items.len) };
+        }
+        return s.buf.items[s.rng[g][0]..s.rng[g][1]];
+    }
+
+    /// Whether entries `x` and `y` hold one cell now: of one parameter,
+    /// only where they can (`sameCellAt`).
+    fn shared(s: *StartCells, f: *Frame, x: u32, y: u32) Error!bool {
+        const lc = s.code.contract;
+        const a = paramOfEntry(lc, x);
+        if (a == paramOfEntry(lc, y) and !f.sameCellAt(f.m.loc.layoutEntries(lc.layouts[a]), x - lc.off[a], y - lc.off[a])) return false;
+        // Both are read before either slice is taken: a read appends to
+        // `buf`, which can move.
+        _ = try s.of(f, x);
+        _ = try s.of(f, y);
+        return f.cellsMeet(s.buf.items[s.rng[x][0]..s.rng[x][1]], s.buf.items[s.rng[y][0]..s.rng[y][1]]);
+    }
+
+    /// Whether any two entries of the captures hold one cell now (the
+    /// cheap test first: a cell's origin and entry in two entries).
+    fn any(s: *StartCells, f: *Frame, follow: []const bool) Error!bool {
+        const lc = s.code.contract;
+        var keys: std.ArrayList([3]u32) = .empty;
+        defer keys.deinit(f.gpa);
+        for (0..lc.arity) |a| if (follow[a]) for (lc.off[a]..lc.off[a + 1]) |g| {
+            for (try s.of(f, @intCast(g))) |p| if (p.root != 0) try keys.append(f.gpa, .{ f.originOf(p.root), p.e, @intCast(g) });
+        };
+        _ = f.charge(keys.items.len);
+        std.mem.sort([3]u32, keys.items, {}, struct {
+            fn lt(_: void, p: [3]u32, q: [3]u32) bool {
+                return std.mem.order(u32, &p, &q) == .lt;
+            }
+        }.lt);
+        for (keys.items[0..keys.items.len -| 1], 0..) |p, i| {
+            const q = keys.items[i + 1];
+            if (p[0] == q[0] and p[1] == q[1] and p[2] != q[2]) return true;
+        }
+        return false;
+    }
+};
 
 /// Whether, after some number of runs of a code whose contract is `lc`,
 /// the entry `at` holds an old cell that another entry holds after the same
@@ -13424,12 +13540,14 @@ fn storedAtoms(f: *Frame, code: Code, j: u32, e: u32) Error!Stored {
 /// write of `at` is of a cell another location holds. A search of the pairs
 /// of entries, each step one run back through both renewals (an entry with
 /// no renewal keeps its own cells), from `at` beside each other entry, for
-/// a pair that is one entry twice; an entry of the code's own parameters is
+/// a pair that is one entry twice, or two entries that hold one cell now
+/// (`start`: by the cells their atoms name, a renewal before the runs can
+/// have put one cell at two places; #2710); an entry of the code's own parameters is
 /// the start of a pair only, since the callee hands it anew at each run. A
 /// step goes to a source the entry can hold (`sameCellAt`). Each pair
 /// visited is work (kernel §8); past the budget the walk gives up, and the
 /// answer is yes (the pessimistic side).
-fn heldTwiceAfterRuns(f: *Frame, lc: *const Contract, follow: []const bool, at: u32) Error!bool {
+fn heldTwiceAfterRuns(f: *Frame, lc: *const Contract, follow: []const bool, at: u32, start: *StartCells) Error!bool {
     if (lc.renew.len == 0) return false;
     const n: u32 = lc.off[lc.arity];
     // Two entries come to hold one cell only through an entry that both
@@ -13452,7 +13570,7 @@ fn heldTwiceAfterRuns(f: *Frame, lc: *const Contract, follow: []const bool, at: 
                 if (named[x] > 1) meets = true;
             }
         }
-        if (!meets) return false;
+        if (!meets and !try start.any(f, follow)) return false;
     }
     var seen: std.AutoHashMapUnmanaged([2]u32, void) = .empty;
     defer seen.deinit(f.gpa);
@@ -13475,7 +13593,7 @@ fn heldTwiceAfterRuns(f: *Frame, lc: *const Contract, follow: []const bool, at: 
         for (xs.items) |x| for (ys.items) |y| {
             // Only a capture's entries keep cells from one run to the next.
             if (!follow[paramOfEntry(lc, x)] or !follow[paramOfEntry(lc, y)]) continue;
-            if (x == y) return true;
+            if (x == y or try start.shared(f, x, y)) return true;
             const got = try seen.getOrPut(f.gpa, .{ x, y });
             if (!got.found_existing) try queue.append(f.gpa, .{ x, y });
         };
@@ -13497,6 +13615,82 @@ fn stepBack(f: *Frame, lc: *const Contract, g: u32, out: *std.ArrayList(u32)) Er
         if (s.a == a and !f.sameCellAt(es, g - lc.off[a], s.e)) continue;
         if (std.mem.indexOfScalar(u32, out.items, h) == null) try out.append(f.gpa, h);
     }
+}
+
+/// Whether atoms `a` and `b` name one cell, whatever their names: a
+/// version of a root is a new name of its origin's cells, and the way an
+/// atom was read (`via`), the time its name died (`dead`), its probe name
+/// (`ren`) and its arm (`ctx`) are no other cell (kernel §13 item 12, *One
+/// cell at two places is decided on cells*). Two positions of one list
+/// match are two cells (`posApart`); `outside` is no cell of the frame.
+fn sameCell(f: *const Frame, a: Atom, b: Atom) bool {
+    if (a.root == 0 or b.root == 0) return false;
+    return f.originOf(a.root) == f.originOf(b.root) and a.e == b.e and !posApart(a, b) and f.comparable(a.path, b.path);
+}
+
+/// Whether an atom of `xs` and an atom of `ys` name one cell (`sameCell`):
+/// the atoms of `xs` sorted by the cell's origin and entry, each of `ys`
+/// looked up there, so the work is linear in the atoms, not their product
+/// (kernel §8: each atom is work).
+fn cellsMeet(f: *Frame, xs: []const Atom, ys: []const Atom) Error!bool {
+    if (xs.len == 0 or ys.len == 0) return false;
+    if (f.charge(xs.len + ys.len)) return true;
+    const Key = struct { o: u32, e: u32, i: u32 };
+    const ks = try f.gpa.alloc(Key, xs.len);
+    defer f.gpa.free(ks);
+    var n: usize = 0;
+    for (xs, 0..) |x, i| if (x.root != 0) {
+        ks[n] = .{ .o = f.originOf(x.root), .e = x.e, .i = @intCast(i) };
+        n += 1;
+    };
+    const lt = struct {
+        fn lt(_: void, p: Key, q: Key) bool {
+            return if (p.o != q.o) p.o < q.o else p.e < q.e;
+        }
+    }.lt;
+    std.mem.sort(Key, ks[0..n], {}, lt);
+    for (ys) |y| {
+        if (y.root == 0) continue;
+        const want: Key = .{ .o = f.originOf(y.root), .e = y.e, .i = 0 };
+        var lo: usize = 0;
+        var hi: usize = n;
+        while (lo < hi) {
+            const mid = (lo + hi) / 2;
+            if (lt({}, ks[mid], want)) lo = mid + 1 else hi = mid;
+        }
+        while (lo < n and ks[lo].o == want.o and ks[lo].e == want.e) : (lo += 1) {
+            if (f.sameCell(xs[ks[lo].i], y)) return true;
+        }
+    }
+    return false;
+}
+
+/// Whether value `v`, read at layout `sig`, holds a cell of its entry `e`
+/// at another entry of `inner` (the contents of a cell) that can hold the
+/// same cell (`sameCellAt`), by the cells the atoms name (`sameCell`), not
+/// by their names: a write in place of `e` is then a write of the other
+/// location too, which a holder reads under the name it has there (kernel
+/// §13 item 12, *One cell at two places is decided on cells*). Before,
+/// only `e` itself was tested (`argLeaves`' answer), and two writer fibers
+/// each pushed in place onto one part of a pair that a renewal made hold
+/// one list (#2710). Each atom compared is work (kernel §8); past the
+/// budget the answer is yes.
+fn heldAtOther(f: *Frame, v: Val, sig: u32, e: u32, inner: []const bool) Error!bool {
+    const es = f.m.loc.layoutEntries(sig);
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    _ = try f.argLeaves(v, sig, e, &.{}, false, &f.atoms);
+    const ne = f.atoms.items.len - start;
+    if (ne == 0) return false;
+    for (0..inner.len) |e2| {
+        if (e2 == e or !inner[e2] or !f.sameCellAt(es, e, @intCast(e2))) continue;
+        const s2 = f.atoms.items.len;
+        _ = try f.argLeaves(v, sig, @intCast(e2), &.{}, false, &f.atoms);
+        const n2 = f.atoms.items.len - s2;
+        if (try f.cellsMeet(f.atoms.items[start..][0..ne], f.atoms.items[s2..][0..n2])) return true;
+        f.atoms.shrinkRetainingCapacity(s2);
+    }
+    return false;
 }
 
 /// Whether entries `a` and `b` of one layout `es` can hold the same cell
