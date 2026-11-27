@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1477,7 +1477,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     function of the record the default (rule 2, `defaultParams`). A `view` (a function of the record
     whose answer is the build's markup type, or a record or tuple with markup in it,
     `Check.Mod.isView`) does not keep what its answer holds: the runtime renders the answer before it
-    runs `update` again (rule 12, `boundary.md` §9.4.8). **The message is never `own`**: a handler of
+    runs `update` again (rule 12, `boundary.md` §9.4.8). **The message is never `own`**, except where *A message a command builds*, below, holds: a handler of
     the rendered markup keeps its message until the next render and can send it twice, a message can
     hold a top-level value, and the runtime's commands, subscriptions and platform events make
     messages that no rule of the checker follows; a `send` written in the program is checked where it
@@ -1517,6 +1517,54 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     Research report 121 §4.1–§4.2 and report 122 §3.1–§3.2, §3.4: a field with no known code was
     dropped (neither producer nor consumer), and whether an answer was the model or a pair was guessed
     from its locations, so a tuple model was read at the wrong place.*
+    **A message a command builds** (*the owner's decision, 2026-11-27, #2657*: "a message whose
+    constructor is only ever built inside the program's own commands counts as `update`'s own").
+    The platform's fact: the runtime hands each message that a command's body sends (its `send`, the
+    word `sender`) to `update` once, and keeps none of it after `update` returns (`Inline.commands`,
+    `boundary.md` §9.8.4); a platform makes a message only by calling a function the program handed
+    it, or by handing on a message the program made. So where no construction of a constructor `C`
+    can reach the runtime except through such a send, and nothing but that send holds what it sends,
+    a location of the message at `C` is `update`'s own (`Mod.cmdBuilt`, `Frame.msgOwn`). Each of
+    these is a positive fact, and where one does not hold the message is not `own`, as before:
+
+    1. `update`'s field is a declaration of the entry's module, and its message parameter's type
+       `T` is a type of that module with no type parameter. No other module of the program can
+       name `T`'s constructors: one that imports the entry's module is not imported by it.
+    2. **Every construction of `C`** in the module (`Mod.ctorRefs`) is one the walk saw as one of
+       these, in each walk of its body (`Frame.noteCmdSite`):
+       - `send (C a…)`: the whole argument of a call of the function's own parameter of sender
+         type, whose demands all hold on the function's own ground (`fresh` or `call`): the
+         function made each cell that a write can edit, and does not read it again;
+       - `C`, as an argument of a call of a declaration of a platform package (not core, not the
+         program's), whose contract answers no answer of that function, hands it to no other
+         function parameter, and hands it, at each of its parameter's cells, only the answer of
+         another function parameter, `free`; where each such function is, at this call, known code
+         whose answer there is only cells it made and let go nowhere (`freshOwn`). `Cmd.task
+         (λ⊤ → [ "first" ]) Response` is one: each run calls the work again.
+
+       A constructor used in any other way (in `view`, in a subscription's or a handler's
+       function, partly applied, inside a lambda the send is not the parameter of, in code the
+       walk never reached) makes messages that no send gives up, and is not `C` of this rule.
+    3. **No decoder in the module**: no derived codec and no schema declaration, which make a
+       message that no construction made.
+    4. **No function of the program keeps a message** (`Mod.keepsMessages`, published by each
+       module for those it imports, `Contract.Published.keeps_messages`): every lambda, and every
+       declaration used as a value, whose parameter's type can hold a message — it names `T`, any
+       type of the program, or a type variable, outside a function's parameter — has a contract,
+       and that contract lets no such parameter location escape, hands it to no function and
+       leaves it in no cell. A platform hands a command's messages to the program's functions
+       there (`Cmd.map`'s function, a sender the program made), and one that kept a message could
+       send it again.
+    5. **The model's type does not name `T`** outside a function's parameter: a model that holds a
+       message hands it to `view`, whose handler sends it again.
+    6. **`update` gives the location up**: its contract does not let it escape, leaves it in no
+       cell, hands it to no function, answers it only at the model's item of the answer, and, where
+       the contract is `nonlinear`, at one location there (`paramOwn`).
+
+    So a send in a command asks what it always did (`callParam`), and its line is accepted as
+    before; what changes is that a write of `update` that rests on the message, and a model
+    location answered from it, are `own` where the six facts hold. *Before, the message was never
+    `own`, and `browser/inline/OwnedCommandSend` and the four `Conduit*Errors` pages were refused.*
 14. **Calls into the program that no walked body makes** (`Check.walkSchema`, `Check.walkExports`,
     `Check.checkCovered`). The theorem of §5 needs every call of the program's code to be applied by a
     rule. Code that is not a walked body of the program calls it in the places below, and only there.

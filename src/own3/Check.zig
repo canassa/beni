@@ -206,6 +206,14 @@ pub const Options = struct {
     /// publishes none: an importer reads each of its declarations as one
     /// that reaches JavaScript.
     rows: bool = false,
+    /// The modules this one imports (`Graph.dependencies`), each checked
+    /// and published before it: what their functions can keep of a message
+    /// is read off what they published (kernel §6.13, *A message a command
+    /// builds*, fact 4).
+    deps: []const u32 = &.{},
+    /// Per module of the build, whether it is a platform package's (kernel
+    /// §6.13, *A message a command builds*, fact 2).
+    platform: []const bool = &.{},
 };
 
 const State = enum(u8) { todo, working, done };
@@ -291,6 +299,16 @@ pub const Mod = struct {
     builds_fresh: std.AutoHashMapUnmanaged([2]u32, bool) = .empty,
     /// `Options.library`.
     library: bool = false,
+    /// `Options.deps`.
+    deps: []const u32 = &.{},
+    /// `Options.platform`.
+    platform: []const bool = &.{},
+    /// Per construction of a constructor of the module, by its instruction
+    /// (the call `C a…`, or a bare `C` handed to a call): whether every walk
+    /// that reached it saw it given up to a command's send (kernel §6.13, *A
+    /// message a command builds*, fact 2; `Frame.noteCmdSite`). One walk
+    /// that did not makes it false for good.
+    cmd_sites: std.AutoHashMapUnmanaged(u32, bool) = .empty,
     /// Per declaration of the module, the one instruction that names it
     /// (`.top`), or `none` where none or more than one does
     /// (`soleReference`); made when first asked for.
@@ -1348,6 +1366,10 @@ pub const Mod = struct {
         /// answer is the model), `index` (the item `index` of a tuple).
         answer: enum { none, whole, index } = .none,
         index: u32 = 0,
+        /// `update`'s parameter that is a type variable other than the
+        /// model: the message (kernel §6.13, *A message a command builds*),
+        /// or `none`.
+        msg_param: u32 = none,
         /// The model is in a parameter or the answer in another shape: no
         /// fact says where, and the entry has none of its lists `own`.
         unknown: bool = false,
@@ -1386,7 +1408,9 @@ pub const Mod = struct {
                 if (isVar(bir, p, mv)) {
                     if (o.model_param != none) o.unknown = true;
                     o.model_param = @intCast(k);
-                } else if (try m.mentionsVar(bir, p, mv)) o.unknown = true;
+                } else if (try m.mentionsVar(bir, p, mv)) {
+                    o.unknown = true;
+                } else if (o.name == update_sym and fps.len == 2 and bir.instTag(p) == .type_var) o.msg_param = @intCast(k);
             }
             const r: Inst.Index = @fromBackingInt(bir.instData(fd.value).rhs);
             if (isVar(bir, r, mv)) {
@@ -1415,6 +1439,114 @@ pub const Mod = struct {
         defer ops.deinit(m.gpa);
         try bir.operands(m.gpa, t, &ops);
         for (ops.items) |o| if (try m.mentionsVar(bir, o, v)) return true;
+        return false;
+    }
+
+    /// Kernel §6.13, *A message a command builds*, fact 2 and fact 3:
+    /// whether every construction of constructor `ordinal` of the type
+    /// declared at `ty_decl` of this module is one a walk saw given up to a
+    /// command's send (`cmd_sites`), and the module has no decoder (a
+    /// derived codec, a schema), which makes a message that no construction
+    /// made. A construction that no walk reached is none of those.
+    pub fn cmdBuilt(m: *Mod, ty_decl: u32, ordinal: u32) Allocator.Error!bool {
+        if (m.in.dispatch) |dt| for (dt.terms) |t| if (t == .codec) return false;
+        for (m.bir.decls) |d| if (d.kind == .schema) return false;
+        if (ty_decl >= m.bir.decls.len) return false;
+        const td = m.bir.decl(@fromBackingInt(@intCast(ty_decl)));
+        if (ordinal >= td.ctors_end - td.ctors_start) return false;
+        const want = td.ctors_start + ordinal;
+        // The references that are a pattern's, or a call's callee, are not
+        // read as bare ones.
+        var not_bare: std.DynamicBitSetUnmanaged = try .initEmpty(m.gpa, m.tags.len);
+        defer not_bare.deinit(m.gpa);
+        for (m.tags, m.datas) |t, d| if ((t == .pat_ctor or t == .call) and d.lhs < m.tags.len) not_bare.set(d.lhs);
+        for (m.tags, m.datas, 0..) |t, d, i| {
+            const site = if (t == .call)
+                d.lhs < m.tags.len and m.tags[d.lhs] == .ctor and m.datas[d.lhs].lhs == want
+            else if (t == .ctor) d.lhs == want and !not_bare.isSet(i) else false;
+            if (site and !(m.cmd_sites.get(@intCast(i)) orelse false)) return false;
+        }
+        return true;
+    }
+
+    /// Kernel §6.13, *A message a command builds*, fact 4: whether a
+    /// function of the program can keep a message that it is handed. A
+    /// function value of this module — a lambda, or a declaration read as a
+    /// value — keeps one where a parameter has a location that can hold a
+    /// message (a type variable's, or, with `msg`, one through a
+    /// constructor of that type) and its contract lets that location
+    /// escape, leaves it in a cell or hands it to a function; or where it
+    /// has no contract. So does a module it imports that published so
+    /// (`Contract.Published.keeps_messages`); core's and a platform's
+    /// functions are not the program's, and the platform's fact covers them.
+    pub fn keepsMessages(m: *Mod, msg: ?u32) Allocator.Error!bool {
+        for (m.deps) |d| {
+            if (m.in.isCore(d) or (d < m.platform.len and m.platform[d])) continue;
+            if (d >= m.shared.published.len) return true;
+            const p = m.shared.published[d] orelse return true;
+            if (p.keeps_messages) return true;
+        }
+        var callee: std.DynamicBitSetUnmanaged = try .initEmpty(m.gpa, m.tags.len);
+        defer callee.deinit(m.gpa);
+        for (m.tags, m.datas) |t, d| if (t == .call and d.lhs < m.tags.len) callee.set(d.lhs);
+        for (m.tags, 0..) |t, i| {
+            // A lambda, or a declaration read as a value; every other
+            // instruction makes no function value of the module.
+            const c: *const Contract.Contract = if (t == .lambda)
+                m.code_contract[i] orelse return true
+            else if ((t == .top or t == .ext_value) and !callee.isSet(i)) blk: {
+                if (m.fnType(m.typeOfInst(@intCast(i))) == null) continue;
+                const decl = m.calleeOf(@intCast(i)) orelse return true;
+                break :blk (try m.declContract(decl)) orelse return true;
+            } else continue;
+            const ft = m.fnType(m.typeOfInst(@intCast(i))) orelse return true;
+            const pvars = m.in.store.vars(ft.params);
+            if (pvars.len != c.arity) return true;
+            for (pvars, 0..) |pv, k| {
+                const pl = try m.loc.layoutOf(try m.placeOf(pv.toOptional()));
+                const pes = m.loc.layoutEntries(pl);
+                const ces = m.loc.layoutEntries(c.layouts[k]);
+                for (ces, 0..) |ce, e| {
+                    _ = ce;
+                    const at = c.off[k] + e;
+                    var kept = c.flags[at] & Contract.flag_e != 0;
+                    for (c.fns) |lfo| if (lfo) |g| for (g.supply) |srcs| for (srcs) |x| if (x.kind == .param and x.a == k and x.e == e) {
+                        kept = true;
+                    };
+                    for (c.renew) |ro| if (ro) |srcs| for (srcs) |x| if (x.kind == .param and x.a == k and x.e == e) {
+                        kept = true;
+                    };
+                    if (!kept) continue;
+                    // The contract's own layout of the parameter can be
+                    // wider than the type here: a kept location that the
+                    // parameter's type can hold a message at is a keeper.
+                    if (try m.holdsMsg(pes, msg)) return true;
+                    break;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Whether a value of a layout with entries `es` can hold a message's
+    /// cells: an entry at a type variable, or, with `msg`, one below a
+    /// constructor of that type (kernel §6.13, *A message a command
+    /// builds*). A function's or a foreign value's entry is not: a message
+    /// it holds is one a function captured or the host was handed, which
+    /// that function kept.
+    pub fn holdsMsg(m: *Mod, es: []const Loc.Entry, msg: ?u32) Allocator.Error!bool {
+        var ls: std.ArrayList(u64) = .empty;
+        defer ls.deinit(m.gpa);
+        for (es) |e| {
+            if (e.kind == .@"var") return true;
+            const t = msg orelse continue;
+            ls.clearRetainingCapacity();
+            try m.loc.labels(e.loc, &ls, m.gpa);
+            for (ls.items) |w| {
+                const l: Loc.Label = @bitCast(w);
+                if (l.kind == .ctor_arg and l.head == t) return true;
+            }
+        }
         return false;
     }
 
@@ -4099,8 +4231,11 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .kept_lets = options.kept_lets,
         .schema_graph = options.schema_graph,
         .library = options.library,
+        .deps = options.deps,
+        .platform = options.platform,
     };
     defer m.walk_arena.deinit();
+    defer m.cmd_sites.deinit(gpa);
     defer m.builds_fresh.deinit(gpa);
     defer m.uniq_seen.deinit(gpa);
     defer m.share.deinit(gpa);
@@ -4330,6 +4465,10 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     var summaries: std.ArrayList([]const u8) = .empty;
     if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
     const published = try Contract.publish(gpa, &m.loc, m.contracts, derived, m.js);
+    // What an importer reads of whether a function of the program keeps a
+    // message (kernel §6.13, *A message a command builds*, fact 4): every
+    // walk of the module has run.
+    published.keeps_messages = options.rows or try m.keepsMessages(null);
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items, .false_words = m.false_words.items };
 }
 

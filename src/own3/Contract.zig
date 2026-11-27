@@ -551,6 +551,11 @@ pub const Published = struct {
     /// kernel §6 rule 10, *A worded body is checked against its walk*). A
     /// declaration past the end is read as one that does.
     js: []const bool = &.{},
+    /// A function of the module, or of a module it imports, can keep a
+    /// message it is handed (`Check.Mod.keepsMessages`; kernel §6.13, *A
+    /// message a command builds*, fact 4). Read by the modules that import
+    /// it, each of which is checked after it.
+    keeps_messages: bool = true,
 
     pub fn deinit(p: *Published, gpa: Allocator) void {
         p.arena.deinit();

@@ -262,6 +262,23 @@ fn valueWriter(session: *const Session, birs: []const *const Bir, bir: *const Bi
     return null;
 }
 
+/// The modules `m` imports, by index (kernel §6.13, *A message a command
+/// builds*, fact 4): each is checked before it.
+fn depsOf(arena: Allocator, session: anytype, m: Graph.Index) Allocator.Error![]const u32 {
+    const ds = session.graph.dependencies(m);
+    const out = try arena.alloc(u32, ds.len);
+    for (out, ds) |*o, d| o.* = d.int();
+    return out;
+}
+
+/// Per module of the build, whether a platform package holds it.
+fn platformModules(arena: Allocator, session: anytype) Allocator.Error![]const bool {
+    const n = session.graph.count();
+    const out = try arena.alloc(bool, n);
+    for (out, 0..) |*o, i| o.* = session.graph.modulePackage(@fromBackingInt(@intCast(i))) == .platform;
+    return out;
+}
+
 /// The Driver's hook: in the worker that checked module `m`, after its type
 /// check and before its interface is published.
 pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocator.Error!void {
@@ -320,6 +337,8 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         .kept_lets = try keptLets(arena, session, d, m, bir),
         .library = session.options.library and session.graph.modulePackage(m) == .app,
         .rows = session.graph.modulePackage(m) != .app,
+        .deps = try depsOf(arena, session, m),
+        .platform = try platformModules(arena, session),
     });
     ctx.state.shared.published[mi_u] = r.published;
 

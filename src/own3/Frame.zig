@@ -4155,6 +4155,7 @@ fn finishDemands(f: *Frame) Error!void {
                 line.refused = null;
                 line.detail = "";
                 try f.m.addLine(f, line, .entry);
+                try f.noteCmdSite(d.base_inst, false);
                 continue;
             };
         }
@@ -4168,6 +4169,9 @@ fn finishDemands(f: *Frame) Error!void {
             .call => .call,
             .param => if (f.is_lambda) .callback_param else .param,
         };
+        // A construction that this send gives up, on the function's own
+        // ground (kernel §6.13, *A message a command builds*, fact 2).
+        if (d.op == .supply and d.send) try f.noteCmdSite(d.base_inst, d.refused == null and g != .param);
         try f.m.addLine(f, d.*, ground);
     }
 }
@@ -8920,6 +8924,13 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         const after = (try f.saveCells()).?;
         try f.joinCells(&.{ after, before }, &.{});
     }
+    // A constructor handed to a platform's function, which hands what it
+    // answers to the runtime as a message (kernel §6.13, *A message a
+    // command builds*, fact 2): given up there only where each of its
+    // arguments is what work handed at this call makes in each run.
+    if (code) |c| if (c.decl[0] != none and c.decl[0] < m.platform.len and m.platform[c.decl[0]]) for (args, 0..) |a, j| {
+        if (m.tags[a.int()] == .ctor) try f.noteCmdSite(a.int(), try f.taggedByWork(c.contract, @intCast(j), vals.items));
+    };
     // Another fiber can run inside the call (kernel §13 item 12).
     const run = blk: {
         try vals.append(f.gpa, callee_val);
@@ -14289,6 +14300,43 @@ fn sendSlots(f: *Frame, v: Val, pplace: PlaceId, e: u32) Error!?SendSplit {
     return .{ .place = place, .lists = lists.items, .slots = slots.items };
 }
 
+/// What a walk saw of a construction of a constructor (kernel §6.13, *A
+/// message a command builds*, fact 2): `inst` is a call `C a…` that a send
+/// is handed, or a bare `C` handed to a call, and `ok` says whether it is
+/// given up to a command's send there. One walk that says no is final.
+fn noteCmdSite(f: *Frame, inst: u32, ok: bool) Error!void {
+    const m = f.m;
+    if (inst == none or inst >= m.tags.len) return;
+    const site = if (m.tags[inst] == .call) m.tags[m.datas[inst].lhs] == .ctor else m.tags[inst] == .ctor;
+    if (!site) return;
+    const gop = try m.cmd_sites.getOrPut(m.gpa, inst);
+    if (!gop.found_existing or !ok) gop.value_ptr.* = ok;
+}
+
+/// Whether a platform's function of contract `c` hands its function
+/// parameter `j`, at each cell of its parameters, only what another of its
+/// function parameters answers, `free`, where the function handed there
+/// (`vals`) is known code that answers only cells it made and let go
+/// nowhere; and keeps nothing of what `j` answers but what the runtime is
+/// sent: no answer of `j` in its own answer, in a cell, or in what it hands
+/// another function (kernel §6.13, *A message a command builds*, fact 2).
+fn taggedByWork(f: *Frame, c: *const Contract, j: u32, vals: []const Val) Error!bool {
+    const m = f.m;
+    if (j >= c.arity or j >= vals.len) return false;
+    const g = c.fns[j] orelse return false;
+    if (g.lost) return false;
+    for (c.res) |srcs| for (srcs) |x| if (x.kind == .answer and x.a == j) return false;
+    for (c.renew) |ro| if (ro) |srcs| for (srcs) |x| if (x.kind == .answer and x.a == j) return false;
+    for (c.fns, 0..) |lfo, k| if (lfo) |h| if (k != j) for (h.supply) |srcs| for (srcs) |x| if (x.kind == .answer and x.a == j) return false;
+    for (g.supply, 0..) |srcs, slot| for (srcs) |x| {
+        if (x.kind != .answer or x.a == j or x.a >= c.arity or x.a >= vals.len or c.fns[x.a] == null or !g.free[slot]) return false;
+        const code = (try f.codeOf(vals[x.a])) orelse return false;
+        const wc = code.contract;
+        for (wc.res, 0..) |ws, re| for (ws) |y| if (y.kind != .fresh or !freshOwn(m, wc, @intCast(re), y)) return false;
+    };
+    return true;
+}
+
 /// A call of the frame's own function parameter at root `root`.
 fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, arg_insts: []const Inst.Index) Error!Val {
     const m = f.m;
@@ -14704,6 +14752,11 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
     // (a worklist): each fact and each pair of locations once, and each a
     // step of the declaration's budget (kernel §8). Past the budget no
     // location is `own`: the walk gave up, and a give-up accepts nothing.
+    // The message's locations that are `update`'s own (kernel §6.13, *A
+    // message a command builds*): per entry of `update`'s message
+    // parameter, for its one code.
+    const msg = try f.msgOwn(fields.items, codes.items, mes);
+    defer if (msg) |x| f.gpa.free(x.own);
     const bad = try f.gpa.alloc(bool, mes.len);
     defer f.gpa.free(bad);
     @memset(bad, false);
@@ -14759,6 +14812,13 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                             bad[k] = true;
                         },
                         .param => {
+                            // A location of a message a command built, which
+                            // `update` gives up (kernel §6.13, *A message a
+                            // command builds*): no model location needs it.
+                            if (msg) |x| if (x.code == c and s.a == x.param and s.e < x.own.len) {
+                                if (!x.own[s.e]) bad[k] = true;
+                                continue;
+                            };
                             if (s.a != model_param or !paramOwn(c, ri, s)) {
                                 bad[k] = true;
                                 continue;
@@ -14855,11 +14915,12 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
     // The verdicts: one for each location that a producer handed the model
     // (`update`, `settle`) writes. A write is `own` only where each model
     // location it can write is.
-    // The message is never `own`: no fact names its one holder. A handler
-    // of the rendered markup keeps its message until the next render and can
-    // send it twice, and a message can hold a top-level value or anything a
-    // platform's runtime made; a `send` is checked where it is written, but
-    // it is one source among these (kernel §6.13).
+    // The message is not `own` where no fact names its one holder. A
+    // handler of the rendered markup keeps its message until the next render
+    // and can send it twice, and a message can hold a top-level value or
+    // anything a platform's runtime made; a `send` is checked where it is
+    // written, but it is one source among these (kernel §6.13). The
+    // exception is a message a command builds (`msgOwn`).
     for (fields.items) |fd| {
         if (fd.shape.model_param == none or fd.shape.answer == .none) continue;
         for (codes.items[fd.from..][0..fd.len]) |c0| {
@@ -14875,13 +14936,100 @@ fn entryCall(f: *Frame, inst: u32, entry: [2]u32, arg: u32) Error!Val {
                         for (ris.items) |k| if (!own[k]) {
                             ok = false;
                         };
-                    }
+                    } else if (msg) |x| if (x.code == c and pj == x.param and e < x.own.len) {
+                        ok = x.own[e] and !f.failed and !m.steps_over;
+                    };
                     try m.addEntryLine(f, inst, c0, pj == fd.shape.model_param, pe.loc, ok);
                 }
             }
         }
     }
     return f.unknownResult(inst, held.items);
+}
+
+/// Kernel §6.13, *A message a command builds*: the entries of `update`'s
+/// message parameter that are `update`'s own, for its one code `code`, or
+/// null where a fact of the entry does not hold. An entry is own where it
+/// is a list below a constructor of the message's type that every
+/// construction of the module gives up to a command's send
+/// (`Mod.cmdBuilt`), no function of the program keeps a message
+/// (`Mod.keepsMessages`), the model holds no message, and `update` gives
+/// the entry up: it lets it escape nowhere, leaves it in no cell, hands it
+/// to no function, and answers it only in the model's item of its answer,
+/// at one location there where its contract is `nonlinear` (`paramOwn`).
+const MsgOwn = struct { code: *const Contract, param: u32, own: []bool };
+fn msgOwn(f: *Frame, fields: anytype, codes: []const Code, mes: []const Loc.Entry) Error!?MsgOwn {
+    const m = f.m;
+    var found: ?struct { fd: @TypeOf(fields[0]), code: Code } = null;
+    for (fields) |fd| if (fd.shape.msg_param != none and fd.shape.model_param != none and fd.shape.answer != .none) {
+        if (found != null or fd.len != 1) return null;
+        found = .{ .fd = fd, .code = codes[fd.from] };
+    };
+    const u = found orelse return null;
+    // `update` is a declaration of this module.
+    if (u.code.inst != none or u.code.decl[0] != m.in.module) return null;
+    const c = u.code.contract;
+    const mp = u.fd.shape.msg_param;
+    if (mp >= c.arity) return null;
+    // The message's type: a type of this module, with no type parameter.
+    const ft = m.fnType(u.fd.ty) orelse return null;
+    const pv = m.in.store.vars(ft.params);
+    if (mp >= pv.len) return null;
+    const app = switch (m.in.store.resolvedContent(pv[mp])) {
+        .structure => |st| switch (st) {
+            .app => |a| a,
+            // A message of no nominal type: no constructor is read.
+            .unit, .empty_record, .func, .tuple, .record => return null,
+        },
+        .flex, .rigid, .alias, .err => return null,
+    };
+    const tid = app.type.int();
+    if (tid >= m.in.types.entries.len or app.args.len != 0) return null;
+    const te = m.in.types.entries[tid];
+    if (te.package != .app or te.module.int() != m.in.module or te.kind != .adt) return null;
+    // The model holds no message, and no function of the program keeps one.
+    if (try m.holdsMsg(mes, tid)) return null;
+    if (try m.keepsMessages(tid)) return null;
+    const pes = m.loc.layoutEntries(c.layouts[mp]);
+    const own = try f.gpa.alloc(bool, pes.len);
+    @memset(own, false);
+    // Where the answer has the model.
+    const item: ?u32 = switch (u.fd.shape.answer) {
+        .none => unreachable,
+        .whole => null,
+        .index => u.fd.shape.index,
+    };
+    const res = m.loc.layoutEntries(c.layouts[c.arity]);
+    var ls: std.ArrayList(u64) = .empty;
+    defer ls.deinit(f.gpa);
+    for (pes, 0..) |pe, e| {
+        if (pe.kind != .list) continue;
+        ls.clearRetainingCapacity();
+        try m.loc.labels(pe.loc, &ls, f.gpa);
+        if (ls.items.len == 0) continue;
+        const first: Loc.Label = @bitCast(ls.items[0]);
+        if (first.kind != .ctor_arg or first.head != tid or first.cyc) continue;
+        const at = c.off[mp] + e;
+        if (c.flags[at] & flag_e != 0 or handsOn(c, mp, @intCast(e))) continue;
+        var kept = false;
+        for (c.renew) |ro| if (ro) |srcs| for (srcs) |x| if (x.kind == .param and x.a == mp and x.e == e) {
+            kept = true;
+        };
+        // Answered outside the model's item: a command holds it.
+        for (c.res, 0..) |srcs, ri| for (srcs) |x| if (x.kind == .param and x.a == mp and x.e == e) {
+            if (item) |ix| {
+                ls.clearRetainingCapacity();
+                try m.loc.labels(res[ri].loc, &ls, f.gpa);
+                const l0: ?Loc.Label = if (ls.items.len != 0) @bitCast(ls.items[0]) else null;
+                if (l0 == null or l0.?.kind != .index or l0.?.payload != ix) kept = true;
+            }
+            if (!paramOwn(c, @intCast(ri), x)) kept = true;
+        };
+        if (kept) continue;
+        if (!try m.cmdBuilt(te.decl.int(), first.payload >> 12)) continue;
+        own[e] = true;
+    }
+    return .{ .code = c, .param = mp, .own = own };
 }
 
 /// The index that `want` has in `sorted` (pairs of a location and an index, by location), or `none`.
