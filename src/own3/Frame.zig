@@ -3853,7 +3853,7 @@ fn hoistRow(f: *Frame, d: Demand, u: Read, out: *std.ArrayList(OwnHoists.Read)) 
         var n: u32 = 0;
         var y: Inst.Index = @fromBackingInt(e.x);
         while (bir.instTag(y) == .field_access) : (n += 1) y = @fromBackingInt(@intCast(bir.instData(y).lhs));
-        const xs = try f.gpa.dupe(u32, f.m.eagerAliases(&e.x));
+        const xs = try f.m.eagerAliases(f.gpa, e.x);
         for (xs) |z| try out.append(f.gpa, .{ .decl = f.decl, .demand = d.point, .inst = z, .holder = e.local, .path_len = n, .placement = d.point, .phase = phase, .capture = e.capture });
         return true;
     }
@@ -4899,7 +4899,7 @@ fn eagerCapture(f: *Frame, x: u32, local: u32, lex: bool) Error!Val {
         } else if (lex) {
             const rep = eagerX(l.*);
             if (rep != x) {
-                const xs = try f.gpa.dupe(u32, m.eagerAliases(&x));
+                const xs = try m.eagerAliases(f.gpa, x);
                 for (xs) |y| try m.eagerAlias(rep, y);
             }
         }
@@ -6661,7 +6661,7 @@ fn eagerRead(f: *Frame, x: u32, local: u32, e: Eager, at: ?u32, ctx: ?u32) Error
         if (ctx) |c| u.ctx = c;
     }
     if (e.lex) {
-        const xs = try f.gpa.dupe(u32, m.eagerAliases(&x));
+        const xs = try m.eagerAliases(f.gpa, x);
         for (xs) |y| try m.addEagerRow(.{ .decl = f.decl, .demand = none, .inst = y, .holder = local, .path_len = @intCast(chain.items.len), .placement = e.placement, .phase = e.phase, .capture = e.capture });
     }
     return v;

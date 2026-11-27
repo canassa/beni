@@ -388,7 +388,7 @@ pub const Mod = struct {
     /// Per captured field path, by the read instruction that stands for it
     /// (`Frame.eagerCapture`): every read instruction of the same local and
     /// fields in the text of the code that captures it, each a row.
-    eager_alias: std.AutoHashMapUnmanaged(u32, std.ArrayList(u32)) = .empty,
+    eager_alias: std.ArrayList([2]u32) = .empty,
     /// Per declaration: its body reaches JavaScript (`reachesJs`).
     js: []bool = &.{},
     /// Per instruction, where the module's bodies are read for JavaScript
@@ -3593,21 +3593,21 @@ pub const Mod = struct {
         return c;
     }
 
-    /// Add `x` to the read instructions that `rep` stands for, once.
+    /// Add `x` to the read instructions that `rep` stands for, once
+    /// (`eager_alias`, pairs of the two).
     pub fn eagerAlias(m: *Mod, rep: u32, x: u32) Allocator.Error!void {
-        const g = try m.eager_alias.getOrPut(m.gpa, rep);
-        if (!g.found_existing) {
-            g.value_ptr.* = .empty;
-            try g.value_ptr.append(m.gpa, rep);
-        }
-        if (std.mem.indexOfScalar(u32, g.value_ptr.items, x) == null) try g.value_ptr.append(m.gpa, x);
+        if (x == rep) return;
+        for (m.eager_alias.items) |p| if (p[0] == rep and p[1] == x) return;
+        try m.eager_alias.append(m.gpa, .{ rep, x });
     }
 
     /// The read instructions `rep` stands for: itself, and those that
-    /// `eagerAlias` added.
-    pub fn eagerAliases(m: *const Mod, rep: *const u32) []const u32 {
-        if (m.eager_alias.getPtr(rep.*)) |l| return l.items;
-        return @as(*const [1]u32, rep);
+    /// `eagerAlias` added, in `gpa`.
+    pub fn eagerAliases(m: *const Mod, gpa: Allocator, rep: u32) Allocator.Error![]const u32 {
+        var out: std.ArrayList(u32) = .empty;
+        try out.append(gpa, rep);
+        for (m.eager_alias.items) |p| if (p[0] == rep) try out.append(gpa, p[1]);
+        return out.items;
     }
 
     /// A row of a captured field path read where its closure is made
@@ -4348,8 +4348,6 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     }
     defer m.eager_rows.deinit(gpa);
     defer {
-        var it = m.eager_alias.valueIterator();
-        while (it.next()) |l| l.deinit(gpa);
         m.eager_alias.deinit(gpa);
     }
     m.code_caps = try gpa.alloc([]const u32, bir.insts.len);
