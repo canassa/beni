@@ -9315,7 +9315,8 @@ Three choices are the owner's, asked on the dashboard as `node-process-spawn-q1`
 (a)), `q2` (the environment, (b)) and `q3` (the kill policy, (d)). All three are decided as
 recommended (Jayson, 2026-11-05); (i) records the answers. Amended 2026-11-24, for issue #2023:
 (k) gives the child a standard input, a text written and then closed, and (a), (d), (e), (f), (h),
-(i) and (j) each say where it changes them.* A `node` program cannot start
+(i) and (j) each say where it changes them. The shape of (k)'s field is the owner's choice too,
+asked as `child-stdin-q1` (Cesar, 2026-11-27); (i) records it.* A `node` program cannot start
 another program today. Rex web (`jaysonsantos/rex-web`) must call the installed `rex` CLI (`rex ls
 --json`, `rex api call …`) from a beni server. The `node` platform gains one module,
 **`ChildProcess`** (`platforms/node/ChildProcess.beni`), beni over `Js` with no sibling, as `Io` and
@@ -9336,7 +9337,7 @@ pub type alias Command =
     , args : List String     -- each one argument, as it is: no shell reads it
     , cwd : Maybe String     -- the child's working directory; Nothing: the program's own
     , env : Environment      -- the child's environment, (b)
-    , input : String         -- the text the child reads on standard input, (k); "" by default: none (2026-11-24)
+    , stdin : Input          -- the child's standard input, (k); NoInput by default (2026-11-24)
     , killAfter : Duration   -- the grace between SIGTERM and SIGKILL, (d); 1 s by default
     , maxOutput : Int        -- the most bytes kept of standard output, and of standard error; 16 MiB by default
     }
@@ -9345,6 +9346,10 @@ pub type Environment
     = Inherit                             -- the program's own environment, as it is
     | Extend (List (String × String))     -- the program's own, with these variables set
     | Only (List (String × String))       -- these variables, and no other
+
+pub type Input                            -- (k) (2026-11-24)
+    = NoInput                             -- nothing to read: /dev/null
+    | Text String                         -- a pipe: this text as UTF-8, and then an end of file
 
 pub type alias Output =
     { status : Status
@@ -9385,7 +9390,7 @@ main = Io.run λ⊤ →
 
 A program changes a default with record update: `{ ChildProcess.command "make" [] | cwd = Just
 "build" }`. `command` gives `cwd = Nothing`, `env = Inherit`, `killAfter = Duration.seconds 1` and
-`maxOutput = 16 777 216`. *Amended 2026-11-24 (#2023):* and `input = ""`, (k). A field a later slice adds gets a default in `command`, so a program that
+`maxOutput = 16 777 216`. *Amended 2026-11-24 (#2023):* and `stdin = NoInput`, (k). A field a later slice adds gets a default in `command`, so a program that
 builds its `Command` with `command` does not change.
 
 **There is no shell, and there is no string form.** `run` calls `spawn(program, args, { shell:
@@ -9403,7 +9408,7 @@ then its own text, written on purpose.
 - **Standard input** is `/dev/null` (Node's `"ignore"`): a child that reads it gets an end of
   file at once and never waits for a terminal. Input to the child is a later slice, (j).
   *Amended 2026-11-24 (#2023):* that slice is (k). Standard input stays `/dev/null` for a command
-  whose `input` is `""`, which is every command that does not set it.
+  whose `stdin` is `NoInput`, which is every command that does not set it.
 - **The output** of each stream is kept whole, then decoded as UTF-8 when the child has ended;
   an invalid sequence decodes to U+FFFD, and a byte order mark is kept, as the bytes are. More
   than `maxOutput` bytes on either stream is `Err OutputTooLarge`, (e); `maxOutput` is the bound a
@@ -9533,10 +9538,11 @@ program writes as two `run`s or one `sh -c`; `shell`, by design; `detached`, `un
 descriptors; a template-string command, which is a parser of command lines by another name.
 *Amended 2026-11-24 (#2023):* Effect's command takes its standard input as a `Stream` of bytes
 (`CommandInput`, `ChildProcess.ts`), and the Node spawner forks a fiber that runs the stream into
-the child's `stdin` and does not join it (`setupChildStdin`, `NodeChildProcessSpawner.ts`), so a
-write that fails does not fail `string` or `exitCode`. (k) copies both: the input is a part of
-the command, and a child that stops reading does not fail `run`. Changed: the input is a `String`
-written whole, because beni has no `Stream`.
+the child's `stdin` and does not join it (`setupChildStdin`, `NodeChildProcessSpawner.ts`). (k)
+copies both: the input is a part of the command, and the result does not wait for the write.
+Changed: the input is a text written whole, because beni has no `Stream`. What Effect does with a
+write that fails, its source and its tests do not show (`NodeChildProcessSpawner.test.ts` has no
+such case), so (k)'s rule for a child that stops reading is beni's own.
 
 **(g) Order and determinism.** What a program observes depends on the children it starts and on
 the scheduler's FIFO, never on a pid or a timer: `run` gives no pid, the output is whole, and two
@@ -9572,19 +9578,22 @@ none uses `/bin/echo`, which NixOS lacks.
 - (k), *added 2026-11-24 (#2023)*: `ChildProcessInput` (a text sent to `/bin/sh -c 'cat'` and
   read back; text that is not ASCII, and a NUL; a lone surrogate, which an escape of JSON brings
   into a string, read back as U+FFFD; 1 MiB through `cat`, which shows that the write and the
-  reads do not wait for each other; an empty `input`, which is an end of file at once; two
+  reads do not wait for each other; `NoInput` and `Text ""`, each an end of file at once, and
+  what a child's `[ -c /dev/stdin ]` says of each: a device, and not a device; two
   children at once, each with its own text; a program that is not found, with an input; a child
-  that reads one line of 1 MiB and exits; a child that exits and reads nothing, with a short text
-  and with 1 MiB; a child that closes its standard input and writes after that; a `Task.timeout`
-  that ends a child with 1 MiB not yet read; `OutputTooLarge` with 1 MiB not yet read). Without
-  the input pipe's `error` listener the program ends at the first child that stops reading
-  1 MiB, with Node's `Unhandled 'error' event` — checked by hand on the emitted JavaScript. The
-  last two cases show only that a stopped child leaves no error.
+  that reads one line of 1 MiB and exits; a child that exits and reads nothing, with an empty
+  text, with a short text and with 1 MiB; a child that closes its standard input and writes after
+  that; a `Task.timeout` that ends a child with 1 MiB not yet read; `OutputTooLarge` with 1 MiB
+  not yet read). Without the input pipe's `error` listener the program ends at the first child
+  that stops reading 1 MiB, with Node's `Unhandled 'error' event` — checked by hand on the
+  emitted JavaScript. The last two cases show only that a stopped child leaves no error.
 - (k), where a real child shows nothing, or shows it only by a race: `ChildProcessInputFaults`,
   whose test platform gives its own children in place of `spawn`'s. One says what `spawn` was
-  asked for as its standard input: `ignore` with no `input` and with `""`, `pipe` with a text (a
-  real child reads an end of file at once from `/dev/null` and from an empty pipe). Its input
-  pipe fails with `EPIPE`, by Node's route: `Ok`. One does not start, and notes a write to its
+  asked for as its standard input: `ignore` with `NoInput`, `pipe` with `Text ""` and with a
+  text. Its input pipe fails its first write with `EPIPE`, by Node's route, also a write of no
+  bytes (the child that stopped before the `spawn` event of (k)): `Ok`. Its child goes on only
+  when the pipe is closed, so a platform that does not end the pipe of an empty text leaves the
+  program with nothing to wake it. One does not start, and notes a write to its
   standard input: there is none. One never reads and writes over `maxOutput`, and notes that its
   input pipe is destroyed before the signal comes. Each of the three fails with its rule broken
   in the emitted JavaScript, checked by hand. `ChildProcessInputUnknownCode`: the input pipe
@@ -9613,38 +9622,46 @@ none uses `/bin/echo`, which NixOS lacks.
   beni's process group, so Ctrl-C reaches it; process groups wait for #338. Effect's policy, a
   group signal with no `SIGKILL` unless the program asks, was offered and declined. The capture of the output whole, with streaming later, is the issue's own scope and the
 coordinator's instruction of 2026-11-05.
-- `child-stdin-q1`, the shape of (k)'s field: **asked 2026-11-24, not answered yet.** Recommended,
-  and what (k) says until then: `input : String`, where `""` is no input. The other option: a field
-  `stdin : Input` with a type of cases (`NoInput`, `Text String`), as `env` has.
+- `child-stdin-q1`, the shape of (k)'s field: **one field, a type of cases, no input by default**
+  (Cesar, 2026-11-27 08:14:53 UTC): `stdin : Input` with `NoInput` and `Text text`, as `env` has
+  cases. `Text ""` is an empty pipe. `input : String`, where `""` is no input and a program cannot
+  ask for an empty pipe, was offered and recommended, and declined.
 
 **(j) Not in this slice.** Standard input, a `String` written and closed, then a stream (#2023)
-*(amended 2026-11-24: the `String` is (k); the stream waits with the handle, #2024, and input as
-bytes with #335's bytes)*;
+*(amended 2026-11-24: the `String` is (k)'s `Text`; the stream waits with the handle, #2024, and
+input as bytes is a later case of `Input`, with #335's bytes)*;
 streaming output and a handle (`pid`, `kill`, line by line), which waits for a `Stream` (§17
 decision 17; #2024); process groups and the signals they need (#338); output as bytes (with
 #335's bytes). Windows is not a target of the `node` platform's tests today: its signals are
 emulated and its `PATH` lookup has its own rules, and this section says nothing of it.
 
-**(k) Standard input: a text, written and then closed.** *Added 2026-11-24, for issue #2023. The
-shape of the field is the owner's decision, asked on the dashboard as `child-stdin-q1`. Until the
-answer comes, this text has the recommended one. (i) records the decision.* The first slice gave
-every child an empty standard input. A program could not send a request body to `rex api call`,
-or a document to `jq`. `Command` gets a seventh field, **`input : String`**, and `command` gives
-it `""`:
+**(k) Standard input: a text, written and then closed.** *Added 2026-11-24, for issue #2023. (The
+shape of the field — a type of cases, not a `String` — is the owner's decision `child-stdin-q1`,
+(i).)* The first slice gave every child an empty standard input. A program could not send a
+request body to `rex api call`, or a document to `jq`. `Command` gets a seventh field,
+**`stdin : Input`**, and `command` gives it `NoInput`:
 
 ```elm
-ChildProcess.run { ChildProcess.command "jq" [ ".name" ] | input = json }
+pub type Input
+    = NoInput
+    | Text String
+
+ChildProcess.run { ChildProcess.command "jq" [ ".name" ] | stdin = ChildProcess.Text json }
 ```
 
-- **`input = ""` is no input.** Standard input is `/dev/null`, as (a) says, and Node makes no
-  pipe. A program that does not set `input` gives its child the same file as before. The child
-  can see the difference: `/dev/null` is a character device, and a pipe from Node is a socket
-  (measured on Linux, Node 24.19). So the default does not become an empty pipe.
-- **The platform writes any other text, and then closes the pipe.** Standard input is a pipe
-  (`stdio[0] = "pipe"`). Node emits a child's `spawn` event only when the child started, and
-  before every other event of that child. On that event the platform calls
+- **`NoInput` is no input.** Standard input is `/dev/null`, as (a) says, and Node makes no pipe.
+  A program that does not set `stdin` gives its child the same file as before.
+- **`Text text` is a pipe: the platform writes the text, and then closes the pipe.** Standard
+  input is a pipe (`stdio[0] = "pipe"`). Node emits a child's `spawn` event only when the child
+  started, and before every other event of that child. On that event the platform calls
   `child.stdin.end(text, "utf8")`, one time. The child reads the bytes of the text and then an
   end of file. After a start that failed, the platform writes nothing.
+- **`Text ""` is an empty pipe, and not `NoInput`.** The platform makes the pipe and closes it
+  the same way, with no bytes. The child reads an end of file at once, as it does from
+  `/dev/null`. But the child can see the difference: `/dev/null` is a character device, and a
+  pipe from Node is a socket (measured on Linux, Node 24.19). A tool that reads its standard
+  input only when that is a pipe does different work for the two. So the two cases stay apart,
+  and the program chooses.
 - **The platform writes the text as UTF-8**, the encoding (a) reads the output in. A lone
   surrogate becomes U+FFFD (`ef bf bd`; measured), as an invalid sequence of the output does. A
   NUL character is one `00` byte. The input is data and not an argument, so a NUL is not
@@ -9664,11 +9681,18 @@ answer for each: `Ok`, with the child's status and output, as for any child that
 ended.
 
 1. The kernel's buffer takes the whole text. The write succeeds, although nothing reads the text
-   (measured: 10 bytes to a child that only exits give no error).
+   (measured: 10 bytes to a child that only exits give no error). The same 10 bytes are case 2
+   when the child has exited before the platform handles the `spawn` event (measured, with the
+   event held back for 200 ms: `EPIPE` in 60 of 60 runs).
 2. The write fails with **`EPIPE`**, an `error` event of the input pipe (measured: 1 MiB to seven
    scripts that stop reading, 150 runs each; every run gave `EPIPE` with `syscall: "write"`, and
    no run gave another code). The platform's listener takes that error by its name and does
-   nothing more: Node dropped the rest of the text. `run` continues to wait for the child.
+   nothing more: Node dropped the rest of the text. `run` continues to wait for the child. An
+   empty text can fail the same way, although it has no bytes: Node gives `EPIPE` for the end of
+   the pipe of `Text ""` when the child exited, or closed its standard input, before the
+   platform handles the `spawn` event (measured, with the event held back for 200 ms: 60 of 60
+   runs for each of the two children). With the event at once, `Text ""` gave no error (measured:
+   four scripts, 150 runs each).
 3. The child exits first. Node destroys the input pipe at the child's `exit`, with the text not
    yet written, and reports no error (measured).
 
@@ -9695,8 +9719,8 @@ listens.
 - **A stopped child.** When (d) stops the child, or `OutputTooLarge` does, the platform closes
   the input pipe with the output pipes. It drops the text not yet written. A pipe that the
   platform destroys reports no error.
-- **Not here.** The input as bytes waits for #335's bytes. A streamed input waits for a `Stream`
-  and the handle of #2024 (§17 decision 17).
+- **Not here.** The input as bytes is a later case of `Input`, and waits for #335's bytes. A
+  streamed input waits for a `Stream` and the handle of #2024 (§17 decision 17).
 
 ## Appendix — what is deliberately not done
 
