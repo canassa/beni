@@ -1097,7 +1097,8 @@ Three things keep the old key, so that nothing changes there:
 
 - **An expansion that is not clean** — one that ran out of depth (`Builder.too_deep`) or met a
   key-kind issue (§37) — is not entered. Each later application is read again and gets what it
-  got before.
+  got before. (*Amended 2026-11-27, below:* after a read runs out of depth, it reads no
+  application again. It expands no more aliases.)
 - **A shape that is not known** keys by every argument: an alias with more than 64 parameters, a
   recursive one, and one whose expansion names a schema endpoint, a variable that is not a
   parameter, a type that did not resolve, or a type with the wrong number of arguments (an `err`
@@ -1145,6 +1146,90 @@ linear. This cost is accepted, and it is not a defect:
 
 A change to this rule is a new amendment: it specifies the shared ground types for every place
 above, before any of them is built.
+
+*Amended 2026-11-27: a read that ran out of depth expands no more aliases (#2124).* The amendment
+of 2026-11-06 does not enter an expansion that ran out of depth under its shown arguments, and it
+reads each later application again. In a diamond deeper than the reader's bound, that work does
+not end. In `A{i} a = A{i-1} (A{i-1} a)`, the body of an inner application is two levels of the
+reader below its alias, and the body of an outer one is one level below. So `A{n} Int` in a
+constructor's argument passes `Builder.max_depth` (512) when `n` is more than 255 (254 under an
+annotation's arrow), and a path of the diamond fits only after `2n − 510` outer steps. No
+expansion above that point is clean, so none is shared, and each expands its body two times:
+about `2^(2n − 510)` expansions. On master `a46fc93170` (Debug), `n = 260` checked in 0.1 s,
+and `n = 300` did not end in 20 s. That was true for a private constructor that nothing calls,
+for a public constructor and for an annotation.
+
+The rule: **after a read runs out of depth, it expands no alias.**
+
+- `Builder.too_deep` is the state. The builder that `aliasBody` makes for a body starts with the
+  flag of its caller and gives its own flag back. So the flag is the read's, and not one
+  builder's.
+- In `Builder.apply`, the steps before the expansion do not change: the arity test, the key-kind
+  checks, the exact entry, a nominal type's application, the test for an alias inside its own
+  expansion, and the entry by shown arguments.
+- Where the reader then read the alias's body, it now makes the `alias` variable with an `err`
+  for its expansion. That is the variable a shallow read makes (§14.2). It gets the exact entry
+  and no entry by shown arguments.
+
+A type that was too deep to read changes in one way:
+
+- All that the reader built before it ran out of depth is the same.
+- The node past the bound is `err`, as before.
+- Structure that the reader meets later is read as before: a function, a tuple, a record, a
+  nominal type, a type variable. An alias that has an entry in the memo gets that entry.
+- An alias that the reader meets later and that has no entry is not expanded. It is an `alias`
+  variable with its name and its arguments, and it resolves to `err`. Before, the reader
+  expanded it as far as the bound let it.
+
+The messages for the depth do not change. The flag is set at the same node as before, and each
+caller reports the read or drops it as before (§12.2's table of `err` producers):
+`nesting_too_deep` at an annotation, at a constructor that is published or used, and nothing for
+a private constructor that nothing uses. A message that comes from the readable part of the type
+stays: `f : A260 Int → Int` with the body `"s"` is `nesting_too_deep` and a type mismatch, and
+`f 1 2 3` is too many arguments.
+
+One kind of message does not stay: a mismatch against an alias that the reader did not expand.
+Such an alias is `err`, and `err` unifies with every type, so no message can come from it:
+
+- An alias written after the too-deep part. In `f : A260 Int → Name`, with `type alias Name =
+  String`, a body `1` got a mismatch against `Name`, and gets none now. It is the same for a
+  later argument of the same constructor, and for a later field of a record alias.
+- The outer applications of the diamond. `K260 Bool`, over `K0 a = String`, was `String` behind
+  its `nesting_too_deep`, because the path through the outer applications did fit. It is a hole
+  now.
+
+The message for the depth is there in each case, and the mismatch shows after the user makes
+the type less deep. Measured on 28 forms at 8 depths from 250 to 262 (master `a46fc93170`
+against the change: the exit code, the JSON diagnostics, `dump --stage=interface` and `dump
+--stage=types`): 179 of the 224 runs are equal byte for byte, each run at 254 or less among
+them. The other 45 lose one mismatch of this kind and nothing else, and no run has a different
+`nesting_too_deep`. At 300 and at 600 levels, each of the 28 forms ends.
+
+The flag stays set for the life of a builder, as it did. A builder that serves more than one
+read expands no alias in the later reads either: a declaration's annotation and then its `where`
+clause, the arguments of one constructor, or all the constructors of one type (`Contexts`,
+`Publish`, `Marker`, `Wire`). Each of these is one declaration, and a reading that has a hole
+after the change had a hole before it. `readAnnotation`, `Instantiate.ownCtor`, `Contexts` and
+`Publish` report the depth or drop the whole reading, as before. `Marker` and `Wire` keep their
+reading with its holes, as before: the other readers of the same arguments are their cover
+(§12.2's table). A shallow reader (`canonical`, the key-kind preparation) expands no alias in
+the first place, so the rule changes nothing there.
+
+After the bound, the reader finishes the bodies that are open, each one time, and expands
+nothing. So a read costs at most its clean expansions, the 512 levels, and the written types on
+its path. `A{n} Int` costs the same for each `n` above 255. Measured (ReleaseFast, instructions,
+the three forms in one module): 31.0 M at `n = 300` and 35.7 M at `n = 600`.
+
+Two things do not change:
+
+- **The key-kind half of the first bullet above.** An expansion that met a key-kind issue is
+  still read again at each application, and a diamond over such an alias is still exponential
+  (#2716).
+- **The interface reader.** `InterfaceTerms.Reader` has no flag. It enters each expansion, and
+  its bound is never met on a record that the writer wrote (§14.2).
+
+`check/bad/AliasDiamondTooDeep` and `check/good/AliasDiamondTooDeepUnused` hold the three forms
+300 deep. `perf_test.zig` holds the scenario.
 
 ### 7.5 Speculation (I14)
 
@@ -3430,7 +3515,7 @@ downstream of a message already written:
 | Producer | Why its `err` has a message |
 |---|---|
 | `TypeStore.resolved`'s guard | **removed** (it was the silent one) |
-| `Builder.read` past `max_depth` | sets `too_deep`; `readAnnotation` reports `nesting_too_deep`, and so do `Publish`'s constructor reading, `Contexts` (`null` → at the use) and `Instantiate.ownCtor`; `Marker`'s and `Publish`'s second reading of the same constructor arguments are covered by the first |
+| `Builder.read` past `max_depth`, and `Builder.apply` on an alias after it (§7.4, *amended 2026-11-27*: the read expands no more aliases) | sets `too_deep`; `readAnnotation` reports `nesting_too_deep`, and so do `Publish`'s constructor reading, `Contexts` (`null` → at the use) and `Instantiate.ownCtor`; `Marker`'s and `Publish`'s second reading of the same constructor arguments are covered by the first |
 | `Builder.read`'s other tags, `named` with no type, `apply` at a wrong arity or inside its own expansion, `aliasBody` with no body | an earlier phase reported (unresolved name, parser placeholder, `wrong_type_arity`, `recursive_alias`, `import_cycle`, a parse error): the module is quiet, or the alias's module is a dependency with an error |
 | `Builder.named`, a private record schema's endpoint through another module's alias | the endpoint is read from the declaring module's plan (§11.5, *amended 2026-09-28*); `err` only when that module has no plan, which is when it had an error |
 | `Builder.schemaMember`, `InterfaceTerms`/`Schemes` readers (`.err` term, a scheme `none`, a depth past the writer's bound) | the dependency's message: its publisher reported the `<error>` (§14.1, *amended 2026-09-28*) or the depth (`nesting_too_deep` at the same bound); an index out of range is a malformed record, which no compiler-written interface is |
