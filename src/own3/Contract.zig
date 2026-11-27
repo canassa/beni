@@ -218,6 +218,11 @@ pub const Fn = struct {
     /// argument escape unless each function there is beni code (kernel §6
     /// rule 2, *A function held in a value*, *A field called as a method*).
     receiver: bool = false,
+    /// Per parameter `k` of the owner (bit `k`): every run of the function
+    /// ends before any run of the function at `k` starts, and the owner keeps
+    /// it nowhere, answers it nowhere and hands it to nothing that can run it
+    /// later (kernel §11 item 11, *The order of a callee's runs*). A row's is 0.
+    before: u64 = 0,
 };
 
 pub const Contract = struct {
@@ -539,7 +544,7 @@ fn union2(arena: Allocator, a: []const Src, b: []const Src) Allocator.Error![]co
 fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
     const x = a orelse return b == null;
     const y = b orelse return false;
-    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.single != y.single or x.defect != y.defect or x.runs_on != y.runs_on or x.forks != y.forks or x.starts != y.starts or x.kept_out != y.kept_out or x.after_call != y.after_call or x.ans_own != y.ans_own or x.receiver != y.receiver) return false;
+    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.single != y.single or x.defect != y.defect or x.runs_on != y.runs_on or x.forks != y.forks or x.starts != y.starts or x.kept_out != y.kept_out or x.after_call != y.after_call or x.ans_own != y.ans_own or x.receiver != y.receiver or x.before != y.before) return false;
     if (!std.mem.eql(u32, x.layouts, y.layouts) or !std.mem.eql(bool, x.free, y.free)) return false;
     for (x.supply, y.supply) |s, t| if (!srcsEql(s, t)) return false;
     return true;
@@ -597,6 +602,7 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
         out.after_call = true;
         out.ans_own = true;
         out.receiver = true;
+        out.before = 0;
         return out;
     }
     const supply = try arena.alloc([]const Src, x.supply.len);
@@ -604,7 +610,7 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
     for (supply, x.supply, y.supply) |*s, p, q| s.* = try union2(arena, p, q);
     for (free, x.free, y.free) |*f, p, q| f.* = p and q;
     const out = try arena.create(Fn);
-    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .single = x.single and y.single, .defect = x.defect or y.defect, .runs_on = x.runs_on or y.runs_on, .forks = x.forks and y.forks, .starts = x.starts and y.starts, .kept_out = x.kept_out or y.kept_out, .after_call = x.after_call or y.after_call, .ans_own = x.ans_own or y.ans_own, .receiver = x.receiver or y.receiver };
+    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .single = x.single and y.single, .defect = x.defect or y.defect, .runs_on = x.runs_on or y.runs_on, .forks = x.forks and y.forks, .starts = x.starts and y.starts, .kept_out = x.kept_out or y.kept_out, .after_call = x.after_call or y.after_call, .ans_own = x.ans_own or y.ans_own, .receiver = x.receiver or y.receiver, .before = x.before & y.before };
     return out;
 }
 
@@ -706,7 +712,7 @@ fn dupFn(a: Allocator, f: *const Fn) Allocator.Error!*const Fn {
     const supply = try a.alloc([]const Src, f.supply.len);
     for (supply, f.supply) |*s, x| s.* = try a.dupe(Src, x);
     const out = try a.create(Fn);
-    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .single = f.single, .defect = f.defect, .runs_on = f.runs_on, .forks = f.forks, .starts = f.starts, .kept_out = f.kept_out, .after_call = f.after_call, .ans_own = f.ans_own, .receiver = f.receiver };
+    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .single = f.single, .defect = f.defect, .runs_on = f.runs_on, .forks = f.forks, .starts = f.starts, .kept_out = f.kept_out, .after_call = f.after_call, .ans_own = f.ans_own, .receiver = f.receiver, .before = f.before };
     return out;
 }
 

@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value); §11 item 11 added the same day (*A closure writes a field of a record it captured*, *The order of a callee's runs*, #2657). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1589,6 +1589,36 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     `Show` body and a helper shown in an arm keep the closure made at the render, which a removed
     row still runs after `update`.*
 
+    **A hole evaluated once** (*added 2026-11-27, #2657*; `Frame.holeOnceMarkup`, `dropWritten`,
+    `Enforce.keptByLowering`). Markup holds every value a hole's evaluation reads because a lowering
+    may evaluate the hole again, or later, from those values. Where the lowering says that it
+    evaluates a hole at most once in each evaluation of the function the markup is in, from what
+    that evaluation made or was handed and never from a value an earlier evaluation read
+    (`Lowering.evaluates_hole_once`, `boundary.md` §9.4.8, *A hole evaluated once*), the old value of
+    a cell that the hole's own evaluation wrote is read by nothing but another evaluation of the hole.
+    So a value the evaluation read, or handed to a helper's call in the hole, of which every cell
+    (`allLeaves`) is a cell that a write of that evaluation names, made at a call that is not pure and
+    total for certain (`Mod.notTotalCall`, `Enforce.notTotalCalls`: a callee the checker did not prove
+    total, or a list append), is no value the markup holds; the hole's value, a closure the hole makes,
+    and every other value it read stay held. A pure, total value is evaluated where the lowering
+    likes: eagerly in an arm the branch does not take, or again where an event fires from an argument
+    of a helper (`browser-inline.md` §8.2), and a `Dict` writer is total; so its writes do not count. The checker
+    reads a hole so where two facts hold:
+    1. the markup is the whole body of a declaration with parameters, or the markup of an arm of an
+       `if` or a `case` (no `let` around it) that is a hole's value of such markup, itself read so,
+       through arms alone (`holeOnceMarkup`): a `let`'s markup, a constant's and an argument's are
+       evaluated where a hole shows them, which can be twice;
+    2. the lowering names the hole (`inline`: one that the root reaches through elements and
+       fragments alone, in a root with no `let`).
+    *The argument.* A later reader of the old name is a holder that observes the cell as it was
+    before the write. The function's own later reads of it are judged by §5 as before (a read of an
+    old name after the write); the only other reader that the markup stood for is an evaluation of
+    the hole from the values it read, which the lowering rules out. A write by another value of the
+    function, before or after, reads the cell through a name of its own, which §5 judges. *Before,
+    `<section>{helper (List.push xs 2)}</section>` in an arm held `xs`, and the push was refused as
+    read again where the markup is read; and a hole that called a helper which writes its argument
+    held the argument (`browser/inline/TotalCallBranchOwnership`).*
+
     *The argument.* The runtime is a holder that the walk does not follow, and it does two things
     with markup: it reads the values the markup holds while it renders, and it calls code the markup
     gives it. The first is covered by the markup holding every value its holes can read until it is
@@ -2605,10 +2635,53 @@ cells, and an update is a write of some of them.
      The update must run before the place where the chain is read (`runsBefore` against that
      place), and the chain must be in the closure's own text (`lex`). `RecordReadNestedClosure`'s
      arm `#InList` is one: `{ it | n = it.n + 1 }` and then `λs → … it.n` in the same arm.
+11. **A closure writes a field of a record it captured** (*added 2026-11-27, #2657*;
+   `Frame.captureSlot`, `captureSlots`, `writesCapturedSlot`). A capture is a parameter of the
+   closure's contract (§6.3), so in the closure's own frame a write of a captured record's field slot
+   (one in no cell's contents: those are §13 item 11's) passes §5 test 1, is judged there by tests 2
+   to 4 against the closure's own holders, and the contract publishes it (`W` at the capture's
+   slot), as a parameter's write is. The holder judges the closure where it runs it:
+   - **a call of the closure** (`apply`): the captures are arguments, as a direct call's are, and
+     each written slot is a demand at the call against the other arguments;
+   - **a call whose callee runs it within the call, at most once, as its own argument**
+     (`runsWithin` is that call itself, and the callee's `Fn.once` or `Fn.single`): the code reads
+     there what its contract reads of the capture, and each written slot is a demand at that call
+     on what the frame holds there, against the call's other arguments (not the one that holds the
+     closure) and the closure's other captures. Twice in one call, a later run would write in place
+     the record an earlier run answered to the callee, which the copying program keeps apart;
+     inside another function (a capture of a capture, `Use.inner`), what the functions on the way
+     do with it is not judged here; so both are refused (`call`);
+   - **any other holder** (the default, a lost use, one that keeps or answers it, a list, markup, a
+     spawned fiber): the closure runs at times the frame does not see, and the write is refused
+     (`call`).
+
+   **The order of a callee's runs** (`Fn.before`, `Frame.publishBefore`, `Frame.sights`). An
+   argument of that call that is a closure reaching the written record is another operand (§5 test
+   2), which refuses the write: the callee can run it after the write. Where the callee's contract
+   says that it runs the parameter `i` only before the parameter `k` that holds the writing closure,
+   every read of a run at `i` is over before the write, and what the callee still holds of it is
+   what its runs leave: the operand at `i` is the closure's captures at the locations its contract
+   answers, lets escape, hands to a function, writes or renews or stores in a cell (`capAfter`; a
+   location it only reads is not among them; a captured function, a contract that casts and a draft
+   are held whole). A walked body publishes `i` before `k` where:
+   - every point at which its walk runs `i` is a call that runs it within itself: a call of it
+     (`callParam`), or a call whose callee runs it within (`flowOwn` with `runsWithin`);
+   - the body keeps `i` nowhere: no escape and no answer of its location, no draft that loses it
+     (`Fn.lost`) or holds it past the call (`Fn.kept_out`), no function parameter of the body
+     handed it (a supply), no cell's renewal naming it;
+   - `k` escapes nowhere but through a holder the walk sees (each such holder is a point of `k`,
+     from which it can run `k` at any later time);
+   - each point of `i` is at another instruction than each point of `k`, and at an earlier time of
+     the walk's clock (§5.3): one call that is handed both can run them in either order.
+   A row's `before` is empty, and a join of two contracts keeps what both say. `Task.bracket`
+   publishes `acquire` before `use`: it runs `acquire` within `uninterruptible`, then calls `use`.
+   *Before, a closure's write of a captured record was refused in its own frame (`captured`), so
+   `Task.bracket (λ⊤ → model.count + 10) … λr → ( { model | count = r }, … )` in `update` was
+   refused (`browser/inline/BracketInUpdate`).*
 
 Every other rule applies to a slot as to a list's storage: a call's contract flags its slots (read,
 written, escaped), so a write in a helper of another module is a demand at its call (§6.2); a
-capture, an answer of a function parameter and a cell's contents are never `own`; a slot that escaped
+capture (but in its own frame, item 11), an answer of a function parameter and a cell's contents are never `own`; a slot that escaped
 is never written; a function that writes its parameter's slot is refused where the default holds it
 (§6.8: a callback of `List.map` that updates its element, `Ref.update`'s function); markup holds what
 its holes read until it is rendered (§6.12), and the platform rule that §6.12 trusts holds of a record

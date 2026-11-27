@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 43 },
+    .targets = .{ .major = 1, .minor = 44 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -182,6 +182,9 @@ pub const lowering: m.Lowering = .{
     // A handler of an element of a `view`'s own markup, reached through
     // elements alone, is read at the event (`readsHandlerAtEvent`).
     .reads_handler_at_event = readsHandlerAtEvent,
+    // A hole of a root's own markup, reached through elements alone, is
+    // evaluated once in each evaluation of its function (`evaluatesHoleOnce`).
+    .evaluates_hole_once = evaluatesHoleOnce,
     .programs = &.{
         .{ .module = "Tea", .name = "sandbox" },
         .{ .module = "Tea", .name = "element" },
@@ -262,6 +265,38 @@ fn readsHandlerAtEvent(tree: *const m.Tree, index: m.Root.Index, item: u32) bool
     const r = tree.root(index);
     if (r.kind != .expression or r.lets.len != 0) return false;
     return elementsReach(tree, r.node, item);
+}
+
+/// `Lowering.evaluates_hole_once` (`boundary.md` §9.4.8, *A hole evaluated
+/// once*): a hole that the root's markup reaches through elements and
+/// fragments alone, in a root with no `let`. Each binding function
+/// evaluates the values of its group once in each run, after the `let`s and
+/// the helpers' arguments they read, which it evaluates again in that run
+/// (`bindLets`, `argsOnce`, §8.2 *Evaluation order*); a branch's arm is a
+/// root of its own, whose values run when the branch takes the arm, or for
+/// an eager arm only when each is proven pure and total; and no value of a
+/// pass is kept to evaluate a hole from at a later one (`keeps_let` is
+/// `keepsNoLet`). A `For` row, a `Show` body, a component and its children
+/// are not reached: a row keeps what it captured from the render that made it.
+fn evaluatesHoleOnce(tree: *const m.Tree, index: m.Root.Index, node: m.Node.Index) bool {
+    const r = tree.root(index);
+    if (r.kind != .expression or r.lets.len != 0) return false;
+    return holeReached(tree, r.node, node);
+}
+
+/// Whether hole `hole` is a child that `n` reaches through elements and
+/// fragments alone.
+fn holeReached(tree: *const m.Tree, n: m.Node.Index, hole: m.Node.Index) bool {
+    const children = switch (tree.kind(n)) {
+        .element => tree.element(n).children,
+        .fragment => tree.fragment(n).children,
+        else => return false,
+    };
+    for (tree.childrenOf(children)) |c| {
+        if (c == hole and tree.kind(c) == .hole) return true;
+        if (holeReached(tree, c, hole)) return true;
+    }
+    return false;
 }
 
 /// Whether item `item` is on an element that `n` reaches through elements

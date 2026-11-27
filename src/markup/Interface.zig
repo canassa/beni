@@ -134,7 +134,11 @@ const std = @import("std");
 /// root the lowering reads the handler of where the event fires, from the
 /// values the root's function holds then (`boundary.md` §9.4.8, *A handler
 /// read at the event*).
-pub const version: Version = .{ .major = 1, .minor = 43 };
+/// Version 1.44 adds `Lowering.evaluates_hole_once`: which holes of a root
+/// the lowering evaluates at most once in each evaluation of the function
+/// the root is the body of, and never again from what an earlier
+/// evaluation read (`boundary.md` §9.4.8, *A hole evaluated once*).
+pub const version: Version = .{ .major = 1, .minor = 44 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -272,6 +276,19 @@ pub const Lowering = struct {
     /// handler**: a lowering that says nothing is read on the side that
     /// refuses.
     reads_handler_at_event: *const fn (tree: *const Tree, root: Root.Index, item: u32) bool = keepsEveryHandler,
+    /// 1.44 (`boundary.md` §9.4.8, *A hole evaluated once*): whether, for
+    /// root `root`, when it is the whole body of a function or the markup of
+    /// an arm of an `if` or a `case` that is a hole's value of such a root,
+    /// the lowering evaluates the value of hole `node` at most once in each
+    /// evaluation of the function, wherever it writes the root: from the
+    /// values that evaluation made or was handed, never again from a value
+    /// it read at an earlier evaluation, and a helper's call in the hole is
+    /// made there, at most once, with its arguments evaluated there. The
+    /// ownership checker then reads the old value of a cell that the hole's
+    /// own evaluation wrote as read by nothing the markup keeps. **The
+    /// default is false**: the lowering may evaluate a hole again, or later,
+    /// from the values it read (the `dom` lowering's block of inputs).
+    evaluates_hole_once: *const fn (tree: *const Tree, root: Root.Index, node: Node.Index) bool = evaluatesNoHoleOnce,
 
     pub const Effects = struct {
         sub: []const u8,
@@ -317,6 +334,15 @@ pub fn keepsEveryHandler(tree: *const Tree, root: Root.Index, item: u32) bool {
     _ = tree;
     _ = root;
     _ = item;
+    return false;
+}
+
+/// 1.44: `Lowering.evaluates_hole_once`'s default: no hole is known to be
+/// evaluated once.
+pub fn evaluatesNoHoleOnce(tree: *const Tree, root: Root.Index, node: Node.Index) bool {
+    _ = tree;
+    _ = root;
+    _ = node;
     return false;
 }
 

@@ -1,0 +1,31 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <div>
+          <p>"2"</p>
+          <button id="go">"go"</button>
+        </div>
+      </section>
+      <p id="last">"0"</p>
+    </main>
+  </div>
+</body>
+-- click #go
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <div>
+          <p>"2"</p>
+          <button id="go">"go"</button>
+        </div>
+      </section>
+      <p id="last">"2"</p>
+    </main>
+  </div>
+</body>
+-- click #go
+(the DOM did not change)

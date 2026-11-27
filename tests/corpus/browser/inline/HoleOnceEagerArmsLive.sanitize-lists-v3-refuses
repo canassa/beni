@@ -1,0 +1,4 @@
+# Eager arms whose values are pure and total are both evaluated on one dictionary: the inserts in place stay refused (ownership-v3-kernel.md §6 rule 12, *A hole evaluated once*).
+24:29 list_still_used Dict.insert
+28:29 list_still_used Dict.insert
+37:10 list_still_used call

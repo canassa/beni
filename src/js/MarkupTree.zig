@@ -363,6 +363,45 @@ pub fn handlersAtEvent(arena: Allocator, built: *const Built, lowering: *const m
     return out.items;
 }
 
+/// The instructions of the hole values that `lowering` evaluates at most
+/// once in each evaluation of the function a root is the body of
+/// (`Lowering.evaluates_hole_once`, `boundary.md` §9.4.8, *A hole evaluated
+/// once*): of each root, every hole its markup reaches through elements and
+/// fragments whose value is an instruction, that the lowering names.
+/// Ascending. The ownership checker reads each so only where the root is
+/// the whole body of a function, or an arm's markup of such a root's hole
+/// (kernel §6 rule 12, *A hole evaluated once*).
+pub fn holesOnce(arena: Allocator, built: *const Built, lowering: *const m.Lowering) Allocator.Error![]const u32 {
+    var out: std.ArrayList(u32) = .empty;
+    for (built.tree.roots, 0..) |root, ri| {
+        if (root.kind != .expression) continue;
+        try holesBelow(arena, built, lowering, @fromBackingInt(@intCast(ri)), root.node, &out);
+    }
+    std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+    return out.items;
+}
+
+fn holesBelow(arena: Allocator, built: *const Built, lowering: *const m.Lowering, ri: m.Root.Index, n: m.Node.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
+    const tree = &built.tree;
+    const children = switch (tree.kind(n)) {
+        .element => tree.element(n).children,
+        .fragment => tree.fragment(n).children,
+        else => return,
+    };
+    for (tree.childrenOf(children)) |c| {
+        if (tree.kind(c) == .hole) {
+            const inst = switch (built.values[@backingInt(tree.hole(c).value)]) {
+                .inst => |i| i,
+                .call => |c2| c2.inst,
+                else => continue,
+            };
+            if (lowering.evaluates_hole_once(tree, ri, c)) try out.append(arena, inst.int());
+            continue;
+        }
+        try holesBelow(arena, built, lowering, ri, c, out);
+    }
+}
+
 fn handlersBelow(arena: Allocator, built: *const Built, lowering: *const m.Lowering, ri: m.Root.Index, n: m.Node.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
     const tree = &built.tree;
     switch (tree.kind(n)) {

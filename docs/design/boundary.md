@@ -2884,6 +2884,32 @@ closure, or the arguments, of the render that made them. The tests are `browser/
 under the sanitiser), and `browser/inline/KeptHandlerNamedTwice` (a `.sanitize-lists-v3-refuses` page:
 the `view` is named again in a helper, so its handler is kept).
 
+**A hole evaluated once** (*added 2026-11-27*, #2657; interface 1.44). A lowering may evaluate a hole's
+value where it renders, from the values the hole read (the `dom` lowering's block of a root's inputs,
+`backend.md` §15.4), and so evaluate it again, or later, from values read at an earlier evaluation; the
+checker therefore counts markup as holding every value a hole's evaluation reads. A lowering that
+evaluates a hole only as a part of one evaluation of the function the markup is in says so through the
+interface: `Lowering.evaluates_hole_once` names each hole of a root, for a root that is the whole body of
+a function, or the markup of an arm of an `if` or a `case` that is the value of a hole of such a root,
+whose value it evaluates, wherever it writes that root, **at most once in each evaluation of the
+function**, from the values that evaluation made or was handed, and never again from a value it read
+at an earlier evaluation. A helper's call in such a hole is made there, at most once, with its
+arguments evaluated there. Its default is `false` for every hole. When a hole's evaluation writes a cell
+in place, the old value of that cell is read again only by another evaluation of the hole, so the
+ownership checker does not count the markup as holding the values of which every cell the hole's own
+evaluation wrote at a call that is not pure and total (a pure, total value may still be evaluated in
+an arm not taken, or again at an event); the hole's value, and every value the evaluation read of a cell it did not write, it
+still holds (`ownership-v3-kernel.md` §6.12, *A hole evaluated once*). `inline` says so of each hole
+that the root reaches through elements and fragments alone, in a root with no `let`: it evaluates the
+hole in the binding function of its group, once on each pass that runs that function, and it evaluates
+again in that function each `let` and each helper's argument the hole reads (`browser-inline.md` §8.2,
+*Evaluation order*); a branch's arm is a root of its own, evaluated only when its value takes the arm,
+or, eagerly, for an arm whose values are proven pure and total (no list writer). A `For` row, a `Show`
+body and a component are not reached, and the `let`s of a root are memo nodes or values of one
+binding. The tests are `browser/inline/TotalCallBranchOwnership`, a page written in place under the
+sanitiser, and `browser/inline/HoleOnceDispatchLive` and `HoleOnceEagerArmsLive`, whose `Dict` inserts
+are pure and total and stay refused.
+
 **What the checker concludes from the rule** (`ownership-v3-kernel.md` §6.12, §6.13). The rule is
 about the runtime, so the checker uses it only where the program gives markup to the runtime:
 

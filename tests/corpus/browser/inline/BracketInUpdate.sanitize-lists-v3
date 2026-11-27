@@ -1,0 +1,1 @@
+The use closure writes count of the model it captured, inside Task.bracket, which runs acquire only before use: update writes count in place under --ownership=v3 (ownership-v3-kernel.md §11 item 11, *The order of a callee's runs*).
