@@ -501,6 +501,14 @@ tail_old: bool = false,
 answer_place: ?PlaceId = null,
 /// The body read a value at a type variable that is not its own type (`narrowed`), or used the answer of a callee that did (`Contract.casts`).
 casts: bool = false,
+/// The type variables that a call of the frame can answer a new value of
+/// (`taintCall`), as the store's roots: a location of the result or of a
+/// supply at one of them is not at the same place (kernel §3.4, *a walked
+/// body's own type variables*).
+tainted: std.ArrayList(Var) = .empty,
+/// A type of a call that `taintCall` could not read to the end: every
+/// variable is tainted.
+tainted_all: bool = false,
 
 nodes: std.ArrayList(Node) = .empty,
 kids: std.ArrayList(Kid) = .empty,
@@ -2399,6 +2407,11 @@ fn unknownOf(f: *Frame, place: PlaceId, vs: []const Val) Error!Val {
     for (vs) |v| if (v != v_none and v != v_outside) try f.lists.append(f.gpa, v);
     const count: u32 = @intCast(f.lists.items.len - start);
     if (count == 0) return v_outside;
+    // A value of no claim made of parts can hold any of their cells at any
+    // of its locations, a part read at no place among them: no location of
+    // the frame is at the same place (kernel §3.4, *a walked body's own type
+    // variables*).
+    f.tainted_all = true;
     return f.node(.{ .tag = .unknown, .place = place, .a = start, .b = count });
 }
 
@@ -5155,6 +5168,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // scrutinee. A `smear` of it would claim its cells and lose that
             // one cell can be at two of its locations.
             if (try m.trySuccess(data.lhs)) |s| return f.project(v, s);
+            try f.taintCall(inst);
             return f.unknownOf(try m.placeOfInst(inst), &.{v});
         },
         .call => return f.call(inst, mode),
@@ -5247,14 +5261,25 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             var handed: std.ArrayList(u32) = .empty;
             defer handed.deinit(f.gpa);
             try f.keptItems(@fromBackingInt(data.lhs), &unrendered, &handed);
+            // A handler that the lowering reads where its event fires, in a
+            // root of a function named only as a program's `view` (kernel
+            // §6 rule 12, *A handler read at the event*): no closure of
+            // this render is kept, and the handler is a call made then.
+            const view_root = try m.viewRoot(inst);
             for (ops.items, vals, reads) |o, v, rd| {
                 if (std.mem.indexOfScalar(u32, handed.items, o.int()) != null) {
                     for (held.items[rd[0]..rd[1]]) |x| try f.escape(x, inst);
                     continue;
                 }
-                const kept = std.mem.indexOfScalar(u32, unrendered.items, o.int()) != null or try f.keptHole(v);
+                const unrendered_item = std.mem.indexOfScalar(u32, unrendered.items, o.int()) != null;
+                if (unrendered_item and view_root and m.handlerAtEvent(o.int())) {
+                    try f.eventCall(inst, o.int(), v);
+                    continue;
+                }
+                const kept = unrendered_item or try f.keptHole(v);
                 if (kept) try f.escape(v, inst) else try f.readAll(v, inst);
             }
+            try f.taintCall(inst);
             return f.unknownOf(try m.placeOfInst(inst), held.items);
         },
         // Not an expression: a reference the resolver did not rewrite, a
@@ -5430,6 +5455,34 @@ fn runtimeCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val, item: Val) Error!voi
     }
     try f.escape(item, inst);
     try f.escape(fv, inst);
+}
+
+/// The handler `fv`, the value of `fn_inst`, of an event of the markup
+/// `inst` that the lowering reads where the event fires (kernel §6 rule 12,
+/// *A handler read at the event*): it evaluates the handler then, from the
+/// values the `view` is handed then, and keeps nothing of this render. So
+/// the handler is no holder of what it reads: its run is a call, applied
+/// as at a call site with the event's payload, which holds no cell of the
+/// frame, and the message it answers escapes — the runtime sends it to
+/// `update`, and can queue it behind a dispatch. A message that is no
+/// function is that answer itself. A function that no rule follows, or of
+/// another arity, is kept as before: it escapes whole.
+fn eventCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val) Error!void {
+    const m = f.m;
+    const n = f.nodes.items[fv];
+    if (n.tag == .join) {
+        // Each arm is work (kernel §8); past the budget the join is kept.
+        if (f.charge(n.b)) return f.escape(fv, inst);
+        for (0..n.b) |ki| try f.eventCall(inst, fn_inst, f.lists.items[n.a + 2 * ki]);
+        return;
+    }
+    const ft = m.fnType(m.typeOfInst(fn_inst)) orelse return f.escape(fv, inst);
+    if (m.in.store.vars(ft.params).len != 1) return f.escape(fv, inst);
+    const code = (try f.codeOf(fv)) orelse return f.escape(fv, inst);
+    if (code.own_params != 1) return f.escape(fv, inst);
+    const args = [1]Val{v_outside};
+    const answer = try f.applyAt(inst, fn_inst, code, &args, &.{}, try m.placeOf(ft.result.toOptional()));
+    try f.escape(answer, inst);
 }
 
 /// The values of the items of the markup at `root` that the runtime can keep
@@ -5693,7 +5746,170 @@ fn ctorValue(f: *Frame, inst: u32) Error!Val {
 /// The answer of code the walk does not follow at `inst`: no claim, and it
 /// can hold each cell of the values `in_sight` (kernel §3.2).
 fn unknownResult(f: *Frame, inst: u32, in_sight: []const Val) Error!Val {
+    try f.taintCall(inst);
     return f.unknownOf(try f.m.placeOfInst(inst), in_sight);
+}
+
+/// A call of the frame at `inst` can answer a new value of each type variable
+/// its type names (kernel §3.4, *a walked body's own type variables*): a
+/// location of the frame's result or supply at one of them is not at the
+/// same place.
+fn taintCall(f: *Frame, inst: u32) Error!void {
+    try f.taintType(f.m.typeOfInst(inst).unwrap(), 0);
+}
+
+/// Each type variable that the type `t` names is tainted (`tainted`). A type
+/// that is not known, or not read to its end, taints every one: the
+/// pessimistic side. Each part of the type is work (kernel §8).
+fn taintType(f: *Frame, t: ?Var, depth: u32) Error!void {
+    if (f.tainted_all) return;
+    const v = t orelse {
+        f.tainted_all = true;
+        return;
+    };
+    if (depth > 16 or f.charge(1)) {
+        f.tainted_all = true;
+        return;
+    }
+    const store = f.m.in.store;
+    const r, const c = store.resolved(v);
+    switch (c) {
+        .flex, .rigid => {
+            for (f.tainted.items) |x| if (x == r) return;
+            try f.tainted.append(f.gpa, r);
+        },
+        // `resolved` reads through every alias; an error is no type.
+        .alias, .err => f.tainted_all = true,
+        .structure => |s| switch (s) {
+            .unit, .empty_record => {},
+            .func => |fx| {
+                for (store.vars(fx.params)) |p| try f.taintType(p, depth + 1);
+                try f.taintType(fx.result, depth + 1);
+            },
+            .app => |ap| for (store.vars(ap.args)) |x| try f.taintType(x, depth + 1),
+            .tuple => |xs| for (store.vars(xs)) |x| try f.taintType(x, depth + 1),
+            .record => |rec| {
+                for (store.fields(rec.fields)) |fd| try f.taintType(fd.value, depth + 1);
+                try f.taintType(rec.ext, depth + 1);
+            },
+        },
+    }
+}
+
+/// Whether the type `t` is a type variable that no call of the frame can
+/// answer a new value of (`taintCall`).
+fn untainted(f: *Frame, t: ?Var) bool {
+    if (f.tainted_all) return false;
+    const v = t orelse return false;
+    const r, const c = f.m.in.store.resolved(v);
+    switch (c) {
+        .flex, .rigid => {},
+        .structure, .alias, .err => return false,
+    }
+    _ = f.charge(f.tainted.items.len);
+    for (f.tainted.items) |x| if (x == r) return false;
+    return true;
+}
+
+/// Whether the walked contract `c` answers each value at a type variable's
+/// location of its result at the same place (`Src.same_place`), or is a
+/// cell's row, which answers the contents as they are (kernel §3.4).
+fn answersInPlace(f: *Frame, c: *const Contract) bool {
+    if (c.cell_row) return true;
+    const es = f.m.loc.layoutEntries(c.layouts[c.arity]);
+    for (c.res, 0..) |srcs, r| {
+        if (es[r].kind != .@"var") continue;
+        for (srcs) |s| switch (s.kind) {
+            .param, .answer => if (!s.same_place) return false,
+            // A walked body that does not cast makes no value of a type
+            // variable; a row's new value there is a new value.
+            .fresh => return false,
+            .outside, .twice => {},
+        };
+    }
+    return true;
+}
+
+/// Whether the contract `c` hands its function parameter `fnc` each value
+/// at a type variable's location of parameter `k` of that function at the
+/// same place, or runs it once as a cell's row (`Fn.once`).
+fn handsInPlace(f: *Frame, fnc: *const CMod.Fn, k: usize) bool {
+    if (fnc.once) return true;
+    if (fnc.lost) return false;
+    const es = f.m.loc.layoutEntries(fnc.layouts[k]);
+    for (fnc.off[k]..fnc.off[k + 1]) |i| {
+        if (es[i - fnc.off[k]].kind != .@"var") continue;
+        for (fnc.supply[i]) |s| switch (s.kind) {
+            .param, .answer => if (!s.same_place) return false,
+            .fresh => return false,
+            .outside, .twice => {},
+        };
+    }
+    return true;
+}
+
+/// The function values `vals` that a call of `c` hands its function
+/// parameters can be run with, and answer, new values of the type variables
+/// of their types: taint them (kernel §3.4, *a walked body's own type
+/// variables*). A function the callee hands values at the same place, whose
+/// own answer is at the same place (the frame's own function parameter or
+/// capture, whose answer its caller reads, or known code that answers so),
+/// taints nothing.
+fn taintHanded(f: *Frame, c: *const Contract, vals: []const Val, arg_insts: []const Inst.Index) Error!void {
+    const m = f.m;
+    for (vals, 0..) |v, j| {
+        if (j >= c.arity) break;
+        // The function's type in the frame's variables: a capture's, or an
+        // argument's the walk has no type of, is none, and a variable read
+        // there is every one (`taintType`).
+        const fty: ?Var = if (j < arg_insts.len) m.typeOfInst(arg_insts[j].int()).unwrap() else null;
+        const ft = m.fnType(if (fty) |t| t.toOptional() else .none);
+        const fnc = c.fns[j] orelse {
+            if (ft != null) {
+                try f.taintType(fty, 0);
+            } else if (v != v_none and v != v_outside) switch (f.nodes.items[v].tag) {
+                .closure, .fnref => f.tainted_all = true,
+                .none, .outside, .ref, .built, .join, .unknown, .later => {},
+            };
+            continue;
+        };
+        const pvars: []const Var = if (ft) |t| m.in.store.vars(t.params) else &.{};
+        for (0..fnc.arity) |k| if (!f.handsInPlace(fnc, k)) {
+            try f.taintType(if (k < pvars.len) pvars[k] else null, 0);
+        };
+        if (v == v_none or v == v_outside) continue;
+        const own = f.ownFnRoot(v);
+        if (own != none and f.isFnRoot(own)) continue;
+        const res_ty: ?Var = if (ft) |t| t.result else null;
+        const code = (try f.codeOf(v)) orelse {
+            try f.taintType(res_ty, 0);
+            continue;
+        };
+        if (!f.answersInPlace(code.contract)) try f.taintType(res_ty, 0);
+    }
+}
+
+/// Mark the `param` and `answer` sources `srcs` of the entry `e` of
+/// `layout`, whose type is `t`, at the same place where the entry is a type
+/// variable's that no call of the frame named (kernel §3.4, *a walked body's
+/// own type variables*). Normal again: the mark is part of a source's key.
+fn markInPlace(f: *Frame, srcs: []const Src, layout: u32, e: usize, t: ?Var) Error![]const Src {
+    const m = f.m;
+    const ent = m.loc.layoutEntries(layout)[e];
+    if (ent.kind != .@"var") return srcs;
+    if (!f.untainted(try m.typeAt(t, ent.loc))) return srcs;
+    var any = false;
+    for (srcs) |s| switch (s.kind) {
+        .param, .answer => any = true,
+        .fresh, .outside, .twice => {},
+    };
+    if (!any) return srcs;
+    const out = try m.arena.dupe(Src, srcs);
+    for (out) |*s| switch (s.kind) {
+        .param, .answer => s.same_place = true,
+        .fresh, .outside, .twice => {},
+    };
+    return CMod.normal(m.arena, out);
 }
 
 fn built(f: *Frame, place: PlaceId, kids: []const Kid) Error!Val {
@@ -6905,6 +7121,14 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
             if (m.loc.layoutEntries(layouts[s.a])[s.e].kind != .field) flags[off[s.a] + s.e] |= flag_r;
         };
     }
+    // The sources at the same place (kernel §3.4, *a walked body's own type
+    // variables*): a frame that casts reads a value at a type that is not
+    // its own, and one that gave up publishes nothing.
+    const in_place = !f.casts and !f.failed;
+    if (in_place and f.body_root != none) {
+        const rty = m.typeOfInst(f.body_root).unwrap();
+        for (res, 0..) |*r, e| r.* = try f.markInPlace(r.*, layouts[arity], e, rty);
+    }
     // The function parameters. Each parameter of a function type has a
     // contract, also when the body does nothing with it: a missing fact
     // about a function is never "nothing happens" (research report 112 §2.2).
@@ -6928,6 +7152,21 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
         for (supply, dr.free) |s, free| if (free) for (s) |x| if (x.kind == .param) {
             flags[off[x.a] + x.e] |= flag_s;
         };
+        if (in_place) {
+            // The function parameter's type in the body's variables.
+            const r = f.roots.items[dr.root];
+            const pty: Var.Optional = switch (r.kind) {
+                .param => if (f.patType(r.inst)) |t| t.toOptional() else .none,
+                .capture => if (r.index < f.param_ty.items.len) f.param_ty.items[r.index] else .none,
+                .outside, .local, .answer, .fresh => .none,
+            };
+            if (m.fnType(pty)) |ft| {
+                const pv = m.in.store.vars(ft.params);
+                for (0..@min(dr.arity, pv.len)) |k| for (dr.off[k]..dr.off[k + 1]) |i| {
+                    supply[i] = try f.markInPlace(supply[i], dr.layouts[k], i - dr.off[k], pv[k]);
+                };
+            }
+        }
         const fnc = try m.arena.create(CMod.Fn);
         fnc.* = .{ .arity = dr.arity, .layouts = dr.layouts, .off = dr.off, .supply = supply, .free = try m.arena.dupe(bool, dr.free), .called = dr.called, .lost = dr.lost, .ans_escapes = dr.ans_escapes, .rewrites = dr.rewrites, .defect = dr.defect or (f.defect_data == .held and dr.used) or (f.defect_data != .none and dr.lost) or (idx < 32 and (f.defectHookParams() >> @intCast(idx)) & 1 != 0), .runs_on = dr.runs_on or (idx < 32 and (f.runsOnParams() >> @intCast(idx)) & 1 != 0), .forks = (dr.lost and !dr.not_forks and !dr.called) or (idx < 32 and (f.forksParams() >> @intCast(idx)) & 1 != 0), .starts = idx < 32 and (f.startsParams() >> @intCast(idx)) & 1 != 0, .kept_out = dr.kept_out and !(idx < 32 and ((f.startsParams() | f.forksParams()) >> @intCast(idx)) & 1 != 0), .after_call = dr.after_call, .single = dr.calls <= 1 and !dr.handed and !dr.lost };
         fnc.ans_own = dr.ans_own;
@@ -9599,12 +9838,16 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
     // 14, *What a decoding run answers*): its answer is read off the decoded
     // type at this call, the walked contract's for everything else.
     if (code) |*c| if (args.len == c.own_params and try m.decodingRun(inst)) {
+        // The worker builds what it answers (kernel §3.4).
+        try f.taintCall(inst);
         c.contract = try f.decodedContract(c.contract, inst);
     };
     // An entry is a call of a known function too: what its contract says it
     // can do to this fiber is noted as at any call (`knownRuns`).
     if (code) |c| if (c.contract.entry and args.len == 1) {
         const demands_before = f.demands.items.len;
+        // The runtime calls the program's functions with values of its own.
+        try f.taintCall(inst);
         const result = try f.entryCall(inst, c.decl, args[0].int());
         try f.knownRuns(inst, c.contract);
         f.revokeAt(inst, false, f.demands.items.len > demands_before);
@@ -9658,6 +9901,7 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         // keeps past the render, so that escapes.
         if (primitive) {
             for (args, vals.items) |a, v| if (!m.isMarkup(m.typeOfInst(a.int()))) try f.escape(v, inst);
+            try f.taintCall(inst);
             break :blk try f.unknownOf(try m.placeOfInst(inst), vals.items);
         }
         // Unknown code: it can keep each argument, and its answer can hold each of them and the callee's captures.
@@ -9725,7 +9969,12 @@ fn decodedContract(f: *Frame, c: *const Contract, inst: u32) Error!*const Contra
     const input_holds = m.loc.layoutEntries(c.layouts[input]).len != 0;
     var walked: std.ArrayList(Src) = .empty;
     defer walked.deinit(f.gpa);
-    for (c.res) |srcs| try walked.appendSlice(f.gpa, srcs);
+    // At other entries than the walk's: no source is at its same place there.
+    for (c.res) |srcs| for (srcs) |s| {
+        var t = s;
+        t.same_place = false;
+        try walked.append(f.gpa, t);
+    };
     const rest = try CMod.normal(m.arena, walked.items);
     // The new sites are past every site the walked answer names, so no new
     // cell is one of the walked contract's (its issues', which can escape).
@@ -10656,6 +10905,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // location for escape here too (`narrowed`; research report 150).
         if (try f.punned(args[0], if (arg_insts.len != 0) arg_insts[0].int() else none, place)) {
             try f.narrowed(args[0], inst, place, if (arg_insts.len != 0) arg_insts[0].int() else none);
+            try f.taintCall(inst);
             return f.unknownOf(place, args[0..1]);
         }
         // A value read at a type with fewer places than its own (a list
@@ -10668,6 +10918,10 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     }
     // `Record.copy` (kernel §11): a new object whose fields hold the argument's values.
     if (c.record_copy and args.len == 1) return f.recordCopy(args[0], inst, place);
+    // A call that can answer a new value of a type variable, or hand its
+    // function values one (kernel §3.4, *a walked body's own type variables*).
+    if (!f.answersInPlace(c)) try f.taintCall(inst);
+    try f.taintHanded(c, args, arg_insts);
     // The flags of the contract are scanned three times below, for what it
     // lets escape, writes and reads (kernel §8).
     _ = f.charge(3 * Loc.scanUnits(c.flags.len / 4));
@@ -10838,6 +11092,17 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // over the arguments it captured (kernel §6 rule 2, *A function a body
     // answers*).
     if (c.answers != null and !casts) if (try f.madeVal(inst, c, code, args, place)) |mv| return mv;
+    // Where the arguments are not apart, the claims fail only through a cell
+    // at two places of them: the cells that can be one (`argsDuplicated`).
+    // A result entry none of whose cells is one of those keeps the callee's
+    // claims (kernel §4.4, *The claims of a call whose arguments are not
+    // apart*).
+    var dups: std.ArrayList(Atom) = .empty;
+    defer dups.deinit(f.gpa);
+    // A large set is read as every cell, the claims of no entry kept, as
+    // before: the test of each entry against it is work in pairs (kernel §8).
+    // So is a call of one argument that holds a cell: every cell of it can be one.
+    const dups_known = !args_apart and f.cellArgs(args) > 1 and try f.argsDuplicated(args, c, &dups) and dups.items.len <= share_small;
     // A new cell's handle that the answer holds is the answer's alone only
     // where the answer names it first: not one the call's renewals or flows
     // put in another holder (`cellResult`, kernel §13).
@@ -10906,9 +11171,12 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // in its run, or outside the frame; a captured cell is `twice`
         // already) holds no cell of the arguments, so a cell at two places
         // of them is at no two places of it.
-        const twice = !single and (st.twice or (!args_apart and (sources > 1 or (answers and st.handed))));
+        const tainted = !args_apart and (!dups_known or f.holdsDuplicated(f.atoms.items[start..], dups.items));
+        const twice = !single and (st.twice or (tainted and (sources > 1 or (answers and st.handed))));
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = twice };
-        has_answer[e] = answers;
+        // An entry that can hold such a cell is tested by its atoms, as an
+        // answer's is: the callee's claim does not cover it.
+        has_answer[e] = answers or tainted;
     }
     // The callee's claim is about its own locations. Two locations of the
     // caller at one wide location of the callee's result (a type variable,
@@ -10944,9 +11212,92 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
             sp[seen[cr]] = cr;
         }
     }
-    try f.deriveLinearSplit(root, !c.nonlinear and args_apart, has_answer, split);
+    try f.deriveLinearSplit(root, !c.nonlinear and (args_apart or dups_known), has_answer, split);
     try f.cellResult(root, roots_before, inst);
     return f.rootVal(root);
+}
+
+/// The cells that can be at two places of the arguments `args` of a call of
+/// `c`, as atoms, into `out`: every cell of an argument that cannot claim
+/// that its own parts are apart (`partsOf`, `argSplit`), and every cell of
+/// two parts that can hold one cell (`dupOverlap`). False where the set is
+/// not known (the budget): then every cell can be one. A cell of no other
+/// kind is at one place of the arguments (kernel §4.4, *The claims of a call
+/// whose arguments are not apart*).
+fn argsDuplicated(f: *Frame, args: []const Val, c: *const Contract, out: *std.ArrayList(Atom)) Error!bool {
+    var buf: std.ArrayList(Atom) = .empty;
+    defer buf.deinit(f.gpa);
+    var runs: std.ArrayList([2]u32) = .empty;
+    defer runs.deinit(f.gpa);
+    var every: std.ArrayList(bool) = .empty;
+    defer every.deinit(f.gpa);
+    for (args, 0..) |v, j| {
+        const start: u32 = @intCast(buf.items.len);
+        const rstart = runs.items.len;
+        var ok = try f.partsOf(v, &buf, &runs, 0);
+        if (ok and j < c.arity) ok = !try f.argSplit(v, c, j);
+        if (ok) {
+            while (every.items.len < runs.items.len) try every.append(f.gpa, false);
+            continue;
+        }
+        // Every cell of it can be at two places.
+        runs.shrinkRetainingCapacity(rstart);
+        every.shrinkRetainingCapacity(rstart);
+        buf.shrinkRetainingCapacity(start);
+        _ = try f.allLeaves(v, &buf);
+        try runs.append(f.gpa, .{ start, @intCast(buf.items.len) });
+        try every.append(f.gpa, true);
+    }
+    // A large set is not tested in pairs: every cell can be one.
+    if (buf.items.len > share_small) return false;
+    // Each pair of parts is work of its own (kernel §8).
+    for (runs.items, 0..) |x, i| {
+        if (f.charge(runs.items.len - i)) return false;
+        for (runs.items[i + 1 ..], i + 1..) |y, k| {
+            if (every.items[i] and every.items[k]) continue;
+            if (f.dupOverlap(buf.items[x[0]..x[1]], buf.items[y[0]..y[1]])) {
+                every.items[i] = true;
+                every.items[k] = true;
+            }
+        }
+    }
+    for (runs.items, every.items) |x, w| if (w) try out.appendSlice(f.gpa, buf.items[x[0]..x[1]]);
+    return true;
+}
+
+/// How many of `args` can hold a cell of the frame.
+fn cellArgs(f: *const Frame, args: []const Val) usize {
+    var k: usize = 0;
+    for (args) |v| {
+        if (v == v_none or v == v_outside) continue;
+        switch (f.nodes.items[v].tag) {
+            .none, .outside, .fnref => {},
+            .ref, .built, .join, .closure, .unknown, .later => k += 1,
+        }
+    }
+    return k;
+}
+
+/// Whether one of the atoms `xs` can be a cell of `dups`. Two atoms outside
+/// the frame are read as one cell: the outside names no cell apart.
+fn holdsDuplicated(f: *const Frame, xs: []const Atom, dups: []const Atom) bool {
+    if (xs.len > share_small) return true;
+    for (xs) |x| switch (f.roots.items[x.root].kind) {
+        // The answer of the frame's own function parameter is one opaque
+        // root: its atom names no cell it was handed, a duplicated one
+        // among them (kernel §4.4).
+        .answer => return true,
+        .outside, .param, .capture, .local, .fresh => {},
+    };
+    for (xs) |x| {
+        // Each comparison made is work (kernel §8); past the budget it can.
+        if (f.charge(dups.len)) return true;
+        for (dups) |y| {
+            if (x.root == 0 and y.root == 0) return true;
+            if (f.overlap(x, y)) return true;
+        }
+    }
+    return false;
 }
 
 /// A callee that casts can hand a cast value on as well as answer one: it
@@ -11550,20 +11901,25 @@ fn positionedParam(m: *Mod, c: *const Contract, j: usize) ?usize {
 /// at two places of it, which the argument's own layout cannot show apart.
 /// The contract is written for arguments that are apart (kernel §4.4).
 fn argsSplit(f: *Frame, args: []const Val, c: *const Contract) Error!bool {
-    const m = f.m;
     for (args, 0..) |v, j| {
         if (j >= c.arity) break;
-        const n = f.nodes.items[v];
-        switch (n.tag) {
-            .ref, .built, .join => {},
-            .none, .fnref, .outside, .closure, .unknown => continue,
-            .later => unreachable, // read through `capVal` only
-        }
-        const sig = c.layouts[j];
-        const h = (try m.loc.holes(sig, try m.loc.layoutOf(n.place))) orelse continue;
-        if (try splitAbove(m, sig, h)) return true;
+        if (try f.argSplit(v, c, j)) return true;
     }
     return false;
+}
+
+/// `argsSplit` of the one argument `v` at parameter `j`.
+fn argSplit(f: *Frame, v: Val, c: *const Contract, j: usize) Error!bool {
+    const m = f.m;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .ref, .built, .join => {},
+        .none, .fnref, .outside, .closure, .unknown => return false,
+        .later => unreachable, // read through `capVal` only
+    }
+    const sig = c.layouts[j];
+    const h = (try m.loc.holes(sig, try m.loc.layoutOf(n.place))) orelse return false;
+    return try splitAbove(m, sig, h);
 }
 
 /// Whether one wide entry of `holes` is above two entries of `view`, or
@@ -11688,6 +12044,10 @@ const SrcState = struct {
     nseen: u32 = 0,
     /// Each part of the answer is asked for, not the one at `suffix`.
     whole: bool = false,
+    /// With `whole`: only the parts at and below `suffix`, where the holder
+    /// hands the answer there at the same place (`Src.same_place`, kernel
+    /// §3.4, *a walked body's own type variables*).
+    below: bool = false,
     /// Neither the callee nor a function argument casts (`Contract.casts`,
     /// `argsCast`): it answers a value only at a location of the value's own
     /// type, so an argument of a type of no location is at no location the
@@ -11763,13 +12123,16 @@ fn expandSrcs(f: *Frame, base: *const Use, srcs: []const Src, rsig: u32, cr: u32
                     // not at entry `e` (kernel §3.4, *A value of no location
                     // in a typed answer*).
                     if (st.typed and args[s.a] == v_outside and ai != none and try f.layoutLen(try f.m.placeOfInst(ai)) == 0) continue;
-                    // Only a cell's row answers a value at a type variable as
-                    // it is, each part at its place (`Contract.cell_row`):
-                    // another row can build a new value there of the
-                    // argument's parts, a walked body can call one, and a
-                    // callee that casts, or a function handed to it that does,
-                    // can answer another part of the argument at a place.
-                    f.pair_exact_ok = c.cell_row and !c.casts and !try f.argsCast(c, args);
+                    // A cell's row answers a value at a type variable as it
+                    // is, each part at its place (`Contract.cell_row`), and
+                    // so does a walked body at a source it marks
+                    // (`Src.same_place`, kernel §3.4, *a walked body's own
+                    // type variables*): another row can build a new value
+                    // there of the argument's parts, a walked body can call
+                    // one, and a callee that casts, or a function handed to
+                    // it that does, can answer another part of the argument
+                    // at a place.
+                    f.pair_exact_ok = (c.cell_row or s.same_place) and !c.casts and !try f.argsCast(c, args);
                     defer f.pair_exact_ok = false;
                     if (try f.pairedLeaves(args[s.a], ai, c.layouts[s.a], s.e, rsig, cr, rlayout, e)) st.twice = true;
                     if (c.flags[c.off[s.a] + s.e] & (flag_w | flag_s) != 0) f.oldNames(before, st);
@@ -14461,9 +14824,14 @@ const FlatSink = struct {
     }
     fn answer(s: *FlatSink, f: *Frame, level: *const Use, src: Src, suffix: []const u64, deep: bool) Error!void {
         // A wide location asks: each part of the answer below the place, not the one at it.
+        // Where the holder hands the answer at the same place, the parts at
+        // and below the place (`SrcState.below`).
         const outer = s.st.whole;
         if (deep) s.st.whole = true;
         defer s.st.whole = outer;
+        const outer_below = s.st.below;
+        s.st.below = deep and src.same_place;
+        defer s.st.below = outer_below;
         try f.answerOfParam(level, src, suffix, s.st, s.depth + 1);
     }
 };
@@ -14657,13 +15025,14 @@ fn ownSupply(f: *Frame, level: *const Use, code: Code, k: u32, le: u32, seen: *S
         // pushed a list onto a list of lists in a cell wrote its elements
         // too, and a later run of it wrote the list an earlier run pushed
         // (`run/CellWriterStoresFresh`).
-        const exact = level.fnc.once and !wide and slot.fe != none and blk: {
+        const exact = !wide and slot.fe != none and blk: {
             const floc = f.m.loc.layoutEntries(lc.layouts[k])[le].loc;
             const uloc = f.m.loc.layoutEntries(level.fnc.layouts[k])[slot.fe].loc;
             break :blk uloc == floc or f.m.loc.isPrefix(uloc, floc);
         };
         for (slot.srcs) |src| {
-            f.resolve_exact = exact;
+            // A walked holder hands it so at a source it marks (`Src.same_place`).
+            f.resolve_exact = exact and (level.fnc.once or src.same_place);
             defer f.resolve_exact = false;
             try f.resolve(level, src, part, wide, &sink, 0);
         }
@@ -15236,7 +15605,7 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
     // The scan of the answer's layout and of the map is work (kernel §8).
     _ = f.charge(Loc.scanUnits(m.loc.layoutEntries(lc.layouts[lc.arity]).len) + Loc.scanUnits(cov.len));
     var exact = false;
-    if (!st.whole) if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(cov[re], ae)) {
+    if (!st.whole or st.below) if (want) |wl| for (m.loc.layoutEntries(lc.layouts[lc.arity]), 0..) |re_e, re| if (re_e.loc == wl and Loc.hits(cov[re], ae)) {
         exact = true;
     };
     var psuffix: std.ArrayList(u64) = .empty;
@@ -15244,7 +15613,13 @@ fn answerOfCode(f: *Frame, code: Code, use: *const Use, ae: u32, st: *SrcState, 
     const meets = try AnswersAt.init(f, fnc.layouts[fnc.arity], ae, lc.layouts[lc.arity]);
     for (cov, 0..) |cv, k| {
         if (!try meets.check(f, fnc.layouts[fnc.arity], lc.layouts[lc.arity], k, cv)) continue;
-        if (exact and m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc != want.?) continue;
+        if (exact) {
+            const kl = m.loc.layoutEntries(lc.layouts[lc.arity])[k].loc;
+            // `below`: each part at and below the place, and a location the
+            // call map cannot place (`Loc.all`), which can be at any.
+            if (!st.whole and kl != want.?) continue;
+            if (st.whole and kl != want.? and !m.loc.isPrefix(want.?, kl) and cv < Loc.all) continue;
+        }
         // The function's type is wider here than the holder's: no cell is there.
         if (cv >= Loc.all and !try f.anyMeets(fnc.layouts[fnc.arity], lc.layouts[lc.arity], @intCast(k))) continue;
         switch (st.visit(use, @intCast(k), code)) {
@@ -15322,11 +15697,14 @@ fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u3
                 const inner = try f.innerUse(code, ls.a, lf, use);
                 const outer = st.suffix;
                 const outer_whole = st.whole;
+                const outer_below = st.below;
                 st.suffix = &.{};
                 st.whole = true;
+                st.below = false;
                 try f.answerOf(try f.capVal(code, ls.a - code.own_params), &inner, ls.e, st, depth + 1);
                 st.suffix = outer;
                 st.whole = outer_whole;
+                st.below = outer_below;
             },
             .param => {
                 if (ls.a >= code.own_params) {
@@ -15385,13 +15763,15 @@ fn answerSrcs(f: *Frame, code: Code, use: *const Use, k: usize, cv: u32, ae: ?u3
                     const part = try f.partBelow(lc.layouts[ls.a], ls.e, fnc.layouts[ls.a], slot.fe, &.{}, psuffix);
                     // The parameter's entry is at that part, or below it: what is
                     // handed at that place, not every cell below it (kernel §13 item 2).
-                    const exact = fnc.once and !wide and slot.fe != none and blk: {
+                    const exact = !wide and slot.fe != none and blk: {
                         const floc = m.loc.layoutEntries(lc.layouts[ls.a])[ls.e].loc;
                         const uloc = m.loc.layoutEntries(fnc.layouts[ls.a])[slot.fe].loc;
                         break :blk uloc == floc or m.loc.isPrefix(uloc, floc);
                     };
                     for (slot.srcs) |ss| {
-                        f.resolve_exact = exact;
+                        // A cell's row hands it so, and a walked holder at a
+                        // source it marks (`Src.same_place`, kernel §3.4).
+                        f.resolve_exact = exact and (fnc.once or ss.same_place);
                         defer f.resolve_exact = false;
                         try f.resolve(use, ss, part, wide, &sink, 0);
                     }

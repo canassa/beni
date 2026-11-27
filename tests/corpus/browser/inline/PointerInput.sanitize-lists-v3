@@ -1,0 +1,1 @@
+The move handler reads scale, which the lowering reads where the event fires: update writes scale and the log in place under --ownership=v3 (ownership-v3-kernel.md §6 rule 12, *A handler read at the event*).

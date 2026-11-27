@@ -330,11 +330,13 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         .provenance = session.resolution.provenance,
         .interner = &session.interner,
     };
+    const lowered = try keptByLowering(arena, session, d, m, bir);
     const r = try Check.checkModule(gpa, arena, &mi, &ctx.state.shared, nc.names(), .{
         .schema_graph = &schema_graph,
         .summaries = if (kept) |k| k.summaries else false,
         .markup_type = markup_type,
-        .kept_lets = try keptLets(arena, session, d, m, bir),
+        .kept_lets = lowered.kept_lets,
+        .handlers_at_event = lowered.handlers_at_event,
         .library = session.options.library and session.graph.modulePackage(m) == .app,
         .rows = session.graph.modulePackage(m) != .app,
         .deps = try depsOf(arena, session, m),
@@ -471,27 +473,39 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     for (r.limits) |o| try dest.append(gpa, .{ .ownership = true, .code = .ownership_limit, .module = m, .region = @fromBackingInt(0), .token = o.token orelse 0, .message = try gpa.dupe(u8, o.text) });
 }
 
-/// The `let`s of module `m` whose values the build's markup lowering keeps
-/// beyond the call of the function that made them (kernel §6.14,
-/// `boundary.md` §9.4.8, *What a lowering keeps*). The lowering says which it
-/// keeps (`Lowering.keeps_let`), of the `let`s that the compiler moves into
-/// a root (`MarkupTree.keptLets`): the tree is built here as the emitter
-/// builds it, so the checker and the lowering read one answer. A build with
-/// no lowering, or a module with no markup, keeps none.
-fn keptLets(arena: Allocator, session: *const Session, d: *const Driver, m: Graph.Index, bir: *const Bir) Allocator.Error![]const u32 {
+/// What the build's markup lowering says it keeps of module `m`, and what it
+/// reads where an event fires (kernel §6.12, §6.14, `boundary.md` §9.4.8):
+/// the tree is built here as the emitter builds it, so the checker and the
+/// lowering read one answer. A build with no lowering, or a module with no
+/// markup, keeps no `let` and reads no handler at its event.
+const Lowered = struct {
+    /// The `let`s whose values the lowering keeps beyond the call of the
+    /// function that made them (*What a lowering keeps*): of the `let`s that
+    /// the compiler moves into a root (`MarkupTree.keptLets`), those it says
+    /// it keeps (`Lowering.keeps_let`).
+    kept_lets: []const u32 = &.{},
+    /// The handlers it reads where their event fires (*A handler read at the
+    /// event*, `MarkupTree.handlersAtEvent`, `Lowering.reads_handler_at_event`).
+    handlers_at_event: []const u32 = &.{},
+};
+
+fn keptByLowering(arena: Allocator, session: *const Session, d: *const Driver, m: Graph.Index, bir: *const Bir) Allocator.Error!Lowered {
     const mk = session.graph.markup;
-    const name = mk.lowering.unwrap() orelse return &.{};
+    const name = mk.lowering.unwrap() orelse return .{};
     const lowering = for (markup_lowerings) |*l| {
         if (std.mem.eql(u8, l.name, session.interner.slice(name))) break l;
-    } else return &.{};
-    if (!lowering.groups) return &.{};
+    } else return .{};
+    // A lowering that does not group evaluates no `let` of its own, and is
+    // read as keeping each handler (`Lowering.reads_handler_at_event`'s
+    // default): no answer is asked of it.
+    if (!lowering.groups) return .{};
     const mi = m.int();
     // No shortcut by the dispatch table: a component's call has no row in
     // it, and a root made of one is a root all the same. The tree finds
     // the roots as the emitter does, from the `markup` instructions.
-    if (mi >= d.dispatch.len) return &.{};
-    const vocabulary = mk.vocabulary orelse return &.{};
-    if (vocabulary.int() >= d.interfaces.len) return &.{};
+    if (mi >= d.dispatch.len) return .{};
+    const vocabulary = mk.vocabulary orelse return .{};
+    if (vocabulary.int() >= d.interfaces.len) return .{};
     const live = try arena.alloc(u32, bir.decls.len);
     for (live, 0..) |*x, i| x.* = @intCast(i);
     const built = try MarkupTree.build(arena, .{
@@ -504,8 +518,11 @@ fn keptLets(arena: Allocator, session: *const Session, d: *const Driver, m: Grap
         .interfaces = d.interfaces,
         .debug_module = if (session.graph.lookup(.core, InternPool.WellKnown.Debug.symbol())) |x| x.int() else null,
         .parameterised_templates = lowering.parameterised_templates,
-    }) orelse return &.{};
-    return MarkupTree.keptLets(arena, &built, bir, lowering);
+    }) orelse return .{};
+    return .{
+        .kept_lets = try MarkupTree.keptLets(arena, &built, bir, lowering),
+        .handlers_at_event = try MarkupTree.handlersAtEvent(arena, &built, lowering),
+    };
 }
 
 const markup_lowerings = @import("markup_lowerings").all;

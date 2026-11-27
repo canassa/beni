@@ -1,0 +1,41 @@
+-- The live twins of `FoldIntoDictInPlace`: a fold whose dictionary holds one
+-- list at two keys, or a list another holder reads after the write, keeps
+-- the write refused (ownership-v3-kernel.md §3.4, *a walked body's own type
+-- variables*).
+import Dict exposing (Dict)
+import Node exposing (Program)
+
+
+lengths : Dict Int (List Int) → List String
+lengths d = List.map (Dict.values d) λl → String.fromInt (List.length l)
+
+
+push : Int, Dict Int (List Int) → Dict Int (List Int)
+push k d = Dict.update d k λm → Just (List.push (Maybe.withDefault m []) 9)
+
+
+twoKeys : ⊤ → List String
+twoKeys ⊤ =
+    built = List.foldr [ 1, 2 ] (Dict.insert (Dict.empty ⊤) 0 [ 1 ]) λx d →
+        Dict.insert d x (Maybe.withDefault (Dict.get d 0) [])
+    lengths (push 0 built)
+
+
+readAfter : ⊤ → List String
+readAfter ⊤ =
+    l = [ 1 ]
+    built = List.foldr [ 1, 2 ] (Dict.insert (Dict.empty ⊤) 0 l) λx d → Dict.insert d x []
+    grown = push 0 built
+    [ String.fromInt (List.length l), …lengths grown ]
+
+
+captured : ⊤ → List String
+captured ⊤ =
+    c = [ 1 ]
+    built = Dict.foldl (Dict.fromList [ ( 1, ⊤ ), ( 2, ⊤ ) ]) (Dict.empty ⊤) λk _ d →
+        Dict.insert d k c
+    lengths (push 1 built)
+
+
+main : Program
+main = Node.printLines [ …twoKeys ⊤, …readAfter ⊤, …captured ⊤ ]

@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -179,6 +179,34 @@ as a pair: both parts are `x`). Four facts that rest on "apart" are read so:
   casts. Where the argument has no entry at that place, every entry below the wide location is read,
   as before (`suffix_fallback`). A wide location of the caller's own reading still reads every cell
   below it.
+  *Amended 2026-11-27 (#2657): a walked body's own type variables.* A walked body that does not
+  cast makes no value of a type variable of its own: a value of type `b` in it is one it was handed
+  (a parameter, a capture, the answer of a function it runs), a part of one, or the answer of a
+  call. So where no call of the body can answer a new value of `b`, each value at a location of `b`
+  is, at that place, the value one of its sources has there, as it is. A call can where its type,
+  read in the body's variables, names `b` (`Frame.taintCall`): unknown code, markup, an entry's
+  call, a decoding run, an identity that answers `unknown`, a row other than a cell's, and a walked
+  callee one of whose sources at a location of its answer is not at the same place; and a value of
+  no claim made of parts (`unknownOf`: a part the place graph does not name) can be at any location,
+  so it takes the mark off every variable. So can a call
+  that hands a function value to a callee whose supply at a location of a parameter of that function
+  is not at the same place (that parameter's type there), or whose own answer is not (its answer's
+  type), or that hands it where no contract follows it. A call of the frame's own function parameter
+  or capture answers at the same place: the frame's caller reads that answer itself, through the
+  function it handed. `finish` marks each `param` and `answer` source of a result location, and of a
+  location of what the body hands a function parameter, **at the same place** (`Src.same_place`),
+  where the location is a type variable's (`var`, the type there a variable of the store: the type of
+  the body, or of the function parameter's pattern), no call of the frame named that variable, and the
+  frame does not cast. A caller reads such a source as a cell's row's: a parameter's at the same place
+  (`paired_exact`), what is handed there (`resolve_exact`), and the answer of a function that is
+  handed there at and below the place asked, not every part of it (`SrcState.below`; a location the
+  call map cannot place, `Loc.all`, is read as before). In the rounds of a recursive group the mark
+  starts on (a draft with no source names no call) and a round can only take it away, so the rounds
+  end at the greatest fixed point: a run that answers a rebuilt value runs a call that does, at some
+  depth of the recursion. *Before, `List.foldr`, `Dict.foldl` and `Dict.foldr` into a dictionary of
+  lists answered a dictionary whose storage, and the location of a function in a list, held every
+  list of the accumulator, and a write of one was refused `disjoint` (`browser/inline/FoldRight`,
+  `DictFoldLeft`, `DictFoldRight`).*
 
 And a contract that holds one cell of its parameter at two places of its answer (`nonlinear`) answers no
 value as it is: it is applied as a call, not as an identity (`isIdentity`).
@@ -641,6 +669,30 @@ saw as an opaque root: a pair of entries with one is tested by the caller's atom
 exception (`alternatives`): the answer of a function `g` and a parameter location the callee hands `g`
 `free` are alternatives, because a cell handed `free` is read by the callee no more, so it is in the answer
 or it stays, never both (the `taken` rows of `core/`).
+
+**The claims of a call whose arguments are not apart** (*added 2026-11-27, #2657*;
+`Frame.argsDuplicated`, `holdsDuplicated`). Where the arguments are not apart, the callee's claims
+fail only through a cell that is at two places of them: a cell at one place of the arguments is put
+at a location of the result as many times as the callee's walk puts that one place there, which its
+claims count, whatever the other arguments hold. A cell the callee made, or that a function argument
+made in one of its runs, is no cell of the arguments (no two runs share one, above). So the call
+names the cells that can be at two places (`argsDuplicated`): every cell of an argument that cannot
+say its own parts are apart (`partsOf` fails, or `argsSplit`), and every cell of two parts that can
+hold one cell (`dupOverlap`); and a result entry is read as before (no claim: `twice` where two
+sources or an answer that holds a handed cell feed a summary entry, and tested by its atoms for
+`linear`) only where one of its atoms can be one of those cells (`holdsDuplicated`, two atoms outside
+the frame read as one), or where one is the answer of the frame's own function parameter, an opaque
+root whose atom names none of the cells it was handed (a duplicated one among them: `List.map [ l, l ]
+g` with `g` a parameter). The atoms of an entry name every other cell it can hold (§2), so an entry none of
+whose atoms is such a cell holds each cell of it as the callee's claims say; the result is `linear`
+where the callee is not `nonlinear`, and its other entries are tested by their atoms. Past the budget
+every entry is read as before. *Before, one cell at two places of an argument took every claim of the
+call: a fold over a list in which one subscription's tap was at two places (`Sub.batch [ sub, sub ]`)
+answered a dictionary whose lists, each a list its callback made in a run, were `twice`, and a write
+of one was refused `element` (`browser/inline/FoldRight`, `DictFoldLeft`, `DictFoldRight`).* Those
+pages were refused `disjoint` too, by §3.4's wide reading of the fold's accumulator, a type
+variable of the fold: §3.4's amendment of the same day, *a walked body's own type variables*, reads
+it at the same place.
 
 **Two readings through a later root** (research report 159, #2564). An atom records the first root the frame
 made that it was read through (`via`), and two of its readings are two cells where that root holds each cell
@@ -1503,6 +1555,40 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     write of it, or of a cell it shares, runs in place, in that call or a later one. The lowering
     says which `let`s it keeps; the checker does not guess.
 
+    **A handler read at the event** (*added 2026-11-27, #2657*; `eventCall`, `Mod.viewRoot`,
+    `Enforce.keptByLowering`). A handler that the runtime keeps is a closure made at the render, and
+    it reads what it captured when the event fires, after `update` wrote it: so it escapes. A
+    lowering can instead evaluate the handler where the event fires, from the values the `view` is
+    handed then, and keep nothing of the render for it. Then the closure of the render is never run,
+    and the handler holds none of what it reads: its run is a call, made at the event, whose answer,
+    the message, escapes (the runtime sends it to `update`, and can queue it behind a dispatch). The
+    checker reads an event so where three positive facts hold, and keeps the handler otherwise:
+    1. the markup is the whole body of a function — a declaration, or a lambda — whose module
+       names it only as a field, whose type answers markup, of a record written as the one
+       argument of a call of an entry (rule 13): no other instruction names the declaration, no
+       method call or evidence of the module names it (the `Dispatch` terms), no `via` keeps a
+       name unresolved, and the build is not `--library`;
+    2. the lowering says, of that event, that it reads the handler where the event fires
+       wherever it writes such a root (`Lowering.reads_handler_at_event`, `boundary.md` §9.4.8,
+       *A handler read at the event*; its default keeps every handler). `inline` says so of an
+       event on an element that the root reaches through elements and fragments alone, in a root
+       with no `let`: the page of a program, or the pieces another module's program shows, where
+       no row, arm, region, `Show` or helper's call keeps a closure or an argument of a render
+       (`browser-inline.md` §8.3, §8.4);
+    3. the handler is a known function of one parameter: it is applied to the event's payload,
+       which holds no cell of the frame, as at a call site (`applyAt`), and what it answers
+       escapes. A message that is no function escapes as it is; a function that no rule follows
+       escapes whole, as before.
+
+    The handler stays in the default use where it is evaluated (`mention`), so one that writes
+    what it is handed or a cell it captured is refused as before. *Before, every handler escaped,
+    and a write by `update` of a field that a `view`'s handler read was refused, though the
+    handler read the field again at the event (`browser/inline/KeptHandlerSameField`,
+    `PointerInput`, `PieceHandler`, `PieceHandlerCell`, `PieceHandlerReplaced`). An earlier
+    attempt read every handler so, and was withdrawn: a keyed `For` row, a keyed
+    `Show` body and a helper shown in an arm keep the closure made at the render, which a removed
+    row still runs after `update`.*
+
     *The argument.* The runtime is a holder that the walk does not follow, and it does two things
     with markup: it reads the values the markup holds while it renders, and it calls code the markup
     gives it. The first is covered by the markup holding every value its holes can read until it is
@@ -1688,7 +1774,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     | the program's own body | a function, with the arguments written | rule 2 |
     | a function of `core/` or a platform, walked or worded, or a `foreign` (a callback of `List.map`, `Ref.update`, `Task`, `Cmd`, `Sub`, `Io`, `Hosted`, `Browser.Worker.program`, a Cloudflare `Worker.program`) | the function it was handed, with what its contract says | rules 2 and 8 (the contract, or the default where it loses it), rule 10 (words; no word is unknown code) |
     | the markup runtime | a `For`'s row and key function and a `Show`'s body and key function, with items of the markup's values | rule 12: applied as at a call site |
-    | the markup runtime | an event's handler, `Html.map`'s function, a component's function (the module's `view`), with an event, a message or the props | rule 12: each is a value at an item of markup, so it goes to the `top` use (rule 8) and writes nothing; the props and what the handlers capture escape |
+    | the markup runtime | an event's handler, `Html.map`'s function, a component's function (the module's `view`), with an event, a message or the props | rule 12: each is a value at an item of markup, so it goes to the `top` use (rule 8) and writes nothing; the props and what the handlers capture escape, but for a handler the lowering reads at the event, which is applied there as a call whose message escapes (*A handler read at the event*) |
     | the markup runtime | a top-level function in a hole (a helper, `language.md` §11.6), re-made where it renders | rule 12: the markup holds what the call is handed |
     | the entry's runtime | each function of the entry's record, with the model, a message or what it makes | rule 13 |
     | derived `eq` and `compare`, `==` and `<`, a method call, return-type dispatch, `where` evidence, `core/`'s derived JavaScript (`listEq` calls the element's comparator) | the methods the dispatch table names, with the operands or their parts | rule 11 |

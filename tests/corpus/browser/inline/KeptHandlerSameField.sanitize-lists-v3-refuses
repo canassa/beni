@@ -1,2 +1,0 @@
-# The handler reads label, which update writes: the entry refuses the write (ownership-v3-kernel.md §6 rule 3).
-46:10 list_still_used entry
