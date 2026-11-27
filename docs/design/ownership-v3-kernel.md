@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -179,6 +179,32 @@ as a pair: both parts are `x`). Four facts that rest on "apart" are read so:
   casts. Where the argument has no entry at that place, every entry below the wide location is read,
   as before (`suffix_fallback`). A wide location of the caller's own reading still reads every cell
   below it.
+  *Amended 2026-11-27 (#2657): a walked body's own type variables.* A walked body that does not
+  cast makes no value of a type variable of its own: a value of type `b` in it is one it was handed
+  (a parameter, a capture, the answer of a function it runs), a part of one, or the answer of a
+  call. So where no call of the body can answer a new value of `b`, each value at a location of `b`
+  is, at that place, the value one of its sources has there, as it is. A call can where its type,
+  read in the body's variables, names `b` (`Frame.taintCall`): unknown code, markup, an entry's
+  call, a decoding run, an identity that answers `unknown`, a row other than a cell's, and a walked
+  callee one of whose sources at a location of its answer is not at the same place. So can a call
+  that hands a function value to a callee whose supply at a location of a parameter of that function
+  is not at the same place (that parameter's type there), or whose own answer is not (its answer's
+  type), or that hands it where no contract follows it. A call of the frame's own function parameter
+  or capture answers at the same place: the frame's caller reads that answer itself, through the
+  function it handed. `finish` marks each `param` and `answer` source of a result location, and of a
+  location of what the body hands a function parameter, **at the same place** (`Src.same_place`),
+  where the location is a type variable's (`var`, the type there a variable of the store: the type of
+  the body, or of the function parameter's pattern), no call of the frame named that variable, and the
+  frame does not cast. A caller reads such a source as a cell's row's: a parameter's at the same place
+  (`paired_exact`), what is handed there (`resolve_exact`), and the answer of a function that is
+  handed there at and below the place asked, not every part of it (`SrcState.below`; a location the
+  call map cannot place, `Loc.all`, is read as before). In the rounds of a recursive group the mark
+  starts on (a draft with no source names no call) and a round can only take it away, so the rounds
+  end at the greatest fixed point: a run that answers a rebuilt value runs a call that does, at some
+  depth of the recursion. *Before, `List.foldr`, `Dict.foldl` and `Dict.foldr` into a dictionary of
+  lists answered a dictionary whose storage, and the location of a function in a list, held every
+  list of the accumulator, and a write of one was refused `disjoint` (`browser/inline/FoldRight`,
+  `DictFoldLeft`, `DictFoldRight`).*
 
 And a contract that holds one cell of its parameter at two places of its answer (`nonlinear`) answers no
 value as it is: it is applied as a call, not as an identity (`isIdentity`).
@@ -659,12 +685,10 @@ where the callee is not `nonlinear`, and its other entries are tested by their a
 every entry is read as before. *Before, one cell at two places of an argument took every claim of the
 call: a fold over a list in which one subscription's tap was at two places (`Sub.batch [ sub, sub ]`)
 answered a dictionary whose lists, each a list its callback made in a run, were `twice`, and a write
-of one was refused `element` (`browser/inline/FoldRight`, `DictFoldLeft`, `DictFoldRight`).* What it
-does not cover: those pages are still refused (`disjoint`), by §3.4's wide reading. A fold's
-accumulator is at a type variable of the fold, so the callback's parameter, and with it the cells an
-earlier run answered, is read at every location of the caller's dictionary, and the answer is
-`linear` nowhere: a list one run made is at the dictionary's storage too. The cells at the same place
-(`paired_exact`) are read only for a cell's row.
+of one was refused `element` (`browser/inline/FoldRight`, `DictFoldLeft`, `DictFoldRight`).* Those
+pages were refused `disjoint` too, by §3.4's wide reading of the fold's accumulator, a type
+variable of the fold: §3.4's amendment of the same day, *a walked body's own type variables*, reads
+it at the same place.
 
 **Two readings through a later root** (research report 159, #2564). An atom records the first root the frame
 made that it was read through (`via`), and two of its readings are two cells where that root holds each cell

@@ -55,6 +55,14 @@ pub const Src = struct {
     /// reader that does not read it reads the cells with no position: the
     /// pessimistic side.
     p: u8 = 0,
+    /// A `param` or an `answer` source of a type variable's location of a
+    /// walked body's result, or of what it hands a function parameter, whose
+    /// cells there are the source's value at the same place, as it is: no
+    /// call of the body can answer a new value of that variable (kernel §3.4,
+    /// *a walked body's own type variables*, `Frame.taintCall`). A caller
+    /// reads it as a cell's row's: the part at that place, not every cell
+    /// below the variable. False reads every cell below: the pessimistic side.
+    same_place: bool = false,
 
     pub const Kind = enum(u8) { outside, fresh, param, answer, twice };
     pub const outside: Src = .{ .kind = .outside };
@@ -71,7 +79,7 @@ pub const Src = struct {
     }
 
     pub fn key(s: Src) u64 {
-        return (@as(u64, s.p) << 40) | (@as(u64, @backingInt(s.kind)) << 32) | (@as(u64, s.a) << 16) | s.e;
+        return (@as(u64, @intFromBool(s.same_place)) << 48) | (@as(u64, s.p) << 40) | (@as(u64, @backingInt(s.kind)) << 32) | (@as(u64, s.a) << 16) | s.e;
     }
     pub fn eql(x: Src, y: Src) bool {
         return x.key() == y.key();

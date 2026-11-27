@@ -1,0 +1,1 @@
+v3 hands the fold's accumulator on whole at its type variable, so the dictionary it answers holds each list at its own place and the focused edit after the fold is in place (ownership-v3-kernel.md §3.4, *a walked body's own type variables*).
