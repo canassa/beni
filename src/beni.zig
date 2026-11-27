@@ -228,6 +228,7 @@ pub const own3 = struct {
     pub const Frame = @import("own3/Frame.zig");
     pub const Check = @import("own3/Check.zig");
     pub const Enforce = @import("own3/Enforce.zig");
+    pub const Block = @import("own3/Block.zig");
 };
 pub const dump = struct {
     pub const tokens = @import("dump/tokens.zig");
@@ -263,6 +264,7 @@ test {
     std.testing.refAllDecls(writes);
     std.testing.refAllDecls(own);
     std.testing.refAllDecls(own2);
+    std.testing.refAllDecls(own3);
     std.testing.refAllDecls(fmt);
     std.testing.refAllDecls(js);
     std.testing.refAllDecls(build);

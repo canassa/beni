@@ -15,6 +15,7 @@
 //! - one directory serves a run that does not enforce and one that does, the
 //!   checker v1 and the checker v3, `--library` and a program;
 //! - a block is damaged;
+//! - a module has a long chain of nested types (the block's size);
 //! - a record is written in place with a read that is read first (the
 //!   lowering channel and the hoisted reads of an installed module);
 //! - a module that importers read is installed in a session with other
@@ -390,6 +391,63 @@ test "a damaged block is a miss: the module is checked and walked again" {
         try testing.expectEqual(repaired.counters.modules, repaired.counters.hits);
     }
     try testing.expect(damaged >= 4 * 3);
+}
+
+/// A module of `depth` record aliases, each with three lists and the next
+/// alias, and one function for each alias.
+fn deepSource(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    for (0..depth) |i| {
+        try out.appendSlice(arena, try std.fmt.allocPrint(arena, "pub type alias T{d} =\n    {{ f0 : List Int\n    , f1 : List Int\n    , f2 : List Int\n", .{i}));
+        if (i + 1 < depth) try out.appendSlice(arena, try std.fmt.allocPrint(arena, "    , next : T{d}\n", .{i + 1}));
+        try out.appendSlice(arena, "    }\n\n\n");
+    }
+    for (0..depth) |i| {
+        try out.appendSlice(arena, try std.fmt.allocPrint(arena, "pub g{d} : T{d} → Int\ng{d} r = List.length r.f0\n", .{ i, i, i }));
+        if (i + 1 < depth) try out.appendSlice(arena, "\n\n");
+    }
+    return out.items;
+}
+
+test "a chain of nested record types: an entry that a build reads back, and twice the depth is not six times the bytes" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", manifest);
+    // The layout of alias `i` has an entry for each list below it, and the
+    // path of an entry is as long as its depth. With each path written whole
+    // the block grew with the cube of the depth: 83 MB at 240 levels, above
+    // what the cache reads, so each build wrote the entry and none read it
+    // (the review of #2549). The entries of a layout share their first labels
+    // now. The two depths here gave 81 kB and 476 kB (5.9 times) with whole
+    // paths, and give 73 kB and 133 kB (1.8 times).
+    const library = [_][]const u8{ "build", "--library", "--ownership=v3", "--ownership-everywhere", "--lists-in-place", "--records-in-place" };
+    var largest: [2]usize = .{ 0, 0 };
+    for ([_]usize{ 20, 40 }, 0..) |depth, i| {
+        try w.write("src/Deep.beni", try deepSource(arena, depth));
+        const cache = try std.fmt.allocPrint(arena, "cache-{d}", .{depth});
+        const cache_flag = try std.fmt.allocPrint(arena, "--cache-dir={s}", .{cache});
+        const outs = [_][]const u8{
+            try std.fmt.allocPrint(arena, "out-oracle-{d}", .{depth}),
+            try std.fmt.allocPrint(arena, "out-cold-{d}", .{depth}),
+            try std.fmt.allocPrint(arena, "out-warm-{d}", .{depth}),
+        };
+        const oracle = try run(&w, arena, &library, &.{ "--no-cache", try std.fmt.allocPrint(arena, "--out={s}", .{outs[0]}) });
+        try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
+        const cold = try run(&w, arena, &library, &.{ cache_flag, try std.fmt.allocPrint(arena, "--out={s}", .{outs[1]}) });
+        try expectSame(&w, arena, oracle, outs[0], cold, outs[1]);
+        const warm = try run(&w, arena, &library, &.{ cache_flag, try std.fmt.allocPrint(arena, "--out={s}", .{outs[2]}) });
+        try expectSame(&w, arena, oracle, outs[0], warm, outs[2]);
+        try testing.expectEqual(warm.counters.modules, warm.counters.hits);
+        for (try w.listFiles(cache)) |f| {
+            if (!std.mem.endsWith(u8, f, ".bec")) continue;
+            largest[i] = @max(largest[i], (try w.read(try std.fs.path.join(arena, &.{ cache, f }))).len);
+        }
+    }
+    try testing.expect(largest[0] > 0);
+    try testing.expect(largest[1] < 3 * largest[0]);
 }
 
 test "a warm build under --ownership=v3 is the same at --jobs=1 and --jobs=8" {
