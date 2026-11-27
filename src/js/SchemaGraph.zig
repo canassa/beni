@@ -509,6 +509,51 @@ pub fn shapeable(g: SchemaGraph, scratch: Allocator, r: Ref) Allocator.Error!boo
     return true;
 }
 
+/// Whether every decoding run of definition `r` answers a value its own
+/// worker built (`ownership-v3-kernel.md` §6 rule 14, *What a decoding run
+/// answers*): it takes no parameter, and every node it reaches, through
+/// references, is one whose decoding worker and shape reader make a new
+/// record, a new array (`[]` and `push`), a new tuple or a new constructor
+/// with a payload on each run, or answer a primitive, a nullary
+/// constructor's constant (which holds no cell), or the input itself where
+/// the node is a `Value`. No `via` (a conversion's function answers what it
+/// likes), no check (its function is handed the value the worker built and
+/// can keep it), no parameter and no module `codec` (a runtime builder's
+/// adapters, which no walk follows). `shapeable` with checks refused.
+pub fn buildsFresh(g: SchemaGraph, scratch: Allocator, r: Ref) Allocator.Error!bool {
+    var stack: std.ArrayList(Ref) = .empty;
+    defer stack.deinit(scratch);
+    var seen: std.ArrayList(Ref) = .empty;
+    defer seen.deinit(scratch);
+    var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+    defer nodes.deinit(scratch);
+    try stack.append(scratch, r);
+    while (stack.pop()) |at| {
+        var done = false;
+        for (seen.items) |x| done = done or (x.module == at.module and x.decl == at.decl);
+        if (done) continue;
+        try seen.append(scratch, at);
+        const d = g.definition(at.module, at.decl) orelse return false;
+        if (d.params_end != d.params_start) return false;
+        const plan = g.planOf(at.module);
+        nodes.clearRetainingCapacity();
+        try subtree(plan, scratch, d.root, &nodes);
+        for (nodes.items) |n| switch (tag(plan, n)) {
+            .primitive, .list, .nullable, .record, .tagged, .tuple, .constructors, .maybe, .annotation => {},
+            .reference => {
+                if (args(plan, n).len != 0) return false;
+                try stack.append(scratch, g.target(at.module, @fromBackingInt(@intCast(lhs(plan, n)))) orelse return false);
+            },
+            .codec_ref => {
+                if (args(plan, n).len != 0) return false;
+                try stack.append(scratch, g.codecTarget(at.module, lhs(plan, n)));
+            },
+            .conversion, .check, .parameter, .codec_value => return false,
+        };
+    }
+    return true;
+}
+
 /// The `core/Schema` reader a node's shape names first, or null for a
 /// reference, a check or an annotation, which name none. A record with a
 /// key, or a union with a discriminator, that is a name `Object.prototype`

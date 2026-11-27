@@ -31,6 +31,9 @@ const Contract = @import("Contract.zig");
 const Frame = @import("Frame.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Edges = @import("../check/Edges.zig");
+const SchemaGraph = @import("../js/SchemaGraph.zig");
+const SchemaValid = @import("../js/SchemaValid.zig");
+const Graph = @import("../resolve/Graph.zig");
 
 const PlaceId = Ids.PlaceId;
 const Step = Place.Step;
@@ -191,6 +194,10 @@ pub const Options = struct {
     /// keeps beyond the call that made them, ascending (kernel §6.14,
     /// `Enforce.keptLets`): each is held by the root that keeps it.
     kept_lets: []const u32 = &.{},
+    /// The build's schema plans, as the backend reads them: which decoding
+    /// runs answer what their workers build (kernel §6 rule 14, *What a
+    /// decoding run answers*). Null: no run is known to.
+    schema_graph: ?*const SchemaGraph = null,
     /// A module of core or a platform, the packages that may write
     /// ownership words: which of its bodies reach JavaScript is worked out
     /// and published (`reachesJs`), for its worded bodies and for those of
@@ -276,6 +283,11 @@ pub const Mod = struct {
     markup_type: ?MarkupType = null,
     /// `Options.kept_lets`.
     kept_lets: []const u32 = &.{},
+    /// `Options.schema_graph`.
+    schema_graph: ?*const SchemaGraph = null,
+    /// Per definition, whether its decoding runs answer what their workers
+    /// build (`SchemaGraph.buildsFresh`), read once each.
+    builds_fresh: std.AutoHashMapUnmanaged([2]u32, bool) = .empty,
 
     places: Place.Table = .{},
     account: Ids.Account = .{ .allowance = std.math.maxInt(u32) },
@@ -1418,6 +1430,55 @@ pub const Mod = struct {
         if (m.declOf(t) == null) return false;
         const name = m.names.declName(t[0], t[1]);
         return std.mem.eql(u8, name, "from") or std.mem.eql(u8, name, "to");
+    }
+
+    /// Whether call `inst` is a decoding run whose answer its worker built
+    /// (kernel §6 rule 14, *What a decoding run answers*): the callee is,
+    /// named directly, core's `Json.decode`, `decodeWith` or `decodeValue`
+    /// whose `where a.codec` evidence at the call is a derived codec of no
+    /// argument, or core's `Schema.read`, `readWith`, `parse` or `parseWith`
+    /// whose schema is written at the call as `S.schema ⊤`; and the
+    /// definition builds what it answers (`SchemaGraph.buildsFresh`). These
+    /// are the runs that the backend writes as a call of that definition's
+    /// worker or shape (`SchemaValid.sites`, `Schema.compiledRun`). The input
+    /// is the run's last argument.
+    pub fn decodingRun(m: *Mod, inst: u32) Allocator.Error!bool {
+        const g = m.schema_graph orelse return false;
+        if (m.tags[inst] != .call) return false;
+        const callee = m.datas[inst].lhs;
+        if (m.tags[callee] != .ext_value) return false;
+        const cd = m.datas[callee];
+        if (cd.lhs >= m.in.provenance.len or !m.in.isCore(cd.lhs) or cd.lhs >= m.names.module_names.len) return false;
+        const decl = (m.in.provenance[cd.lhs].valueDecl(cd.rhs) orelse return false).int();
+        const module = m.names.module_names[cd.lhs];
+        const name = m.names.declName(cd.lhs, decl);
+        const here: Graph.Index = @fromBackingInt(m.in.module);
+        const ref: SchemaGraph.Ref = if (std.mem.eql(u8, module, "Json")) blk: {
+            if (!eqlAny(name, &.{ "decode", "decodeWith", "decodeValue" })) return false;
+            const dt = m.in.dispatch orelse return false;
+            const site = dt.siteOf(@fromBackingInt(inst)) orelse dt.siteOf(@fromBackingInt(callee)) orelse return false;
+            const roots = dt.argsAt(site.evidence);
+            if (roots.len != 1) return false;
+            const k = switch (dt.term(roots[0])) {
+                .codec => |use| use.index,
+                else => return false,
+            };
+            if (dt.argsOfTerm(roots[0]).len != 0) return false;
+            break :blk g.codecTarget(here, k);
+        } else if (std.mem.eql(u8, module, "Schema")) blk: {
+            if (!eqlAny(name, &.{ "read", "readWith", "parse", "parseWith" })) return false;
+            const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(m.datas[inst].rhs)), Inst.Index);
+            if (args.len < 2 or m.tags[args[0].int()] != .call) return false;
+            const member: Inst.Index = @fromBackingInt(m.datas[args[0].int()].lhs);
+            break :blk SchemaValid.schemaRoot(g.provenance, g.interfaces, m.bir, here, member) orelse return false;
+        } else return false;
+        const key: [2]u32 = .{ ref.module.int(), ref.decl };
+        if (m.builds_fresh.get(key)) |b| return b;
+        var scratch: std.heap.ArenaAllocator = .init(m.gpa);
+        defer scratch.deinit();
+        const b = try g.buildsFresh(scratch.allocator(), ref);
+        try m.builds_fresh.put(m.gpa, key, b);
+        return b;
     }
 
     /// Whether the declaration is a function: a reference to it is a function value.
@@ -3989,8 +4050,10 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .shared = shared,
         .markup_type = options.markup_type,
         .kept_lets = options.kept_lets,
+        .schema_graph = options.schema_graph,
     };
     defer m.walk_arena.deinit();
+    defer m.builds_fresh.deinit(gpa);
     defer m.uniq_seen.deinit(gpa);
     defer m.share.deinit(gpa);
     defer m.places.deinit(gpa);
@@ -4220,4 +4283,9 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
     const published = try Contract.publish(gpa, &m.loc, m.contracts, derived, m.js);
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items, .false_words = m.false_words.items };
+}
+
+fn eqlAny(s: []const u8, xs: []const []const u8) bool {
+    for (xs) |x| if (std.mem.eql(u8, s, x)) return true;
+    return false;
 }

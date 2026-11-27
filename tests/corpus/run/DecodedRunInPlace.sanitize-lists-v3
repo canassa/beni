@@ -1,0 +1,1 @@
+The pushes of three decoding runs' answers are accepted under v3 and run in place: each run's worker built the lists it answers (ownership-v3-kernel.md §6 rule 14, *What a decoding run answers*).

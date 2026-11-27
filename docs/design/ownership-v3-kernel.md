@@ -1339,7 +1339,8 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     (`Check.edgeEffect`). The runtime's `send` is
     the alias with the word `sender` (`platforms/browser/Browser.beni`, and `platforms/browser-base/Hosted.beni`, whose `Send` every renderer's `Cmd.Send` aliases), followed through aliases of it;
     a message sent is given up, so each cell of it is a demand (`callParam`). No declaration is read by
-    its name, and no method is read as read-only because it is derived, but one: a call of `Js.from` or
+    its name, and no method is read as read-only because it is derived, but two: the decoding runs of
+    rule 14 (*What a decoding run answers*), and a call of `Js.from` or
     `Js.to` of the core package is its argument, since the build writes it so (`Mod.emitsArgument`, the
     key of `js/JsIntrinsic.zig`; §3.4, *What a value was made from*). The fact is of the code the build
     writes, which no word of the rows can say (`returned a → Js.Value` is as true of a row that answers
@@ -1548,6 +1549,45 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     walked as a declaration, and `Schema.conversion` loses its functions, so they went to `top` there.
     The default costs precision: a print whose value nothing reads after is refused, and a parse worker's
     value is new, so its conversion could write it (research report 129 §9).
+
+    **What a decoding run answers** (*added 2026-11-27, #2657*; `schema.md` §6, *What a run answers,
+    for ownership*). A run of `core/Schema` or `Json` reaches its worker through JavaScript
+    (`compiledRun`, `Js.apply`), so its walked contract answers what JavaScript hands back: `outside`,
+    the input at every location, the issues' cells. For the runs below, the backend writes the
+    decoding worker of a statically known definition, and what that worker answers is a fact of the
+    code it emits (`js/SchemaLower.zig`'s workers, `core/Schema`'s shape readers): **every record,
+    list, tuple and constructor with a payload that it answers is an object it made in that run**
+    (`{ … }`, `[]` filled with `push`, `{ $: tag, a: payload }`), each at one place of the answer; a
+    primitive and a nullary constructor's constant hold no cell; and a `Value` is the input's own
+    object, or a part of it, as it was handed (`v["key"]`). It never answers an object of a former
+    run, and never the host's array (`schema.md` §6, *Lists are arrays*: an array the caller handed
+    in as a host value is never adopted). The runs (`Mod.decodingRun`), each named directly at the
+    call, not through an alias:
+    - `Json.decode`, `decodeWith` and `decodeValue` whose `where a.codec` evidence at the call is a
+      derived codec with no argument (`Dispatch` term `codec`): the backend writes the codec's
+      worker, or its shape (`SchemaValid.sites`, `Schema.compiledRun`);
+    - `Schema.read`, `readWith`, `parse` and `parseWith` whose schema argument is written at the
+      call as `S.schema ⊤` of a declaration (`SchemaValid.schemaRoot`).
+
+    and only where the definition, closed over every declaration and derived codec it names, has
+    no parameter, no `via`, no check and no module `codec` (`SchemaGraph.buildsFresh`): a `via`'s
+    function answers what it likes (a capture, a top-level value), a check's function is handed
+    the value the worker built and can keep it, and a module's `codec` is a runtime builder's,
+    whose adapters no walk follows. At such a call the contract is the walked one with its answer
+    read at the call's own result type (`Frame.decodedContract`): each location below `Ok` that is
+    a list or a record's slot holds a new cell of a site of its own, at no escape, apart from every
+    other; each wide location below `Ok` (a `Value`) holds the run's input, its last argument, or a
+    new cell where the input holds none (`parse`'s text: `JSON.parse` made the objects); every
+    location below `Err` holds every source of the walked answer. No location of the answer is a
+    cast's, and no object of it was there before the call. So a value decoded into the model is
+    the model's own (rule 13, `freshOwn`), and a write of it runs in place. *Before, the answer
+    was the walked one, `outside` at every location, and each loader page of `browser-inline`
+    whose route decodes its slice (`browser/inline/CaseLoader`, `NestedStableLoad`,
+    `PartialRoutes`, `ResearchS3`, `ShapeLoader`, `SnapshotFromTable`, `TickFresh`,
+    `TickInPlace`, `ValidatedLoader`) had every later write of the slice refused at the entry.*
+    This is the second fact the checker reads by a name (rule 11): the fact is of the code the
+    build writes for the call, which no word of a row can say (`fresh` names one site for every
+    location, and none says that a `Value` is the input).
 
     **A `--library` build.** Host JavaScript calls each value that the root package exports, at any time,
     with values that it may still hold and read after. An exported function is a **function in the default

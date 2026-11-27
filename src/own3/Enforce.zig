@@ -16,6 +16,7 @@ const Bir = @import("../bir/Bir.zig");
 const Types = @import("../check/Types.zig");
 const CheckModule = @import("../check/Check.zig").Module;
 const Dispatch = @import("../check/Dispatch.zig");
+const SchemaGraph = @import("../js/SchemaGraph.zig");
 const Driver = @import("../check/Driver.zig");
 const CheckDiagnostics = @import("../check/Diagnostics.zig");
 const Enforce2 = @import("../own2/Enforce.zig");
@@ -302,7 +303,18 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     const kept = session.options.ownership_v3_dump;
     const mk = session.graph.markup;
     const markup_type: ?Check.MarkupType = if (mk.type_module.unwrap()) |mm| if (mk.type_name.unwrap()) |mn| .{ .module = mm, .name = mn } else null else null;
+    // The plans as the backend reads them (`js/SchemaGraph.zig`): this
+    // module's is filled by its check, and each import's before it.
+    const schema_graph: SchemaGraph = .{
+        .graph = &session.graph,
+        .plans = d.plans,
+        .birs = ctx.ins.birs,
+        .interfaces = session.resolution.interfaces,
+        .provenance = session.resolution.provenance,
+        .interner = &session.interner,
+    };
     const r = try Check.checkModule(gpa, arena, &mi, &ctx.state.shared, nc.names(), .{
+        .schema_graph = &schema_graph,
         .summaries = if (kept) |k| k.summaries else false,
         .markup_type = markup_type,
         .kept_lets = try keptLets(arena, session, d, m, bir),

@@ -8815,6 +8815,12 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
         if (callee_val == v_none) callee_val = try f.eval(callee, .callee, false);
         if (fn_root == none) try f.flowTop(callee_val, inst);
     };
+    // A decoding run whose worker builds what it answers (kernel §6 rule
+    // 14, *What a decoding run answers*): its answer is read off the decoded
+    // type at this call, the walked contract's for everything else.
+    if (code) |*c| if (args.len == c.own_params and try m.decodingRun(inst)) {
+        c.contract = try f.decodedContract(c.contract, inst);
+    };
     // An entry is a call of a known function too: what its contract says it
     // can do to this fiber is noted as at any call (`knownRuns`).
     if (code) |c| if (c.contract.entry and args.len == 1) {
@@ -8907,6 +8913,70 @@ fn knownRuns(f: *Frame, inst: u32, c: *const Contract) Error!void {
     if (c.runs_on) try f.noteRunsOn(inst, true);
     if (c.hosts) try f.hostsCall(inst);
     if (c.hosts_forked) try f.noteHostsForked(inst);
+}
+
+/// The contract of decoding run `inst` (`Mod.decodingRun`; kernel §6 rule
+/// 14, *What a decoding run answers*), at the call's own result layout: the
+/// walked contract `c`, whose answer is what its JavaScript hands back, with
+/// each location of the decoded value below `Ok` replaced by what the worker
+/// builds there. A location of a list or a record's slot is a new cell of
+/// its own site, apart from every other (the worker makes each object where
+/// it answers it, once); a wide one, a `Value`, is the input as it was
+/// handed (the run's last parameter), or new where the input holds no cell
+/// (`parse`'s text, whose `JSON.parse` made it). Every location below `Err`
+/// holds every source of the walked answer: the run's issues are read as
+/// the walk read them.
+fn decodedContract(f: *Frame, c: *const Contract, inst: u32) Error!*const Contract {
+    const m = f.m;
+    if (c.arity == 0) return c;
+    const place = try m.placeOfInst(inst);
+    if (m.places.kind(place) != .ctor or m.places.head(place) != m.in.types.well_known.result.int()) return c;
+    const layout = try m.loc.layoutOf(place);
+    const es = m.loc.layoutEntries(layout);
+    const input: u16 = @intCast(c.arity - 1);
+    const input_holds = m.loc.layoutEntries(c.layouts[input]).len != 0;
+    var walked: std.ArrayList(Src) = .empty;
+    defer walked.deinit(f.gpa);
+    for (c.res) |srcs| try walked.appendSlice(f.gpa, srcs);
+    const rest = try CMod.normal(m.arena, walked.items);
+    // The new sites are past every site the walked answer names, so no new
+    // cell is one of the walked contract's (its issues', which can escape).
+    var site0: u32 = 0;
+    for (walked.items) |s| if (s.kind == .fresh) {
+        site0 = @max(site0, @as(u32, s.a) + 1);
+    };
+    const res = try m.arena.alloc([]const Src, es.len);
+    var labels: std.ArrayList(u64) = .empty;
+    defer labels.deinit(f.gpa);
+    for (es, res, 0..) |ent, *r, e| {
+        labels.clearRetainingCapacity();
+        try m.loc.labels(ent.loc, &labels, f.gpa);
+        // `Ok` is `Result`'s first constructor (`core/Result.beni`), and its
+        // payload its argument 0: the label's payload is `(0 << 12) | 0`.
+        const first: ?Loc.Label = if (labels.items.len != 0) @bitCast(labels.items[0]) else null;
+        const under_ok = if (first) |l| l.kind == .ctor_arg and l.head == m.places.head(place) and l.payload == 0 else false;
+        if (!under_ok) {
+            r.* = rest;
+        } else if (ent.kind.wide() and input_holds) {
+            r.* = try m.arena.dupe(Src, &.{.{ .kind = .param, .a = input, .e = 0 }});
+        } else {
+            r.* = try m.arena.dupe(Src, &.{Src.fresh(site0 + @as(u32, @intCast(e)), false)});
+        }
+    }
+    const layouts = try m.arena.dupe(u32, c.layouts);
+    layouts[c.arity] = layout;
+    const out = try m.arena.create(Contract);
+    out.* = c.*;
+    out.layouts = layouts;
+    out.res = res;
+    // The answer's parts are read at the decoded type, where they are: no
+    // cast hides one, and none was there before the call.
+    out.casts = false;
+    out.exact = false;
+    out.old_result = false;
+    // Two `Value`s of the answer can be one object of the input.
+    out.nonlinear = true;
+    return out;
 }
 
 /// A call or a method call that the walk applied, kept with what it was
