@@ -21,7 +21,9 @@
 //! - a module that importers read is installed in a session with other
 //!   symbols and other types than the one that stored it;
 //! - a module whose contract answers one of its own declarations is installed
-//!   in a session where it has another module index.
+//!   in a session where it has another module index;
+//! - a platform that chooses v3 in its manifest, with no ownership flag: the
+//!   record writes that the lowering reads off the walk.
 //!
 //! The counters of `--self-profile` say whether the cache did anything: a
 //! scenario that compared two cold runs would pass with no cache at all.
@@ -742,5 +744,88 @@ test "a block whose contract answers a declaration of its module, read in a sess
         try expectSame(&w, arena, oracle, "out-oracle", got, "out-got");
         // `Main` and `Mirror` are checked; `Pick` and core are installed.
         try testing.expectEqual(@as(u64, 2), got.counters.checked);
+    }
+}
+
+const inline_manifest =
+    \\{ "name": "own3cache", "build": { "platform": "browser-inline", "paths": ["src"], "out": "out" } }
+    \\
+;
+
+/// `bump` updates its parameter: accepted, and written in place.
+const inline_step =
+    \\pub type alias Model =
+    \\    n : Int
+    \\    log : List Int
+    \\
+    \\
+    \\pub bump : Model → Model
+    \\bump model = { model | n = model.n + 1 }
+    \\
+;
+
+/// `update` updates the model and hands the result to `Step.bump`, a call
+/// that writes a record argument in place.
+fn inlineMain(arena: std.mem.Allocator, note: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena,
+        \\{s}import Html exposing (Html)
+        \\import Step exposing (Model)
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Add
+        \\
+        \\
+        \\update : Msg, Model → Model
+        \\update Add model = Step.bump {{ model | log = List.push model.log model.n }}
+        \\
+        \\
+        \\view : Model → Html Msg
+        \\view model =
+        \\    <main>
+        \\        <button onClick={{Add}}>add</button>
+        \\        <p>{{model.n}}</p>
+        \\    </main>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox {{ init = λ⊤ → {{ n = 0, log = [] }}, update = update, view = view }}
+        \\
+    , .{note});
+}
+
+test "a platform that chooses v3 in its manifest: a build with no ownership flag writes the same JavaScript from the cache" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // `browser-inline` names the checker v3 in its manifest and writes
+    // records in place where v3 accepts each update of a module. The walk
+    // tells the lowering two things of a module beyond its channel: whether
+    // each of its record updates is accepted (`Driver.records_in_place`,
+    // read off the channel), and the calls that write a record argument
+    // (`Driver.record_calls`, which the release optimiser must not drop). A
+    // module that the cache gives has both from its block.
+    for ([_][]const []const u8{ &.{"build"}, &.{ "build", "--release" } }) |base| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("beni.json", inline_manifest);
+        try w.write("src/Step.beni", inline_step);
+        try w.write("src/Main.beni", try inlineMain(arena, ""));
+        const oracle = try run(&w, arena, base, &.{ "--no-cache", "--out=out-oracle" });
+        try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
+        const cold = try run(&w, arena, base, &.{ "--cache-dir=cache", "--out=out-cold" });
+        try expectSame(&w, arena, oracle, "out-oracle", cold, "out-cold");
+        try testing.expectEqual(@as(u64, 0), cold.counters.hits);
+        // Each module comes from the cache.
+        const warm = try run(&w, arena, base, &.{ "--cache-dir=cache", "--out=out-warm" });
+        try expectSame(&w, arena, oracle, "out-oracle", warm, "out-warm");
+        try testing.expectEqual(warm.counters.modules, warm.counters.hits);
+        // `Main` is walked again, against the block of `Step`.
+        try w.write("src/Main.beni", try inlineMain(arena, "-- walked again\n"));
+        const oracle2 = try run(&w, arena, base, &.{ "--no-cache", "--out=out-oracle2" });
+        const edited = try run(&w, arena, base, &.{ "--cache-dir=cache", "--out=out-edited" });
+        try expectSame(&w, arena, oracle2, "out-oracle2", edited, "out-edited");
+        try testing.expectEqual(@as(u64, 1), edited.counters.checked);
     }
 }
