@@ -1,0 +1,18 @@
+-- A constant that one instruction of the module reads, in the body of
+-- another constant, is that constant's own (ownership-v3-kernel.md §7, *A
+-- constant read once*): v3 accepts the append in place.
+import List
+import Node exposing (Program)
+import String
+
+
+seed : List Int
+seed = List.range 1 2
+
+
+extended : List Int
+extended = seed ++ [ 3 ]
+
+
+main : Program
+main = Node.printLines [ String.join (List.map extended String.fromInt) "," ]

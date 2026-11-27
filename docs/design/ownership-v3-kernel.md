@@ -814,6 +814,15 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    every cell the callee can hold or answer is in a demand, an escape or the result.* *Research report
    124 F2 and report 125: a function that hands a list to its callback and then writes it was judged
    only where it was called directly, and never where a holder runs it.*
+
+   **A capture of a named function** (*added 2026-11-27, #2657*; `Frame.namedCapture`). A call, in a
+   lambda's or a local function's frame, of a capture whose local a `let` binds, with no parameter, to a
+   reference to a top-level function (`fl = List.foldl`) is a call of that function's contract, as the
+   reference itself is in the frame that binds it. A local is bound once, so every closure that captures
+   it captures that one function value; the evidence of a reference is judged at the reference (rule
+   11). Before, the capture was the frame's own function parameter, and a lambda that writes its
+   parameter handed to it was refused as going where the checker does not follow it
+   (`browser/inline/NestedFoldValue`).
 3. **Capture** (`capture`, `codeValue`, `solveCodes`): a lambda or a local function is walked in its own
    frame, its captures are parameters of its contract, and the closure value holds them (`closureOf`). A
    capture bound after the closure is made is a `later` slot read as the value bound there (`capVal`;
@@ -1674,6 +1683,19 @@ words, and where the body reaches no JavaScript that can see a cell its contract
 claims less than the walk found refuses the declaration; an alias's words are compared with the contract
 of the function it names (§6 rule 10, *A worded body is checked against its walk*). A module whose walk reached a limit, or that is not an application
 module, authorises no in-place write (`Enforce.checkModule`, `Hoists.finish`).
+
+**A constant read once** (*added 2026-11-27, #2657*; `Mod.soleReference`, the `.top` arm of
+`Frame.evalInner`). A top-level value is `outside` every frame (§3.1) because every reader has it. A
+constant that is not `pub`, is no function, and that exactly one instruction of the module names has one
+reader; where that instruction is in the body of another constant, evaluated by that constant's own
+frame and in no markup (`Frame.onceInBody`: no lambda's or local function's body, which another frame walks, and no hole, which a lowering can evaluate where the markup renders, as often as it renders it; the module loader runs the rest once), and where that constant runs once (`Mod.runsAtLoad`: the backend defines both as plain constants, not as a memo per evidence as it does a constant with a `where` clause; `Frame.loaderRunsOnce`: its value holds no function and no foreign value, and it has no markup, since a lowering inlines a constant of markup at each place that shows it, `browser-inline.md` §8.2, and runs it there as often as it renders, as the `dom` renderer does per instance, and a program value's parts run at each mount), the reference is the
+constant's evaluation: it is applied as a call of the constant's contract (rule 2), so what the
+constant made and let escape nowhere is the reader's own, and a write of it runs in place. No other code
+can read the value: the module's other instructions do not name it, another module cannot (it is not
+`pub`), and host JavaScript cannot (a `--library` build exports every constant it can call, so the rule
+is off there, as in a module with a name that a `via` keeps unresolved, `schema_value_ref` or
+`schema_expr_ref`). *Before, `extended = seed ++ [ 3 ]` with `seed = List.range 1 2` read nowhere
+else was refused, `unknown` (`browser/inline/InitializationTransfer`).*
 
 ## 8. Resource limits
 

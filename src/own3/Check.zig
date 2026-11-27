@@ -34,6 +34,7 @@ const Edges = @import("../check/Edges.zig");
 const SchemaGraph = @import("../js/SchemaGraph.zig");
 const SchemaValid = @import("../js/SchemaValid.zig");
 const Graph = @import("../resolve/Graph.zig");
+const Convention = @import("../check/Convention.zig");
 
 const PlaceId = Ids.PlaceId;
 const Step = Place.Step;
@@ -288,6 +289,12 @@ pub const Mod = struct {
     /// Per definition, whether its decoding runs answer what their workers
     /// build (`SchemaGraph.buildsFresh`), read once each.
     builds_fresh: std.AutoHashMapUnmanaged([2]u32, bool) = .empty,
+    /// `Options.library`.
+    library: bool = false,
+    /// Per declaration of the module, the one instruction that names it
+    /// (`.top`), or `none` where none or more than one does
+    /// (`soleReference`); made when first asked for.
+    sole_refs: ?[]u32 = null,
 
     places: Place.Table = .{},
     account: Ids.Account = .{ .allowance = std.math.maxInt(u32) },
@@ -1479,6 +1486,46 @@ pub const Mod = struct {
         const b = try g.buildsFresh(scratch.allocator(), ref);
         try m.builds_fresh.put(m.gpa, key, b);
         return b;
+    }
+
+    /// Kernel §7, *A constant read once*: the one instruction of the module
+    /// that names its declaration `d`, a constant that is not `pub` and is no
+    /// function, in a build that is not `--library`; `none` otherwise. A name
+    /// a `via` keeps unresolved (`schema_value_ref`, `schema_expr_ref`) is
+    /// read by its text, so a module with one has no such instruction.
+    pub fn soleReference(m: *Mod, d: u32) Allocator.Error!u32 {
+        if (m.library or d >= m.bir.decls.len) return none;
+        const refs = m.sole_refs orelse blk: {
+            const r = try m.arena.alloc(u32, m.bir.decls.len);
+            @memset(r, none);
+            const seen = try m.arena.alloc(bool, m.bir.decls.len);
+            @memset(seen, false);
+            var unresolved = false;
+            for (m.tags, m.datas, 0..) |t, data, i| switch (t) {
+                .top => if (data.lhs < r.len) {
+                    r[data.lhs] = if (seen[data.lhs]) none else @intCast(i);
+                    seen[data.lhs] = true;
+                },
+                .schema_value_ref, .schema_expr_ref => unresolved = true,
+                else => {},
+            };
+            if (unresolved) @memset(r, none);
+            m.sole_refs = r;
+            break :blk r;
+        };
+        const decl = m.bir.decls[d];
+        if (decl.is_pub or decl.kind != .value or try m.isFunction(.{ m.in.module, d })) return none;
+        if (!m.runsAtLoad(d)) return none;
+        return refs[d];
+    }
+
+    /// Whether the backend defines declaration `d` of the module as a plain
+    /// constant, evaluated once, where the module loads
+    /// (`Convention.definitionOf`, the answer `Lower` reads): not a memo per
+    /// evidence, as a constant with a `where` clause is (`thunk`).
+    pub fn runsAtLoad(m: *const Mod, d: u32) bool {
+        const dt = m.in.dispatch orelse return false;
+        return Convention.definitionOf(dt, m.bir, d) == .constant;
     }
 
     /// Whether the declaration is a function: a reference to it is a function value.
@@ -4051,6 +4098,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .markup_type = options.markup_type,
         .kept_lets = options.kept_lets,
         .schema_graph = options.schema_graph,
+        .library = options.library,
     };
     defer m.walk_arena.deinit();
     defer m.builds_fresh.deinit(gpa);

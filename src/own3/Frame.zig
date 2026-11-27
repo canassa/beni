@@ -3848,33 +3848,82 @@ fn hoistsApart(f: *Frame) Error!void {
 /// before the one that holds `r`. A `case`'s arm, a lambda, markup (whose
 /// holes a lowering can evaluate where it renders), and an argument of a
 /// callee that the lowering can short-circuit (`&&`, `||`) are not.
+/// The parent of each instruction of the body that the frame evaluates
+/// (`parents`), made once: false where the body is not known or the work
+/// passed the budget. A lambda's body is another frame's, and has none.
+fn ensureParents(f: *Frame) Error!bool {
+    const bir = f.m.bir;
+    if (f.body_root == none) return false;
+    if (f.parents_made) return true;
+    f.parents_made = true;
+    f.parents = try f.gpa.alloc(u32, bir.insts.len);
+    @memset(f.parents, none);
+    var stack: std.ArrayList(u32) = .empty;
+    defer stack.deinit(f.gpa);
+    var kids: std.ArrayList(Inst.Index) = .empty;
+    defer kids.deinit(f.gpa);
+    try stack.append(f.gpa, f.body_root);
+    while (stack.pop()) |n| {
+        // Each instruction is work (kernel §8); past the budget no read is placed.
+        if (f.charge(1)) return false;
+        const tag = bir.instTag(@fromBackingInt(n));
+        // A lambda's body is another frame's.
+        if (tag == .lambda) continue;
+        kids.clearRetainingCapacity();
+        try bir.operands(f.gpa, @fromBackingInt(n), &kids);
+        for (kids.items) |k| {
+            if (k.int() < f.parents.len) f.parents[k.int()] = n;
+            try stack.append(f.gpa, k.int());
+        }
+    }
+    return true;
+}
+
+/// Whether instruction `inst` is evaluated at most once in each run of the
+/// frame's body (kernel §7, *A constant read once*): every instruction
+/// between it and the body is the body's own, none a lambda (another
+/// frame's) and none markup, whose holes a lowering can evaluate where the
+/// markup renders, as often as it renders it (`backend.md` §15).
+fn onceInBody(f: *Frame, inst: u32) Error!bool {
+    if (!try f.ensureParents()) return false;
+    var x = inst;
+    while (x != f.body_root) {
+        if (x >= f.parents.len or f.parents[x] == none) return false;
+        x = f.parents[x];
+        switch (f.m.tags[x]) {
+            .markup => return false,
+            // A local function's body runs where it is called.
+            .let_def => {
+                const def = f.m.bir.extraData(@fromBackingInt(@intCast(f.m.datas[x].lhs)), Bir.LetDef);
+                if (def.params_start != def.params_end) return false;
+            },
+            else => {},
+        }
+    }
+    return true;
+}
+
+/// Whether the module loader runs this constant's body once, and nothing
+/// else runs it (kernel §7, *A constant read once*): its value holds no
+/// function and no foreign value, and no instruction of it is markup. A
+/// lowering inlines a constant of markup at each place that shows it and
+/// runs it there, as often as it renders it (`browser-inline.md` §8.2, the
+/// `dom` renderer's instances), and a program value's parts at each mount;
+/// a closure or a foreign value can be such a value, or hold one.
+fn loaderRunsOnce(f: *Frame) Error!bool {
+    const m = f.m;
+    if (f.body_root == none) return false;
+    const h = m.places.holds(try m.placeOfInst(f.body_root));
+    if (h.closure or h.@"opaque" or h.any) return false;
+    if (f.charge(Loc.scanUnits(f.d.inst_end.int() - f.d.inst_start.int()))) return false;
+    for (f.d.inst_start.int()..f.d.inst_end.int()) |i| if (m.tags[i] == .markup) return false;
+    return true;
+}
+
 fn runsBefore(f: *Frame, w: u32, r: u32) Error!bool {
     const m = f.m;
     const bir = m.bir;
-    if (f.body_root == none) return false;
-    if (!f.parents_made) {
-        f.parents_made = true;
-        f.parents = try f.gpa.alloc(u32, bir.insts.len);
-        @memset(f.parents, none);
-        var stack: std.ArrayList(u32) = .empty;
-        defer stack.deinit(f.gpa);
-        var kids: std.ArrayList(Inst.Index) = .empty;
-        defer kids.deinit(f.gpa);
-        try stack.append(f.gpa, f.body_root);
-        while (stack.pop()) |n| {
-            // Each instruction is work (kernel §8); past the budget no read is placed.
-            if (f.charge(1)) return false;
-            const tag = bir.instTag(@fromBackingInt(n));
-            // A lambda's body is another frame's.
-            if (tag == .lambda) continue;
-            kids.clearRetainingCapacity();
-            try bir.operands(f.gpa, @fromBackingInt(n), &kids);
-            for (kids.items) |k| {
-                if (k.int() < f.parents.len) f.parents[k.int()] = n;
-                try stack.append(f.gpa, k.int());
-            }
-        }
-    }
+    if (!try f.ensureParents()) return false;
     // The ancestors of `w`, up to the body.
     var up: std.ArrayList(u32) = .empty;
     defer up.deinit(f.gpa);
@@ -4720,6 +4769,18 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             if (es.len == 0) return if (fn_below) v_outside else v_none;
             const c = (try m.declContract(t)) orelse return v_outside;
             if (c.arity != 0) return v_outside;
+            // The one reader of a constant, in the body of another constant
+            // that the module loader runs once, outside any function (kernel
+            // §7, *A constant read once*): no other code reads the value, so
+            // the reference is the constant's evaluation, a call of its
+            // contract, and what it made is this frame's.
+            if (m.tags[inst] == .top and f.parent == null and !f.is_lambda and f.decl < m.bir.decls.len and
+                f.decl != t[1] and m.bir.decls[f.decl].kind == .value and m.runsAtLoad(f.decl) and
+                !try m.isFunction(.{ m.in.module, f.decl }) and try m.soleReference(t[1]) == inst and
+                try f.onceInBody(inst) and try f.loaderRunsOnce())
+            {
+                return f.applyAt(inst, inst, .{ .contract = c, .decl = t, .own_params = 0 }, &.{}, &.{}, place);
+            }
             const cov = try m.loc.cover(c.layouts[0], layout);
             // The two scans of the map, and the one of the result, are work (kernel §8).
             _ = f.charge(2 * Loc.scanUnits(cov.len) + Loc.scanUnits(c.res.len));
@@ -8792,7 +8853,16 @@ fn call(f: *Frame, inst: u32, mode: Mode) Error!Val {
                 if (try m.declContract(.{ n.a, n.b })) |c| code = .{ .contract = c, .decl = .{ n.a, n.b }, .own_params = c.arity };
                 js_callee = f.jsCode(.{ n.a, n.b });
             },
-            .ref => fn_root = f.ownFnRoot(callee_val),
+            .ref => {
+                // A capture of a local bound to a top-level function: that
+                // function, in every closure the lambda makes (kernel §6 rule
+                // 2, *A capture of a named function*).
+                if (try f.namedCapture(callee_val)) |t| if (try m.declContract(t)) |c| {
+                    code = .{ .contract = c, .decl = t, .own_params = c.arity };
+                    js_callee = f.jsCode(t);
+                };
+                if (code == null) fn_root = f.ownFnRoot(callee_val);
+            },
             .none, .outside, .built, .join, .unknown => {},
             .later => unreachable, // read through `capVal` only
         }
@@ -11118,6 +11188,38 @@ fn pairedLeavesAt(f: *Frame, v: Val, psig: u32, pe: u32, rsig: u32, cr: u32, rla
 // something.
 
 /// The frame's own function parameter that `v` is, or `none`.
+/// The top-level function that value `v` is, where `v` is a capture of a
+/// local that a `let` binds, with no parameter, to a reference to a
+/// top-level function (`fl = List.foldl`): every closure that captures the
+/// local captures that reference, since a local is bound once (kernel §6
+/// rule 2, *A capture of a named function*). Null otherwise.
+fn namedCapture(f: *Frame, v: Val) Error!?[2]u32 {
+    const m = f.m;
+    const n = f.nodes.items[v];
+    if (n.tag != .ref) return null;
+    const root = n.a;
+    const r = f.roots.items[root];
+    if (r.kind != .capture or n.b != r.path) return null;
+    const local = for (f.cap_locals.items, 0..) |l, k| {
+        if (f.own_params + k < f.params.items.len and f.params.items[f.own_params + k] == root) break l;
+    } else return null;
+    const bir = m.bir;
+    // The scan of the declaration is work (kernel §8).
+    if (f.charge(Loc.scanUnits(f.d.inst_end.int() - f.d.inst_start.int()))) return null;
+    for (f.d.inst_start.int()..f.d.inst_end.int()) |i| {
+        if (m.tags[i] != .let_def) continue;
+        const def = bir.extraData(@fromBackingInt(@intCast(m.datas[i].lhs)), Bir.LetDef);
+        if (def.local != local) continue;
+        if (def.params_start != def.params_end) return null;
+        const value = m.datas[i].rhs;
+        if (m.tags[value] != .top and m.tags[value] != .ext_value) return null;
+        const t = m.calleeOf(value) orelse return null;
+        if (!try m.isFunction(t)) return null;
+        return t;
+    }
+    return null;
+}
+
 fn ownFnRoot(f: *Frame, v: Val) u32 {
     const n = f.nodes.items[v];
     if (n.tag != .ref) return none;
