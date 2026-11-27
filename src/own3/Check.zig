@@ -200,6 +200,10 @@ pub const Options = struct {
     /// event*; `Enforce.keptByLowering`): each is a call made at the event
     /// in a root of a function named only as a program's `view` (`Mod.viewRoot`).
     handlers_at_event: []const u32 = &.{},
+    /// The hole values that the build's markup lowering evaluates at most
+    /// once in each evaluation of the function, ascending (kernel §6 rule
+    /// 12, *A hole evaluated once*; `Enforce.keptByLowering`).
+    holes_once: []const u32 = &.{},
     /// The build's schema plans, as the backend reads them: which decoding
     /// runs answer what their workers build (kernel §6 rule 14, *What a
     /// decoding run answers*). Null: no run is known to.
@@ -299,6 +303,8 @@ pub const Mod = struct {
     kept_lets: []const u32 = &.{},
     /// `Options.handlers_at_event`.
     handlers_at_event: []const u32 = &.{},
+    /// `Options.holes_once`.
+    holes_once: []const u32 = &.{},
     /// Per instruction, whether it is a `markup` root that is the whole body
     /// of a function its module names only as a program's `view`
     /// (`viewRoot`), made once.
@@ -1701,6 +1707,16 @@ pub const Mod = struct {
             break :blk r;
         };
         return inst < roots.len and roots[inst];
+    }
+
+    /// Whether the build's markup lowering evaluates the hole value `inst`
+    /// at most once in each evaluation of its function (`Options.holes_once`).
+    pub fn holeOnce(m: *const Mod, inst: u32) bool {
+        return std.sort.binarySearch(u32, m.holes_once, inst, struct {
+            fn order(a: u32, b: u32) std.math.Order {
+                return std.math.order(a, b);
+            }
+        }.order) != null;
     }
 
     /// Whether the build's markup lowering reads the handler `inst` where its
@@ -4324,6 +4340,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .markup_type = options.markup_type,
         .kept_lets = options.kept_lets,
         .handlers_at_event = options.handlers_at_event,
+        .holes_once = options.holes_once,
         .schema_graph = options.schema_graph,
         .library = options.library,
         .deps = options.deps,

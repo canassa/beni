@@ -337,6 +337,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         .markup_type = markup_type,
         .kept_lets = lowered.kept_lets,
         .handlers_at_event = lowered.handlers_at_event,
+        .holes_once = lowered.holes_once,
         .library = session.options.library and session.graph.modulePackage(m) == .app,
         .rows = session.graph.modulePackage(m) != .app,
         .deps = try depsOf(arena, session, m),
@@ -482,6 +483,10 @@ const Lowered = struct {
     /// The handlers it reads where their event fires (*A handler read at the
     /// event*, `MarkupTree.handlersAtEvent`, `Lowering.reads_handler_at_event`).
     handlers_at_event: []const u32 = &.{},
+    /// The hole values it evaluates at most once in each evaluation of the
+    /// function (*A hole evaluated once*, `MarkupTree.holesOnce`,
+    /// `Lowering.evaluates_hole_once`).
+    holes_once: []const u32 = &.{},
 };
 
 fn keptByLowering(arena: Allocator, session: *const Session, d: *const Driver, m: Graph.Index, bir: *const Bir) Allocator.Error!Lowered {
@@ -517,6 +522,7 @@ fn keptByLowering(arena: Allocator, session: *const Session, d: *const Driver, m
     return .{
         .kept_lets = try MarkupTree.keptLets(arena, &built, bir, lowering),
         .handlers_at_event = try MarkupTree.handlersAtEvent(arena, &built, lowering),
+        .holes_once = try MarkupTree.holesOnce(arena, &built, lowering),
     };
 }
 

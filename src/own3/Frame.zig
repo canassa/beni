@@ -4939,11 +4939,24 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             // Per value: the run of `held` that its evaluation read.
             const reads = try f.gpa.alloc([2]u32, ops.items.len);
             defer f.gpa.free(reads);
+            // A hole that the lowering evaluates once in each evaluation of
+            // the function (kernel §6 rule 12, *A hole evaluated once*): what
+            // its evaluation read or handed a helper, of which each cell is
+            // one its own writes name, is read again by nothing the markup
+            // keeps.
+            const once_markup = m.holes_once.len != 0 and try f.holeOnceMarkup(inst);
             for (ops.items, vals, reads) |o, *v, *rd| {
                 rd[0] = @intCast(held.items.len);
+                const d0 = f.demands.items.len;
                 v.* = try f.ev(o.int());
+                const once = once_markup and m.holeOnce(o.int());
+                if (once) try f.dropWritten(&held, rd[0], d0);
                 try held.append(f.gpa, v.*);
-                if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) try held.appendSlice(f.gpa, f.call_vals);
+                if (f.call_inst == o.int() and std.mem.indexOfScalar(u32, helpers.items, o.int()) != null) {
+                    const c0 = held.items.len;
+                    try held.appendSlice(f.gpa, f.call_vals);
+                    if (once) try f.dropWritten(&held, c0, d0);
+                }
                 rd[1] = @intCast(held.items.len);
             }
             // A component is called where the markup renders: its effect
@@ -6783,6 +6796,73 @@ fn captureSlot(f: *Frame, a: Atom) Error!bool {
     if (r.kind != .capture or !f.isSlotAtom(a)) return false;
     const inner = try f.innerOf(r.layout);
     return !(a.e < inner.len and inner[a.e]);
+}
+
+/// Whether the markup `inst` is read with the lowering's answer of *A hole
+/// evaluated once* (kernel §6 rule 12): the whole body of a declaration with
+/// parameters, or the markup of an arm of an `if` or a `case` (with no `let`
+/// around it, an `else if` through the arms of the inner `case`) that is the
+/// value of a hole, itself so read, of such markup. A `let`'s markup, a
+/// constant's, an argument's and a lambda's are evaluated where something
+/// shows or runs them, which can be more than once.
+fn holeOnceMarkup(f: *Frame, inst: u32) Error!bool {
+    const bir = f.m.bir;
+    if (f.is_lambda or f.d.params == 0 or f.body_root == none) return false;
+    if (inst == f.body_root) return true;
+    if (!try f.ensureParents()) return false;
+    var x = inst;
+    var arms: u32 = 0;
+    while (true) {
+        if (f.charge(1)) return false;
+        if (x >= f.parents.len or f.parents[x] == none) return false;
+        const p = f.parents[x];
+        const d = bir.instData(@fromBackingInt(p));
+        switch (bir.instTag(@fromBackingInt(p))) {
+            .branch => {
+                if (d.rhs != x) return false;
+                arms += 1;
+            },
+            .case => if (d.lhs == x) return false,
+            .markup => {
+                if (arms == 0 or !f.m.holeOnce(x)) return false;
+                return f.holeOnceMarkup(p);
+            },
+            else => return false,
+        }
+        x = p;
+    }
+}
+
+/// Of `held[from..]`, drop each value of which every cell is one that a
+/// write since demand `d0` names (kernel §6 rule 12, *A hole evaluated
+/// once*): a value with no cell, too.
+fn dropWritten(f: *Frame, held: *std.ArrayList(Val), from: usize, d0: usize) Error!void {
+    if (f.demands.items.len == d0 or from >= held.items.len) return;
+    var lv: std.ArrayList(Atom) = .empty;
+    defer lv.deinit(f.gpa);
+    var keep = from;
+    for (held.items[from..]) |x| {
+        lv.clearRetainingCapacity();
+        _ = try f.allLeaves(x, &lv);
+        // Each pair compared is work (kernel §8); past the budget it stays.
+        if (f.charge(lv.items.len * (f.demands.items.len - d0))) {
+            held.items[keep] = x;
+            keep += 1;
+            continue;
+        }
+        const all = for (lv.items) |a| {
+            const written = for (f.demands.items[d0..]) |d| {
+                if (for (f.atoms.items[d.w..][0..d.wn]) |w| {
+                    if (w.root == a.root and w.path == a.path and w.e == a.e) break true;
+                } else false) break true;
+            } else false;
+            if (!written) break false;
+        } else true;
+        if (all) continue;
+        held.items[keep] = x;
+        keep += 1;
+    }
+    held.shrinkRetainingCapacity(keep);
 }
 
 /// Whether the location `loc` is in the deep level of a cycle.

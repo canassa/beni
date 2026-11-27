@@ -1431,6 +1431,32 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     `Show` body and a helper shown in an arm keep the closure made at the render, which a removed
     row still runs after `update`.*
 
+    **A hole evaluated once** (*added 2026-11-27, #2657*; `Frame.holeOnceMarkup`, `dropWritten`,
+    `Enforce.keptByLowering`). Markup holds every value a hole's evaluation reads because a lowering
+    may evaluate the hole again, or later, from those values. Where the lowering says that it
+    evaluates a hole at most once in each evaluation of the function the markup is in, from what
+    that evaluation made or was handed and never from a value an earlier evaluation read
+    (`Lowering.evaluates_hole_once`, `boundary.md` §9.4.8, *A hole evaluated once*), the old value of
+    a cell that the hole's own evaluation wrote is read by nothing but another evaluation of the hole.
+    So a value the evaluation read, or handed to a helper's call in the hole, of which every cell
+    (`allLeaves`) is a cell that a write of that evaluation names, is no value the markup holds; the
+    hole's value, a closure the hole makes, and every other value it read stay held. The checker
+    reads a hole so where two facts hold:
+    1. the markup is the whole body of a declaration with parameters, or the markup of an arm of an
+       `if` or a `case` (no `let` around it) that is a hole's value of such markup, itself read so,
+       through arms alone (`holeOnceMarkup`): a `let`'s markup, a constant's and an argument's are
+       evaluated where a hole shows them, which can be twice;
+    2. the lowering names the hole (`inline`: one that the root reaches through elements and
+       fragments alone, in a root with no `let`).
+    *The argument.* A later reader of the old name is a holder that observes the cell as it was
+    before the write. The function's own later reads of it are judged by §5 as before (a read of an
+    old name after the write); the only other reader that the markup stood for is an evaluation of
+    the hole from the values it read, which the lowering rules out. A write by another value of the
+    function, before or after, reads the cell through a name of its own, which §5 judges. *Before,
+    `<section>{helper (List.push xs 2)}</section>` in an arm held `xs`, and the push was refused as
+    read again where the markup is read; and a hole that called a helper which writes its argument
+    held the argument (`browser/inline/TotalCallBranchOwnership`).*
+
     *The argument.* The runtime is a holder that the walk does not follow, and it does two things
     with markup: it reads the values the markup holds while it renders, and it calls code the markup
     gives it. The first is covered by the markup holding every value its holes can read until it is
