@@ -1978,6 +1978,9 @@ pub const Mod = struct {
         const c = try m.emptyContract(params, result);
         const fns = @constCast(c.fns);
         for (fns, tys) |*f, ty| f.* = try m.bottomFn(ty);
+        // A body that answers no function yet (kernel §6 rule 2, *A function
+        // a body answers*).
+        c.answers = &.{};
         return c;
     }
 
@@ -2024,6 +2027,8 @@ pub const Mod = struct {
         const fns = try m.arena.alloc(?*const Contract.Fn, arity);
         @memset(fns, null);
         const c = try m.arena.create(Contract.Contract);
+        // A body that answers no function yet: where a group's rounds start
+        // (kernel §6 rule 2, *A function a body answers*).
         c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns };
         return c;
     }
@@ -2371,6 +2376,8 @@ pub const Mod = struct {
         switch (s.kind) {
             .outside, .twice => return true,
             .fresh => return has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty),
+            // No row states what a function in a value answers.
+            .held => return false,
             .answer => {
                 const w = pw[s.a];
                 const fnc = c.fns[s.a] orelse return false;
@@ -2703,7 +2710,8 @@ pub const Mod = struct {
             .answer => if (s.a < arity) {
                 answered[s.a] = true;
             },
-            .fresh, .outside, .twice => {},
+            // No parameter location: what a function in a value answers.
+            .fresh, .outside, .twice, .held => {},
         };
         // What a cell's store leaves in its contents is placed there (kernel §13).
         for (c.renew) |ro| if (ro) |srcs| for (srcs) |s| switch (s.kind) {
@@ -2713,7 +2721,7 @@ pub const Mod = struct {
             .answer => if (s.a < arity) {
                 answered[s.a] = true;
             },
-            .fresh, .outside, .twice => {},
+            .fresh, .outside, .twice, .held => {},
         };
         const want = struct {
             fn at(cc: *const Contract.Contract, hd: []const bool, j: usize, e: usize) void {
@@ -3134,7 +3142,7 @@ pub const Mod = struct {
                     return try m.falseText(name, "the body reads again what it hands function parameter {d} at its parameter {d}{s}, and its words `{s}` say that it does not", .{ j + 1, k + 1, try m.atText(fe.loc), words });
                 for (g.supply[slot]) |s| {
                     const covered = switch (s.kind) {
-                        .param, .answer, .twice => srcCovered(s, wg.supply[slot]),
+                        .param, .answer, .twice, .held => srcCovered(s, wg.supply[slot]),
                         // A cell the body made: a caller names it only where the body answers it too.
                         // In a module of core, at a type variable, where the body does not
                         // cast, it is none (`phantomAt`).
@@ -3168,12 +3176,13 @@ pub const Mod = struct {
         for (ws) |w| switch (s.kind) {
             .param => if (w.kind == .param and w.a == s.a and w.e == s.e and (w.p == 0 or w.p == s.p)) return true,
             .answer => if (w.kind == .answer and w.a == s.a and w.e == s.e) return true,
+            .held => if (w.kind == .held and w.a == s.a and w.e == s.e) return true,
             .twice => unreachable,
             .outside => if (w.kind == .outside) return true,
             .fresh => switch (w.kind) {
                 .outside => return true,
                 .fresh => if (s.e == 0 or w.e != 0) return true,
-                .param, .answer => if (s.e == 0) return true,
+                .param, .answer, .held => if (s.e == 0) return true,
                 .twice => {},
             },
         };
@@ -3186,7 +3195,7 @@ pub const Mod = struct {
     /// of its result, so no cell of a parameter is at two of them.
     fn dupsOnly(c: *const Contract.Contract) bool {
         for (c.res, 0..) |srcs, ri| for (srcs) |s| {
-            if (s.kind != .param and s.kind != .answer) continue;
+            if (s.kind != .param and s.kind != .answer and s.kind != .held) continue;
             for (c.res[ri + 1 ..]) |other| for (other) |x| if (x.kind == s.kind and x.a == s.a and x.e == s.e) return false;
         };
         return true;
@@ -3230,6 +3239,7 @@ pub const Mod = struct {
         return switch (s.kind) {
             .param => std.fmt.allocPrint(m.arena, "parameter {d}'s value{s}", .{ s.a + 1, if (s.p == 0) "" else if ((s.p - 1) % 2 == 0) " at the position its key names" else " at the other positions" }),
             .answer => std.fmt.allocPrint(m.arena, "the answer of function parameter {d}", .{s.a + 1}),
+            .held => std.fmt.allocPrint(m.arena, "the answer of a function held at parameter location {d}", .{s.a}),
             .twice => "one cell at two places of a list (`twice`)",
             .outside => "a value outside every frame (a top-level value, or JavaScript's)",
             .fresh => if (s.e != 0) "a new value that it let escape" else "a new value",
@@ -4048,7 +4058,7 @@ pub const Mod = struct {
                 try m.srcsText(w, srcs);
             };
             if (c.fns[j]) |fnc| {
-                w.print(" π{d} fn{s}{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "", if (fnc.defect) " defect" else "" }) catch return error.OutOfMemory;
+                w.print(" π{d} fn{s}{s}{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "", if (fnc.defect) " defect" else "", if (fnc.ans_own) " answer-own" else "" }) catch return error.OutOfMemory;
                 if (fnc.runs_on) w.writeAll(" runs-on") catch return error.OutOfMemory;
                 if (fnc.forks) w.writeAll(" forks") catch return error.OutOfMemory;
                 if (fnc.starts) w.writeAll(" starts") catch return error.OutOfMemory;
@@ -4061,6 +4071,11 @@ pub const Mod = struct {
                     w.writeAll(")") catch return error.OutOfMemory;
                 };
             }
+            // The functions held below the parameter (kernel §6 rule 2, *A
+            // function held in a value*).
+            for (m.loc.layoutEntries(c.layouts[j]), 0..) |e, k| if (c.heldAt(c.off[j] + k)) |fnc| {
+                w.print(" π{d}{s} held{d}{s}{s}", .{ j + 1, try m.locText(e.loc), c.off[j] + k, if (fnc.called) " called" else "", if (fnc.ans_own) " answer-own" else "" }) catch return error.OutOfMemory;
+            };
         }
         // The body's paths (kernel §13 item 13): what each writes and renews.
         for (c.paths, 0..) |p, pk| {
@@ -4076,6 +4091,8 @@ pub const Mod = struct {
         }
         // Kernel §13 item 12, *A defect*, (d).
         if (c.runs_on) w.writeAll(" runs-on") catch return error.OutOfMemory;
+        // The functions it answers (kernel §6 rule 2, *A function a body answers*).
+        if (c.answers) |xs| if (xs.len != 0) w.print(" answers{d}", .{xs.len}) catch return error.OutOfMemory;
         if (c.hosts) w.writeAll(" hosts") catch return error.OutOfMemory;
         if (c.hosts_forked) w.writeAll(" hosts-forked") catch return error.OutOfMemory;
         w.writeAll("; res") catch return error.OutOfMemory;
@@ -4098,6 +4115,7 @@ pub const Mod = struct {
                 if (s.p != 0) w.print("[{s}π{d}]", .{ if ((s.p - 1) % 2 == 0) "" else "≠", (s.p - 1) / 2 + 1 }) catch return error.OutOfMemory;
             },
             .answer => w.print(" answer{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory,
+            .held => w.print(" held{d}@{d}", .{ s.a, s.e }) catch return error.OutOfMemory,
             .twice => w.writeAll(" twice") catch return error.OutOfMemory,
         };
     }
