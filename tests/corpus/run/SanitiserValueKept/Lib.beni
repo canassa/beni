@@ -1,5 +1,4 @@
 import Debug
-import Io
 import List
 import Task
 
@@ -12,7 +11,7 @@ pub type alias Pt =
 keep : List Int, List Int → Pt
 keep u v =
     _ = Task.spawnDetached λ⊤ →
-        Io.sleep 5
+        Task.yieldNow ⊤
         Debug.log "kept" (List.length v)
     { xs = u, a = [] }
 
@@ -40,7 +39,7 @@ made = build ⊤
 hold : List (List Int) → ⊤
 hold ls =
     _ = Task.spawnDetached λ⊤ →
-        Io.sleep 5
+        Task.yieldNow ⊤
         Debug.log "held" (List.length ls)
     ⊤
 

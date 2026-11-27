@@ -30,7 +30,7 @@ main = Io.run λ⊤ →
 
         Task.defer root λ_ →
             say "deferred start"
-            Task.sleep (Duration.millis 20)
+            Task.sleep (Duration.seconds 10)
             say "deferred end"
         Task.yieldNow ⊤
     Task.closeRoot root

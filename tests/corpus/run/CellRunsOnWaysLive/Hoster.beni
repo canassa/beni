@@ -15,7 +15,7 @@ hosting : ⊤ → String
 hosting ⊤ =
     r = Ref.make [ 1, 2 ]
     t = Task.spawn λ⊤ →
-        Task.sleep (Duration.millis 1)
+        Task.yieldNow ⊤
         Ref.update r λl → List.push l 5
     Task.sleep (Duration.millis 5)
     s = ints (Ref.get r)

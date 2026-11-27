@@ -68,7 +68,7 @@ hosting : ⊤ → String
 hosting ⊤ =
     r = Ref.make [ 1, 2 ]
     t = Task.spawn λ⊤ →
-        Task.sleep (Duration.millis 1)
+        Task.yieldNow ⊤
         Ref.update r λl → List.push (List.copy l) 5
     Task.sleep (Duration.millis 5)
     s = ints (Ref.get r)
@@ -86,7 +86,7 @@ stashReader ⊤ =
             ints (Ref.get r)
     t = Task.spawn rd
     stash rd
-    Task.sleep (Duration.millis 1)
+    Task.yieldNow ⊤
     Ref.update r λl → List.push (List.copy l) 5
     Task.join t
 
@@ -102,7 +102,7 @@ stashWriter ⊤ =
             ints (Ref.get r)
     t = Task.spawn wr
     stash wr
-    Task.sleep (Duration.millis 1)
+    Task.yieldNow ⊤
     Ref.update r λl → List.push (List.copy l) 5
     Task.join t
 

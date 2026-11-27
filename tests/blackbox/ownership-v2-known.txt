@@ -240,6 +240,7 @@ tests/corpus/run/SchedulerCloseRoot.beni SchedulerCloseRoot 18:9 #0 :: Deferred.
 tests/corpus/run/SchedulerDeferred.beni SchedulerDeferred 18:9 #0 :: Deferred.complete done◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
 tests/corpus/run/SchedulerIdle.beni SchedulerIdle 25:9 #0 :: Deferred.complete done◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
 tests/corpus/run/SchedulerStopped.beni SchedulerStopped 29:9 #0 :: Deferred.complete done◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
+tests/corpus/run/SchedulerStopping.beni SchedulerStopping 58:9 #0 :: Deferred.complete gate◆ :: absent :: accepted  v2 words `Deferred.complete` as a writer (#1079); v1 has no row
 tests/corpus/ownership/RefSetThenWrite.beni [node] RefSetThenWrite 18:13 #0 :: Ref.set cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer of `◆` (#1079); v1 has no row; a later use of the handle is no use of the old contents (#1366)
 tests/corpus/ownership/RefSetThenWrite.beni [node] RefSetThenWrite 24:5 #0 :: Ref.set cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer of `◆` (#1079); v1 has no row; a later use of the handle is no use of the old contents (#1366)
 tests/corpus/ownership/RefSetThenWrite.beni [node] RefSetThenWrite 25:5 #0 :: RefSetThenWrite.poke cell◆ :: absent :: accepted  v2 words `Ref.set` as a writer of `◆` (#1079); v1 has no row; a later use of the handle is no use of the old contents (#1366)

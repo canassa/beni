@@ -25,7 +25,7 @@ hosting : ⊤ → String
 hosting ⊤ =
     r = Ref.make [ 1, 2 ]
     t = Task.spawn λ⊤ →
-        Task.sleep (Duration.millis 1)
+        Task.yieldNow ⊤
         Ref.update r λl → List.push (List.copy l) 5
     Task.sleep (Duration.millis 5)
     s = ints (Ref.get r)
@@ -41,7 +41,7 @@ maskedReader ⊤ =
         Task.uninterruptible λ⊤ →
             Task.sleep (Duration.millis 5)
             ints (Ref.get r)
-    Task.sleep (Duration.millis 1)
+    Task.yieldNow ⊤
     Ref.update r λl → List.push (List.copy l) 5
     Task.join t
 
@@ -55,7 +55,7 @@ maskedWriter ⊤ =
             Task.sleep (Duration.millis 5)
             Ref.update r λl → List.push (List.copy l) 7
             ints (Ref.get r)
-    Task.sleep (Duration.millis 1)
+    Task.yieldNow ⊤
     Ref.update r λl → List.push (List.copy l) 5
     Task.join t
 
@@ -68,7 +68,7 @@ maskedHelper ⊤ =
         masked λ⊤ →
             Task.sleep (Duration.millis 5)
             ints (Ref.get r)
-    Task.sleep (Duration.millis 1)
+    Task.yieldNow ⊤
     Ref.update r λl → List.push (List.copy l) 5
     Task.join t
 
@@ -81,7 +81,7 @@ maskMask ⊤ =
         Task.uninterruptibleMask λ_ →
             Task.sleep (Duration.millis 5)
             ints (Ref.get r)
-    Task.sleep (Duration.millis 1)
+    Task.yieldNow ⊤
     Ref.update r λl → List.push (List.copy l) 5
     Task.join t
 
@@ -93,7 +93,7 @@ spawnSched ⊤ =
     sc = Task.scheduler λ⊤ → ⊤
     t = Task.spawn λ⊤ →
         Task.withScheduler sc λ⊤ →
-            Task.sleep (Duration.millis 1)
+            Task.yieldNow ⊤
             Ref.update r λl → List.push (List.copy l) 5
     Task.sleep (Duration.millis 5)
     s = ints (Ref.get r)
@@ -106,7 +106,7 @@ selfMask : ⊤ → String
 selfMask ⊤ =
     r = Ref.make [ 1, 2 ]
     t = Task.spawn λ⊤ →
-        Task.sleep (Duration.millis 1)
+        Task.yieldNow ⊤
         Ref.update r λl → List.push (List.copy l) 5
     s = Task.uninterruptible λ⊤ →
         Task.sleep (Duration.millis 5)
@@ -120,7 +120,7 @@ afterMask : ⊤ → String
 afterMask ⊤ =
     r = Ref.make [ 1, 2 ]
     t = Task.spawn λ⊤ →
-        Task.sleep (Duration.millis 1)
+        Task.yieldNow ⊤
         Ref.update r λl → List.push (List.copy l) 5
     Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 5)
     s = ints (Ref.get r)
@@ -147,7 +147,7 @@ schedDetached ⊤ =
         Task.sleep (Duration.millis 5)
         ints (Ref.get r)
     Task.withScheduler sc λ⊤ →
-        Task.sleep (Duration.millis 1)
+        Task.yieldNow ⊤
         Ref.update r λl → List.push (List.copy l) 5
     Task.join t
 
