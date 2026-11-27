@@ -2339,6 +2339,73 @@ ${ind(body, 4)}
 `;
 }
 
+// #2710, #2709: one cell at two places of a cell's contents is decided on the cells the atoms name,
+// through every renaming a writer's run makes (kernel §13 item 12, amendment of 2026-11-27, (e)).
+// Programs are `twice.<contents>.<mover>.<pair>.<writers>.<twin>`: a renewal (the mover) stores part
+// `src` of a cell's contents at part `dst` (`<pair>` is `src` then `dst`, of a tuple `tuple` or a
+// record's fields `record`), and writer fibers push in place onto part `src` and part `dst` (`two`), or
+// onto every part (`three`). The mover is the frame's own `Ref.update` (`frame`), a helper (`helper`), a
+// fold that runs it (`fold`), a fiber made before the writers (`fiberBefore`) or after them
+// (`fiberAfter`), or a `Task.race` branch (`race`); the frame then sleeps and prints every part. The twin
+// is `live` where the mover stores the part itself, `dead` where it stores a copy.
+const TWICE_SHAPES = ['tuple', 'record'].flatMap((c) =>
+  ['frame', 'helper', 'fold', 'fiberBefore', 'fiberAfter', 'race'].flatMap((m) =>
+    ['02', '01', '10', '21'].flatMap((p) => ['two', 'three'].map((w) => `${c}.${m}.${p}.${w}`))));
+
+function genTwice(shape, live) {
+  const [cont, mover, pr, ws] = shape.split('.');
+  const src = Number(pr[0]);
+  const dst = Number(pr[1]);
+  const rec = cont === 'record';
+  const ns = rec ? ['x', 'y', 'z'] : ['a', 'b', 'c'];
+  const T = rec ? 'Three' : '(List Int × List Int × List Int)';
+  const init = rec ? '{ x = [ 1 ], y = [ 2 ], z = [ 3 ] }' : '( [ 1 ], [ 2 ], [ 3 ] )';
+  // The function that sets part `i` to `e` of the part it reads (`src` for the mover), the others as they are.
+  const set = (i, e, isMove) => {
+    const from = isMove ? src : i;
+    if (rec) return `λo → { o | ${ns[i]} = ${e(`o.${ns[from]}`)} }`;
+    return `λ( ${ns.map((n, k) => (isMove && k === i ? '_' : n)).join(', ')} ) → ( ${ns.map((n, k) => (k === i ? e(ns[from]) : n)).join(', ')} )`;
+  };
+  const move = set(dst, (x) => (live ? x : `List.copy ${x}`), true);
+  const write = (i) => set(i, (x) => `List.push ${x} ${i + 1}`, false);
+  const writers = (ws === 'three' ? [0, 1, 2] : [src, dst]).map((i) => `_ = Task.spawn λ⊤ → Ref.update r ${write(i)}`);
+  const defs = [];
+  let movers;
+  if (mover === 'helper') {
+    defs.push(`dup : Ref ${T} → ⊤\ndup cell = Ref.update cell ${move}`);
+    movers = ['dup r'];
+  } else {
+    movers = [{
+      frame: `Ref.update r ${move}`,
+      fold: `List.foldl [ 1 ] ⊤ λ_ _ → Ref.update r ${move}`,
+      fiberBefore: `_ = Task.spawn λ⊤ → Ref.update r ${move}`,
+      fiberAfter: `_ = Task.spawn λ⊤ → Ref.update r ${move}`,
+      race: `Task.race (λ⊤ → Ref.update r ${move}) λ⊤ → Task.yieldNow ⊤`,
+    }[mover]];
+  }
+  const steps = mover === 'fiberBefore' ? [...movers, ...writers] : [...writers, ...movers];
+  const show = rec ? 'fin = Ref.get r\nNode.print "${ints fin.x} ${ints fin.y} ${ints fin.z}"' : '( p, q, s ) = Ref.get r\nNode.print "${ints p} ${ints q} ${ints s}"';
+  const body = `r = Ref.make ${init}\n${steps.join('\n')}\nTask.sleep (Duration.millis 5)\n${show}`;
+  return `-- twice.${shape}: see bench/ownership-sweeps/cells.mjs.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+${rec ? '\n\ntype alias Three =\n    x : List Int\n    y : List Int\n    z : List Int\n' : ''}${defs.map((d) => `\n\n${d}\n`).join('')}
+
+main : Program
+main = Io.run λ⊤ →
+${ind(body, 4)}
+`;
+}
+
 fs.mkdirSync(out, { recursive: true });
 const list = [];
 const emit = (name, files) => {
@@ -2420,6 +2487,9 @@ for (const kind of RENEW_KINDS) for (const store of RENEW_STORES) for (const via
 }
 for (const shape of FIXED_SHAPES) for (const live of [true, false]) {
   emit(`fixed.${shape}.${live ? 'live' : 'dead'}`, { 'Main.beni': genFixed(shape, live) });
+}
+for (const shape of TWICE_SHAPES) for (const live of [true, false]) {
+  emit(`twice.${shape}.${live ? 'live' : 'dead'}`, { 'Main.beni': genTwice(shape, live) });
 }
 fs.writeFileSync(path.join(out, 'LIST'), list.join('\n') + '\n');
 console.log(`${list.length} programs`);
