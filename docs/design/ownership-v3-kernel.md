@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -857,6 +857,51 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    cell of each capture, so `Cmd.task (λ⊤ → Navigation.goBack model.key 0) …` in `update`'s answer
    held every location of the model, none was `update`'s own (rule 13), and every write of `update`
    was refused (`browser/tea/NavigatePush`; `run/ClosureFieldInPlace` and its live twin).*
+
+   **A field path a closure captures** (*added 2026-11-27, #2657*; `Frame.eagerLocal`,
+   `eagerCapture`, `eagerSlot`, `eagerRead`). A read in a code of a chain of field reads `l.f₁.….fₖ`
+   (k ≥ 1, field reads alone) whose local `l` is a capture of the code is **read where the closure
+   is made**, and the closure captures the value read there, not the record: the lowering binds the
+   chain to a temporary at that point and the code reads the temporary (`ownership-checker.md`
+   §31.6, v1's rule, which the lowering already applies to v1's rows: `backend.md` §4, *Hoists*). A
+   field read is pure and cannot fail (`language.md` §11.11), so reading it earlier changes no value
+   and no effect; and in the copying program the closure captured the old record, whose fields never
+   change, so a value read before any write of the record is the value the copying program reads.
+   The place is the one §31.6 names:
+   - a lambda's chain is read where the lambda is made; one that an item of a `let` binds, where the
+     walk reaches that item (made earlier because another code named it, its read waits);
+   - a local function's chain is read where its `let` starts, since its closure exists from there
+     (`language.md` §7, a hoisted `function`), and stamped with that time and context however late
+     the walk makes it;
+   - a chain of a local that the frame binds later (a lambda or a local function that names a later
+     item, `let_forward_reference`) is read just after the item that binds it (`eagerAfterItem`);
+   - a chain of a local of a frame around the one that makes the closure is a capture of that
+     closure in its turn, carried out to the closure made in the local's own frame and read there
+     once, for every closure inside it (#2617).
+
+   In the frame that makes the closure, the read is a read of each slot of the chain at that time
+   (§11 item 4, `readSlots`): a write before it in the same run meets it as a later read (§5, test
+   4), and the lowering's read-first rule may place it before the write (§11 item 10). The closure
+   then holds the chain's value at the locations its contract reaches, as for any capture: a list in
+   the field is still held, and a write of that list is still judged against it; the record's slots
+   are not held, so a write of the field after the closure is made, in this run or a later one, is no
+   write of what the closure reads. A chain whose read is no part of the closure's own text (a
+   member of the closure's group named in it, `memberValue`) is read there too, but its row is the
+   other code's: `lex` marks the reads whose rows the frame writes, and only they are read first.
+
+   It holds in an application's module (`Check.Mod.eager_ok`), whose records the lowering writes in
+   place; in a module of core or a platform, and in a declaration with markup (whose lowering can
+   make a closure where it renders, and evaluate a handler at the event, rule 12), every chain is
+   read where the code runs, as before (`Frame.no_eager`). The rows go to the lowering of every
+   module of the application, whether or not it writes (`Check.Result.eager`, `Enforce`): the record
+   that one module's closure captured can be written in place by another's `update`. Before, a
+   tagger `Pulsed model.label _` that `subscriptions` answers held the slot `model.label=`, so the
+   entry found the label kept by a consumer and `update`'s write of it was refused
+   (`browser/inline/LatestTagger`, `SubscriptionArgument`); and a command's body that reads
+   `model.count` held the slot past the arm that wrote it (`BatchMapOldValue`,
+   `ClosureNamesLocalAfterSuspension`, `RecordReadLambdaBoundAfter`, `RecordReadLocalFunction`,
+   `RecordReadNestedClosure`). In place under v3's oracle, the old tagger that `Inline.passOn` can
+   apply after an `update` holds the old label, as the copying program's does.
 4. **Construct** (`built`, `listOf`, `spreadChain`, `appendChain`): a tuple, record or constructor names
    each part that holds a cell; a list literal's storage is the frame's own cell, its elements are the
    items' leaves as one run with `partDup`; a spread's base is written (a demand) and its storage is a new
@@ -2397,6 +2442,22 @@ cells, and an update is a write of some of them.
    `case` (v1 places those; v3 does not yet). *Research report 153: TodoMVC's `changed { model |
    nextId = model.nextId + 1 } (… model.nextId …)`, refused by v3 and accepted by v1 under
    `--records-in-place` (#2517).*
+
+   *Amended 2026-11-27 (#2657).* Two more reads are read first, under the same three facts:
+   - **a call that writes a record it was handed** (a demand at a call whose cells are slots, §5,
+     `Demand.record`): the read is bound just before the call (phase 0), which evaluates its callee
+     and its arguments after, so a read of the old value placed there reads what the copying program
+     reads. Before, `( said model "tuple", model.count )` with `said` updating `model.count` was
+     refused (`browser/inline/ReleaseCalleeWrite`, the arm `#tuple`);
+   - **a captured field path read where its closure is made** (§6 rule 3, *A field path a closure
+     captures*), whose closure is made after the write: the whole chain is bound at the write's
+     placement, and the closure's reads use that temporary, the row naming the closure
+     (`Reads.Read.capture`, as v1's rows do). Its local need not be a parameter: it is one bound, and
+     in scope, where the write runs (`Frame.boundBefore`: a parameter; a local an earlier item of a
+     `let` around the write binds; a local an arm's pattern binds, for a write in the arm's body).
+     The update must run before the place where the chain is read (`runsBefore` against that
+     place), and the chain must be in the closure's own text (`lex`). `RecordReadNestedClosure`'s
+     arm `#InList` is one: `{ it | n = it.n + 1 }` and then `λs → … it.n` in the same arm.
 
 Every other rule applies to a slot as to a list's storage: a call's contract flags its slots (read,
 written, escaped), so a write in a helper of another module is a demand at its call (§6.2); a

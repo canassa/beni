@@ -7083,9 +7083,10 @@ pub const Lowerer = struct {
         if (l.in.ownership.clean) return l.in.ownership.reads;
         if (!l.in.records_v3 or !l.sanitizesLists()) return null;
         if (l.in.list_writes == null) return null;
-        // v3's rows, as v1's: a chain of field reads from a parameter, read whole.
+        // v3's rows, as v1's: a chain of field reads from a local, read
+        // whole, and a closure's read where it is made (`capture`).
         const rows = try l.scratch.alloc(Hoists.Read, l.in.v3_reads.len);
-        for (l.in.v3_reads, rows) |r, *to| to.* = .{ .decl = r.decl, .demand = r.demand, .inst = r.inst, .holder = r.holder, .path_start = 0, .path_len = r.path_len, .prefix_len = r.path_len, .placement = r.placement, .phase = r.phase };
+        for (l.in.v3_reads, rows) |r, *to| to.* = .{ .decl = r.decl, .demand = r.demand, .inst = r.inst, .holder = r.holder, .path_start = 0, .path_len = r.path_len, .prefix_len = r.path_len, .placement = r.placement, .phase = r.phase, .capture = r.capture };
         return rows;
     }
 
@@ -7297,9 +7298,9 @@ pub const Lowerer = struct {
             try l.constDecl(out, n, base, p);
             base = try l.ident(n, p);
         }
-        var properties: std.ArrayList(Node.Index) = .empty;
         // The fields named; the runtime copies the others out of the base,
         // and reads none of these of it (`ownership-v3-kernel.md` §11 item 3).
+        var properties: std.ArrayList(Node.Index) = .empty;
         for (fields, values[1..]) |f, value| {
             try properties.append(l.scratch, try l.fieldProperty(l.bir.symbol(f.name), value, p));
         }

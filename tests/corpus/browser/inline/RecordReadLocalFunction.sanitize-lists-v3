@@ -1,0 +1,1 @@
+v3 reads a field path a local function captures where its `let` starts (ownership-v3-kernel.md §6 rule 3, *A field path a closure captures*): the field is written in place, and each call reads the old value.

@@ -402,9 +402,14 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         gpa.free(d.hoist_reads[mi_u]);
         d.hoist_reads[mi_u] = &.{};
     }
-    if (table.writes.len != 0 and mi_u < d.hoist_reads.len) {
+    // And the field paths its closures captured, read where each is made
+    // (kernel §6 rule 3, *A field path a closure captures*), in every module
+    // of the application, whatever it writes: a record that one module's
+    // closure holds can be written in place by another's update.
+    if ((table.writes.len != 0 or r.eager.len != 0) and mi_u < d.hoist_reads.len) {
         var reads: std.ArrayList(Reads.Read) = .empty;
-        for (r.lines) |l| if (!l.refused) try reads.appendSlice(arena, l.hoists);
+        if (table.writes.len != 0) for (r.lines) |l| if (!l.refused) try reads.appendSlice(arena, l.hoists);
+        if (session.graph.modulePackage(m) == .app) try reads.appendSlice(arena, r.eager);
         d.hoist_reads[mi_u] = try gpa.dupe(Reads.Read, reads.items);
     }
     if (mi_u < d.channels.len) d.channels[mi_u] = table else table.deinit(gpa);

@@ -204,7 +204,9 @@ const REntry = struct {
 /// parameter it reaches is answered in the contract (`flag_a`), not read: the
 /// caller holds the answer and reads its slots where it reads them, and a
 /// call that writes counts it as another operand (kernel §5, §11).
-const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true, tail: bool = false };
+/// `ev`: the read of a field path that a closure captured, read where the
+/// closure is made (`eagers`, kernel §6 rule 3), or `none`.
+const Read = struct { point: u32, at: u32, val: Val, ctx: u32, mask: u32 = 0, nmask: u32 = 0, all: bool = true, tail: bool = false, ev: u32 = none };
 const Escape = struct { start: u32, len: u32, point: u32, ctx: u32 };
 /// A context is an arm of a `case` (`parent`, `case`, `arm`), or the
 /// meeting of two (`both`: an atom found through an arm of each of two
@@ -216,6 +218,32 @@ const Ctx = struct { parent: u32, case: u32, arm: u32, depth: u32, both: [2]u32 
 /// `none`), what it was handed (`vals`, a run of `js_site_vals`), what it
 /// answered, and whether it made the frame cast.
 const JsSite = struct { pos: [2]u32, vals: u32, nvals: u32, result: Val, casts: bool };
+
+/// A captured field path, read where its closure is made (kernel §6 rule 3,
+/// *A field path a closure captures*): the read instruction (the chain's
+/// last field read) and its local, the closure made in this frame that the
+/// read is in (`capture`, a lambda or a local function's `let_def`), where
+/// the lowering reads it (`placement`, `phase`, as `Reads.Read`), and
+/// whether the read is inside that closure's own text (`lex`): a read that
+/// a code holds through another of its group is that other code's to place.
+const Eager = struct { x: u32, local: u32, capture: u32, placement: u32, phase: u32, lex: bool };
+/// A captured field path whose read waits (`eagerSlot`): for the item that
+/// binds its local (`wait == none`), or for the binding of the lambda that
+/// reads it (`wait`, the lambda). `at` is its slot in `lists`.
+const Pending = struct { x: u32, local: u32, capture: u32, wait: u32, at: u32, lex: bool, done: bool = false };
+/// A local function of a `let` and the time and context where the `let`
+/// was entered, with the `let`.
+const Block = struct { def: u32, at: u32, ctx: u32, let_inst: u32 };
+const eager_bit: u32 = 1 << 31;
+const eager_lex: u32 = 1 << 30;
+
+fn isEagerKey(key: u32) bool {
+    return key & eager_bit != 0;
+}
+
+fn eagerX(key: u32) u32 {
+    return key & ~(eager_bit | eager_lex);
+}
 
 /// A function value whose code the frame knows.
 const Code = struct {
@@ -463,7 +491,28 @@ params: std.ArrayList(u32) = .empty,
 /// Per parameter of the contract: its type, for a function parameter's draft.
 param_ty: std.ArrayList(Var.Optional) = .empty,
 /// The captured locals, in the order of `params` after the own parameters.
+/// A field path read where the closure is made is `eager_bit` and its read
+/// instruction (kernel §6 rule 3, *A field path a closure captures*), with
+/// `eager_lex` where the read is inside this code's own text.
 cap_locals: std.ArrayList(u32) = .empty,
+/// No capture of a field path is read where its closure is made: a module
+/// of core or a platform, a declaration with markup, and each frame inside
+/// one (`Check.Mod.eager_ok`, `has_markup`).
+no_eager: bool = false,
+/// Each read of a captured field path that this frame made where a closure
+/// was made (`eagerRead`): what the uses of it say, by `Read.ev`.
+eagers: std.ArrayList(Eager) = .empty,
+/// Captured field paths of closures this frame made that it reads later:
+/// where a `let` item binds the local, or where the item that binds the
+/// closure is reached (`eagerSlot`, `settleEager`).
+pending: std.ArrayList(Pending) = .empty,
+/// The local functions of each `let` this frame entered, and the time it
+/// entered it: their captured field paths are read there (`eagerSlot`).
+blocks: std.ArrayList(Block) = .empty,
+/// Each `let` item this frame bound, and the time just after it.
+items_done: std.ArrayList([3]u32) = .empty,
+/// The `let_def` whose binding the frame is making, or `none`.
+binding_now: u32 = none,
 codes: std.ArrayList(Code) = .empty,
 drafts: std.ArrayList(FnDraft) = .empty,
 answers: std.ArrayList(Answer) = .empty,
@@ -783,6 +832,7 @@ pub fn init(m: *Mod, parent: ?*Frame, decl: u32, is_lambda: bool, code_inst: u32
         m.held_ticks = 0;
     }
     f.depth = if (parent) |p| p.depth + 1 else 0;
+    f.no_eager = if (parent) |p| p.no_eager or p.markup_reads != null else !m.eager_ok or decl >= m.has_markup.len or m.has_markup[decl];
     try f.nodes.append(f.gpa, .{ .tag = .none });
     try f.nodes.append(f.gpa, .{ .tag = .outside });
     try f.roots.append(f.gpa, .{ .kind = .outside, .linear = .yes });
@@ -3773,16 +3823,36 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
 
 /// The row of the lowering channel that reads `u` before the stores of the
 /// accepted update `d` (kernel §11, *A read of a written field, read
-/// first*), or null where no rule places it there. The read is a chain of
+/// first*), or before the call `d` whose callee writes a record it was
+/// handed, or null where no rule places it there. The read is a chain of
 /// field reads from a parameter, which is bound before any expression of
-/// the body runs; and the update runs on every path that reaches the read,
-/// so a temporary bound just before its stores is in scope at the read
-/// and holds what the read reads in the copying program.
+/// the body runs; and the write runs on every path that reaches the read,
+/// so a temporary bound just before its stores (or the call) is in scope at
+/// the read and holds what the read reads in the copying program.
 fn hoistRow(f: *Frame, d: Demand, u: Read) Error!?OwnHoists.Read {
     const bir = f.m.bir;
     if (u.point >= bir.insts.len or d.point >= bir.insts.len) return null;
+    const phase: u32 = switch (bir.instTag(@fromBackingInt(d.point))) {
+        .record_update => 1,
+        // A call that writes a record (kernel §11 item 10, *a call*): read
+        // before the call, which evaluates its arguments after.
+        .call => if (d.op == .call and d.record) 0 else return null,
+        else => return null,
+    };
+    // A captured field path read where its closure is made (kernel §6 rule
+    // 3): read first in its turn, the whole path, where the closure's text
+    // holds it and the update runs before where the lowering reads it.
+    if (u.ev != none) {
+        const e = f.eagers.items[u.ev];
+        if (!e.lex) return null;
+        if (!try f.boundBefore(e.local, d.point)) return null;
+        if (!try f.runsBefore(d.point, e.placement)) return null;
+        var n: u32 = 0;
+        var y: Inst.Index = @fromBackingInt(e.x);
+        while (bir.instTag(y) == .field_access) : (n += 1) y = @fromBackingInt(@intCast(bir.instData(y).lhs));
+        return .{ .decl = f.decl, .demand = d.point, .inst = e.x, .holder = e.local, .path_len = n, .placement = d.point, .phase = phase, .capture = e.capture };
+    }
     if (bir.instTag(@fromBackingInt(u.point)) != .field_access) return null;
-    if (bir.instTag(@fromBackingInt(d.point)) != .record_update) return null;
     var x: Inst.Index = @fromBackingInt(u.point);
     var len: u32 = 0;
     while (bir.instTag(x) == .field_access) : (len += 1) x = @fromBackingInt(@intCast(bir.instData(x).lhs));
@@ -3791,7 +3861,7 @@ fn hoistRow(f: *Frame, d: Demand, u: Read) Error!?OwnHoists.Read {
     if (f.d.locals_start + local >= bir.locals.len) return null;
     if (bir.locals[f.d.locals_start + local].kind != .param) return null;
     if (!try f.runsBefore(d.point, u.point)) return null;
-    return .{ .decl = f.decl, .demand = d.point, .inst = u.point, .holder = local, .path_len = len, .placement = d.point, .phase = 1 };
+    return .{ .decl = f.decl, .demand = d.point, .inst = u.point, .holder = local, .path_len = len, .placement = d.point, .phase = phase };
 }
 
 /// The rows of one chain of field reads stand apart (kernel §11 item 10):
@@ -3918,6 +3988,59 @@ fn loaderRunsOnce(f: *Frame) Error!bool {
     if (f.charge(Loc.scanUnits(f.d.inst_end.int() - f.d.inst_start.int()))) return false;
     for (f.d.inst_start.int()..f.d.inst_end.int()) |i| if (m.tags[i] == .markup) return false;
     return true;
+}
+
+/// Whether the local `local` of this frame is bound, and in scope, where
+/// `w` runs (kernel §6 rule 3, *A field path a closure captures*): a
+/// parameter is bound before the body runs; a local that an item of a `let`
+/// binds, at each later item and the `let`'s body; one that a `case` arm's
+/// pattern binds, in the arm's body. Any other is not known to be.
+fn boundBefore(f: *Frame, local: u32, w: u32) Error!bool {
+    const m = f.m;
+    const bir = m.bir;
+    if (f.d.locals_start + local >= bir.locals.len) return false;
+    const loc = bir.locals[f.d.locals_start + local];
+    if (loc.kind == .param) return true;
+    if (loc.kind == .fresh) return false;
+    if (!try f.ensureParents()) return false;
+    // The instruction that binds it: the `let` item, or the arm.
+    var b = loc.inst.int();
+    if (loc.kind == .pattern) while (true) {
+        if (b >= f.parents.len or f.parents[b] == none) return false;
+        const p = f.parents[b];
+        // Each step is work (kernel §8).
+        if (f.charge(1)) return false;
+        switch (m.tags[p]) {
+            .branch, .let_pattern => {
+                b = p;
+                break;
+            },
+            else => b = p,
+        }
+    };
+    if (b >= f.parents.len or f.parents[b] == none) return false;
+    const binder = if (m.tags[b] == .branch) b else f.parents[b];
+    if (m.tags[binder] != .branch and m.tags[binder] != .let) return false;
+    // `w`'s way up to the binder, and the part of it that holds `w`.
+    var x = w;
+    while (x < f.parents.len and f.parents[x] != none and f.parents[x] != binder) {
+        if (f.charge(1)) return false;
+        x = f.parents[x];
+    }
+    if (x >= f.parents.len or f.parents[x] != binder) return false;
+    // In an arm: its body, not its pattern.
+    if (m.tags[binder] == .branch) return x == m.datas[binder].rhs;
+    // In a `let`: an item after the one that binds it, or the body.
+    var kids: std.ArrayList(Inst.Index) = .empty;
+    defer kids.deinit(f.gpa);
+    try bir.operands(f.gpa, @fromBackingInt(binder), &kids);
+    var bi: usize = none;
+    var wi: usize = none;
+    for (kids.items, 0..) |k, i| {
+        if (k.int() == b and bi == none) bi = i;
+        if (k.int() == x and wi == none) wi = i;
+    }
+    return bi != none and wi != none and bi < wi;
 }
 
 fn runsBefore(f: *Frame, w: u32, r: u32) Error!bool {
@@ -4118,7 +4241,7 @@ fn finishDemands(f: *Frame) Error!void {
                     break;
                 }
                 if (try f.useReaches(u, ws)) {
-                    if (d.op == .update) if (try f.hoistRow(d.*, u)) |row| {
+                    if (d.op == .update or d.op == .call) if (try f.hoistRow(d.*, u)) |row| {
                         try hoists.append(f.gpa, row);
                         continue;
                     };
@@ -4457,7 +4580,20 @@ fn eval(f: *Frame, inst: u32, mode: Mode, tail: bool) Error!Val {
     if (m.tags[inst] == .let) {
         const bindings = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.lhs)), Inst.Index);
         try f.enterLet(inst, bindings);
-        for (bindings) |b| try f.binding(b.int());
+        // Where the `let` starts: a local function's captured field paths
+        // of a local bound by then are read here (kernel §6 rule 3).
+        if (!f.no_eager) {
+            f.entered += 1;
+            const at = f.timeOf(inst);
+            for (bindings) |b| if (m.tags[b.int()] == .let_def) {
+                const def = m.bir.extraData(@fromBackingInt(m.datas[b.int()].lhs), Bir.LetDef);
+                if (@backingInt(def.params_end) != @backingInt(def.params_start)) try f.blocks.append(f.gpa, .{ .def = b.int(), .at = at, .ctx = f.cur_ctx, .let_inst = inst });
+            };
+        }
+        for (bindings) |b| {
+            try f.binding(b.int());
+            if (!f.no_eager) try f.eagerAfterItem(b.int());
+        }
         return f.eval(data.rhs, mode, tail);
     }
     if (m.tags[inst] == .case) return f.caseOf(inst, mode, tail);
@@ -4661,6 +4797,57 @@ fn capture(f: *Frame, local: u32) Error!Val {
     return f.rootVal(root);
 }
 
+/// The local at the root of the chain of field reads `x`, where the local
+/// is a capture of this code (kernel §6 rule 3, *A field path a closure
+/// captures*): null where the chain has another step, the local is this
+/// frame's, or no capture of this frame is read early (`no_eager`).
+fn eagerLocal(f: *Frame, x: u32) ?u32 {
+    if (f.no_eager or !f.is_lambda) return null;
+    const m = f.m;
+    var i = x;
+    while (m.tags[i] == .field_access) i = m.datas[i].lhs;
+    if (m.tags[i] != .local) return null;
+    const local = m.datas[i].lhs;
+    const l = f.d.locals_start + local;
+    // A code in work, a local of this frame, bound or later: no capture.
+    if (m.lframe[l] == none or m.lframe[l] == f.id or m.lbinder[l] == f.id) return null;
+    return local;
+}
+
+/// The capture of the field path `x` of the captured `local`: a root of
+/// this code, of the path's type, which the frame that makes the closure
+/// gives the value it read where it made it (`eagerSlot`). `lex`: the read
+/// is in this code's text, or in a closure inside it.
+fn eagerCapture(f: *Frame, x: u32, local: u32, lex: bool) Error!Val {
+    _ = local;
+    const m = f.m;
+    if (!f.is_lambda) {
+        f.failed = true;
+        return f.unknownOf(try m.placeOfInst(x), &.{});
+    }
+    const key = eager_bit | x;
+    for (f.cap_locals.items, 0..) |*l, k| if (l.* & ~eager_lex == key) {
+        if (lex) l.* |= eager_lex;
+        const v = try f.rootVal(f.params.items[f.own_params + k]);
+        if (f.markup_reads) |mr| try mr.append(f.gpa, v);
+        return v;
+    };
+    const root = try f.newRoot(.capture, try m.placeOfInst(x), none);
+    f.roots.items[root].index = @intCast(f.params.items.len);
+    // Its cells are followed as a capture's are (kernel §13 item 11).
+    if (f.roots.items[root].cells) {
+        f.roots.items[root].tracked = true;
+        f.cells_any = true;
+    }
+    try f.params.append(f.gpa, root);
+    try f.param_ty.append(f.gpa, m.typeOfInst(x));
+    try f.cap_locals.append(f.gpa, if (lex) key | eager_lex else key);
+    if (f.roots.items[root].tracked) try f.backfillCapture(root);
+    const v = try f.rootVal(root);
+    if (f.markup_reads) |mr| try mr.append(f.gpa, v);
+    return v;
+}
+
 /// A capture's root is made where the body first names it, which can be
 /// inside an arm or after a return point; a parameter's is made before the
 /// body. What the frame noted of its parameters' cells before is noted of
@@ -4731,6 +4918,9 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
             return cv;
         },
         .field_access => {
+            // A field path of a captured local: read where the closure is
+            // made, and captured as the value read there (kernel §6 rule 3).
+            if (f.eagerLocal(inst)) |local| return f.eagerCapture(inst, local, true);
             const base = try f.eval(data.lhs, .callee, false);
             if (base == v_none) return v_none;
             const rank: u32 = @intCast(m.fieldRank(@fromBackingInt(data.rhs)));
@@ -5700,6 +5890,28 @@ fn readSlots(f: *Frame, v: Val, ranks: []const u32, point: u32) Error!void {
     try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
 }
 
+/// A read of every field slot of the record `v` but those of the fields
+/// `named` (`recordUpdate`): a value whose slots are not known by its
+/// place, or a field the place has no slot for, reads it whole.
+fn readOtherSlots(f: *Frame, v: Val, named: []const u32, point: u32) Error!void {
+    if (v == v_none or v == v_outside) return;
+    const place = f.placeOfVal(v) orelse return;
+    if (whole(f.nodes.items[v].tag)) return f.readAll(v, point);
+    var es: std.ArrayList(u32) = .empty;
+    defer es.deinit(f.gpa);
+    if (!try f.slotEntries(place, &.{}, &es)) return f.readAll(v, point);
+    for (named) |rank| {
+        const e = try f.slotEntry(place, rank);
+        if (e == none) return f.readAll(v, point);
+        if (std.mem.indexOfScalar(u32, es.items, e)) |at| _ = es.orderedRemove(at);
+    }
+    const start: u32 = @intCast(f.lists.items.len);
+    try f.lists.appendSlice(f.gpa, es.items);
+    const nmask: u32 = @intCast(f.lists.items.len - start);
+    if (nmask == 0) return;
+    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
+}
+
 /// The step word of a record construction's kid that holds its field slots
 /// (`recordOf`). No step of the place graph has it: it is never read as a step.
 const slot_kid: u32 = std.math.maxInt(u32);
@@ -5762,9 +5974,17 @@ fn binding(f: *Frame, b: u32) Error!void {
         .def => {
             const def = m.bir.extraData(@fromBackingInt(data.lhs), Bir.LetDef);
             const l = f.d.locals_start + def.local;
+            const saved = f.binding_now;
+            f.binding_now = b;
+            defer f.binding_now = saved;
             // Code that a binding above named is made already (`makeCode`).
-            if (m.lframe[l] == f.id) return;
-            if (m.lcode[l] != none) return f.makeCode(def.local);
+            // A lambda's captured field paths are read here, where it is
+            // made (kernel §6 rule 3).
+            if (m.lframe[l] == f.id) return f.eagerReached(b);
+            if (m.lcode[l] != none) {
+                try f.makeCode(def.local);
+                return f.eagerReached(b);
+            }
             const v = try f.eval(data.rhs, .bind, false);
             // A `let` that the markup lowering keeps beyond this call
             // (kernel §6.14): the root holds the value and a later call
@@ -5890,28 +6110,6 @@ fn findGroups(f: *Frame, bindings: []const Inst.Index) Error!void {
             },
             .pattern => last = @max(last, @max(m.datas[b].lhs, m.datas[b].rhs)),
             .stmt => last = @max(last, m.datas[b].rhs),
-/// A read of every field slot of the record `v` but those of the fields
-/// `named` (`recordUpdate`): a value whose slots are not known by its
-/// place, or a field the place has no slot for, reads it whole.
-fn readOtherSlots(f: *Frame, v: Val, named: []const u32, point: u32) Error!void {
-    if (v == v_none or v == v_outside) return;
-    const place = f.placeOfVal(v) orelse return;
-    if (whole(f.nodes.items[v].tag)) return f.readAll(v, point);
-    var es: std.ArrayList(u32) = .empty;
-    defer es.deinit(f.gpa);
-    if (!try f.slotEntries(place, &.{}, &es)) return f.readAll(v, point);
-    for (named) |rank| {
-        const e = try f.slotEntry(place, rank);
-        if (e == none) return f.readAll(v, point);
-        if (std.mem.indexOfScalar(u32, es.items, e)) |at| _ = es.orderedRemove(at);
-    }
-    const start: u32 = @intCast(f.lists.items.len);
-    try f.lists.appendSlice(f.gpa, es.items);
-    const nmask: u32 = @intCast(f.lists.items.len - start);
-    if (nmask == 0) return;
-    try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = false });
-}
-
             .not_a_binding => f.failed = true,
         }
         const first = (if (k == 0) b else @max(prev, b)) + 1;
@@ -6225,7 +6423,8 @@ fn closureOf(f: *Frame, mb: Member, cap_locals: []const u32) Error!Val {
     const c = m.code_contract[mb.inst].?;
     var tmp: std.ArrayList(Val) = .empty;
     defer tmp.deinit(f.gpa);
-    for (cap_locals) |l| try tmp.append(f.gpa, try f.capSlot(l));
+    const pend0 = f.pending.items.len;
+    for (cap_locals, 0..) |l, k| try tmp.append(f.gpa, if (isEagerKey(l)) try f.eagerSlot(mb, l, @intCast(k)) else try f.capSlot(l));
     // A closure runs where its holder runs it: each use of it reads, writes
     // and renews what it captured (`apply`, `flowCode`), and a holder that
     // the walk does not follow shares each handle it captured (kernel §13
@@ -6233,6 +6432,8 @@ fn closureOf(f: *Frame, mb: Member, cap_locals: []const u32) Error!Val {
     // renders (§6.12): each handle it captured has another holder now.
     if (f.markup_reads != null) for (tmp.items) |v| if (f.nodes.items[v].tag != .later) try f.shareVal(v, mb.inst);
     const start: u32 = @intCast(f.lists.items.len);
+    // A read that waits has its slot in the run appended here.
+    for (f.pending.items[pend0..]) |*p| p.at += start;
     try f.lists.appendSlice(f.gpa, tmp.items);
     try f.codes.append(f.gpa, .{ .contract = c, .caps = start, .ncaps = @intCast(cap_locals.len), .inst = mb.inst, .own_params = @intCast(mb.params.len) });
     const v = try f.node(.{ .tag = .closure, .place = try m.placeOf(mb.ty), .a = @intCast(f.codes.items.len - 1) });
@@ -6240,6 +6441,151 @@ fn closureOf(f: *Frame, mb: Member, cap_locals: []const u32) Error!Val {
     // lowering evaluates the hole, which can be where it renders (kernel
     // §6.12): the markup holds the closure, so it holds each capture.
     if (f.markup_reads) |mr| try mr.append(f.gpa, v);
+    return v;
+}
+
+/// What the closure of `mb` holds of its captured field path `key` (kernel
+/// §6 rule 3, *A field path a closure captures*): the value the path has
+/// where the lowering reads it. A lambda's path is read where the lambda is
+/// made, and one bound by a `let` item where the item is reached; a local
+/// function's where its `let` starts, or just after the item of that `let`
+/// that binds the local; a path of a local that this frame binds later,
+/// just after the item that binds it. A path of a local of a frame around
+/// this one is this code's capture in turn, read where that frame makes
+/// this code's closure, once for every closure inside it.
+fn eagerSlot(f: *Frame, mb: Member, key: u32, k: u32) Error!Val {
+    const m = f.m;
+    const x = eagerX(key);
+    const lex = key & eager_lex != 0;
+    var i = x;
+    while (m.tags[i] == .field_access) i = m.datas[i].lhs;
+    const local = m.datas[i].lhs;
+    const l = f.d.locals_start + local;
+    const lambda_item = m.tags[mb.inst] == .lambda and mb.local != none;
+    if (m.lframe[l] == f.id) {
+        if (m.tags[mb.inst] == .let_def) {
+            const blk = for (f.blocks.items) |b| {
+                if (b.def == mb.inst) break b;
+            } else return f.giveUp(x);
+            const items = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(m.datas[blk.let_inst].lhs)), Inst.Index);
+            for (items) |it| if (f.itemBinds(it.int(), local)) {
+                const done = for (f.items_done.items) |d| {
+                    if (d[0] == it.int()) break d;
+                } else return f.giveUp(x);
+                return f.eagerRead(x, local, .{ .x = x, .local = local, .capture = mb.inst, .placement = it.int(), .phase = 2, .lex = lex }, done[1], done[2]);
+            };
+            return f.eagerRead(x, local, .{ .x = x, .local = local, .capture = mb.inst, .placement = items[0].int(), .phase = 0, .lex = lex }, blk.at, blk.ctx);
+        }
+        // A lambda that an item binds, made before the item is reached.
+        if (lambda_item and (f.binding_now == none or m.datas[f.binding_now].rhs != mb.inst)) return f.eagerWait(x, local, mb.inst, mb.inst, k, lex);
+        return f.eagerRead(x, local, .{ .x = x, .local = local, .capture = mb.inst, .placement = mb.inst, .phase = 0, .lex = lex }, null, null);
+    }
+    if (m.lbinder[l] == f.id) {
+        const reached = !lambda_item or (f.binding_now != none and m.datas[f.binding_now].rhs == mb.inst);
+        return f.eagerWait(x, local, mb.inst, if (reached) none else mb.inst, k, lex);
+    }
+    return f.eagerCapture(x, local, lex);
+}
+
+/// A captured field path whose read waits (`Pending`): a `later` slot that
+/// `eagerAfterItem` or `eagerReached` fills, and that nothing reads before.
+fn eagerWait(f: *Frame, x: u32, local: u32, cap: u32, wait: u32, k: u32, lex: bool) Error!Val {
+    try f.pending.append(f.gpa, .{ .x = x, .local = local, .capture = cap, .wait = wait, .at = k, .lex = lex });
+    return f.node(.{ .tag = .later, .place = try f.m.placeOfInst(x), .a = local, .b = 1 });
+}
+
+/// Just after item `b` of a `let`: the time there, and each waiting read of
+/// a captured field path whose local is bound now, read there.
+fn eagerAfterItem(f: *Frame, b: u32) Error!void {
+    f.entered += 1;
+    const at = f.timeOf(b);
+    try f.items_done.append(f.gpa, .{ b, at, f.cur_ctx });
+    for (0..f.pending.items.len) |pi| {
+        const p = f.pending.items[pi];
+        if (p.done or p.wait != none or f.m.lframe[f.d.locals_start + p.local] != f.id) continue;
+        f.pending.items[pi].done = true;
+        const v = try f.eagerRead(p.x, p.local, .{ .x = p.x, .local = p.local, .capture = p.capture, .placement = b, .phase = 2, .lex = p.lex }, null, null);
+        f.lists.items[p.at] = v;
+    }
+}
+
+/// The lambda that item `b` binds is reached: each of its waiting reads of
+/// a local bound by now is read here, where the lambda is made.
+fn eagerReached(f: *Frame, b: u32) Error!void {
+    const lam = f.m.datas[b].rhs;
+    if (f.m.tags[b] != .let_def or f.m.tags[lam] != .lambda) return;
+    for (0..f.pending.items.len) |pi| {
+        const p = f.pending.items[pi];
+        if (p.done or p.wait != lam) continue;
+        f.pending.items[pi].wait = none;
+        if (f.m.lframe[f.d.locals_start + p.local] != f.id) continue;
+        f.pending.items[pi].done = true;
+        const v = try f.eagerRead(p.x, p.local, .{ .x = p.x, .local = p.local, .capture = p.capture, .placement = lam, .phase = 0, .lex = p.lex }, null, null);
+        f.lists.items[p.at] = v;
+    }
+}
+
+/// Whether item `b` of a `let` binds `local`.
+fn itemBinds(f: *Frame, b: u32, local: u32) bool {
+    const m = f.m;
+    return switch (letTag(m.tags[b])) {
+        .def => m.bir.extraData(@fromBackingInt(m.datas[b].lhs), Bir.LetDef).local == local,
+        .pattern => f.patBinds(m.datas[b].lhs, local),
+        .stmt, .not_a_binding => false,
+    };
+}
+
+fn patBinds(f: *Frame, pat: u32, local: u32) bool {
+    const m = f.m;
+    const data = m.datas[pat];
+    return switch (patTag(m.tags[pat])) {
+        .variable => data.lhs == local,
+        .as => data.rhs == local or f.patBinds(data.lhs, local),
+        .tuple, .list => for (m.bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |p| {
+            if (f.patBinds(p.int(), local)) break true;
+        } else false,
+        .spread => f.patBinds(data.lhs, local),
+        .ctor => for (m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |p| {
+            if (f.patBinds(p.int(), local)) break true;
+        } else false,
+        .record => std.mem.indexOfScalar(u32, m.bir.extraSlice(Bir.inlineRange(data), u32), local) != null,
+        .wild, .int, .char, .string, .unit, .not_a_pattern => false,
+    };
+}
+
+/// The read of the captured field path `x` of `local` that `e` places: each
+/// field of the chain read out of its slot, in order, at this time (or at
+/// `at` and `ctx` where they are given: where the lowering reads it, which
+/// the walk passed), as the body's own `local.f.…` would be. The reads carry
+/// `e` (`Read.ev`), and its row goes to the lowering where the read is in
+/// the closure's own text.
+fn eagerRead(f: *Frame, x: u32, local: u32, e: Eager, at: ?u32, ctx: ?u32) Error!Val {
+    const m = f.m;
+    var chain: std.ArrayList(u32) = .empty;
+    defer chain.deinit(f.gpa);
+    var i = x;
+    while (m.tags[i] == .field_access) : (i = m.datas[i].lhs) try chain.append(f.gpa, i);
+    f.noteWalked(i);
+    const before = f.uses.items.len;
+    var v = m.lv[f.d.locals_start + local];
+    var j = chain.items.len;
+    while (j > 0) {
+        j -= 1;
+        const step = chain.items[j];
+        f.noteWalked(step);
+        if (v == v_none) break;
+        const rank: u32 = @intCast(m.fieldRank(@fromBackingInt(m.datas[step].rhs)));
+        try f.readSlots(v, &.{rank}, step);
+        v = try f.project(v, .{ .kind = .field, .payload = @intCast(rank) });
+    }
+    const at_ev: u32 = @intCast(f.eagers.items.len);
+    try f.eagers.append(f.gpa, e);
+    for (f.uses.items[before..]) |*u| {
+        u.ev = at_ev;
+        if (at) |t| u.at = t;
+        if (ctx) |c| u.ctx = c;
+    }
+    if (e.lex) try m.addEagerRow(.{ .decl = f.decl, .demand = none, .inst = x, .holder = local, .path_len = @intCast(chain.items.len), .placement = e.placement, .phase = e.phase, .capture = e.capture });
     return v;
 }
 
@@ -6269,6 +6615,13 @@ fn capVal(f: *Frame, code: Code, k: usize) Error!Val {
     // (kernel §13 items 5 and 11). No share is made here: the caller may
     // be making a run of `f.atoms`.
     if (n.tag != .later) return f.cellsNowIn(v);
+    // A captured field path whose read waits (`eagerWait`) is read where
+    // the lowering reads it, after the item that binds its local: a run
+    // before that is one that lowering refuses (`let_forward_reference`).
+    if (n.b != 0) {
+        f.failed = true;
+        return f.unknownOf(n.place, &.{});
+    }
     const l = f.d.locals_start + n.a;
     if (m.lframe[l] == 0 and m.lcode[l] != none) try f.makeCode(n.a);
     if (m.lframe[l] != f.id) {
@@ -9270,6 +9623,15 @@ fn memberValue(f: *Frame, local: u32, inst: u32) Error!Val {
                 var tmp: std.ArrayList(Val) = .empty;
                 defer tmp.deinit(f.gpa);
                 for (caps) |l| {
+                    // A captured field path of the member: a capture of this
+                    // code in turn, whose read is the member's to place
+                    // (not in this code's text).
+                    if (isEagerKey(l)) {
+                        var i = eagerX(l);
+                        while (m.tags[i] == .field_access) i = m.datas[i].lhs;
+                        try tmp.append(f.gpa, try f.eagerCapture(eagerX(l), m.datas[i].lhs, false));
+                        continue;
+                    }
                     const abs = f.d.locals_start + l;
                     try tmp.append(f.gpa, if (m.lframe[abs] != f.id) try f.capture(l) else m.lv[abs]);
                 }

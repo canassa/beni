@@ -1144,7 +1144,14 @@ no longer the spread `({ ...r, a: x })`:
 - **Hoists** (*revised the same day*, `ownership-checker.md` Â§31.14). A later read of a written field is read
   into a temporary before the write, at the placement the checker's table names, and a closure that captures a
   field path reads it when it is made. The table is in the module's cache entry beside its summary block
-  (`ownership-checker.md` Â§31.10).
+  (`ownership-checker.md` Â§31.10). *Amended 2026-11-27 (#2657):* under the checker v3
+  (`ownership-v3-kernel.md` §6 rule 3, *A field path a closure captures*, and §11 item 10) the same rows
+  come from v3's channel (`own3/Reads.zig`, with the closure in `capture`): each field path that a closure
+  of an application module captures, read where the closure is made, in every module whether it writes or
+  not, and a read of a field that a call writes, read before the call. The lowering places them as it
+  places v1's. Only a build that writes v3's accepted writes in place (`--lists-in-place`, and the
+  sanitiser `--sanitize-lists`) reads the channel, so a build that writes nothing in place does not move by
+  one byte.
 - **A barrier.** A record update is a barrier to Â§9's optimiser, as a list demand is (*`--release`*, above).
   No read of a written field, or of anything that may alias the base, is moved across it. No single-use
   binding of such a read is inlined past it. It is never dropped as unused.

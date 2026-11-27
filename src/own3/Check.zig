@@ -177,6 +177,11 @@ pub const Result = struct {
     /// body is checked against its walk*): every package's build refuses
     /// each (`Enforce.checkModule`).
     false_words: []const Limit = &.{},
+    /// The field paths that closures captured, each read where its closure
+    /// is made (kernel §6 rule 3, *A field path a closure captures*): rows
+    /// of the lowering channel that no write asks for, read wherever the
+    /// module's records are written in place.
+    eager: []const OwnHoists.Read = &.{},
 };
 
 /// The build's markup type (`boundary.md` §9.2), by the names the manifest
@@ -370,6 +375,16 @@ pub const Mod = struct {
     spread_root: std.DynamicBitSetUnmanaged = .{},
     lines: std.ArrayList(Line) = .empty,
     limits: std.ArrayList(Limit) = .empty,
+    /// A capture of a field path is read where its closure is made (kernel
+    /// §6 rule 3, *A field path a closure captures*): an application's
+    /// module, whose records the lowering writes in place. Not core's or a
+    /// platform's, whose closures read their captures where they run.
+    eager_ok: bool = false,
+    /// Per declaration: its body has markup, whose lowering can evaluate a
+    /// closure where it renders (§6.12): no capture of it is read early.
+    has_markup: []bool = &.{},
+    /// The rows of the reads `eager_ok` makes (`Result.eager`), each once.
+    eager_rows: std.ArrayList(OwnHoists.Read) = .empty,
     /// Per declaration: its body reaches JavaScript (`reachesJs`).
     js: []bool = &.{},
     /// Per instruction, where the module's bodies are read for JavaScript
@@ -3578,6 +3593,17 @@ pub const Mod = struct {
     /// §3.3, §8): each line it made since `mark` that is accepted is
     /// refused at the limit. A line of a code whose own walk ended well, or
     /// one judged before a later step passed the budget, is the walk's too.
+    /// A row of a captured field path read where its closure is made
+    /// (`Result.eager`), once: the rounds of a group walk a body again.
+    pub fn addEagerRow(m: *Mod, r: OwnHoists.Read) Allocator.Error!void {
+        for (m.eager_rows.items) |o| if (o.decl == r.decl and o.inst == r.inst and o.capture == r.capture) {
+            // One read has one place where the lowering reads it.
+            if (std.debug.runtime_safety) std.debug.assert(o.placement == r.placement and o.phase == r.phase);
+            return;
+        };
+        try m.eager_rows.append(m.gpa, r);
+    }
+
     fn gaveUp(m: *Mod, mark: usize) void {
         for (m.lines.items[mark..]) |*l| if (!l.refused) {
             l.refused = true;
@@ -4234,6 +4260,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .library = options.library,
         .deps = options.deps,
         .platform = options.platform,
+        .eager_ok = !options.rows,
     };
     defer m.walk_arena.deinit();
     m.cmd_sites = try gpa.alloc(u8, bir.insts.len);
@@ -4289,6 +4316,16 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.recalled = try gpa.alloc(bool, bir.insts.len);
     defer gpa.free(m.recalled);
     @memset(m.recalled, false);
+    m.has_markup = try gpa.alloc(bool, bir.decls.len);
+    defer gpa.free(m.has_markup);
+    for (bir.decls, m.has_markup) |d, *h| {
+        h.* = false;
+        for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .markup) {
+            h.* = true;
+            break;
+        };
+    }
+    defer m.eager_rows.deinit(gpa);
     m.code_caps = try gpa.alloc([]const u32, bir.insts.len);
     defer gpa.free(m.code_caps);
     @memset(m.code_caps, &.{});
@@ -4472,7 +4509,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     // message (kernel §6.13, *A message a command builds*, fact 4): every
     // walk of the module has run.
     published.keeps_messages = options.rows or try m.keepsMessages(null);
-    return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items, .false_words = m.false_words.items };
+    return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items, .false_words = m.false_words.items, .eager = try arena.dupe(OwnHoists.Read, m.eager_rows.items) };
 }
 
 fn eqlAny(s: []const u8, xs: []const []const u8) bool {
