@@ -74,7 +74,7 @@ ${main}
 
 fs.mkdirSync(out, { recursive: true });
 const list = [];
-for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 13, 14, 15, 16, 18, 20, 24]) {
+for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 24]) {
   for (const twin of ['fresh.dead', 'kept.dead', 'kept.live', 'twice.live', 'answer.live']) {
     for (const [start, steps] of [[0, 3], [n - 1, 2 * n + 1]]) {
       const d = path.join(out, `n${n}.s${start}.k${steps}.${twin}`);
