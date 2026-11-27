@@ -4,7 +4,8 @@
 -- runs `u` twice, so its second run would write the record the first
 -- answered; `both` runs `u` before `v`, and `u` answers the record that `v`
 -- writes; `kept` keeps the closure in a list, which runs it at any time;
--- `late` reads the record after the call. The copying program prints
+-- `late` reads the record after the call, which is read before the call (§11
+-- item 10) and so accepted. The copying program prints
 -- `1 11`, `2 1`, `1 1 m!`, `1`, `1 5`.
 import Node exposing (Program)
 

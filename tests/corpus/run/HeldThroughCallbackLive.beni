@@ -1,0 +1,42 @@
+-- A function held in a list, reached by a fold's callback, is handed a list the
+-- callback captured, and answers it inside a new value: the answer holds the
+-- caller's list, so the write of it is refused (ownership-v3-kernel.md §6 rule 2,
+-- *A function held in a value*). Were it accepted, `kept` would show the push.
+import Node exposing (Program)
+
+
+type Validation
+    = Valid
+    | Invalid (List Int)
+
+
+collect : List (List Int → Validation), List Int → Validation
+collect works input = List.foldl works Valid λwork acc →
+    case ( acc, work input ) of
+        ( Invalid left, Invalid right ) →
+            Invalid (left ++ right)
+
+        ( Invalid left, Valid ) →
+            Invalid left
+
+        ( Valid, result ) →
+            result
+
+
+refused : ⊤ → List Int × Int
+refused ⊤ =
+    kept = [ 1 ]
+    result =
+        case collect [ Invalid ] kept of
+            Invalid xs →
+                List.push xs 2
+
+            Valid →
+                []
+    ( result, List.length kept )
+
+
+main : Program
+main =
+    ( r, n ) = refused ⊤
+    Node.printLines [ String.fromInt (List.length r), String.fromInt n ]

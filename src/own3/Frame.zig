@@ -5854,6 +5854,9 @@ fn answersInPlace(f: *Frame, c: *const Contract) bool {
             // A walked body that does not cast makes no value of a type
             // variable; a row's new value there is a new value.
             .fresh => return false,
+            // The answer of a function held in a value (kernel §6 rule 2,
+            // *A function held in a value*) is code the body does not know.
+            .held => return false,
             .outside, .twice => {},
         };
     }
@@ -5871,7 +5874,7 @@ fn handsInPlace(f: *Frame, fnc: *const CMod.Fn, k: usize) bool {
         if (es[i - fnc.off[k]].kind != .@"var") continue;
         for (fnc.supply[i]) |s| switch (s.kind) {
             .param, .answer => if (!s.same_place) return false,
-            .fresh => return false,
+            .fresh, .held => return false,
             .outside, .twice => {},
         };
     }
@@ -5931,13 +5934,13 @@ fn markInPlace(f: *Frame, srcs: []const Src, layout: u32, e: usize, t: ?Var) Err
     var any = false;
     for (srcs) |s| switch (s.kind) {
         .param, .answer => any = true,
-        .fresh, .outside, .twice => {},
+        .fresh, .outside, .twice, .held => {},
     };
     if (!any) return srcs;
     const out = try m.arena.dupe(Src, srcs);
     for (out) |*s| switch (s.kind) {
         .param, .answer => s.same_place = true,
-        .fresh, .outside, .twice => {},
+        .fresh, .outside, .twice, .held => {},
     };
     return CMod.normal(m.arena, out);
 }
@@ -15814,10 +15817,24 @@ fn answerOf(f: *Frame, v: Val, use: *const Use, ae: u32, st: *SrcState, depth: u
     // The frame's own function parameter answers through its own contract; anything else has no claim.
     if (f.isFnRoot(root) and use.kind != .top) return f.ownAnswer(root, use.fnc.layouts[use.fnc.arity], ae, st);
     // So do the functions held below one of its parameters or captures
-    // (kernel §6 rule 2, *A function held in a value*).
-    if (use.kind != .top) if (try f.heldOf(v)) |h| return f.ownAnswerDi(try f.heldDraftOf(h), use.fnc.layouts[use.fnc.arity], ae, st);
+    // (kernel §6 rule 2, *A function held in a value*), where the use hands
+    // them no cell. The draft of such a function holds what the frame's own
+    // calls of it hand it (`callHeld`), not what a use that is no call of
+    // the frame hands it (a callback's parameter it reaches through a row):
+    // there its answer is the lost one, which holds what the use hands it.
+    if (use.kind != .top) if (try f.heldOf(v)) |h| {
+        if (!handsCells(use)) return f.ownAnswerDi(try f.heldDraftOf(h), use.fnc.layouts[use.fnc.arity], ae, st);
+        return f.heldLost(v, use, st, depth);
+    };
     if (use.kind != .top and use.held != none) return f.heldLost(v, use, st, depth);
     return f.lostAnswer(use, st);
+}
+
+/// Whether `use` hands its function a source that can be a cell: any but
+/// `outside`.
+fn handsCells(use: *const Use) bool {
+    for (use.fnc.supply) |srcs| for (srcs) |x| if (x.kind != .outside) return true;
+    return false;
 }
 
 /// The answer of a function held in a value that no rule names (kernel §6
@@ -16365,6 +16382,9 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
 /// location's answer root, which a caller that knows the functions there
 /// reads off their contracts (`Src.held`).
 fn callHeld(f: *Frame, inst: u32, callee: u32, di: u32, callee_val: Val, vals: []const Val, arg_insts: []const Inst.Index) Error!Val {
+    // Code the body does not know can answer a new value of each type
+    // variable of the call (kernel §3.4, *a walked body's own type variables*).
+    try f.taintCall(inst);
     for (vals) |v| try f.escape(v, inst);
     try f.escape(callee_val, inst);
     return f.callDraft(inst, callee, di, vals, arg_insts);

@@ -891,7 +891,13 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    says. A list made with a spread, a base or a front, a list a callee answers, and any value the walk
    cannot name there give the lost answer (§3.2). Before, the answer of such a call was the answer of
    unknown code, `outside` and every cell in sight, and a list it answered was refused
-   (`browser/inline/FunctionElements`).
+   (`browser/inline/FunctionElements`). The draft holds what the frame's own calls hand the function
+   (`callHeld`), and nothing else: where such a function reaches another use, a callback's parameter
+   through a row (`List.foldl works Valid λwork acc → … work input`), its answer there is the draft's
+   only when the use hands it no cell (`handsCells`), and else the lost answer of what the use hands
+   it (`heldLost`). *Amended 2026-11-27 (#2657):* before, the draft's answer was read there too, with
+   none of what the callback handed it, so a validator answering the list the callback captured was
+   read as a new one (`run/HeldThroughCallbackLive`, `check/bad/inline/FunctionElementBorrowed`).
 
    **What the holder hands back** (`Fn.ans_own`, `handedAnswersOwn`, `fnsAnswerOwn`). Where a known
    function at a use writes what the holder hands it, and that is an answer of a function the holder
