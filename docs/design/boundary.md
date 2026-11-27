@@ -2733,7 +2733,7 @@ through elements and fragments alone, in a root with no `let`.
 of a `Show` keyed by identity — the read set of its payload's identity alone (`write-sets.md`, *a `Show`
 keyed by identity*) — where 1.19 gave it only for a branch hole. A key whose writes conflict with it may
 make the shown value another object, so a lowering that keeps no such value (§9.4.8) remounts the body at
-that key's pass. A lowering that targets 1.44 sees null, as before; `inline` targets 1.45 (`browser-inline.md`
+that key's pass. The field is handed to every lowering; one that targets 1.44 reads no selector of a `Show`, so it sees what it saw. `inline` targets 1.45 (`browser-inline.md`
 §8.2, amended 2026-11-27).
 
 #### 9.4.7 Diagnostics

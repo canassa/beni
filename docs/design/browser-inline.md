@@ -836,8 +836,9 @@ beni over `Js` in `Inline.beni`:
     (`write-sets.md` §1.3), so its pass runs the renewal entry first, which marks a shown body
     (`renew(state)`); the `Show`'s entry, which the same pass runs, then removes it and makes a
     new one, or shows the fallback. A shown fallback is kept, as it was. Where the pass gives no
-    such read set, the `Show`'s whole read set stands for it: the body is a new one at every pass
-    of the entry. So whether the body is a new one depends on the source and the message, never
+    such read set, the `Show`'s whole read set stands for it: the body is a new one at the pass of
+    every key whose writes conflict with that read set (its statement groups and the controls'
+    buckets, which also run the entry, do not renew it). So whether the body is a new one depends on the source and the message, never
     on whether the arm wrote the record in place or copied it: both builds print the same page.
     Against `browser-tea`, which compares the record by identity at every render, it differs only
     where the write set over-approximates — an arm that may give back the very same record, as
@@ -2430,7 +2431,10 @@ The simple form is S2c's row unit with none of S2d's edits:
   over any other item type is class 1**, refused at the `For` with a key function
   (`keyed={.id}`) or position (`keyed={False}`) to write instead (`build/bad/inline/ForByReferenceRecord/`).
   The permanent answer is the owner's (#2504: a refusal, a warning with another behaviour, or keys
-  by value); no page of the corpus keys such a `For` by reference.
+  by value); no page of the corpus keys such a `For` by reference. The test is stricter than
+  §9.4.8: it also refuses an item type that holds no record and no list but is not primitive-`eq`
+  (a tuple of numbers, a type of constructors with no fields), which the `Show` keeps through
+  `Tree.identitySafe`; the interface has no such fact for a `For`'s item yet.
 - **Row events.** A row's event goes through the program's dispatcher (§8.3, amended
   2026-11-05): the row's `set` evaluates the event's handler value with the row's values, as a
   binding evaluates any value (§8.2, #466), and the listener hands the dispatcher that message —
