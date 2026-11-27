@@ -11474,10 +11474,12 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // The run of the first location that an entry of the callee's result
     // covers, where its expansion read nothing of the location: each later
     // location that the entry covers has the same run (kernel §8, *An
-    // expansion that reads nothing of its location*). A column by the
-    // callee's entry, and one more for `Loc.all`; made at the first run.
-    var shared: ?[]?SharedRun = null;
-    defer if (shared) |x| f.gpa.free(x);
+    // expansion that reads nothing of its location*). One run at a time:
+    // the locations that one entry of the callee covers are one after
+    // another in the caller's layout (the paths below one location), so the
+    // run of the entry in work is the one to keep, and a call pays no
+    // allocation for it.
+    var shared: ?SharedRun = null;
     for (0..es.len) |e| {
         const cr = cov[e];
         const start: u32 = @intCast(f.atoms.items.len);
@@ -11492,8 +11494,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
             has_answer[e] = true;
             continue;
         }
-        const col = if (cr == Loc.all) c.res.len else cr;
-        if (shared) |sh| if (sh[col]) |*kept| if (!f.charge(1)) {
+        if (shared) |*kept| if (kept.cr == cr and !f.charge(1)) {
             const sr = kept.*;
             // A check counts no work, so it has a bound of its own: the
             // first locations that take the run (kernel §9).
@@ -11551,15 +11552,10 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // An entry that can hold such a cell is tested by its atoms, as an
         // answer's is: the callee's claim does not cover it.
         has_answer[e] = answers or tainted;
-        if (es.len > 1 and !st.entry_read and kind == .alias and !m.steps_over) {
-            const sh = shared orelse blk: {
-                const x = try f.gpa.alloc(?SharedRun, c.res.len + 1);
-                @memset(x, null);
-                shared = x;
-                break :blk x;
-            };
-            if (sh[col] == null) sh[col] = .{ .start = start, .len = @intCast(f.atoms.items.len - start), .twice = st.twice, .handed = st.handed, .tainted = tainted, .sources = sources, .answers = answers };
-        }
+        shared = if (!st.entry_read and kind == .alias and !m.steps_over)
+            .{ .cr = cr, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = st.twice, .handed = st.handed, .tainted = tainted, .sources = sources, .answers = answers }
+        else
+            null;
     }
     // The callee's claim is about its own locations. Two locations of the
     // caller at one wide location of the callee's result (a type variable,
@@ -11600,13 +11596,13 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     return f.rootVal(root);
 }
 
-/// The run that `applyAt` keeps for an entry of the callee's result whose
+/// The run that `applyAt` keeps for the entry `cr` of the callee's result whose
 /// expansion read nothing of the caller's location (`SrcState.entry_read`),
 /// with what the expansion and the tests of the run found: `twice` and
 /// `handed` of the expansion's state, whether the run holds a cell that is
 /// twice in the arguments (`tainted`), the count of the entry's sources that
 /// can hold a cell, and whether one of them is an answer.
-const SharedRun = struct { start: u32, len: u32, twice: bool, handed: bool, tainted: bool, sources: u32, answers: bool, checked: u32 = 0 };
+const SharedRun = struct { cr: u32, start: u32, len: u32, twice: bool, handed: bool, tainted: bool, sources: u32, answers: bool, checked: u32 = 0 };
 
 /// The locations that take one kept run and that a safe build expands again
 /// (`checkSharedRun`). Each expansion is the work that the kept run saves,
