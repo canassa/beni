@@ -2705,6 +2705,149 @@ test "ownership v3: the check of a shared run stops on no correct program" {
     }
 }
 
+/// A record of `n` lists, `grow` that pushes onto each field in one update,
+/// and `main` that hands it a new record.
+fn recordOfLists(a: std.mem.Allocator, n: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype alias R =\n");
+    for (0..n) |i| try out.print(a, "    f{d} : List Int\n", .{i});
+    try out.appendSlice(a, "\n\ngrow : R → R\ngrow r =\n    { r\n");
+    for (0..n) |i| try out.print(a, "        {s} f{d} = List.push r.f{d} {d}\n", .{ if (i == 0) "|" else ",", i, i, i });
+    try out.appendSlice(a, "    }\n\n\nstart : Int → R\nstart k =\n");
+    for (0..n) |i| try out.print(a, "    {s} f{d} = [ k ]\n", .{ if (i == 0) "{" else ",", i });
+    try out.appendSlice(a, "    }\n\n\nmain : Node.Program\nmain = Node.print (String.fromInt (List.length (grow (start 1)).f0))\n");
+    return out.items;
+}
+
+test "ownership v3: a call that writes 464 locations of a new record is judged" {
+    // `grow` writes the slot and the list of each of 232 fields, and `main`
+    // hands it a new record. Each of the 464 writes of the call is tested
+    // against each other location of the record (kernel §5, test 2), and the
+    // test copied the kept read of that location and compared its atoms: the
+    // walk of `main` passed its budget from 230 fields on (#2534, #2535). A
+    // write passes only the kept reads that have an atom at a root and entry
+    // of it now (kernel §8), and the walk is in its budget.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try recordOfLists(w.arena.allocator(), 232));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 697: accepted 697 (fresh 0, call 464, param 233,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 697: accepted 697 (fresh 0, call 464, param 233,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+/// A record of `n` numbers, `step` that writes each field, and `go` that
+/// hands a new record through `calls` calls of `step` (#2535).
+fn recordThroughCalls(a: std.mem.Allocator, n: u32, calls: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype alias W =\n");
+    for (0..n) |i| try out.print(a, "    f{d} : Int\n", .{i});
+    try out.appendSlice(a, "\n\ninit : Int → W\ninit k =\n");
+    for (0..n) |i| try out.print(a, "    {s} f{d} = k\n", .{ if (i == 0) "{" else ",", i });
+    try out.appendSlice(a, "    }\n\n\nstep : W → W\nstep w =\n    { w\n");
+    for (0..n) |i| try out.print(a, "        {s} f{d} = w.f{d} + 1\n", .{ if (i == 0) "|" else ",", i, i });
+    try out.appendSlice(a, "    }\n\n\ngo : Int → W\ngo n =\n    init n\n");
+    for (0..calls) |_| try out.appendSlice(a, "        ▷ step\n");
+    try out.appendSlice(a, "\n\nmain : Node.Program\nmain = Node.print (String.fromInt (go 1).f0)\n");
+    return out.items;
+}
+
+test "ownership v3: a record of 100 fields through 10 calls that write each field is judged" {
+    // Each of the 1 000 writes of `go` is tested against each later read of
+    // the record (kernel §5, test 4), and a read of a record that the frame
+    // made tests each of its 100 runs. Each run is an old name for the
+    // write, a step for each, and as many more for the lists of runs
+    // (#2535). The runs of a root that are all old names are one step now
+    // (kernel §8).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try recordThroughCalls(w.arena.allocator(), 100, 10));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 1001: accepted 1001 (fresh 0, call 1000, param 1,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 1001: accepted 1001 (fresh 0, call 1000, param 1,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+test "ownership v3: a record of 250 fields through 10 calls that write each field is judged" {
+    // The shape of #2535 itself: 2 500 writes. The walk of `go` needed 38
+    // million units and earns 2.19 million. Three rules of kernel §8 take
+    // it to 1.4 million: a write passes only the kept reads that it marked,
+    // the runs of a root that are all old names are one step, and a later
+    // read that its root's facts settle is no step.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try recordThroughCalls(w.arena.allocator(), 250, 10));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 2501: accepted 2501 (fresh 0, call 2500, param 1,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 2501: accepted 2501 (fresh 0, call 2500, param 1,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+test "ownership v3: a write is compared with a kept read that holds a function parameter's answer" {
+    // `grow` writes 8 locations of `r`, so the call keeps an index of its
+    // kept reads by the root and entry of their atoms, and a write passes
+    // only the kept reads that have an atom at a root and entry of it
+    // (kernel §8). The field `b` holds the answer of the function parameter
+    // `f`, which can be `xs`: the answer's atom has its own root, and the
+    // cells of `xs` are in its base. Such a read has no place in the index
+    // and is compared with each write, so the write of `r.a` (the cells of
+    // `xs`) is refused: `b` reaches it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\type alias R =
+        \\    a : List Int
+        \\    b : List Int
+        \\    c : List Int
+        \\    d : List Int
+        \\
+        \\
+        \\grow : R → R
+        \\grow r =
+        \\    { r
+        \\        | a = List.push r.a 1
+        \\        , b = List.push r.b 2
+        \\        , c = List.push r.c 3
+        \\        , d = List.push r.d 4
+        \\    }
+        \\
+        \\
+        \\run : (List Int → List Int), List Int → Int
+        \\run f xs =
+        \\    ys = f xs
+        \\    r =
+        \\        { a = xs
+        \\        , b = ys
+        \\        , c = [ 1 ]
+        \\        , d = [ 2 ]
+        \\        }
+        \\    s = grow r
+        \\    List.length s.a + List.length s.b
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (run (λxs → xs) [ 7, 8 ]))
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    const want = [_][]const u8{
+        "30:9 call Main.grow r.a: rejected disjoint: another operand of the same operation reaches it",
+        "30:9 call Main.grow r.c: accepted fresh",
+        "30:9 call Main.grow r.d: accepted fresh",
+        "total 14: accepted 12 (fresh 7, call 0, param 5,",
+    };
+    for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+        std.debug.print("wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
 // The first full run of the sanitiser corpus under the prototype accepted 19
 // programs that it must refuse (research report 111 §4.2). Each has a write
 // that changes a list in place while another holder reads it: a plain build
