@@ -349,12 +349,15 @@ test "a damaged block is a miss: the module is checked and walked again" {
     const cold = try run(&w, arena, &enforced, &.{ "--cache-dir=cache", "--out=out-cold" });
     try expectSame(&w, arena, oracle, "out-oracle", cold, "out-cold");
 
-    // Each entry's block starts with its magic. Three kinds of damage, each
-    // in every entry: the version, a byte of the body, and the last bytes cut
-    // off (the entry's table still names them, so the entry itself is bad).
+    // Each entry's block starts with its magic. Four kinds of damage, each
+    // in every entry: the version, a byte of the digest, the last bytes cut
+    // off (the entry's table still names them, so the entry itself is bad),
+    // and one bit of the body. The last one decoded as another contract
+    // before the block had a digest: a flag of a contract is one bit (the
+    // review of #2549).
     const block_magic = "OWN3BLK\x00";
     var damaged: usize = 0;
-    for ([_]u8{ 0, 1, 2 }) |kind| {
+    for ([_]u8{ 0, 1, 2, 3 }) |kind| {
         for (try w.listFiles("cache")) |f| {
             if (!std.mem.endsWith(u8, f, ".bec")) continue;
             const path = try std.fs.path.join(arena, &.{ "cache", f });
@@ -364,6 +367,14 @@ test "a damaged block is a miss: the module is checked and walked again" {
             switch (kind) {
                 0 => copy[at + block_magic.len] ^= 0xff,
                 1 => copy[at + block_magic.len + 9] ^= 0xff,
+                3 => {
+                    // The entry's table of sections (`cache/entry_bytes.zig`:
+                    // 32 bytes of header, then an offset and a length for
+                    // each): the block is the fifth, and the bit is inside it.
+                    const len = std.mem.readInt(u32, copy[32 + 4 * 8 + 4 ..][0..4], .little);
+                    try testing.expectEqual(@as(u32, @intCast(at)), std.mem.readInt(u32, copy[32 + 4 * 8 ..][0..4], .little));
+                    copy[at + @min(73, len - 1)] ^= 1;
+                },
                 else => {},
             }
             try w.write(path, if (kind == 2) copy[0 .. copy.len - 3] else copy);
@@ -378,7 +389,7 @@ test "a damaged block is a miss: the module is checked and walked again" {
         const repaired = try run(&w, arena, &enforced, &.{ "--cache-dir=cache", "--out=out-repaired" });
         try testing.expectEqual(repaired.counters.modules, repaired.counters.hits);
     }
-    try testing.expect(damaged >= 3 * 3);
+    try testing.expect(damaged >= 4 * 3);
 }
 
 test "a warm build under --ownership=v3 is the same at --jobs=1 and --jobs=8" {
