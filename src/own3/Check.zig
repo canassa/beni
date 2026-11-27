@@ -307,8 +307,9 @@ pub const Mod = struct {
     /// (the call `C a…`, or a bare `C` handed to a call): whether every walk
     /// that reached it saw it given up to a command's send (kernel §6.13, *A
     /// message a command builds*, fact 2; `Frame.noteCmdSite`). One walk
-    /// that did not makes it false for good.
-    cmd_sites: std.AutoHashMapUnmanaged(u32, bool) = .empty,
+    /// that did not makes it false for good. Per instruction: 0 no walk
+    /// reached it, 1 given up, 2 not.
+    cmd_sites: []u8 = &.{},
     /// Per declaration of the module, the one instruction that names it
     /// (`.top`), or `none` where none or more than one does
     /// (`soleReference`); made when first asked for.
@@ -1464,7 +1465,7 @@ pub const Mod = struct {
             const site = if (t == .call)
                 d.lhs < m.tags.len and m.tags[d.lhs] == .ctor and m.datas[d.lhs].lhs == want
             else if (t == .ctor) d.lhs == want and !not_bare.isSet(i) else false;
-            if (site and !(m.cmd_sites.get(@intCast(i)) orelse false)) return false;
+            if (site and m.cmd_sites[i] != 1) return false;
         }
         return true;
     }
@@ -4235,7 +4236,9 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .platform = options.platform,
     };
     defer m.walk_arena.deinit();
-    defer m.cmd_sites.deinit(gpa);
+    m.cmd_sites = try gpa.alloc(u8, bir.insts.len);
+    defer gpa.free(m.cmd_sites);
+    @memset(m.cmd_sites, 0);
     defer m.builds_fresh.deinit(gpa);
     defer m.uniq_seen.deinit(gpa);
     defer m.share.deinit(gpa);

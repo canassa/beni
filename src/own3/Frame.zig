@@ -14309,8 +14309,8 @@ fn noteCmdSite(f: *Frame, inst: u32, ok: bool) Error!void {
     if (inst == none or inst >= m.tags.len) return;
     const site = if (m.tags[inst] == .call) m.tags[m.datas[inst].lhs] == .ctor else m.tags[inst] == .ctor;
     if (!site) return;
-    const gop = try m.cmd_sites.getOrPut(m.gpa, inst);
-    if (!gop.found_existing or !ok) gop.value_ptr.* = ok;
+    if (inst >= m.cmd_sites.len) return;
+    if (m.cmd_sites[inst] == 0 or !ok) m.cmd_sites[inst] = if (ok) 1 else 2;
 }
 
 /// Whether a platform's function of contract `c` hands its function
