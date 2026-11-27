@@ -1,5 +1,5 @@
-no input: exited 0, stdout "standard input: ignore\n"
-an empty text, EPIPE: exited 0, stdout "standard input: pipe\n"
-a text, EPIPE: exited 0, stdout "standard input: pipe\n"
+no input: exited 0, stdout "standard input: ignore\n"; the child noted: nothing
+an empty text, EPIPE: exited 0, stdout "standard input: pipe\n"; the child noted: a write of 0 bytes failed with EPIPE
+a text, EPIPE: exited 0, stdout "standard input: pipe\n"; the child noted: a write of 4 bytes failed with EPIPE
 a start that failed: not found; the child noted: nothing
 too large, input not read: output too large; the child noted: the input pipe destroyed before the signal
