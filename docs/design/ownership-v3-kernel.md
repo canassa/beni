@@ -2456,9 +2456,10 @@ paths:
   expanded, where the expansion read nothing of it and walked to no held function, with what the
   expansion found (`twice`, `handed`, whether the run
   holds a cell that is twice in the arguments). The next location takes that run where the same entry
-  of the callee covers it (the locations below one entry are one after another in the caller's
-  layout, so one kept run serves them, and a call pays no allocation), for one unit: the two entries of the result name one range of the frame's atoms, and a run never changes
-  once its entry is made. What is the location's own (`single`, and so `twice`) is computed for each
+  of the callee covers it, for one unit: the two entries of the result name one range of the frame's
+  atoms, and a run never changes once its entry is made. A location that comes after a location of
+  another entry is expanded as before; one kept run, and not one for each entry, costs a call no
+  allocation. What is the location's own (`single`, and so `twice`) is computed for each
   location as before. Only the run of an `alias` entry is kept: a written location has a name of its
   own. A walk past its budget keeps no run.
 
