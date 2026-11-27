@@ -2367,10 +2367,11 @@ paths:
   reads neither (`SrcState.entry_read`) is the same at each location that the same entry of the
   callee covers: the frame's own function parameter answers every location of its answer that the
   callee's entry holds (`ownAnswer`), a lost answer holds each argument (§3.2), and a fresh cell and
-  `outside` are one atom each. `applyAt` keeps the run of the first such location for each entry of
-  the callee's result, with what the expansion found (`twice`, `handed`, whether the run holds a cell
-  that is twice in the arguments). A later location that the same entry covers takes that run, for
-  one unit: the two entries of the result name one range of the frame's atoms, and a run never changes
+  `outside` are one atom each. `applyAt` keeps the run of the last location that it expanded, where
+  the expansion read nothing of it, with what the expansion found (`twice`, `handed`, whether the run
+  holds a cell that is twice in the arguments). The next location takes that run where the same entry
+  of the callee covers it (the locations below one entry are one after another in the caller's
+  layout, so one kept run serves them, and a call pays no allocation), for one unit: the two entries of the result name one range of the frame's atoms, and a run never changes
   once its entry is made. What is the location's own (`single`, and so `twice`) is computed for each
   location as before. Only the run of an `alias` entry is kept: a written location has a name of its
   own. A walk past its budget keeps no run.
