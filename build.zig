@@ -184,6 +184,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/ordering_test.zig", 2 },
     .{ "tests/blackbox/platform_test.zig", 1 },
     .{ "tests/blackbox/oracle_test.zig", 2 },
+    .{ "tests/blackbox/own3_cache_test.zig", 3 },
     .{ "tests/blackbox/page_fuzz_test.zig", 1 },
     .{ "tests/blackbox/playground_page_test.zig", 1 },
     .{ "tests/blackbox/todo_example_test.zig", 1 },

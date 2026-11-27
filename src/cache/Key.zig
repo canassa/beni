@@ -477,6 +477,20 @@ pub const Options = struct {
     reported: []const bool,
     embedded: []const Asset,
     io: Io,
+    /// The run is under `--ownership=v3` (`ownership-v3-kernel.md` §7.1):
+    /// each module's option string names the checker and what its walk
+    /// reads of the run. Null for every other run, whose option strings do
+    /// not change.
+    ownership3: ?Ownership3 = null,
+};
+
+/// What a walk of the ownership checker v3 reads of the run and not of a
+/// source (`own3/Enforce.checkModule`): whether the run enforces, and
+/// whether host JavaScript calls what a module of the root package exports.
+/// The build's markup type and lowering are the graph's.
+pub const Ownership3 = struct {
+    enforce: bool,
+    library: bool,
 };
 
 /// Every module's `own_terms` blob and cacheability bit — everything about a
@@ -602,6 +616,27 @@ fn ownTermsOf(
             if (markup.lowering.unwrap()) |s| interner.slice(s) else "",
         });
     } else markup_text;
+    // The ownership checker v3's term (`ownership-v3-kernel.md` §7.1), only
+    // under `--ownership=v3`: an entry then holds v3's block, which no
+    // other run reads, and a walk reads these of the run. Every module has
+    // the chain's markup settings (its status, its vocabulary module, its
+    // markup type and its lowering): a value of the markup type goes
+    // through modules that write no markup, and the `let`s that a lowering
+    // keeps are read off the vocabulary (`own3/Enforce.keptLets`).
+    // `--library` changes the walk of a module of the root package only.
+    const final_text = if (options.ownership3) |o|
+        try std.fmt.allocPrint(scratch, "{s};ownership=v3,enforce={d},library={d},markup={t},{s},{s}.{s},lowering={s}", .{
+            option_text,
+            @intFromBool(o.enforce),
+            @intFromBool(o.library and module.package == .app),
+            markup.status,
+            if (markup.vocabulary) |v| interner.slice(graph.moduleName(v)) else "",
+            if (markup.type_module.unwrap()) |s| interner.slice(s) else "",
+            if (markup.type_name.unwrap()) |s| interner.slice(s) else "",
+            if (markup.lowering.unwrap()) |s| interner.slice(s) else "",
+        })
+    else
+        option_text;
 
     var bytes: std.ArrayList(u8) = .empty;
     errdefer bytes.deinit(gpa);
@@ -609,7 +644,7 @@ fn ownTermsOf(
         .build_id = options.build_id,
         .package = module.package,
         .name = interner.slice(module.name),
-        .options = option_text,
+        .options = final_text,
         .source_hash = iface_bytes.hash(store.bytes(file)),
         .sibling_hash = try siblingHash(scratch, store, artifacts, options, file),
     });

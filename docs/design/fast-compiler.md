@@ -1218,6 +1218,11 @@ so does the same edit made in a hub. The reason is the persistent cache's key in
 of 634 module keys** and **0 of 634 interface hashes**. The cache is doing almost nothing for the
 one case §2's budgets are about, and this step is the whole of the difference.
 
+*Amended 2026-11-27 (#2549): a run under the hidden `--ownership=v3` keeps the first recipe, where an
+import contributes its key. The ownership walk of v3 reads the bodies, the ownership words and the
+private types of the modules that a module imports, and the pair below covers none of them
+(`ownership-v3-kernel.md` §7.1).*
+
 **An import contributes `(interface hash, dependency digest)`, and that pair replaces its key.** The
 key's recipe is otherwise unchanged and `key_version` bumps to 2:
 
