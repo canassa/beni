@@ -563,6 +563,55 @@ fn diamondMain(arena: std.mem.Allocator, depth: usize) ![]const u8 {
     );
 }
 
+// The diamond `A{i} a = A{i-1} (A{i-1} a)` again, deeper than the type
+// reader's bound (#2124). The body of an inner application is two of the
+// reader's levels below its alias and the body of an outer one is one, so
+// a read of `A{depth} Int` passes `Types.Builder.max_depth`, 512, when
+// `depth` is more than 255, and a path of the diamond fits only after
+// `2 × depth − 510` outer steps. An expansion that ran out of depth is not
+// shared (checker-v2.md §7.4, amended 2026-11-06), so each level above
+// that point was expanded again: about 2^(2 × depth − 510) expansions. A
+// read that ran out of depth now expands no more aliases (§7.4, amended
+// 2026-11-27): a read costs the bound whatever the depth, and the check
+// costs its declarations. The module reads the diamond in a private
+// constructor nothing calls (no message), in a public constructor and in an
+// annotation (`nesting_too_deep` each). Calibration: see `deepDiamond`.
+test "checking a diamond of aliases deeper than the reader's bound is linear in its depth" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    s.refusable = .nesting_too_deep;
+    try s.w.write("D300.beni", try deepDiamond(s.arena(), 300));
+    try s.w.write("D600.beni", try deepDiamond(s.arena(), 600));
+    try s.finish("a diamond of aliases past the reader's bound", try s.ratio("D300.beni", "D600.beni", 300));
+}
+
+/// `type alias A0 a = a`, `type alias A{i} a = A{i-1} (A{i-1} a)` up to
+/// `depth`, and three readers of `A{depth} Int`: a private constructor
+/// nothing calls, a public constructor and an annotation. Calibration
+/// (ReleaseFast, instructions): 31.0 M / 35.7 M at depth 300 / 600, a ratio
+/// of 1.15. Before the change the private constructor alone took 20.1 M /
+/// 44.2 M at depth 250 / 260, and depth 300 did not end in 15 s (#2124).
+fn deepDiamond(arena: std.mem.Allocator, depth: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias A0 a =\n    a\n\n\n");
+    for (1..depth + 1) |i| try out.print(arena, "type alias A{d} a =\n    A{d} (A{d} a)\n\n\n", .{ i, i - 1, i - 1 });
+    try out.print(arena,
+        \\type Unused
+        \\    = Unused (A{d} Int)
+        \\
+        \\
+        \\pub type Shown
+        \\    = Shown (A{d} Int)
+        \\
+        \\
+        \\pub f : A{d} Int → Int
+        \\f _ =
+        \\    1
+        \\
+    , .{ depth, depth, depth });
+    return out.items;
+}
+
 /// `type alias A0 a = Maybe a`, `type alias A{i} a = A{i-1} a × A{i-1}
 /// (List a)` up to `depth`, and `f : A{depth} Int → Int`.
 fn argumentDag(arena: std.mem.Allocator, depth: usize) ![]const u8 {

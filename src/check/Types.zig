@@ -856,7 +856,9 @@ pub const Builder = struct {
     /// roots)` (`AliasShape.key`, tagged so it never meets an exact key):
     /// its chain end. In `A{i} a = A{i-1} (A{i-1} a)` the outer argument is
     /// a new root at every level, so the exact key never matched and `A64
-    /// Int` was 2^64 bodies (checker-v2.md §7.4, amended 2026-11-06).
+    /// Int` was 2^64 bodies (checker-v2.md §7.4, amended 2026-11-06). Only
+    /// a clean expansion gets this entry, and a read that ran out of depth
+    /// expands nothing more (`too_deep`).
     aliases: AliasMemo = .empty,
     shared: ?*AliasMemo = null,
     /// Leave every alias this read meets unexpanded: an `alias` variable
@@ -873,6 +875,14 @@ pub const Builder = struct {
     /// spot because this walk crosses modules — an alias body is read in
     /// ITS module — and the only instruction that names a position in the
     /// module being checked is the one the caller asked about.
+    ///
+    /// The flag is the READ's, not one builder's: the builder `aliasBody`
+    /// makes for a body starts with its caller's flag and hands its own
+    /// back. And it stops the expansions: once it is set, `apply` reads no
+    /// alias body (checker-v2.md §7.4, amended 2026-11-27). An expansion
+    /// that ran out of depth is never shared by its shown arguments, so a
+    /// diamond of aliases deeper than `max_depth` expanded each level
+    /// again, 2^k bodies, and did not end (#2124).
     too_deep: bool = false,
 
     pub const Scoped = struct { name: Symbol, v: Var };
@@ -1248,14 +1258,17 @@ pub const Builder = struct {
         };
         const issues_before = if (b.key_errors) |list| list.items.len else 0;
         const range = try b.store.addVars(args);
-        const actual = if (b.shallow) try b.store.freshErr(b.varRank()) else try b.aliasBody(e, id, args);
+        // A read that ran out of depth expands no more aliases: the variable
+        // a shallow read makes, whose expansion is `err`. The caller reports
+        // the read or drops it (`too_deep`), so the `err` has its message.
+        const actual = if (b.shallow or b.too_deep) try b.store.freshErr(b.varRank()) else try b.aliasBody(e, id, args);
         const v = try b.store.fresh(.{ .alias = .{ .type = id, .args = range, .actual = actual } }, b.varRank());
         // Both entries or neither: nothing can fail between them.
         try b.memo().ensureUnusedCapacity(b.scratch, 2);
         b.memo().putAssumeCapacity(key, v);
-        // Only a clean expansion is shared: one that ran out of depth or met
-        // a key-kind issue is read again at every application, as before, so
-        // each gets what it got.
+        // Only a clean expansion is shared. One that ran out of depth is the
+        // last this read makes (above). One that met a key-kind issue is
+        // read again at every application, so each gets what it got (#2716).
         const issues_after = if (b.key_errors) |list| list.items.len else 0;
         if (shape_key) |k| if (!b.too_deep and issues_after == issues_before) {
             const slot = b.memo().getOrPutAssumeCapacity(k);
@@ -1300,6 +1313,7 @@ pub const Builder = struct {
         // scope inside it and must not leak into it.
         var inner: Builder = .init(b.store, b.types, b.graph, b.artifacts, e.module, bir, b.mode, b.rank, b.scratch, b.interner);
         inner.depth = b.depth;
+        inner.too_deep = b.too_deep;
         inner.key_errors = b.key_errors;
         inner.key_observer = b.key_observer;
         inner.key_region = b.key_region;
