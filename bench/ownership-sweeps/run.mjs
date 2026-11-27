@@ -11,7 +11,14 @@
 // (the line then ends with `ip=<verdict>`). `--mode=both` also builds the program under `--release` two times, plain
 // and in place, so the release optimiser is inside the oracle (research report 141): a release in-place fault is
 // RIPTRAP or RIPDIFF when every other leg passes (else the line ends with `rip=<verdict>`: PLAINRUNFAIL, a plain
-// release run that fails, is a defect of the release build). Each program gets one verdict: SAME (accepted, same output), REFUSED (with its
+// release run that fails, is a defect of the release build). The fifth leg, the build users get: with `--checker=v3`
+// and `--mode=both`, a program on a platform of its own (`PLATFORM`) whose chain names the checker v3
+// (`"ownership": "v3"`, its first `"ownership"` down the chain, `boundary.md` §5.2: `browser-inline`'s pages) is
+// built twice more with no ownership flag, as `beni build` builds it for a user (records written in place where
+// v3 accepted, lists copied: `src/js/Emit.zig`'s `records_v3_plain`), in development and under `--release`, and
+// each run is judged against the plain run of its own mode. A fault there is SHTRAP or SHDIFF (development) or
+// RSHTRAP or RSHDIFF (release) when every other leg passes, and SHFAIL or RSHFAIL when that build fails where the
+// checked builds passed (code reader CR15's U3: no leg built that mode before). Each program gets one verdict: SAME (accepted, same output), REFUSED (with its
 // first code and position), LIMIT, TRAP (the checked build throws: a stale read), DIFF (another output),
 // CRASH (the compiler fails), PLAINFAIL (the generated program does not build), BOTHFAIL (both runs fail, and
 // what they printed agrees once the stack frames and the output directories are set aside; it differs:
@@ -45,6 +52,27 @@ if (!['sanitize', 'inplace', 'both'].includes(mode)) {
   process.exit(2);
 }
 const results = `${path.resolve(dir)}.${opt.tag ?? (mode === 'sanitize' ? opt.checker : `${opt.checker}-${mode}`)}.txt`;
+
+// Whether the chain of the platform at `dir` names the checker v3: its first `"ownership"`, the platform's own
+// manifest first and then each platform it layers on, in order (`platform.zig`'s `Chain.ownershipV3`). A layer
+// is a directory of `platforms/` or a sibling of `dir`.
+function chainNamesV3(dir) {
+  const first = (d, seen) => {
+    if (seen.has(d)) return undefined;
+    seen.add(d);
+    const file = path.join(d, 'beni.json');
+    if (!fs.existsSync(file)) return undefined;
+    const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (manifest.ownership !== undefined) return manifest.ownership;
+    for (const p of manifest.platforms ?? []) {
+      const layer = [path.join(root, 'platforms', p), path.join(path.dirname(d), p)].find((x) => fs.existsSync(path.join(x, 'beni.json')));
+      const o = layer ? first(layer, seen) : undefined;
+      if (o !== undefined) return o;
+    }
+    return undefined;
+  };
+  return first(dir, new Set()) === 'v3';
+}
 
 function run(cmd, args, cwd, timeoutMs) {
   return new Promise((resolve) => {
@@ -170,9 +198,19 @@ async function judge(prog) {
     const inPlaceRel = await build([...rel, `--ownership=${opt.checker}`, '--ownership-everywhere', '--lists-in-place'], 'ir', 120_000);
     if (inPlaceRel.code !== 0) return `CRASH release-in-place ${inPlaceRel.code}`;
     const third = await verdict('ir', plainRelRun);
-    if (ok(third)) return pass === 'SAME' && third === 'SAME' ? 'SAME' : 'BOTHFAIL';
     if (third === 'TIMEOUT') return `${pass} ip=${second} rip=TIMEOUT`;
-    return `RIP${third}`;
+    if (!ok(third)) return `RIP${third}`;
+    const all = pass === 'SAME' && third === 'SAME' ? 'SAME' : 'BOTHFAIL';
+    // The fifth leg: the build users get, where the chain names v3 (the header).
+    if (!plainFlags.length || !chainNamesV3(platform)) return all;
+    for (const [tag, extra, oracleRun, letters] of [['sh', [], plainRun, 'SH'], ['rsh', rel, plainRelRun, 'RSH']]) {
+      const shipped = await build(extra, tag, 120_000);
+      if (shipped.code !== 0) return `${letters}FAIL ${shipped.code}`;
+      const v = await verdict(tag, oracleRun);
+      if (v === 'TIMEOUT') return `${all} ${letters.toLowerCase()}=TIMEOUT`;
+      if (!ok(v)) return `${letters}${v}`;
+    }
+    return all;
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

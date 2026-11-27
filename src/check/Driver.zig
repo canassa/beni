@@ -77,6 +77,13 @@ channels: []@import("../own2/Hoists.zig").Table = &.{},
 /// v3's reads read first per module (`own3/Reads.zig`), written by the
 /// worker that checked it; empty unless `--ownership=v3`.
 hoist_reads: [][]const @import("../own3/Reads.zig").Read = &.{},
+/// Per module, whether v3 accepted every record update of it
+/// (`Check.records_in_place`), written by the worker that checked it; all
+/// false unless `--ownership=v3`.
+records_in_place: []bool = &.{},
+/// Per module, the calls at which v3 accepted a write of a record argument
+/// (`Check.record_calls`), written by the worker that checked it.
+record_calls: [][]const u32 = &.{},
 /// Per module, written by the worker that checked it before `finish`
 /// releases its dependents: whether an error reached it — its own (an
 /// earlier phase's, which quiets it, or its check's), or any dependency's,

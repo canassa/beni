@@ -407,6 +407,16 @@ pub const Input = struct {
     /// v1's clean table writes a module's (§31.10). Lists are written as
     /// every build without an oracle writes them. With `records_v3`.
     records_v3_plain: bool = false,
+    /// With `records_v3_plain`: the checker v3 accepted every record update
+    /// of this module (`Check.records_in_place`), so each is written in
+    /// place, as of a module whose v1 table is clean (§31.10). What lets a
+    /// nested update skip the store of its field's own object
+    /// (`sameFieldObject`).
+    records_clean_v3: bool = false,
+    /// With `records_v3_plain`: the calls, ascending, at which v3 accepted a
+    /// write of a record argument in place (`Check.record_calls`), each a
+    /// store (`suspension`), as v1's `ownership.writesAt` says of a call.
+    v3_record_calls: []const u32 = &.{},
     /// The v3 oracle's reads read before an update's stores (`own3/Reads.zig`).
     v3_reads: []const V3Reads.Read = &.{},
     /// The specifier of `_core/_sanitize.mjs`, relative to this module's
@@ -4344,11 +4354,21 @@ pub const Lowerer = struct {
         }
     }
 
+    /// Whether v3 accepted a write of a record argument in place at the call
+    /// `inst` (`Input.v3_record_calls`).
+    fn v3WritesAt(l: *const Lowerer, inst: Inst.Index) bool {
+        return std.sort.binarySearch(u32, l.in.v3_record_calls, inst.int(), struct {
+            fn order(x: u32, y: u32) std.math.Order {
+                return std.math.order(x, y);
+            }
+        }.order) != null;
+    }
+
     fn suspension(l: *Lowerer, out: *StmtList, inst: Inst.Index, value: Node.Index) !Node.Index {
         // A call whose callee writes a record argument in place is a store
         // (`ownership-checker.md` §31.10, amended 2026-11-24): every call
         // lowering hands its call node through here.
-        if (l.b.tagOf(value) == .call and ((l.in.ownership.clean and l.in.ownership.writesAt(inst)) or l.calleeUnknown(inst))) l.b.markStores(value);
+        if (l.b.tagOf(value) == .call and ((l.in.ownership.clean and l.in.ownership.writesAt(inst)) or l.calleeUnknown(inst) or l.v3WritesAt(inst))) l.b.markStores(value);
         if (!l.suspendable) return value;
         if (!l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return value;
         const p = l.pos(inst);
@@ -7400,7 +7420,7 @@ pub const Lowerer = struct {
             // back changes nothing (§31.3, *Nested updates*). Not under the
             // sanitiser, whose inner update answers a new object. The inner
             // update's own stores are its value's, so they stay.
-            if (l.in.ownership.clean and l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) skip: {
+            if ((l.in.ownership.clean or l.in.records_clean_v3) and l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) skip: {
                 // A call that answers the field's object (`answersFieldObject`)
                 // still runs: its writes are the update. Bound to a temporary
                 // here, the binding becomes the call as a statement, since
@@ -7480,7 +7500,7 @@ pub const Lowerer = struct {
     /// `base` a local. Only of a clean module, where the inner update
     /// answers its base's object.
     fn sameFieldObject(l: *Lowerer, base: Inst.Index, field: Symbol, value: Inst.Index) bool {
-        if (std.debug.runtime_safety) std.debug.assert(l.in.ownership.clean and !l.in.sanitize_records);
+        if (std.debug.runtime_safety) std.debug.assert((l.in.ownership.clean or l.in.records_clean_v3) and !l.in.sanitize_records);
         if (l.bir.instTag(base) != .local) return false;
         if (l.bir.instTag(value) == .call) return l.answersFieldObject(base, field, value);
         if (l.bir.instTag(value) != .record_update) return false;

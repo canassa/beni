@@ -603,6 +603,17 @@ ctxs: std.ArrayList(Ctx) = .empty,
 cur_ctx: u32 = 0,
 returns: std.ArrayList(Val) = .empty,
 scratch: std.ArrayList(Atom) = .empty,
+/// The atoms of an operand's location that the call in work read for one of
+/// its writes, kept for its later writes (kernel §8, *A call reads each
+/// location of an operand once*; `otherLeaves`). On while `applyAt` judges
+/// the locations that one call writes.
+other_on: bool = false,
+other_memo: std.AutoHashMapUnmanaged(OtherKey, OtherHit) = .empty,
+other_buf: std.ArrayList(Atom) = .empty,
+/// A walk of values met a function value or a value of no claim since this
+/// was last set false (`leaves`): what such a value holds can grow while
+/// the frame is walked, so `otherLeaves` keeps no read that met one.
+leaf_wide: bool = false,
 /// While a spread literal or a `++` chain is walked: its root call.
 chain_root: u32 = none,
 /// The next `Use.id`.
@@ -1850,6 +1861,7 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
         },
         .ref, .built, .join => return f.leavesOwn(v, &.{e}, out),
         .closure, .unknown => {
+            f.leaf_wide = true;
             if (try f.leafHit(v, &.{}, true, out)) |dup| return dup;
             const start = out.items.len;
             // Once the walk is over (`finish`), each such value's atoms are
@@ -3556,6 +3568,88 @@ const DemandIn = struct {
     reach: ?[]const Atom = null,
 };
 
+const OtherKey = struct { v: Val, k: u32, ctx: u32, at: u32 };
+const OtherHit = struct { start: u32, len: u32, dup: bool };
+
+/// The atoms of operand `v` at entry `k` of its own layout, in `f.scratch`,
+/// and whether one cell can be there twice: `leaves`, read once for all the
+/// locations that one call writes (kernel §8, *A call reads each location of
+/// an operand once*). While `applyAt` judges those writes (`other_on`), it
+/// evaluates nothing, so no value is made and no entry of a root changes;
+/// each write is judged in one context and at one time, which are in the
+/// key. The first read is kept, and each later one copies it: 1 unit and 1
+/// for each atom, where a read is a walk of the value. Not kept: a read
+/// under a set of the callee's paths (`judge_set`), which each write has its
+/// own of, and a read that met a function value or a value of no claim
+/// (`leaf_wide`). A safe build reads again at each copy and compares (kernel
+/// §9).
+fn otherLeaves(f: *Frame, v: Val, k: u32) Error!bool {
+    f.scratch.clearRetainingCapacity();
+    if (!f.other_on or f.judge_set.len != 0) return f.leaves(v, k, &f.scratch);
+    const key: OtherKey = .{ .v = v, .k = k, .ctx = f.judge_ctx, .at = f.judge_at };
+    if (f.other_memo.get(key)) |hit| {
+        // The copy is work of its own (kernel §8). Past the budget a read
+        // finds nothing, as `leaves` does.
+        if (f.charge(1 + hit.len)) return false;
+        try f.scratch.appendSlice(f.gpa, f.other_buf.items[hit.start..][0..hit.len]);
+        try f.checkOtherLeaves(v, k, hit);
+        return hit.dup;
+    }
+    const wide = f.leaf_wide;
+    f.leaf_wide = false;
+    const dup = try f.leaves(v, k, &f.scratch);
+    const keep = !f.leaf_wide and !f.m.steps_over;
+    f.leaf_wide = f.leaf_wide or wide;
+    if (keep) {
+        const start: u32 = @intCast(f.other_buf.items.len);
+        try f.other_buf.appendSlice(f.gpa, f.scratch.items);
+        try f.other_memo.put(f.gpa, key, .{ .start = start, .len = @intCast(f.scratch.items.len), .dup = dup });
+    }
+    return dup;
+}
+
+/// In safe builds: the read that `otherLeaves` kept (`hit`, now in
+/// `f.scratch`) is what a new read of `v` at `k` finds (kernel §9). The
+/// check counts no work, so its read meets no context of an arm (`leaves`,
+/// `quiet_n`) and can keep one of two atoms that differ in their contexts
+/// alone: the two reads are compared as sets of atoms without contexts.
+fn checkOtherLeaves(f: *Frame, v: Val, k: u32, hit: OtherHit) Error!void {
+    if (!safety or f.m.steps_over) return;
+    const q = f.quiet();
+    defer f.loud(q);
+    const wide = f.leaf_wide;
+    defer f.leaf_wide = wide;
+    var again: std.ArrayList(Atom) = .empty;
+    defer again.deinit(f.gpa);
+    const dup = try f.leaves(v, k, &again);
+    // A check that passed the budget read nothing to compare.
+    if (f.m.steps_over) return;
+    const sameBut = struct {
+        fn ctx(x: Atom, y: Atom) bool {
+            var a = x;
+            var b = y;
+            a.ctx = none;
+            b.ctx = none;
+            return atomEql(a, b);
+        }
+    }.ctx;
+    const kept = f.scratch.items;
+    var same = dup == hit.dup;
+    for (kept) |x| {
+        const found = for (again.items) |y| {
+            if (sameBut(x, y)) break true;
+        } else false;
+        if (!found) same = false;
+    }
+    for (again.items) |y| {
+        const found = for (kept) |x| {
+            if (sameBut(x, y)) break true;
+        } else false;
+        if (!found) same = false;
+    }
+    if (!same) std.debug.panic("own3: the atoms that a call kept for an operand's location are not what a new read finds (kernel §8)", .{});
+}
+
 /// What the operation reads of operand `o` reaches the targets `ws`; `skip`
 /// is the written entry of the written operand itself, and `suffix` the
 /// written part below it. Another part below the same entry is another
@@ -3573,8 +3667,7 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
         // The scan of the layout is work (kernel §8).
         if (f.charge(Loc.scanUnits(pes.len))) return true;
         for (pes, 0..) |e, k| if (e.loc == self) {
-            f.scratch.clearRetainingCapacity();
-            _ = try f.leaves(o.v, @intCast(k), &f.scratch);
+            _ = try f.otherLeaves(o.v, @intCast(k));
             if (f.atomsReach(f.scratch.items, ws)) return true;
         };
         return false;
@@ -3693,8 +3786,7 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
                 if (apart_value == null) apart_value = try f.valueApart(o.v, 0);
             }
         } else if (c != none and (o.flags[c] | more) == 0) continue;
-        f.scratch.clearRetainingCapacity();
-        const dup_k = try f.leaves(o.v, @intCast(k), &f.scratch);
+        const dup_k = try f.otherLeaves(o.v, @intCast(k));
         // A summary entry that holds one cell at two of its places is no two sets.
         if (c == Loc.all and skip != none and apart_value.? and !dup_k) continue;
         if (skip != none and n.tag == .ref) {
@@ -5475,11 +5567,16 @@ fn runtimeCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val, item: Val) Error!voi
     if (arity == 1 or arity == 2) {
         if (try f.codeOf(fv)) |code| if (code.own_params == arity) {
             _ = try f.applyAt(inst, fn_inst, code, args[0..arity], &.{}, try m.placeOfInst(inst));
+            // As at a call of known code (`knownRuns`): the run hosts what
+            // its contract says, where the markup renders.
+            try f.knownRuns(inst, code.contract);
             return;
         };
         const root = f.ownFnRoot(fv);
         if (f.isFnRoot(root)) {
             _ = try f.callParam(inst, fn_inst, root, args[0..arity], &.{});
+            // As at a call of the frame's own function parameter (`call`).
+            try f.noteRunsOn(inst, false);
             return;
         }
     }
@@ -5512,6 +5609,10 @@ fn eventCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val) Error!void {
     if (code.own_params != 1) return f.escape(fv, inst);
     const args = [1]Val{v_outside};
     const answer = try f.applyAt(inst, fn_inst, code, &args, &.{}, try m.placeOf(ft.result.toOptional()));
+    // A run of known code: what its contract says it does to the fiber it
+    // runs on is noted as at a call (`knownRuns`, kernel §13 item 12, *A
+    // defect*, (d), *The ways in*; code reader CR15's U1).
+    try f.knownRuns(inst, code.contract);
     try f.escape(answer, inst);
 }
 
@@ -6031,6 +6132,7 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
             for (f.atoms.items[start..]) |*a| a.dead = f.timeOf(inst);
             try f.uniqueTail(&f.atoms, start);
             f.rents.items[r.ent + e] = .{ .kind = .version, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
+            f.checkOldNames(start, true, true);
             continue;
         }
         // The elements: the cells of other roots, each element one part.
@@ -6311,6 +6413,7 @@ fn recordOf(f: *Frame, place: PlaceId, kids: []const Kid, inst: u32, base: Val) 
         for (f.atoms.items[start..]) |*a| a.dead = f.timeOf(inst);
         try f.uniqueTail(&f.atoms, start);
         f.rents.items[r.ent + e] = .{ .kind = .version, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
+        f.checkOldNames(start, true, true);
     }
     try f.deriveLinear(root, null, &.{});
     if (!any_slot) return f.built(place, kids);
@@ -8327,6 +8430,7 @@ fn renewHandleOf(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32
             if (!strong or (maybe and !selfRenew(c, j, cr))) _ = try f.leavesAs(v, r.place, k, &f.atoms);
             try f.uniqueTail(&f.atoms, start);
             f.rents.items[ent0 + k] = .{ .kind = if (st.written) .version else .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = !xes[k].single and (st.twice or !strong or f.curTwice(v, k)) };
+            if (st.written) f.checkOldNames(start, st.olds, false);
         }
         // Two entries of the version at one wide location of the callee (a
         // type variable) are one location to it, which says nothing of
@@ -9832,6 +9936,11 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
             try f.m.addRefusal(f, inst, .disjoint, held_at_other);
             break;
         }
+        if (try f.heldInOtherCell(capv, sig, @intCast(e))) {
+            f.atoms.shrinkRetainingCapacity(wa);
+            try f.m.addRefusal(f, inst, .disjoint, held_in_other_cell);
+            break;
+        }
         try f.demand(wa, .{
             .point = inst,
             .loc = ses[e].loc,
@@ -10491,6 +10600,9 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     // Another fiber can run inside the call (kernel §13 item 12).
     const run = try f.runBegin(inst, vals.items, if (code) |c| c.contract else null);
     const casts_before = f.casts;
+    // The contract of the function a field called as a method was applied
+    // with (`fieldCall`), or null.
+    var field_code: ?*const Contract = null;
     const result: Val = blk: {
         switch (target) {
             .reads => {
@@ -10498,7 +10610,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
                 try f.derivedEffect(inst, derived, vals.items, all.items);
                 break :blk try f.unknownResult(inst, vals.items);
             },
-            .field => break :blk try f.fieldCall(inst, mc, vals.items, all.items),
+            .field => break :blk try f.fieldCall(inst, mc, vals.items, all.items, &field_code),
             .decl, .unknown => {},
         }
         if (code) |c| break :blk try f.apply(inst, inst, c, vals.items, all.items);
@@ -10511,6 +10623,12 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     if (code) |c| {
         try f.knownRuns(inst, c.contract);
     } else if (target != .reads) try f.noteRunsOn(inst, true);
+    // A field's function applied with its contract hosts what that says,
+    // as at any call of known code (`knownRuns`, kernel §13 item 12, *A
+    // defect*, (d), *The ways in*). Before, only `noteRunsOn` ran here, and
+    // a hosting function in a field was refused only where it met the
+    // default use on its way into the record (code reader CR15's U1).
+    if (field_code) |c| try f.knownRuns(inst, c);
     f.revokeAt(inst, false, wrote);
     try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
     return result;
@@ -10524,7 +10642,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
 /// capture of the frame, called as a method of that root, is the caller's
 /// to name (`Fn.receiver`). Any other function can be a host's, which can
 /// read the record and keep it: the record escapes, as at unknown code.
-fn fieldCall(f: *Frame, inst: u32, mc: Bir.MethodCall, vals: []const Val, all: []const Inst.Index) Error!Val {
+fn fieldCall(f: *Frame, inst: u32, mc: Bir.MethodCall, vals: []const Val, all: []const Inst.Index, applied: *?*const Contract) Error!Val {
     const m = f.m;
     const recv = vals[0];
     const argv = vals[1..];
@@ -10539,7 +10657,10 @@ fn fieldCall(f: *Frame, inst: u32, mc: Bir.MethodCall, vals: []const Val, all: [
             return f.callHeld(inst, inst, di, fv, argv, all[1..]);
         };
         if (try f.knownFns(fv, .strict)) {
-            if (try f.codeOf(fv)) |code| if (code.own_params == argv.len) return f.apply(inst, inst, code, argv, all[1..]);
+            if (try f.codeOf(fv)) |code| if (code.own_params == argv.len) {
+                applied.* = code.contract;
+                return f.apply(inst, inst, code, argv, all[1..]);
+            };
             // Several, or one of another arity: unknown code, of the
             // function and its arguments.
             var in_sight: std.ArrayList(Val) = .empty;
@@ -10619,7 +10740,7 @@ fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
             .derived, .ext_derived, .codec, .primitive => true,
             .top, .ext, .undetermined, .param, .field, .identity, .text => false,
         } else false;
-        if (within) try f.noteHostsForked(inst) else try m.addRefusal(f, inst, .call, "a function in which a writer or a reader of a cell it made runs in another fiber is handed as evidence (`where`), and the code it is handed to can run it masked, under a scheduler of its own, or after the call, so its code runs on after a throw");
+        if (within) try f.noteHostsForked(inst) else if (ev_info.effect.no_contract) try m.addRefusal(f, inst, .call, "a function with no contract, which can host a writer or a reader of a cell in another fiber, is handed as evidence (`where`), and the code it is handed to can run it masked, under a scheduler of its own, or after the call, so its code could run on after a throw") else try m.addRefusal(f, inst, .call, "a function in which a writer or a reader of a cell it made runs in another fiber is handed as evidence (`where`), and the code it is handed to can run it masked, under a scheduler of its own, or after the call, so its code runs on after a throw");
     }
     for ([_]u4{ 1, 2, 4, 8 }) |b| if (texts & b != 0) try m.addEvidenceRefusal(f, inst, Check.RowInfo.text(b));
     return x;
@@ -11236,7 +11357,15 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         _ = f.charge(npaths * c.flags.len);
     }
     // What the callee writes: a location that some paths write and others
-    // do not is judged on runs through those paths (`judge_set`).
+    // do not is judged on runs through those paths (`judge_set`). Each
+    // other location of an operand is read once for all of these writes
+    // (`otherLeaves`): nothing is evaluated between them, so no call is
+    // applied inside this one's writes. A call that writes one location
+    // reads each other location once already, and keeps nothing.
+    std.debug.assert(!f.other_on and f.other_memo.count() == 0 and f.other_buf.items.len == 0);
+    var written: usize = 0;
+    for (c.flags) |x| written += @intFromBool(x & flag_w != 0);
+    f.other_on = written > 1;
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
         const n = c.off[j + 1] - c.off[j];
@@ -11274,6 +11403,11 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
                 .paths = on,
             });
         };
+    }
+    if (f.other_on) {
+        f.other_on = false;
+        f.other_memo.clearRetainingCapacity();
+        f.other_buf.clearRetainingCapacity();
     }
     // What it reads.
     for (0..c.arity) |j| try f.readBy(args[j], inst, c.layouts[j], c.flags[c.off[j]..c.off[j + 1]]);
@@ -11392,6 +11526,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         const tainted = !args_apart and (!dups_known or f.holdsDuplicated(f.atoms.items[start..], dups.items));
         const twice = !single and (st.twice or (tainted and (sources > 1 or (answers and st.handed))));
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = twice };
+        if (kind == .version) f.checkOldNames(start, st.olds, false);
         // An entry that can hold such a cell is tested by its atoms, as an
         // answer's is: the callee's claim does not cover it.
         has_answer[e] = answers or tainted;
@@ -12251,6 +12386,8 @@ const SrcState = struct {
     /// parts are not apart (`REntry.twice`).
     twice: bool = false,
     written: bool = false,
+    /// `oldNames` marked at least one atom (`checkOldNames`).
+    olds: bool = false,
     inst: u32 = none,
     /// The labels of the caller's result entry below the callee's result entry in work.
     suffix: []const u64 = &.{},
@@ -12295,6 +12432,25 @@ fn oldNames(f: *Frame, from: usize, st: *SrcState) void {
     const at = f.timeOf(st.inst);
     for (f.atoms.items[from..]) |*a| a.dead = at;
     st.written = true;
+    if (from < f.atoms.items.len) st.olds = true;
+}
+
+/// In safe builds: a `.version` entry made at `f.atoms[start..]` holds its
+/// old names beside its own new one, each with `dead` set (kernel §13 item
+/// 12 (e), §5.1). `overlap` compares atoms by name, so a holder of the old
+/// cells meets a later write of the new name only through them; a version
+/// entry without them would be a cell no holder is compared with (code
+/// reader CR14's U1). `had`: the old names were not empty. `all`: every
+/// atom of the entry is an old name (the storage of a push or an update).
+fn checkOldNames(f: *const Frame, start: u32, had: bool, all: bool) void {
+    if (!safety or !had) return;
+    const xs = f.atoms.items[start..];
+    if (all) {
+        for (xs) |a| if (a.dead == none) @panic("own3: a version entry holds a name that is not old (kernel §13 item 12 (e))");
+        return;
+    }
+    for (xs) |a| if (a.dead != none) return;
+    @panic("own3: a version entry lost its old names (kernel §13 item 12 (e))");
 }
 
 /// Append to `f.atoms` what the sources `srcs` of the callee's result entry
@@ -13574,6 +13730,15 @@ const FlowKey = struct {
     fnc: usize,
     holder: u64,
     args: u64,
+    /// The location a use of held functions reads (`Use.held`, an entry of
+    /// the contract's `flags` whose `held` fact the judgment reads), the
+    /// frame's own held draft (`Use.di`), and whether the use is an entry's
+    /// default (`Use.entry`): a judgment reads each, so two uses that differ
+    /// in one are two judgments (code reader CR15's U4). No use with one of
+    /// them reaches `flow` today; the key does not rest on that.
+    held: u32,
+    di: u32,
+    entry: bool,
 };
 
 fn flowKey(f: *const Frame, v: Val, use: *const Use) FlowKey {
@@ -13594,6 +13759,9 @@ fn flowKey(f: *const Frame, v: Val, use: *const Use) FlowKey {
         .fnc = if (known) @intFromPtr(use.fnc) else 0,
         .holder = use.holder,
         .args = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(use.args)),
+        .held = use.held,
+        .di = use.di,
+        .entry = use.entry,
     };
 }
 
@@ -14159,6 +14327,11 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                 try f.refuse(use, .disjoint, held_at_other);
                 break;
             }
+            if (try f.heldInOtherCell(capv, sig, @intCast(e))) {
+                f.atoms.shrinkRetainingCapacity(w);
+                try f.refuse(use, .disjoint, held_in_other_cell);
+                break;
+            }
             try f.demand(w, .{
                 .point = site.inst,
                 .callee_inst = site.callee,
@@ -14210,6 +14383,8 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
 }
 
 const held_at_other = "a function writes in place a location of the contents of a cell it captured, and another location of the contents holds the same cell: the write changes both";
+
+const held_in_other_cell = "a function writes in place the contents of a cell it captured, and another cell holds the same value: the write changes both";
 
 const kept_written = "a function writes in place the contents of a cell it captured and stores nothing back, and it can run again: its next run reads the written value as the old one";
 
@@ -14725,6 +14900,74 @@ fn heldAtOther(f: *Frame, v: Val, sig: u32, e: u32, inner: []const bool) Error!b
         const n2 = f.atoms.items.len - s2;
         if (try f.cellsMeet(f.atoms.items[start..][0..ne], f.atoms.items[s2..][0..n2])) return true;
         f.atoms.shrinkRetainingCapacity(s2);
+    }
+    return false;
+}
+
+/// Whether the contents of another cell than those of value `v`'s handles
+/// (read at layout `sig`) hold a cell of its entry `e` now: a cell of a
+/// root the frame tracks, at its latest version, by the cells the atoms
+/// name (`sameCell`), whoever holds its handle. A write in place of `e` is
+/// then a write of that cell's contents too, which a holder of the other
+/// handle (another writer, a reader, the frame) reads under the name it
+/// has there (kernel §13 item 12 (e), *One cell at two places is decided on
+/// cells*). `heldAtOther` asks it of the other locations of one cell's
+/// contents. Before, two cells that held one list were kept apart only
+/// because every way to put it in both was an operand of a switch point
+/// (code reader CR14's U2). Each root and atom compared is work (kernel
+/// §8); past the budget the answer is yes.
+fn heldInOtherCell(f: *Frame, v: Val, sig: u32, e: u32) Error!bool {
+    const m = f.m;
+    const ses = m.loc.layoutEntries(sig);
+    var own: std.ArrayList([3]u32) = .empty;
+    defer own.deinit(f.gpa);
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    // The cells `v`'s handles name: their contents are `heldAtOther`'s.
+    for (ses, 0..) |he, h| if (he.kind == .cell) {
+        const s0 = f.atoms.items.len;
+        _ = try f.argLeaves(v, sig, @intCast(h), &.{}, false, &f.atoms);
+        for (s0..f.atoms.items.len) |i| try f.cellOrigins(f.atoms.items[i], &own);
+        f.atoms.shrinkRetainingCapacity(s0);
+    };
+    _ = try f.argLeaves(v, sig, e, &.{}, false, &f.atoms);
+    const ne = f.atoms.items.len - start;
+    if (ne == 0) return false;
+    // Every cell the frame follows, by the name `cellOrigins` gives it: a
+    // handle a call answered (a `fresh` root's `cell_root`, `cellResult`),
+    // and a handle of a tracked parameter or capture. The roots are counted
+    // before the walk: reading a value can add roots.
+    var cells: std.ArrayList([2]u32) = .empty;
+    defer cells.deinit(f.gpa);
+    const nroots = f.roots.items.len;
+    if (f.charge(nroots)) return true;
+    for (0..nroots) |x| {
+        const r = f.roots.items[x];
+        if (r.kind == .fresh and r.cell_root != none) try cells.append(f.gpa, .{ r.cell_root, r.cell_e });
+    }
+    for (f.params.items) |p| {
+        const r = f.roots.items[p];
+        if (!r.tracked) continue;
+        for (m.loc.layoutEntries(r.layout), 0..) |he, h| if (he.kind == .cell) try cells.append(f.gpa, .{ p, @intCast(h) });
+    }
+    var ks: std.ArrayList(u32) = .empty;
+    defer ks.deinit(f.gpa);
+    for (cells.items) |c| {
+        const mine = for (own.items) |x| {
+            if (x[0] == c[0] and x[1] == c[1]) break true;
+        } else false;
+        if (mine) continue;
+        const r = f.roots.items[c[0]];
+        const cur = f.latestOf(c[0]) orelse try f.rootVal(c[0]);
+        ks.clearRetainingCapacity();
+        try f.contentsAt(r.layout, c[1], &ks);
+        for (ks.items) |k| {
+            const s2 = f.atoms.items.len;
+            _ = try f.leavesAs(cur, r.place, k, &f.atoms);
+            const n2 = f.atoms.items.len - s2;
+            if (try f.cellsMeet(f.atoms.items[start..][0..ne], f.atoms.items[s2..][0..n2])) return true;
+            f.atoms.shrinkRetainingCapacity(s2);
+        }
     }
     return false;
 }

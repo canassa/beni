@@ -17,7 +17,7 @@ const ModelCallback$main = ($id$1) => {
   Inline$on($elements$6[0], () => {
     const $value$9 = "Add";
     const $before$10 = $model$4;
-    $before$10.n = $before$10.next($before$10.n), $model$4 = $before$10;
+    $before$10.n = $before$10.next($before$10.n), $before$10;
     Inline$pass($table$7[0][0]);
   });
   Inline$first();

@@ -401,6 +401,7 @@ fn fitsBir(birs: []const *const Bir, mi: u32, l: *const Block.Loaded) bool {
         for (p.contracts) |co| if (co) |c| if (!madeFits(birs, mi, c, 0)) return false;
     }
     for (l.channel.writes) |w| if (w.inst >= bir.insts.len) return false;
+    for (l.record_calls) |c| if (c >= bir.insts.len) return false;
     const none = std.math.maxInt(u32);
     for (l.reads) |r| {
         if (!inDecl(bir, r.decl, r.inst) or !inDecl(bir, r.decl, r.placement)) return false;
@@ -449,6 +450,14 @@ pub fn restore(ctx: *const Context, d: *Driver, m: Graph.Index, bytes: []const u
     d.channels[mi] = loaded.channel;
     gpa.free(d.hoist_reads[mi]);
     d.hoist_reads[mi] = loaded.reads;
+    // What the walk tells the lowering of the module's record writes
+    // (`walkModule`): whether each update is accepted, read off the channel
+    // as the walk reads it, and the calls that write a record argument.
+    if (mi < d.records_in_place.len) d.records_in_place[mi] = everyUpdateAccepted(ctx.ins.birs[mi], loaded.channel);
+    if (mi < d.record_calls.len) {
+        gpa.free(d.record_calls[mi]);
+        d.record_calls[mi] = loaded.record_calls;
+    } else gpa.free(loaded.record_calls);
     return true;
 }
 
@@ -459,6 +468,17 @@ fn depsOf(arena: Allocator, session: anytype, m: Graph.Index) Allocator.Error![]
     const out = try arena.alloc(u32, ds.len);
     for (out, ds) |*o, d| o.* = d.int();
     return out;
+}
+
+/// Whether every `record_update` of `bir` is an update `table` lists as
+/// accepted. A module with none: true, and nothing reads it there.
+fn everyUpdateAccepted(bir: *const Bir, table: Hoists.Table) bool {
+    for (bir.insts.items(.tag), 0..) |tag, i| {
+        if (tag != .record_update) continue;
+        const w = table.find(@intCast(i)) orelse return false;
+        if (w.kind != .update) return false;
+    }
+    return true;
 }
 
 /// Per module of the build, whether a platform package holds it.
@@ -497,6 +517,7 @@ fn keepBlock(ctx: *const Context, d: *Driver, m: Graph.Index, before: usize) All
         .published = ctx.state.shared.published[mi],
         .channel = d.channels[mi],
         .reads = d.hoist_reads[mi],
+        .record_calls = if (mi < d.record_calls.len) d.record_calls[mi] else &.{},
     };
     var bc: BlockCtx = .{ .session = session, .ins = ctx.ins, .types = d.types };
     const bytes = (try Block.write(gpa, module, bc.names())) orelse return;
@@ -648,6 +669,35 @@ fn walkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocat
         if (session.graph.modulePackage(m) == .app) try reads.appendSlice(arena, r.eager);
         d.hoist_reads[mi_u] = try gpa.dupe(Reads.Read, reads.items);
     }
+    // Whether every record update of the module is one v3 accepted, so the
+    // lowering writes each in place (`Lower.recordWrittenV3`): what v1's
+    // clean table says of a module (`ownership-checker.md` §31.10), from
+    // v3's own lines. A refused or limited module, core and the platforms
+    // publish no write, so none of theirs is (`Lower.Input.records_clean_v3`).
+    if (mi_u < d.records_in_place.len) d.records_in_place[mi_u] = everyUpdateAccepted(bir, table);
+    // The calls whose callee writes a record argument in place, each accepted:
+    // the lowering marks each as a store (`JsIr.Node.stores`), which the
+    // release optimiser never drops (§31.10, *The optimiser barrier*). Of a
+    // module whose channel publishes its writes.
+    if (mi_u < d.record_calls.len) {
+        gpa.free(d.record_calls[mi_u]);
+        d.record_calls[mi_u] = &.{};
+        const published = session.graph.modulePackage(m) == .app and r.limits.len == 0 and for (r.lines) |l| {
+            if (l.refused) break false;
+        } else true;
+        if (published) {
+            var calls: std.ArrayList(u32) = .empty;
+            for (r.lines) |l| if (l.kind == .callsite and l.record) try calls.append(arena, l.inst);
+            std.mem.sort(u32, calls.items, {}, std.sort.asc(u32));
+            var n: usize = 0;
+            for (calls.items) |c| {
+                if (n != 0 and calls.items[n - 1] == c) continue;
+                calls.items[n] = c;
+                n += 1;
+            }
+            d.record_calls[mi_u] = try gpa.dupe(u32, calls.items[0..n]);
+        }
+    }
     if (mi_u < d.channels.len) d.channels[mi_u] = table else table.deinit(gpa);
 
     if (kept != null and mi_u < ctx.state.reports.len) {
@@ -665,6 +715,10 @@ fn walkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocat
     // program's keys; kernel §6 rules 10 and 11).
     const app = session.graph.modulePackage(m) == .app;
     const dest = &d.per_module[mi_u];
+    // A chain that names v3 (`"ownership": "v3"`, `boundary.md` §5.2) is
+    // judged by it with no flag: its text names neither the prototype nor
+    // the flag.
+    const checker: []const u8 = if (session.ownership_v3_platform) "The ownership checker" else "The step 0 prototype of the ownership checker (`--ownership=v3`)";
     for (lines, r.lines) |l, rl| {
         if (!l.refused) continue;
         // A line refused because its walk gave up is no write of a list or
@@ -685,12 +739,13 @@ fn walkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocat
         // the fix is to call it where it writes, or to hand it straight to
         // the call that runs it (kernel §12 item 5).
         const fix: []const u8 = if (std.mem.eql(u8, l.op, "value")) "Call the function directly where it writes, or hand it straight to the call that runs it, or change a copy" else "Change a copy";
-        const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\nThe step 0 prototype of the ownership checker (`--ownership=v3`) refuses a write that it cannot show to be safe. {s} (`{s}`).", .{
+        const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\n{s} refuses a write that it cannot show to be safe. {s} (`{s}`).", .{
             l.op,
             l.base,
             Facts.causeText(l.cause),
             if (l.detail.len != 0) ": " else "",
             l.detail,
+            checker,
             fix,
             copyFix(rl.record, l.op, l.base),
         });
@@ -700,7 +755,7 @@ fn walkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocat
     // (kernel §6 rule 10, *A worded body is checked against its walk*): a
     // fact of the words, so every package's build stops on it.
     for (r.false_words) |x| {
-        const message = try std.fmt.allocPrint(gpa, "{s}\n\nA worded declaration whose body reaches no JavaScript is checked against what the ownership checker (`--ownership=v3`) finds in its body: a word may say more than the body does, never less. Correct the words.", .{x.text});
+        const message = try std.fmt.allocPrint(gpa, "{s}\n\nA worded declaration whose body reaches no JavaScript is checked against what the ownership checker{s} finds in its body: a word may say more than the body does, never less. Correct the words.", .{ x.text, if (session.ownership_v3_platform) "" else " (`--ownership=v3`)" });
         try dest.append(gpa, .{ .ownership = true, .code = .false_ownership_word, .module = m, .region = @fromBackingInt(0), .token = x.token orelse 0, .message = message });
     }
     if (!app) return;
@@ -812,5 +867,76 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
         const kept: ?*Report.Kept = if (state) |s| (if (m < s.reports.len) s.reports[m] else null) else null;
         try reports.append(gpa, if (kept) |k| k.report else .{ .module = m, .checked = false });
     }
-    try Report.write(w, reports.items, ins.names, .{ .totals_only = options.totals_only });
+    try writeReport(w, reports.items, ins.names, options.totals_only);
+}
+
+/// The counts of one module's lines, or of all: `own2/Report.zig`'s, with
+/// the limits as pending demands.
+const Counts = struct {
+    accepted: [@typeInfo(Facts.Verdict.Accepted).@"enum".field_names.len]u32 = @splat(0),
+    rejected: [@typeInfo(Facts.Cause).@"enum".field_names.len]u32 = @splat(0),
+    pending: u32 = 0,
+
+    fn merge(c: *Counts, o: Counts) void {
+        for (&c.accepted, o.accepted) |*x, y| x.* += y;
+        for (&c.rejected, o.rejected) |*x, y| x.* += y;
+        c.pending += o.pending;
+    }
+
+    fn write(c: Counts, w: *std.Io.Writer, label: []const u8) std.Io.Writer.Error!void {
+        var acc: u32 = 0;
+        for (c.accepted) |x| acc += x;
+        var rej: u32 = 0;
+        for (c.rejected) |x| rej += x;
+        const a = c.accepted;
+        try w.print("{s} {d}: accepted {d} (fresh {d}, call {d}, param {d}, callback-param {d}, once {d}, entry {d}; assumed {d}), pending {d}, rejected {d}\n", .{
+            label,                                                 acc + rej + c.pending,                       acc,
+            a[@backingInt(Facts.Verdict.Accepted.fresh)],          a[@backingInt(Facts.Verdict.Accepted.call)], a[@backingInt(Facts.Verdict.Accepted.param)],
+            a[@backingInt(Facts.Verdict.Accepted.callback_param)], a[@backingInt(Facts.Verdict.Accepted.once)], a[@backingInt(Facts.Verdict.Accepted.entry)],
+            a[@backingInt(Facts.Verdict.Accepted.assumed)],        c.pending,                                   rej,
+        });
+    }
+};
+
+/// The report of `dump --stage=ownership --ownership=v3`: the grammar of
+/// `own2/Report.write`, with one difference (kernel §8, *A limit in the
+/// dump*). Each `limit` line of a module is one pending demand, in the
+/// module's count and in the total: the walk that passed the limit judged
+/// no write, and a build of the program stops on it. Before, the total said
+/// `pending 0, rejected 0` beside `limits 1`, which reads as a program
+/// that a build accepts (#2567).
+fn writeReport(w: *std.Io.Writer, reports: []Report.Module, module_names: []const []const u8, totals_only: bool) std.Io.Writer.Error!void {
+    var total: Counts = .{};
+    var limits: u32 = 0;
+    for (reports) |*r| {
+        if (!totals_only) try w.print("module {s}", .{module_names[r.module]});
+        if (!r.checked) {
+            if (!totals_only) try w.writeAll(" (not checked)\n");
+            continue;
+        }
+        if (!totals_only) try w.writeByte('\n');
+        const sorted = @constCast(r.lines);
+        std.mem.sort(Facts.Line, sorted, {}, struct {
+            fn less(_: void, a: Facts.Line, b: Facts.Line) bool {
+                return a.position.line < b.position.line or (a.position.line == b.position.line and a.position.col < b.position.col);
+            }
+        }.less);
+        var counts: Counts = .{ .pending = r.limits };
+        for (sorted) |l| {
+            if (l.refused) counts.rejected[@backingInt(l.cause)] += 1 else counts.accepted[@backingInt(l.accepted)] += 1;
+            if (!totals_only) try Report.writeLine(w, l);
+        }
+        if (!totals_only) {
+            for (r.others) |text| try w.print("  {s}\n", .{text});
+            try counts.write(w, "  demands");
+        }
+        total.merge(counts);
+        limits += r.limits;
+    }
+    try total.write(w, "total");
+    if (limits != 0) try w.print("limits {d}\n", .{limits});
+    for (total.rejected, 0..) |n, i| {
+        if (n == 0) continue;
+        try w.print("cause {s} {d}\n", .{ Facts.causeText(@fromBackingInt(@intCast(i))), n });
+    }
 }

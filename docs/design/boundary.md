@@ -1066,7 +1066,8 @@ ownership with the checker v3 (`src/own3/`), as the hidden `--ownership=v3` does
 what it refuses; a `--ownership=` flag still names the checker, and `dump` prints the one its flags
 name. Such a build writes in place each record update v3 accepted, with v3's reads read first
 (`Lower.Input.records_v3_plain`), as v1's build writes a clean module's (`ownership-checker.md`
-§31.10); its lists are written as every build without an oracle writes them. Under
+§31.10), and reads the per-module facts that v1's clean table gives (kernel §11, last paragraph); its
+refusals name neither the prototype nor the flag; its lists are written as every build without an oracle writes them. Under
 `--ownership=v3` on the command line, with no oracle flag, nothing is written in place: that build
 is the oracle's copying leg (`bench/ownership-sweeps/run.mjs`). v3 reads no cache and no block of
 the checked core, so these builds check core from source (*a cost, #2657*). No other value is accepted, and a chain that does not say it is judged by v1. Inherited

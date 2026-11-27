@@ -21,24 +21,22 @@ const LogScopeInUpdate$main = ($id$1) => {
       const $before$9 = $model$4;
       $before$9.n = $before$9.n + 1;
       const next$6 = $before$9;
-      const $result$10 = Log$annotate("request", "p1", () => Log$minimum("Debug", () => {
+      Log$annotate("request", "p1", () => Log$minimum("Debug", () => {
         Log$debug("in the arm");
         return { a: next$6, b: Cmd$none };
       }));
-      $model$4 = $result$10.a;
       Inline$pass($table$7[0][0]);
     });
   });
   Inline$on($elements$6[1], () => {
     Inline$update(() => {
-      const $before$11 = $model$4;
-      $before$11.n = $before$11.n + 1;
-      const next$9 = $before$11;
-      const $result$12 = Log$span("save", () => {
+      const $before$10 = $model$4;
+      $before$10.n = $before$10.n + 1;
+      const next$9 = $before$10;
+      Log$span("save", () => {
         Log$info("in a span");
         return { a: next$9, b: Cmd$none };
       });
-      $model$4 = $result$12.a;
       Inline$pass($table$7[0][0]);
     });
   });

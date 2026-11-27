@@ -1,0 +1,80 @@
+-- The live twin of CellTwoCellsOneList: one list in two cells, each with a
+-- writer fiber or a race branch that pushes onto it in place. Each is refused
+-- where a run writes the contents of its cell and another cell holds the same
+-- list, judged by the cells the atoms name, whoever holds the other handle
+-- (ownership-v3-kernel.md §13 item 12 (e), amended for code reader CR14's U2:
+-- `heldInOtherCell`). Before, only one cell's contents were compared
+-- (`heldAtOther`), and each of these was refused only by the operands of a
+-- switch point; the shapes with a third cell, a pair in one cell and an update
+-- that stores the other cell's list are here too.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+madeOfOne : ⊤ → String
+madeOfOne ⊤ =
+    l = [ 1 ]
+    r1 = Ref.make l
+    r2 = Ref.make l
+    _ = Task.spawn λ⊤ → Ref.update r1 λx → List.push x 5
+    _ = Task.spawn λ⊤ → Ref.update r2 λx → List.push x 6
+    Task.sleep (Duration.millis 5)
+    "${ints (Ref.get r1)} ${ints (Ref.get r2)}"
+
+
+setAfter : ⊤ → String
+setAfter ⊤ =
+    r1 = Ref.make [ 1 ]
+    r2 = Ref.make [ 0 ]
+    _ = Task.spawn λ⊤ → Ref.update r1 λx → List.push x 5
+    _ = Task.spawn λ⊤ → Ref.update r2 λx → List.push x 6
+    Ref.set r2 (Ref.get r1)
+    Task.sleep (Duration.millis 5)
+    "${ints (Ref.get r1)} ${ints (Ref.get r2)}"
+
+
+updAfter : ⊤ → String
+updAfter ⊤ =
+    r1 = Ref.make [ 1 ]
+    r2 = Ref.make [ 0 ]
+    _ = Task.spawn λ⊤ → Ref.update r1 λx → List.push x 5
+    _ = Task.spawn λ⊤ → Ref.update r2 λx → List.push x 6
+    Ref.update r2 λ_ → Ref.get r1
+    Task.sleep (Duration.millis 5)
+    "${ints (Ref.get r1)} ${ints (Ref.get r2)}"
+
+
+raced : ⊤ → String
+raced ⊤ =
+    l = [ 1 ]
+    r1 = Ref.make l
+    r2 = Ref.make l
+    w1 =
+        λ⊤ →
+            Ref.update r1 λx → List.push x 5
+            Task.sleep (Duration.millis 2)
+    w2 =
+        λ⊤ →
+            Ref.update r2 λx → List.push x 6
+            Task.sleep (Duration.millis 3)
+    Task.race w1 w2
+    "${ints (Ref.get r1)} ${ints (Ref.get r2)}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ madeOfOne ⊤
+        , setAfter ⊤
+        , updAfter ⊤
+        , raced ⊤
+        ]

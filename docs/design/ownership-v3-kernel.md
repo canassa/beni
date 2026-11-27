@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value); §11 item 11 added the same day (*A closure writes a field of a record it captured*, *The order of a callee's runs*, #2657); §7.1 added 2026-11-27 (#2549). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value); §11 item 11 added the same day (*A closure writes a field of a record it captured*, *The order of a callee's runs*, #2657); §6 rule 12, §8, §9 and §13 item 12 revised the same day (#2712: each latent gap code readers CR14 and CR15 found closed by its own rule); §7.1 added 2026-11-27 (#2549). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1569,11 +1569,21 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     and the handler holds none of what it reads: its run is a call, made at the event, whose answer,
     the message, escapes (the runtime sends it to `update`, and can queue it behind a dispatch). The
     checker reads an event so where three positive facts hold, and keeps the handler otherwise:
-    1. the markup is the whole body of a function — a declaration, or a lambda — whose module
-       names it only as a field, whose type answers markup, of a record written as the one
-       argument of a call of an entry (rule 13): no other instruction names the declaration, no
+    1. the markup is the whole body of a function — a declaration, or a lambda — that one of two
+       positive facts names (`Mod.viewRoots`): (a) its module names it only as a field, whose type
+       answers markup, of a record written as the one argument of a call of an entry (rule 13);
+       or (b) it is a declaration its module names nowhere, which other modules show, and each
+       of them names it only as a piece of a view's markup: the callee of the value of a hole (a call, or a method call whose site names it)
+       that one of its own view roots reaches through elements and fragments alone, or the
+       first argument of an `Html.map` call that is one, at any depth (`Mod.checkPieces`; the
+       module publishes (b)'s declarations, `Published.views`, and an importer refuses every
+       other reference to one, `call`, a method call elsewhere and every evidence term that names one among them). In both, no other instruction names the declaration, no
        method call or evidence of the module names it (the `Dispatch` terms), no `via` keeps a
-       name unresolved, and the build is not `--library`;
+       name unresolved, and the build is not `--library`. *Amended 2026-11-27 (#2712, code
+       reader CR15's U2):* before, (b) was the absence of other names alone, and only the
+       `inline` lowering's own limits (another module's function stands only as pieces) kept a
+       `pub` helper out of a row, an arm or a helper's call that keeps a render's closures
+       (`check/bad/inline/ViewOfAnotherModuleInRow`);
     2. the lowering says, of that event, that it reads the handler where the event fires
        wherever it writes such a root (`Lowering.reads_handler_at_event`, `boundary.md` §9.4.8,
        *A handler read at the event*; its default keeps every handler). `inline` says so of an
@@ -2012,9 +2022,17 @@ it is the same as a new walk makes.** Four rules keep that true.
 3. **The entry holds v3's block** (`own3/Block.zig`), in the `ownership` section of the cache entry:
    - the module's contracts as its importers read them (`Contract.Published`): each layout, each
      contract with the functions that it answers and their contracts (`Contract.Made`), each fact of
-     a derived method, which bodies reach JavaScript, and whether the module can keep a message;
-   - the lowering channel (`own2/Hoists.Table`) and the reads that the lowering reads first
-     (`Reads.Read`, §11 item 10).
+     a derived method, which bodies reach JavaScript, whether the module can keep a message, and
+     which declarations an importer may name only as a piece of a view (`Published.views`);
+   - the lowering channel (`own2/Hoists.Table`), the reads that the lowering reads first
+     (`Reads.Read`, §11 item 10), and the calls that write a record argument in place
+     (`Driver.record_calls`). Whether each record update of the module is accepted
+     (`Driver.records_in_place`) is read off the channel again, as the walk reads it.
+
+   Each thing that a walk leaves for a later phase is in the block or is made again from it. A walk
+   that leaves a new one without that gives a build with the cache another output than a build with
+   none; the build sweeps of `bench/ownership-v3-cache.mjs` compare the two, with and with no
+   ownership flag.
 
    A block holds no id of a session. A field is written as its name, not its text rank, a type as
    its package, its module and its name, not its `TypeId`, and the module of a declaration that a
@@ -2064,7 +2082,11 @@ paths:
 - **`flow` judges each function once for each use** (`FlowKey`). A judgment reads the function, the
   holder's contract, the capture, the captured values, and two facts of the use above, set where the use
   is made: whether it is the default, and whether a holder above writes what it handed on
-  (`Use.up_rewrites`). A judgment that read nothing else above its own use is kept for the rest of the
+  (`Use.up_rewrites`). The key holds every fact of the use a judgment reads, those no use that reaches
+  `flow` sets today among them (a use of held functions, `Use.held`; the frame's own held draft,
+  `Use.di`; an entry's default, `Use.entry`; *amended 2026-11-27*, #2712): a key that left one out would
+  hand one use another's judgment the day a use with it reached `flow`, and that must not rest on
+  where `flow` is called from. A judgment that read nothing else above its own use is kept for the rest of the
   walk, and an equal use reaches it again for free. A judgment that read more is judged again on each
   path: one that read the use above it (`upOf`), a key (`freshAtom`: a key names the whole path of
   holders), a draft of the frame's own function, or what an answer was handed (both grow while the walk
@@ -2073,6 +2095,25 @@ paths:
 - **A walk of values** (`leaves`, `leavesOwn`, `reach`) walks each value once for each set of entries
   in one walk, and copies what it found, without repeats, where it reaches the value again. The atoms of
   a value are a set and its `dup` is its own, so the copy is what a second walk would find.
+- **A call reads each location of an operand once for all the locations that it writes**
+  (`Frame.otherLeaves`; #2567). Each write of a call is tested against each other location of each
+  operand (§5, test 2), and the test read that location's atoms again for each write: a callee that
+  writes `w` locations of an argument of `w` locations read `w²` of them, in each round of a recursive
+  group. *A loop over a `case` of 13 constructors with two lists each, `loop t k = if k ≤ 0 then t else
+  loop (step t) (k - 1)`, took 26 rounds of 26 × 26 reads and passed its budget.* While the writes of
+  one call are judged, the walk makes no value and changes no entry of a root, and each of these writes
+  is judged in one context and at one time (`judge_ctx`, `judge_at`). So the atoms of a location are
+  the same for each of them: the first read is kept until the call's last write is judged, and each
+  later read copies it, 1 unit and 1 for each atom. A call that writes one location keeps nothing: it
+  reads each other location once. A read that walks a function value or a value of
+  no claim is not kept (what it holds can grow while the walk runs), and neither is a read under a set
+  of the callee's paths (§13 item 13). A safe build reads the location again at each copy, and the
+  two agree (§9).
+- **A limit in the dump.** `dump --stage=ownership` counts each `limit` line of a module as one pending
+  demand, in the module's `demands` line and in the `total` line, and keeps the `limits` line
+  (`Enforce.writeReport`; #2567). The walk that passed the limit judged no write, and a build of the
+  program stops on it. *Before, a total of `pending 0, rejected 0` stood beside `limits 1`, and read as
+  a program that a build accepts.*
 - **`flow` follows every use, at any depth.** Before report 127 a use deeper than 16 went to the
   `top` use and the depth started again at 0, so the bound bounded nothing, and the use's supplies never
   escaped: a list handed down 18 closures to one that kept it was written in place. A walk is bounded by
@@ -2570,6 +2611,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | the index of a call map read the other way says what a scan of it says, for maps of at most 64 entries | `Frame.coverHits` | §6.2, §8 |
 | the scan of an answer's map, the other map read once, says what `answersAt` says, for layouts of at most 64 entries | `Frame.AnswersAt.check` | §8 |
 | a run that a read skips as old holds only old names, for runs of at most 64 atoms | `Frame.runReaches` | §5.1, §8 |
+| an entry that a write gave a new name (`.version`) keeps its old names beside it, with `dead` set: every atom of the storage of a push or an update is old, and a location a callee wrote and answers keeps at least one old name where it had any (code reader CR14's U1). The check counts no work | `Frame.checkOldNames`, where each such entry is made | §5.1, §13 item 12 (e) |
 | the entries whose runs `rootReach` reads, listed once, are the ones a scan of every entry finds | `Frame.runEntries` | §8 |
 | the pre-pass's edges of each declaration are `Edges.declEdges`', each target at its first place, for a dispatch table of at most 4 096 terms | `own2/TopEdges.crossCheck` | §8 |
 | a location of a frame's result with no source holds no cell in the entry of the result value's own layout that holds its cells (the wide entry above it, `Loc.holes`): its emptiness comes from a rule, not from a reading that had no step for it; the check counts no work | `Frame.checkEmpty`, in `finish` | §3.4 |
@@ -2582,6 +2624,7 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | a worded declaration whose body reaches no JavaScript has a walk's contract below its words' contract: every fact a caller reads of the walk (a flag of a parameter location, a source of a result location, `nonlinear`, `casts`, `old_result`, a function parameter's supply, `free`, `called`, `lost`, `ans_escapes`, `rewrites`), the words say too, or something more pessimistic. It runs in **every** build, not only a safe one, and it **refuses**, `false_ownership_word` at the declaration's name, where the other checks of this table panic: a false word is the platform author's mistake, not a drift of this text from the code. It counts no work. An edge to JavaScript counts only where the walk's values let it see a cell the contract describes (a value handed to the call that holds a parameter's location, a root the answer holds, a cast), and an alias is compared with the contract of the function it names. In a module of core, a new cell at a type variable is none where the walk does not cast. Before research report 162 a worded body's contract was its words whatever its walk found; before research report 164 a call of `round` on a `Float` turned the check off, and an alias was never compared (`run/WordedBodyFalse`) | `Check.falseWord`, `Check.aliasWord`, `Check.reachesJs`, `Frame.judgeJsSites`, at the end of `checkModule` | §6 rule 10, §7 |
 | a row of core outside `Js` whose words name a new cell at a type variable of its result is one of `Check.core_phantoms` (`List.builder`, `Dict.keyIndex`, `Dict.empty`, `Record.copy`, `Task.raceOk`, `Task.timeout`), each of which makes none there: the check of core's worded bodies reads such a cell as none (`Check.phantomAt`). With a row of core that answers a real cell at a type variable, that reading would let a false word of core pass. It counts no work | `Check.checkCorePhantoms`, in `wordedContract` | §6 rule 10 |
 | `slotHeld`'s index of a layout's record slots answers what a scan of the layout answers, for layouts of at most 256 entries | `Frame.slotHeld` | §3.4, §8 |
+| the atoms of an operand's location that a call kept for its later writes are the atoms that a new read of the location finds; the check counts no work | `Frame.otherLeaves` | §5, §8 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 | each check of this table that counts no work restores every count it could change (the declaration's steps, the module's units, `Loc.Table.units`, the walk's give-up), and builds nothing that a later step reads by key or by index: no entry of the location table (a location, a layout, a projection, a path, a map, a memo's answer; `Loc.Table.no_fill`), no place, and no node, root or memo entry of the frame: each list and map of `Frame.quiet_parts` keeps its length (an answer a check could write into a slot made before it is not compared; no check reaches one today). A walk of leaves inside such a check tags no atom with the context of a join's arm, so it builds no meeting of two arms (`meet`, an entry of `Frame.ctxs`); no check reads an atom's context. Nor does it keep a closure's atoms for the reads after `finish` (`Frame.whole_at`). A check that reads again what a step read walks it by that step's route: `Frame.checkMadeEscaped` reads a join arm by arm, each at its own place, as the escape it checks did (`Frame.madeLeaves`). Before, it read the join whole, at the join's place: where a `Js.Value` was made in two `if`s in a row it built the meeting of their arms, and where an arm was a list (`if c then Js.from [ x ] else Js.null`) a map of the two layouts, and safe builds panicked (`run/JsJoinAtVar`, `run/JsJoinOfList`; master's `browser-inline` code reaches the first in every build). A later lookup of an entry a check built would be free in the safe build and counted in a release build, so the two would read the budget differently. So a safe build reaches a release build's verdicts, limits included; a check that would build such an entry panics | `Check.Mod.quiet`, `Frame.quiet`, `Loc.Table.building` | §8 |
 
@@ -2777,6 +2820,18 @@ What the lowering does with an accepted update is `backend.md` §4's: `(r.f₁ =
 value first. The oracle (research report 142) writes each update that v3 accepted in place under
 `--lists-in-place`, and under `--sanitize-lists` copies it and poisons, on every older name of the
 object, each field whose value an in-place store would change; `Js.same` traps two names of one object.
+
+A build that v3 judges with no oracle (`boundary.md` §5.2, `"ownership": "v3"`) also gets two facts per
+module from v3's lines, which v1's clean table gives a build that v1 judges (`ownership-checker.md`
+§31.10) (*added 2026-11-27, #2724*). The first: every `record_update` of the module is an update
+that v3 accepted, so the lowering writes each in place (`Check.records_in_place`). Only then does
+the lowering trust that an update keeps its base's object: a nested update skips the store of its
+field's own object, a callee answers its argument's object, and the write-set pass keeps a model
+key's object (`Writes.Input.in_place`). A module with a refused line or a limit, core and the
+platforms publish no write, so this fact is false for each of them that holds an update. The second:
+the calls at which v3 accepted a write of a record argument in place, which the lowering marks as
+stores (`Check.record_calls`, `JsIr.Node.stores`), so that the release optimiser never drops one
+whose answer is not read. Neither fact changes a verdict.
 
 ## 12. Dictionaries written in place
 
@@ -3433,14 +3488,27 @@ contents of a cell are locations, and that a call can change what a location of 
       two positions of one match of a list are two cells). Three checks read it. A run of a writer,
       and a closure run within a call (item 11), that writes a location of its captured cell's
       contents is refused (`disjoint`) where another location of the contents that can hold the
-      same cell (`sameCellAt`) holds a cell of the written one now (`heldAtOther`): the write
-      changes both, and a holder reads the other under the name it has there. The pairs
+      same cell (`sameCellAt`) holds a cell of the written one now (`heldAtOther`), or where the
+      contents of another cell the frame follows (a handle a call answered, or one of a tracked
+      parameter or capture, at its latest version, whoever holds it) hold one (`heldInOtherCell`):
+      the write changes both, and a holder reads the other under the name it has there.
+      *Amended 2026-11-27 (#2712, code reader CR14's U2):* before, only one cell's contents were
+      compared, and one list in two cells was refused only because every way to put it in both
+      after the writers were made is an operand of a switch point (`Ref.set r2 (Ref.get r1)`,
+      `Ref.update r2 λ_ → Ref.get r1`; `run/CellTwoCellsOneListLive`). The pairs
       `heldTwiceAfterRuns` searches meet where two entries hold one cell now, as well as where both
       steps name one entry (`StartCells`): a renewal before the runs can have put one cell at two
       places. And the fixed point's state is the map from each location to its cells ((b)). The other
       test of two atoms, `overlap`, reads the root, the entry and the path, which name the cell
-      already: a version holds its origin's atoms (`versionOf`: every entry an alias) and no atom of
-      its own name, and `overlap` passes over `via`, `dead`, `ren` and the arm; `dupOverlap` tells two
+      already: a version holds its origin's atoms (`versionOf`: every entry an alias), and an entry
+      that a write gave a new name (`.version`, §5.1: a location a callee wrote and answers,
+      `renewHandleOf`; the storage of a push or an update) holds an atom of that new name **and its
+      old names beside it, each with `dead` set** (`oldNames`). So `overlap`, which compares by
+      name, meets a holder of the old cells through the old names, and a new name is never the only
+      name of a cell that had one; safe builds check that every such entry keeps them
+      (`checkOldNames`, §9; *amended 2026-11-27*, code reader CR14's U1: before, this text said a
+      version holds no atom of its own name, which `renewHandleOf` never kept). `overlap` passes
+      over `via`, `dead`, `ren` and the arm; `dupOverlap` tells two
       readings apart through a root only where that root's own atoms say its parts are apart
       (`linear`, `viaApart`). Before,
       each writer's write was judged at its own location (`argLeaves`' answer for that location
@@ -3969,6 +4037,20 @@ contents of a cell are locations, and that a call can change what a location of 
         the other function is code the walk does not know, a list of them, or a function the callee
         hands to another (`midRunner`: `defaultParams`). It is the pessimistic side, in either order,
         as the pair is: `twoCalls h (λ⊤ → Task.withScheduler s …)` marks `h` too.
+        *Amended 2026-11-27 (#2712, code readers CR14 and CR15): each way closes by its own rule.*
+        Two cells of the table were closed only by another rule, the default use that a hosting
+        function meets on its way into a value. *Row 4, Up*: a field called as a method whose
+        function is beni code is applied with that function's contract (`fieldCall`), and that
+        contract's `hosts` and `hosts_forked` are read as at any call of known code (`knownRuns`);
+        so is a function the markup runtime runs where it renders (a `For` row, `runtimeCall`) and a
+        handler read at its event (`eventCall`), and a call there of the frame's own function
+        parameter notes `runs_on` with no contract, as row 1's call does. Before, only `noteRunsOn`
+        ran there (CR15's U1; `check/bad/inline/HostingFunctionInField`). *Row 5, Up*: evidence
+        with no fact (a method bound to a value, `pub go = hostGo`; a declaration of a module the
+        table does not name; a derived method with no published fact; a row past the budget) is
+        code that can host: every fallback of `Mod.edgeEffect` says `hosts`, so `evidenceAt` refuses
+        it as hosting evidence by its own rule (CR14's U3;
+        `check/bad/inline/HostingEvidenceBoundToValue`).
       - **The ways in, from the code** (*added 2026-11-24, #2653*). The table lists the ways a
         function value enters a frame; this list is every place in `core/` and the platforms'
         runtimes where the runtime parks the calling fiber masked or lends it, or runs a function

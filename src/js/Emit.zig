@@ -750,7 +750,7 @@ pub fn run(
     {
         const hs = e.session.checked.hoists;
         const clean = try e.scratch.alloc(bool, hs.len);
-        for (clean, hs) |*c, h| c.* = h.clean and e.session.enforce_ownership;
+        for (clean, hs, 0..) |*c, h, i| c.* = (h.clean and e.session.enforce_ownership) or e.recordsInPlaceV3(i);
         e.clean_modules = clean;
     }
     // Whether v2 checked every module of the program whole: then every
@@ -4247,7 +4247,7 @@ const Emitter = struct {
         // (`ownership-checker.md` §31.10), for a lowering that holds a root's
         // slice (`browser-inline.md` §8.4, amended 2026-10-22).
         const in_place = try a.alloc(bool, n);
-        for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
+        for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and ((i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership) or e.recordsInPlaceV3(i));
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .graph = e.graph(),
@@ -4272,6 +4272,18 @@ const Emitter = struct {
         e.writes_calls = try w.runCalls();
         e.writes_effects = effects;
         e.writes_birs = birs;
+    }
+
+    /// Whether module `i`'s record updates are all written in place by the
+    /// checker v3's verdicts (`Check.records_in_place`): a build of a chain
+    /// v3 judges, with no oracle (`Lower.Input.records_v3_plain`), of a
+    /// module whose every update v3 accepted. v1's clean table is the same
+    /// fact for a build v1 judges (§31.10).
+    fn recordsInPlaceV3(e: *const Emitter, i: usize) bool {
+        const s = e.session;
+        if (!s.ownership_v3_platform or !s.enforce_ownership) return false;
+        if (e.options.sanitize_lists or e.options.lists_in_place or e.options.sanitize_records) return false;
+        return i < s.checked.records_in_place.len and s.checked.records_in_place[i];
     }
 
     /// `browser-inline.md` §7: the pieces program sites lift — every
@@ -7523,6 +7535,8 @@ const Emitter = struct {
                 .identity_trap = e.options.sanitize_lists,
                 .records_v3 = e.session.options.ownership_v3 and (e.options.sanitize_lists or e.options.lists_in_place or (e.session.ownership_v3_platform and e.session.enforce_ownership)),
                 .records_v3_plain = e.session.ownership_v3_platform and e.session.enforce_ownership and !e.options.sanitize_lists and !e.options.lists_in_place,
+                .records_clean_v3 = e.recordsInPlaceV3(m.int()),
+                .v3_record_calls = if (e.session.ownership_v3_platform and e.session.enforce_ownership and !e.options.sanitize_lists and !e.options.lists_in_place and m.int() < e.session.checked.record_calls.len) e.session.checked.record_calls[m.int()] else &.{},
                 .v3_reads = if (e.session.options.ownership_v3 and e.session.enforce_ownership and m.int() < e.session.checked.hoist_reads.len) e.session.checked.hoist_reads[m.int()] else &.{},
                 .sanitize_runtime = slot.sanitize_runtime,
                 .clean_modules = e.clean_modules,

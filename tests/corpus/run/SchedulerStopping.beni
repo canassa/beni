@@ -2,7 +2,10 @@
 -- (transparent-effects-proposal.md §17.5, amended 2026-10-22). While its
 -- teardown runs a member's release, a fiber that enters it with
 -- `withScheduler` is cancelled at once, before its work runs; `done` comes
--- after the release, with no cleanup cut short.
+-- after the release, with no cleanup cut short. The release waits for
+-- `gate`, which the main fiber completes once it has seen the late fiber's
+-- end, so the order does not depend on the machine's speed.
+import Deferred
 import Duration
 import Io
 import Node exposing (Program)
@@ -32,13 +35,14 @@ report cut =
 main : Program
 main = Io.run λ⊤ →
     s = Task.scheduler λ⊤ → ⊤
+    gate = Deferred.make ⊤
 
     member = Task.spawn λ⊤ →
         Task.withScheduler s λ⊤ →
             Task.bracket
                 (λ⊤ → ⊤)
                 (λ_ _ →
-                    Task.sleep (Duration.millis 20)
+                    Deferred.wait gate
                     say "release done"
                 )
                 λ_ → Task.never ⊤
@@ -47,9 +51,10 @@ main = Io.run λ⊤ →
     Task.stopScheduler s 1000 report
 
     late = Task.spawn λ⊤ →
-        -- The stop's teardown has run by now, and the release sleeps.
+        -- The stop's teardown has run by now, and the release waits for `gate`.
         Task.sleep (Duration.millis 1)
         Task.withScheduler s λ⊤ → say "late inside"
     _ = Debug.log "late" (outcome (Task.wait late))
+    _ = Deferred.complete gate ⊤
     _ = Debug.log "member" (outcome (Task.wait member))
     Node.done

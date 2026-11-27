@@ -320,6 +320,12 @@ pub const Mod = struct {
     /// of a function its module names only as a program's `view`
     /// (`viewRoot`), made once.
     view_roots: ?[]bool = null,
+    /// Per declaration, whether `viewRoots` reads it as a view's root by
+    /// fact 1 (b), with no entry of its module naming it (`Published.views`).
+    view_absent: ?[]bool = null,
+    /// Per instruction, whether it is the value of a field of an entry's
+    /// record whose type answers markup (`viewRoots`).
+    view_fields: ?[]bool = null,
     /// `Options.schema_graph`.
     schema_graph: ?*const SchemaGraph = null,
     /// Per definition, whether its decoding runs answer what their workers
@@ -1664,74 +1670,230 @@ pub const Mod = struct {
     }
 
     /// Kernel §6 rule 12, *A handler read at the event*: whether the `markup`
-    /// instruction `inst` is the whole body of a function that the module
-    /// names only as the `view` of a program's record — a declaration whose
-    /// body, or whose lambda's body, is `inst`, every reference to which is
-    /// the value of a field of a record written as the one argument of a
-    /// call of an entry (a function whose contract is `entry`), where the
-    /// field's type answers markup; or a lambda written as that value. The
+    /// instruction `inst` is the whole body of a function that is named
+    /// only as the `view` of a program's record (`viewRoots`), in a build
+    /// whose lowering reads some handler at its event.
+    pub fn viewRoot(m: *Mod, inst: u32) Allocator.Error!bool {
+        if (m.handlers_at_event.len == 0) return false;
+        const roots = try m.viewRoots();
+        return inst < roots.len and roots[inst];
+    }
+
+    /// Per instruction, whether it is a `markup` root of a view (kernel §6
+    /// rule 12, *A handler read at the event*, fact 1): the whole body of a
+    /// function, a declaration whose body or whose lambda's body it is, or
+    /// a lambda, named by one of two positive facts. (a) Its module writes
+    /// it as the value of a field of a record written as the one argument
+    /// of a call of an entry (a function whose contract is `entry`), where
+    /// the field's type answers markup, and names the declaration nowhere
+    /// else. (b) It is a declaration its module names nowhere, which
+    /// another module shows: each importer reads it only as a piece of a
+    /// view's markup, and refuses any other reference to it (`checkPieces`;
+    /// the module publishes (b)'s declarations, `Published.views`). The
     /// lowering's answer (`Options.handlers_at_event`) is for such a root
     /// alone: anywhere else a lowering can write the root inside a row, an
-    /// arm or a helper's call, where it keeps what a render made. No
-    /// method call or evidence of the module may name the declaration
-    /// (`Dispatch` terms), a `via` that keeps a name unresolved
-    /// (`schema_value_ref`, `schema_expr_ref`) may name any, and in a
-    /// `--library` build host JavaScript calls what the module exports: then
-    /// no root is one.
-    pub fn viewRoot(m: *Mod, inst: u32) Allocator.Error!bool {
-        if (m.handlers_at_event.len == 0 or m.library) return false;
-        const roots = m.view_roots orelse blk: {
-            const r = try m.arena.alloc(bool, m.tags.len);
-            @memset(r, false);
-            m.view_roots = r;
-            // The values of the fields of an entry's record whose type
-            // answers markup.
-            const field = try m.arena.alloc(bool, m.tags.len);
-            @memset(field, false);
-            var unresolved = false;
-            for (m.tags, m.datas) |t, data| switch (t) {
-                .call => {
-                    const callee = m.calleeOf(data.lhs) orelse continue;
-                    // An entry is a platform's function, never one of this module.
-                    if (callee[0] == m.in.module) continue;
-                    const c = (try m.declContract(callee)) orelse continue;
-                    if (!c.entry) continue;
-                    const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
-                    if (args.len != 1 or m.tags[args[0].int()] != .record) continue;
-                    for (m.bir.extraSlice(Bir.inlineRange(m.datas[args[0].int()]), Bir.Field)) |fd| {
-                        const ft = m.fnType(m.typeOfInst(fd.value.int())) orelse continue;
-                        if (m.isMarkup(ft.result.toOptional())) field[fd.value.int()] = true;
-                    }
-                },
-                .schema_value_ref, .schema_expr_ref => unresolved = true,
-                else => {},
-            };
-            if (unresolved) break :blk r;
-            // A declaration named anywhere else is no view's.
-            const named = try m.arena.alloc(bool, m.bir.decls.len);
-            @memset(named, false);
-            for (m.tags, m.datas, 0..) |t, data, i| if (t == .top and data.lhs < named.len and !field[i]) {
-                named[data.lhs] = true;
-            };
-            if (m.in.dispatch) |dt| for (dt.terms) |term| switch (term) {
-                .top => |u| if (u.decl.int() < named.len) {
-                    named[u.decl.int()] = true;
-                },
-                .param, .ext, .derived, .ext_derived, .primitive, .undetermined, .field, .identity, .text, .codec => {},
-            };
-            for (m.bir.decls, 0..) |d, di| {
-                if (d.kind != .value or named[di]) continue;
-                const body = (d.body.unwrap() orelse continue).int();
-                const root = if (d.params != 0) body else if (m.tags[body] == .lambda) m.datas[body].rhs else continue;
-                if (root < r.len and m.tags[root] == .markup) r[root] = true;
-            }
-            for (field, 0..) |is, i| if (is and m.tags[i] == .lambda) {
-                const root = m.datas[i].rhs;
-                if (root < r.len and m.tags[root] == .markup) r[root] = true;
-            };
-            break :blk r;
+    /// arm or a helper's call, where it keeps what a render made. No method
+    /// call or evidence of the module may name the declaration (`Dispatch`
+    /// terms), a `via` that keeps a name unresolved (`schema_value_ref`,
+    /// `schema_expr_ref`) may name any, and in a `--library` build host
+    /// JavaScript calls what the module exports: then no root is one.
+    /// Before, (b) was the absence of other names alone, and only the
+    /// lowering's own limits kept another module's function out of a row,
+    /// an arm or a helper's call (code reader CR15's U2).
+    fn viewRoots(m: *Mod) Allocator.Error![]const bool {
+        if (m.view_roots) |r| return r;
+        const r = try m.arena.alloc(bool, m.tags.len);
+        @memset(r, false);
+        m.view_roots = r;
+        const absent = try m.arena.alloc(bool, m.bir.decls.len);
+        @memset(absent, false);
+        m.view_absent = absent;
+        if (m.library) return r;
+        // The values of the fields of an entry's record whose type
+        // answers markup.
+        const field = try m.arena.alloc(bool, m.tags.len);
+        @memset(field, false);
+        var unresolved = false;
+        for (m.tags, m.datas) |t, data| switch (t) {
+            .call => {
+                const callee = m.calleeOf(data.lhs) orelse continue;
+                // An entry is a platform's function, never one of this module.
+                if (callee[0] == m.in.module) continue;
+                const c = (try m.declContract(callee)) orelse continue;
+                if (!c.entry) continue;
+                const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
+                if (args.len != 1 or m.tags[args[0].int()] != .record) continue;
+                for (m.bir.extraSlice(Bir.inlineRange(m.datas[args[0].int()]), Bir.Field)) |fd| {
+                    const ft = m.fnType(m.typeOfInst(fd.value.int())) orelse continue;
+                    if (m.isMarkup(ft.result.toOptional())) field[fd.value.int()] = true;
+                }
+            },
+            .schema_value_ref, .schema_expr_ref => unresolved = true,
+            else => {},
         };
-        return inst < roots.len and roots[inst];
+        m.view_fields = field;
+        if (unresolved) return r;
+        // A declaration named anywhere else is no view's.
+        const named = try m.arena.alloc(bool, m.bir.decls.len);
+        @memset(named, false);
+        const by_entry = try m.arena.alloc(bool, m.bir.decls.len);
+        @memset(by_entry, false);
+        for (m.tags, m.datas, 0..) |t, data, i| if (t == .top and data.lhs < named.len) {
+            if (field[i]) by_entry[data.lhs] = true else named[data.lhs] = true;
+        };
+        if (m.in.dispatch) |dt| for (dt.terms) |term| switch (term) {
+            .top => |u| if (u.decl.int() < named.len) {
+                named[u.decl.int()] = true;
+            },
+            .param, .ext, .derived, .ext_derived, .primitive, .undetermined, .field, .identity, .text, .codec => {},
+        };
+        for (m.bir.decls, 0..) |d, di| {
+            if (d.kind != .value or named[di]) continue;
+            const body = (d.body.unwrap() orelse continue).int();
+            const root = if (d.params != 0) body else if (m.tags[body] == .lambda) m.datas[body].rhs else continue;
+            if (root < r.len and m.tags[root] == .markup) {
+                r[root] = true;
+                if (!by_entry[di]) absent[di] = true;
+            }
+        }
+        for (field, 0..) |is, i| if (is and m.tags[i] == .lambda) {
+            const root = m.datas[i].rhs;
+            if (root < r.len and m.tags[root] == .markup) r[root] = true;
+        };
+        return r;
+    }
+
+    /// Kernel §6 rule 12, *A handler read at the event*, fact 1 (b): a
+    /// reference to another module's declaration that its module reads as
+    /// a view's root with no entry of its own naming it (`Published.views`)
+    /// is the callee of a call that is a piece of a view's markup here: the
+    /// value of a hole that a view root of this module (`viewRoots`)
+    /// reaches through elements and fragments alone, or the first argument
+    /// of an `Html.map` call that is one, at any depth. Any other reference
+    /// is refused at it: there a lowering can keep a closure of a render in
+    /// a row, an arm or a helper's call, which the other module read as
+    /// none. The `inline` lowering refuses each such place too; this check
+    /// does not rest on that (code reader CR15's U2).
+    fn checkPieces(m: *Mod) Allocator.Error!void {
+        const units = m.loc.units;
+        defer m.loc.units = units;
+        const dt = m.in.dispatch;
+        var any = false;
+        for (m.tags, 0..) |t, i| if (t == .ext_value and m.isPublishedView(@intCast(i))) {
+            any = true;
+            break;
+        };
+        // A method call, or evidence, of the module can name one too (a
+        // `Dispatch` term, with no `ext_value` instruction).
+        if (!any) if (dt) |d| for (d.terms) |term| switch (term) {
+            .ext => |u| if (m.isPublishedViewOf(u.module.int(), @backingInt(u.value))) {
+                any = true;
+                break;
+            },
+            else => {},
+        };
+        if (!any) return;
+        const ok = try m.arena.alloc(bool, m.tags.len);
+        @memset(ok, false);
+        const roots = try m.viewRoots();
+        for (roots, 0..) |is, i| if (is) m.markPieces(@fromBackingInt(m.datas[i].lhs), ok);
+        // A program's own record names another module's view as its `view`:
+        // that root is the page, which fact 1 (a) reads where it is written.
+        if (m.view_fields) |fields| for (fields, 0..) |is, i| if (is) {
+            ok[i] = true;
+        };
+        for (m.tags, 0..) |t, i| if (t == .ext_value and !ok[i] and m.isPublishedView(@intCast(i))) {
+            try m.refusePiece(@intCast(i), if (m.calleeOf(@intCast(i))) |x| try m.refName(x) else "<value>");
+        };
+        // A method call is a piece where its site's instruction is one
+        // (`markPiece`); a view named in evidence, or in the evidence a
+        // site hands its callee, is never one.
+        const d = dt orelse return;
+        for (d.sites) |site| {
+            const at = site.inst.int();
+            var bad = false;
+            if (site.callee.unwrap()) |ti| {
+                if (m.termIsView(d, ti) and !ok[at]) bad = true;
+                if (try m.namesView(d, d.term(ti).argsOf(), 0)) bad = true;
+            }
+            if (try m.namesView(d, site.evidence, 0)) bad = true;
+            if (bad) try m.refusePiece(at, "<method call>");
+        }
+    }
+
+    fn refusePiece(m: *Mod, inst: u32, base: []const u8) Allocator.Error!void {
+        try m.lines.append(m.gpa, .{ .inst = inst, .token = m.tokens[inst], .kind = .callsite, .op = "value", .base = base, .refused = true, .cause = .call, .detail = "another module's view, whose handlers it reads where their event fires, is used here as no piece of a view's markup: a lowering can keep what a render of it made" });
+    }
+
+    /// Whether dispatch term `ti` names another module's published view.
+    fn termIsView(m: *const Mod, dt: *const Dispatch, ti: Dispatch.TermIndex) bool {
+        return switch (dt.term(ti)) {
+            .ext => |u| m.isPublishedViewOf(u.module.int(), @backingInt(u.value)),
+            else => false,
+        };
+    }
+
+    /// Whether a term of the run `r` of `dt.args`, or one below it, names
+    /// another module's published view.
+    fn namesView(m: *const Mod, dt: *const Dispatch, r: Dispatch.Range, depth: u32) Allocator.Error!bool {
+        if (depth > 64) return true;
+        for (dt.argsAt(r)) |ti| {
+            if (m.termIsView(dt, ti)) return true;
+            if (try m.namesView(dt, dt.term(ti).argsOf(), depth + 1)) return true;
+        }
+        return false;
+    }
+
+    /// Whether the `ext_value` instruction `inst` names a declaration its
+    /// module publishes as a view root of fact 1 (b) (`Published.views`).
+    fn isPublishedView(m: *const Mod, inst: u32) bool {
+        const d = m.datas[inst];
+        return m.isPublishedViewOf(d.lhs, d.rhs);
+    }
+
+    fn isPublishedViewOf(m: *const Mod, module: u32, value: u32) bool {
+        if (module >= m.in.provenance.len or module >= m.shared.published.len) return false;
+        const decl = (m.in.provenance[module].valueDecl(value) orelse return false).int();
+        const p = m.shared.published[module] orelse return false;
+        return decl < p.views.len and p.views[decl];
+    }
+
+    /// `checkPieces`: the callees of the pieces that markup node `root`
+    /// reaches through elements and fragments alone.
+    fn markPieces(m: *const Mod, root: Bir.ExtraIndex, ok: []bool) void {
+        const bir = m.bir;
+        switch (bir.markupKind(root)) {
+            .element => {
+                const e = bir.extraData(root, Bir.MarkupElement);
+                for (bir.extraSlice(.{ .start = e.children_start, .end = e.children_end }, Bir.ExtraIndex)) |c| m.markPieces(c, ok);
+            },
+            .fragment => {
+                const fr = bir.extraData(root, Bir.MarkupFragment);
+                for (bir.extraSlice(.{ .start = fr.children_start, .end = fr.children_end }, Bir.ExtraIndex)) |c| m.markPieces(c, ok);
+            },
+            .hole => m.markPiece(bir.extraData(root, Bir.MarkupHole).value.int(), ok, 0),
+            .component, .text, .@"for", .show => {},
+        }
+    }
+
+    /// `markPieces`: the hole value `v` is a piece where it calls a function
+    /// of another module, or a method (its site's callee is one), or is an
+    /// `Html.map` of one.
+    fn markPiece(m: *const Mod, v: u32, ok: []bool, depth: u32) void {
+        if (depth > 16) return;
+        if (m.tags[v] == .method_call) {
+            ok[v] = true;
+            return;
+        }
+        if (m.tags[v] != .call) return;
+        const callee = m.datas[v].lhs;
+        if (m.tags[callee] != .ext_value) return;
+        ok[callee] = true;
+        // `Html.map piece f`: the piece is its first argument.
+        const t = m.calleeOf(callee) orelse return;
+        if (t[0] >= m.names.module_names.len or !std.mem.eql(u8, m.names.module_names[t[0]], "Html") or !std.mem.eql(u8, m.names.declName(t[0], t[1]), "map")) return;
+        const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(m.datas[v].rhs)), Bir.Inst.Index);
+        if (args.len >= 1) m.markPiece(args[0].int(), ok, depth + 1);
     }
 
     /// Whether the build's markup lowering evaluates the hole value `inst`
@@ -1845,13 +2007,18 @@ pub const Mod = struct {
     /// function the compiler derives, or code handed evidence — so the fact
     /// is read off the callee's contract, never off its name, and a missing
     /// fact is the pessimistic one: another module's derived method with no
-    /// published fact can write and keep.
+    /// published fact can write and keep. Code with no fact can also host a
+    /// writer or a reader (`hosts`, kernel §13 item 12, *A defect*, (d)): a
+    /// method bound to a value (`pub go = hostGo`) runs whatever function
+    /// the value is. Before, no fallback said so, and hosting evidence of
+    /// that kind was refused only where the value met the default use at
+    /// its definition (code reader CR14's U3).
     pub fn edgeEffect(m: *Mod, e: Edges.Edge) Allocator.Error!Contract.Effect {
         const target: [2]u32 = switch (e) {
             .top => |d| .{ m.in.module, d },
             .ext => |x| blk: {
-                if (x.module.int() >= m.in.provenance.len) return .{ .no_contract = true, .runs_on = true };
-                const d = m.in.provenance[x.module.int()].valueDecl(x.value) orelse return .{ .no_contract = true, .runs_on = true };
+                if (x.module.int() >= m.in.provenance.len) return .{ .no_contract = true, .runs_on = true, .hosts = true };
+                const d = m.in.provenance[x.module.int()].valueDecl(x.value) orelse return .{ .no_contract = true, .runs_on = true, .hosts = true };
                 break :blk .{ x.module.int(), d.int() };
             },
             // This module's row: its body is walked with the edges (`through_rows`).
@@ -1863,7 +2030,7 @@ pub const Mod = struct {
                     const p = m.shared.published[mi] orelse continue;
                     if (Contract.derivedFact(p, @backingInt(u.type), @backingInt(u.kind))) |x| return x;
                 }
-                return .{ .writes = true, .keeps = true, .no_contract = true };
+                return .{ .writes = true, .keeps = true, .no_contract = true, .hosts = true };
             },
             // The compiler's own comparisons and codecs: they read their
             // operands; what they call is an edge of its own.
@@ -1878,9 +2045,9 @@ pub const Mod = struct {
         // of it does: a method written `pub eq = keeper` has no fact here,
         // nor has a function whose walk gave up. Only a declaration whose
         // own type is no function names no code (research report 129 §6).
-        if (try m.isFunction(target)) return .{ .no_contract = true, .runs_on = true };
+        if (try m.isFunction(target)) return .{ .no_contract = true, .runs_on = true, .hosts = true };
         if (m.valueIsFunction(target)) |is_fn| if (!is_fn) return .{};
-        return .{ .no_contract = true, .runs_on = true };
+        return .{ .no_contract = true, .runs_on = true, .hosts = true };
     }
 
     /// Whether the value of declaration `t` is a function, by its type
@@ -1934,7 +2101,7 @@ pub const Mod = struct {
         // that writes and keeps, and the declaration gives up.
         if (m.overBudget()) {
             var x: RowInfo = .{};
-            x.addEffect(.{ .writes = true, .keeps = true, .no_contract = true });
+            x.addEffect(.{ .writes = true, .keeps = true, .no_contract = true, .hosts = true });
             return x;
         }
         const dt = m.in.dispatch.?;
@@ -1961,7 +2128,7 @@ pub const Mod = struct {
             if (m.overBudget()) {
                 for (rows.items) |k| m.row_slot_gen[k] = m.gen - 1;
                 var x: RowInfo = .{};
-                x.addEffect(.{ .writes = true, .keeps = true, .no_contract = true });
+                x.addEffect(.{ .writes = true, .keeps = true, .no_contract = true, .hosts = true });
                 return x;
             }
             const r = rows.items[next];
@@ -4682,6 +4849,14 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     // message (kernel §6.13, *A message a command builds*, fact 4): every
     // walk of the module has run.
     published.keeps_messages = options.rows or try m.keepsMessages(null);
+    // The views another module may show only as pieces, and this module's
+    // references to such views of the modules it imports (kernel §6 rule
+    // 12, *A handler read at the event*, fact 1 (b)).
+    if (m.handlers_at_event.len != 0) {
+        _ = try m.viewRoots();
+        published.views = try published.arena.allocator().dupe(bool, m.view_absent.?);
+    }
+    try m.checkPieces();
     return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items, .false_words = m.false_words.items, .eager = try arena.dupe(OwnHoists.Read, m.eager_rows.items) };
 }
 

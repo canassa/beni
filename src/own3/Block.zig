@@ -27,9 +27,12 @@
 //! derived   count: u32, then per fact: the type, kind: u8, the effect
 //! js        count: u32, then one byte each
 //! keeps     u8                        `Published.keeps_messages`
+//! views     count: u32, then one byte each (`Published.views`)
 //! channel   clean: u8, writes: u32, then per write: inst: u32, kind: u8,
 //!           callers: u8
 //! reads     count: u32, then seven u32 each
+//! calls     count: u32, then one u32 each: the calls that write a record
+//!           argument in place (`Driver.record_calls`)
 //! ```
 //!
 //! Every integer is little-endian. A function that a contract answers
@@ -76,8 +79,9 @@ pub const magic = "OWN3BLK\x00";
 /// Bumped when the meaning of a byte changes. The compiler's build id is in
 /// every key, so a block is only ever read by the compiler that wrote it;
 /// the version is for a reader of the bytes. 2: the digest, and an entry's
-/// labels after those it shares with the entry before.
-pub const version: u32 = 2;
+/// labels after those it shares with the entry before. 3: `Published.views`,
+/// and the calls that write a record argument.
+pub const version: u32 = 3;
 
 /// The most bytes of a block (half of `cache/Dir.max_entry_bytes`, the
 /// largest entry that the cache reads): a module whose block is larger has
@@ -124,19 +128,25 @@ pub const Module = struct {
     published: ?*const Contract.Published = null,
     channel: Hoists.Table = .empty,
     reads: []const Reads.Read = &.{},
+    /// The calls whose callee writes a record argument in place, by
+    /// instruction, ascending, each once (`Driver.record_calls`): the
+    /// lowering marks each as a store.
+    record_calls: []const u32 = &.{},
 };
 
 /// A block read back. `published` is its own (`Contract.Published.deinit`);
-/// the channel's writes and the reads are `gpa`'s.
+/// the channel's writes, the reads and the calls are `gpa`'s.
 pub const Loaded = struct {
     published: ?*Contract.Published = null,
     channel: Hoists.Table = .empty,
     reads: []const Reads.Read = &.{},
+    record_calls: []const u32 = &.{},
 
     pub fn deinit(l: *Loaded, gpa: Allocator) void {
         if (l.published) |p| p.deinit(gpa);
         l.channel.deinit(gpa);
         gpa.free(l.reads);
+        gpa.free(l.record_calls);
         l.* = .{};
     }
 };
@@ -207,7 +217,7 @@ fn checkField(comptime T: type, comptime name: []const u8, comptime F: type) voi
 comptime {
     // The parts that this file writes by hand: a change of their fields is
     // a change of `putPublished`, `getPublished`, `same` and `valid`.
-    exactFields(Contract.Published, &.{ "arena", "layouts", "contracts", "derived", "js", "keeps_messages" });
+    exactFields(Contract.Published, &.{ "arena", "layouts", "contracts", "derived", "js", "keeps_messages", "views" });
     exactFields(Contract.Made, &.{ "contract", "inst", "decl", "own_params", "caps" });
     exactFields(Contract.ExEntry, &.{ "labels", "kind" });
     exactFields(Contract.DerivedFact, &.{ "type", "kind", "effect" });
@@ -396,6 +406,7 @@ const Writer = struct {
         }
         try w.put([]const bool, p.js);
         try w.put(bool, p.keeps_messages);
+        try w.put([]const bool, p.views);
     }
 };
 
@@ -409,6 +420,7 @@ pub fn write(gpa: Allocator, m: Module, names: Names) Allocator.Error!?[]u8 {
     try w.put(bool, m.channel.clean);
     try w.put([]const Hoists.Write, m.channel.writes);
     try w.put([]const Reads.Read, m.reads);
+    try w.put([]const u32, m.record_calls);
     if (w.bad or w.over()) return null;
 
     var bytes: std.ArrayList(u8) = .empty;
@@ -584,6 +596,9 @@ const Reader = struct {
         }
         p.js = try r.get([]const bool);
         p.keeps_messages = try r.get(bool);
+        p.views = try r.get([]const bool);
+        // A fact for each declaration, or none (`Check.Mod.viewRoots`).
+        if (p.views.len != 0 and p.views.len != p.contracts.len) return error.BadBlock;
     }
 };
 
@@ -624,7 +639,12 @@ pub fn read(gpa: Allocator, bytes: []const u8, remap: Remap) Error!Loaded {
     out.channel.clean = try r.get(bool);
     out.channel.writes = try r.get([]const Hoists.Write);
     out.reads = try r.get([]const Reads.Read);
+    out.record_calls = try r.get([]const u32);
     if (r.left() != 0) return error.BadBlock;
+    // The calls by instruction, ascending, each once (`Lower.v3RecordCall`'s search).
+    for (out.record_calls, 0..) |c, i| {
+        if (i != 0 and out.record_calls[i - 1] >= c) return error.BadBlock;
+    }
     // The writes by instruction, ascending, each once (`Hoists.Table.find`).
     for (out.channel.writes, 0..) |w, i| {
         if (i != 0 and out.channel.writes[i - 1].inst >= w.inst) return error.BadBlock;
@@ -779,7 +799,8 @@ pub fn samePublished(a: ?*const Contract.Published, b: ?*const Contract.Publishe
         eq([]const ?*const Contract.Contract, x.contracts, y.contracts) and
         eq([]const Contract.DerivedFact, x.derived, y.derived) and
         eq([]const bool, x.js, y.js) and
-        x.keeps_messages == y.keeps_messages;
+        x.keeps_messages == y.keeps_messages and
+        eq([]const bool, x.views, y.views);
 }
 
 /// Whether a block read back is what was written (kernel §7.1): the check
@@ -788,7 +809,8 @@ pub fn same(m: Module, l: *const Loaded) bool {
     return samePublished(m.published, l.published) and
         m.channel.clean == l.channel.clean and
         eq([]const Hoists.Write, m.channel.writes, l.channel.writes) and
-        eq([]const Reads.Read, m.reads, l.reads);
+        eq([]const Reads.Read, m.reads, l.reads) and
+        eq([]const u32, m.record_calls, l.record_calls);
 }
 
 // ---- tests ---------------------------------------------------------------------
@@ -917,11 +939,13 @@ fn testModule(arena: Allocator) Allocator.Error!Module {
         .derived = try arena.dupe(Contract.DerivedFact, &.{ .{ .type = 5, .kind = 0, .effect = .{ .writes = true } }, .{ .type = 5, .kind = 1, .effect = .{ .hosts = true } } }),
         .js = try arena.dupe(bool, &.{ true, false }),
         .keeps_messages = false,
+        .views = try arena.dupe(bool, &.{ false, true }),
     };
     return .{
         .published = p,
         .channel = .{ .clean = true, .writes = try arena.dupe(Hoists.Write, &.{ .{ .inst = 3, .kind = .writer }, .{ .inst = 9, .kind = .update, .callers = true } }) },
         .reads = try arena.dupe(Reads.Read, &.{.{ .decl = 1, .demand = 2, .inst = 3, .holder = 4, .path_len = 5, .placement = 6, .phase = 1 }}),
+        .record_calls = try arena.dupe(u32, &.{ 4, 11 }),
     };
 }
 
