@@ -14407,6 +14407,31 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
             if (ek == .field) slot_demands += f.demands.items.len - d1;
         }
     }
+    // A construction sent here is given up only where no cell of it is at
+    // two of its locations (kernel §6.13, *A message a command builds*,
+    // fact 2): the demands above ask for each location alone.
+    if (sender) for (vals, 0..) |v, k| {
+        if (k >= arg_insts.len) break;
+        const ai = arg_insts[k].int();
+        if (m.tags[ai] != .call or m.tags[m.datas[ai].lhs] != .ctor) continue;
+        const layout = f.drafts.items[di].layouts[k];
+        const es = m.loc.layoutEntries(layout);
+        const w0 = f.atoms.items.len;
+        defer f.atoms.shrinkRetainingCapacity(w0);
+        var starts: std.ArrayList(usize) = .empty;
+        defer starts.deinit(f.gpa);
+        var twice = false;
+        for (es, 0..) |ee, e| {
+            if (ee.kind != .list and ee.kind != .@"var") continue;
+            try starts.append(f.gpa, f.atoms.items.len);
+            if (try f.leavesAs(v, f.drafts.items[di].places[k], @intCast(e), &f.atoms) and !ee.single) twice = true;
+        }
+        try starts.append(f.gpa, f.atoms.items.len);
+        if (starts.items.len > 2) for (0..starts.items.len - 1) |x| for (x + 1..starts.items.len - 1) |y| {
+            if (f.overlapAny(f.atoms.items[starts.items[x]..starts.items[x + 1]], f.atoms.items[starts.items[y]..starts.items[y + 1]])) twice = true;
+        };
+        if (twice) try f.noteCmdSite(ai, false);
+    };
     // A message of no cell asked for is a send too: its line says so.
     if (sender and f.demands.items.len - slot_demands == before_demands) {
         try f.demand(@intCast(f.atoms.items.len), .{ .point = inst, .op = .supply, .kind = .send, .callee_inst = callee, .base_inst = if (arg_insts.len != 0) arg_insts[0].int() else none, .send = true });

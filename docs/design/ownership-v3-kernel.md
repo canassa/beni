@@ -1530,11 +1530,13 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     1. `update`'s field is a declaration of the entry's module, and its message parameter's type
        `T` is a type of that module with no type parameter. No other module of the program can
        name `T`'s constructors: one that imports the entry's module is not imported by it.
-    2. **Every construction of `C`** in the module (`Mod.ctorRefs`) is one the walk saw as one of
+    2. **Every construction of `C`** in the module (`Mod.cmdBuilt`) is one the walk saw as one of
        these, in each walk of its body (`Frame.noteCmdSite`):
        - `send (C a…)`: the whole argument of a call of the function's own parameter of sender
          type, whose demands all hold on the function's own ground (`fresh` or `call`): the
-         function made each cell that a write can edit, and does not read it again;
+         function made each cell that a write can edit, and does not read it again; and no cell of the
+         message is at two of its locations (`Pair xs xs`, `Tup ( xs, xs )`), which the demands, each of one
+         location, do not see (the review of this rule);
        - `C`, as an argument of a call of a declaration of a platform package (not core, not the
          program's), whose contract answers no answer of that function, hands it to no other
          function parameter, and hands it, at each of its parameter's cells, only the answer of
