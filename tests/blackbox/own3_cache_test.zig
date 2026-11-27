@@ -19,7 +19,9 @@
 //! - a record is written in place with a read that is read first (the
 //!   lowering channel and the hoisted reads of an installed module);
 //! - a module that importers read is installed in a session with other
-//!   symbols and other types than the one that stored it.
+//!   symbols and other types than the one that stored it;
+//! - a module whose contract answers one of its own declarations is installed
+//!   in a session where it has another module index.
 //!
 //! The counters of `--self-profile` say whether the cache did anything: a
 //! scenario that compared two cold runs would pass with no cache at all.
@@ -642,6 +644,103 @@ test "a block read in a session with other text ranks and type ids gives the imp
         try testing.expectEqual(case.exit, oracle.result.exit_code);
         try expectSame(&w, arena, oracle, "out-oracle", got, "out-got");
         // `Main` and the decoy are checked; `Shapes`, `Lookup` and core are installed.
+        try testing.expectEqual(@as(u64, 2), got.counters.checked);
+    }
+}
+
+/// `samer` and `copier` answer a declaration of this module: the contract of
+/// each names the module and the declaration (`Contract.Made`). `same`
+/// answers its argument, `copy` a new list.
+const pick_source =
+    \\pub same : List Int → List Int
+    \\same xs = xs
+    \\
+    \\
+    \\pub copy : List Int → List Int
+    \\copy xs = List.copy xs
+    \\
+    \\
+    \\pub samer : ⊤ → (List Int → List Int)
+    \\samer _ = same
+    \\
+    \\
+    \\pub copier : ⊤ → (List Int → List Int)
+    \\copier _ = copy
+    \\
+;
+
+/// The same declarations in the same order, with the two bodies exchanged.
+/// Its path is between `Main` and `Pick`, so in a session that has it, it
+/// has the module index that `Pick` had without it.
+const mirror_source =
+    \\pub same : List Int → List Int
+    \\same xs = List.copy xs
+    \\
+    \\
+    \\pub copy : List Int → List Int
+    \\copy xs = xs
+    \\
+    \\
+    \\pub samer : ⊤ → (List Int → List Int)
+    \\samer _ = same
+    \\
+    \\
+    \\pub copier : ⊤ → (List Int → List Int)
+    \\copier _ = copy
+    \\
+;
+
+fn pickUser(arena: std.mem.Allocator, maker: []const u8, note: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(arena,
+        \\{s}import Node
+        \\import Pick
+        \\
+        \\
+        \\main : Node.Program
+        \\main =
+        \\    xs = [ 1, 2, 3 ]
+        \\    f = Pick.{s} ⊤
+        \\    ys = List.push (f xs) 4
+        \\    Node.print (String.fromInt (List.sum xs + List.sum ys))
+        \\
+    , .{ note, maker });
+}
+
+test "a block whose contract answers a declaration of its module, read in a session with other module indexes" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // `Main` pushes onto what the function that `Pick.samer` or
+    // `Pick.copier` answers gives for `xs`, and reads `xs` again. The walk of
+    // `Main` reads the contract of the answered declaration by its module
+    // index and its declaration index (`Frame.madeVal`). With the module
+    // index of the session that stored the block, the second session reads
+    // the declaration of `Mirror` at the same index: a copy where `Pick`
+    // answers its argument, so the push onto a list that is read again is
+    // accepted, and the argument where `Pick` copies.
+    const cases = [_]struct { maker: []const u8, exit: u8 }{
+        .{ .maker = "samer", .exit = 1 },
+        .{ .maker = "copier", .exit = 0 },
+    };
+    for (cases) |case| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("beni.json", manifest);
+        try w.write("src/Pick.beni", pick_source);
+        try w.write("src/Main.beni", try pickUser(arena, case.maker, ""));
+        const first = try run(&w, arena, &enforced, &.{ "--cache-dir=cache", "--out=out-first" });
+        try testing.expectEqual(case.exit, first.result.exit_code);
+
+        // Another session: `Mirror` moves the index of `Pick`, and `Main`,
+        // changed by a comment, is walked against the block of `Pick` that
+        // the first session stored.
+        try w.write("src/Mirror.beni", mirror_source);
+        try w.write("src/Main.beni", try pickUser(arena, case.maker, "-- walked again\n"));
+        const oracle = try run(&w, arena, &enforced, &.{ "--no-cache", "--out=out-oracle" });
+        const got = try run(&w, arena, &enforced, &.{ "--cache-dir=cache", "--out=out-got" });
+        try testing.expectEqual(case.exit, oracle.result.exit_code);
+        try expectSame(&w, arena, oracle, "out-oracle", got, "out-got");
+        // `Main` and `Mirror` are checked; `Pick` and core are installed.
         try testing.expectEqual(@as(u64, 2), got.counters.checked);
     }
 }
