@@ -14248,6 +14248,14 @@ fn supplyAtomsSend(f: *Frame, di: u32, slot: u32, w: u32, point: u32, others: []
     f.newVisit();
     for (w..end) |i| try f.atomSrcsIn(f.atoms.items[i], &srcs);
     try f.drafts.items[di].supply[slot].appendSlice(f.gpa, srcs.items);
+    // A construction a send gives up holds only cells this function made
+    // (kernel §6.13, *A message a command builds*, fact 2): an answer of a
+    // function parameter, a parameter's, a capture's or an outside cell is
+    // one the caller can hold, whatever ground the demand below finds.
+    if (send_callee != none) for (srcs.items) |x| if (x.kind != .fresh or x.e != 0) {
+        try f.noteCmdSite(send_base, false);
+        break;
+    };
     const ai = try f.answerRoot(di, point);
     for (w..end) |i| try f.answers.items[ai].base.append(f.gpa, f.atoms.items[i]);
     if (dup) f.drafts.items[di].free[slot] = false;

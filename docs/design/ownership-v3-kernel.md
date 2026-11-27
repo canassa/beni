@@ -1536,7 +1536,9 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
          type, whose demands all hold on the function's own ground (`fresh` or `call`): the
          function made each cell that a write can edit, and does not read it again; and no cell of the
          message is at two of its locations (`Pair xs xs`, `Tup ( xs, xs )`), which the demands, each of one
-         location, do not see (the review of this rule);
+         location, do not see; and every cell it asks for is one this function made, never an answer of a
+         function parameter (`send (Items (mk ⊤))`), which a demand reads as the function's own (both the review
+         of this rule);
        - `C`, as an argument of a call of a declaration of a platform package (not core, not the
          program's), whose contract answers no answer of that function, hands it to no other
          function parameter, and hands it, at each of its parameter's cells, only the answer of
