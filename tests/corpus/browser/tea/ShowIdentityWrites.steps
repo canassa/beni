@@ -1,0 +1,17 @@
+input #shown "typed"
+# A field the body does not read: the record is a new value, so the body is
+# a new one.
+click #age
+input #shown "kept"
+# A model field beside the record: the body is kept, its hole written.
+click #note
+# Nothing of the record written: kept.
+click #same
+# The very same record in a new `Just`: kept.
+click #rewrap
+# The fallback, kept across a write of what it reads.
+click #clear
+input #nobody "fallback"
+click #note
+# A user again: a new body.
+click #back

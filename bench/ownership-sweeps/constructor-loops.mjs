@@ -6,7 +6,8 @@
 // `loop` applies it `k` times. The contract of `loop` takes as many rounds as the cycle of the 2n list
 // positions is long (n where n is even, 2n where it is odd), and each round's call writes all 2n
 // positions of its argument. Before #2567 each of these writes read every other position again, and the
-// walk passed its budget from 13 constructors on.
+// walk passed its budget at 11 constructors and from 13 on. With one read of each position for a call's
+// writes, it is judged at 11, 12, 14 and 16, and passes its budget at 13, 15 and from 17 on.
 //
 // Each size has dead and live twins, by what the program holds of the argument and reads after the
 // loop:

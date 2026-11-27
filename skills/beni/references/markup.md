@@ -134,7 +134,8 @@ done />` is `TodoItem.view { todo = t, done = True }`. `<Card.header title="x" /
   `Int`, `Float`, `Char` or `Bool`); `keyed={False}` by position; a bare `keyed`, or no `keyed`, by the
   item's identity, which a record update changes. `fallback` shows when the list is empty.
 - `Show` renders a `Maybe`. `when : Maybe a`; the child is `a → Html msg`; `keyed` remounts when
-  the identity (or the key `keyed={f}`) changes; `fallback` shows on `Nothing`. A `fallback` runs only while it shows.
+  the identity (or the key `keyed={f}`) changes: a record or a list that `update` changed is a new
+  value, also where the build changed it in place. `fallback` shows on `Nothing`. A `fallback` runs only while it shows.
 - A row function whose body is markup is compiled in place; any other function is called per row.
 
 ## `Html.map` and the plain-call form
@@ -196,7 +197,8 @@ A `Show` among the children of an element compiles: a body as a `For`'s row func
 ## `For` on `browser-inline`
 
 On `browser-inline`, a `For` over a `List` compiles, keyed by a key function, by position
-(`keyed={False}`) or by reference. After each write of a value that the `For` reads, its rows are
+(`keyed={False}`) or by reference, which needs items that are a `String`, a number, a `Char`, a
+`Bool` or an `Order`. After each write of a value that the `For` reads, its rows are
 made to agree with the list by key: a row keeps its node while its key stays. The `set` of every
 row runs again. A row's `Debug.log` thus logs one time for each row.
 
@@ -207,7 +209,8 @@ row runs again. A row's `Debug.log` thus logs one time for each row.
 These are still compiler limitations: another module's function as a row function; a `For`
 beside other children of a control whose value changes; a markup hole that is no branch, a
 component or a `Show` in a row; a `For` in another module's markup; a `For` in a prerendered page;
-a `For` over a `Dict`.
+a `For` over a `Dict`; a `For` keyed by reference over records or other items (write
+`keyed={.id}` or `keyed={False}`).
 
 ```beni platform=browser-inline
 import Browser

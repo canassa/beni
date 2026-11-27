@@ -16999,7 +16999,10 @@ pub const Lowerer = struct {
             }
         }
         const static = h.group < d.written.len and !d.written[h.group];
-        const selector: ?u32 = if (producer or h.selector_group == std.math.maxInt(u32)) null else h.selector_group;
+        // A producer has no selector but a `Show` keyed by identity's, its
+        // payload's identity (`Writes.recordEdgeSelector`).
+        const show = ref == .node and st.built.tree.kind(ref.node) == .show;
+        const selector: ?u32 = if ((producer and !show) or h.selector_group == std.math.maxInt(u32)) null else h.selector_group;
         return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where, .entry_groups = entry_groups.items, .selector_group = selector };
     }
 

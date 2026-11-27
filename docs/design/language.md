@@ -2754,6 +2754,13 @@ key**, `keyed={.id}`, the spelling `For` already has. A key must be primitive-`e
 (`key_not_primitive`), for §11.9's reason. By identity over a primitive-`eq` type is by value, as for
 `For`.
 
+*Amended 2026-11-27 (#2729):* "identical" is the identity the source gives the value, not the
+JavaScript object's: a record or a list that `update` changed is another value, also where the build
+wrote it in place (`backend.md` §4), so the body remounts there as it does in a build that copies. A
+platform whose runtime keeps no such value decides it with the write set, `browser-inline` by
+`browser-inline.md` §8.2 (amended 2026-11-27); the same holds for a `For` keyed by reference (§11.9),
+which `browser-inline` does not compile over an item type that is not primitive-`eq`.
+
 **Non-keyed `Show` is not provided** (the owner's answer): `<Show when={x}>` without `keyed` is
 `missing_form_attribute`, and `keyed={False}` is `invalid_keyed`; each message shows the `case` that
 says the same thing, since a non-keyed conditional is exactly `case x of Just v -> … ; Nothing ->

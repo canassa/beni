@@ -610,6 +610,8 @@ scratch: std.ArrayList(Atom) = .empty,
 other_on: bool = false,
 other_memo: std.AutoHashMapUnmanaged(OtherKey, OtherHit) = .empty,
 other_buf: std.ArrayList(Atom) = .empty,
+/// Safe builds: the copies of the call in work that `checkOtherLeaves` read again.
+other_checked: u32 = 0,
 /// A walk of values met a function value or a value of no claim since this
 /// was last set false (`leaves`): what such a value holds can grow while
 /// the frame is walked, so `otherLeaves` keeps no read that met one.
@@ -3569,7 +3571,9 @@ const DemandIn = struct {
 };
 
 const OtherKey = struct { v: Val, k: u32, ctx: u32, at: u32 };
-const OtherHit = struct { start: u32, len: u32, dup: bool };
+/// A kept read: its atoms in `other_buf`, its `dup`, and the units that the
+/// read cost. A copy costs no more than that.
+const OtherHit = struct { start: u32, len: u32, dup: bool, units: u32 };
 
 /// The atoms of operand `v` at entry `k` of its own layout, in `f.scratch`,
 /// and whether one cell can be there twice: `leaves`, read once for all the
@@ -3578,43 +3582,56 @@ const OtherHit = struct { start: u32, len: u32, dup: bool };
 /// evaluates nothing, so no value is made and no entry of a root changes;
 /// each write is judged in one context and at one time, which are in the
 /// key. The first read is kept, and each later one copies it: 1 unit and 1
-/// for each atom, where a read is a walk of the value. Not kept: a read
+/// for each atom, and never more than the first read cost, where a read is a
+/// walk of the value. Not kept: a read
 /// under a set of the callee's paths (`judge_set`), which each write has its
 /// own of, and a read that met a function value or a value of no claim
-/// (`leaf_wide`). A safe build reads again at each copy and compares (kernel
-/// §9).
+/// (`leaf_wide`). A safe build reads again at the first copies of a call and
+/// compares (kernel §9).
 fn otherLeaves(f: *Frame, v: Val, k: u32) Error!bool {
     f.scratch.clearRetainingCapacity();
     if (!f.other_on or f.judge_set.len != 0) return f.leaves(v, k, &f.scratch);
     const key: OtherKey = .{ .v = v, .k = k, .ctx = f.judge_ctx, .at = f.judge_at };
     if (f.other_memo.get(key)) |hit| {
-        // The copy is work of its own (kernel §8). Past the budget a read
-        // finds nothing, as `leaves` does.
-        if (f.charge(1 + hit.len)) return false;
+        // The copy is work of its own (kernel §8), and no more work than
+        // the walk that it stands for. Past the budget a read finds
+        // nothing, as `leaves` does.
+        if (f.charge(@min(1 + @as(u64, hit.len), hit.units))) return false;
         try f.scratch.appendSlice(f.gpa, f.other_buf.items[hit.start..][0..hit.len]);
         try f.checkOtherLeaves(v, k, hit);
         return hit.dup;
     }
     const wide = f.leaf_wide;
     f.leaf_wide = false;
+    const before = f.m.steps;
     const dup = try f.leaves(v, k, &f.scratch);
     const keep = !f.leaf_wide and !f.m.steps_over;
     f.leaf_wide = f.leaf_wide or wide;
     if (keep) {
         const start: u32 = @intCast(f.other_buf.items.len);
         try f.other_buf.appendSlice(f.gpa, f.scratch.items);
-        try f.other_memo.put(f.gpa, key, .{ .start = start, .len = @intCast(f.scratch.items.len), .dup = dup });
+        try f.other_memo.put(f.gpa, key, .{ .start = start, .len = @intCast(f.scratch.items.len), .dup = dup, .units = @intCast(@min(f.m.steps - before, std.math.maxInt(u32))) });
     }
     return dup;
 }
+
+/// The copies of one call that a safe build reads again (`checkOtherLeaves`).
+const other_checks_max = 256;
 
 /// In safe builds: the read that `otherLeaves` kept (`hit`, now in
 /// `f.scratch`) is what a new read of `v` at `k` finds (kernel §9). The
 /// check counts no work, so its read meets no context of an arm (`leaves`,
 /// `quiet_n`) and can keep one of two atoms that differ in their contexts
 /// alone: the two reads are compared as sets of atoms without contexts.
+/// No budget bounds a check, so it has a bound of its own: the first
+/// `other_checks_max` copies of a call are read again, and two large runs
+/// are compared in one pass over each. Without the two, a call that writes
+/// `w` locations of `w` cost `w²` walks and each walk the square of its
+/// atoms, outside the budget (the review of #2567).
 fn checkOtherLeaves(f: *Frame, v: Val, k: u32, hit: OtherHit) Error!void {
     if (!safety or f.m.steps_over) return;
+    if (f.other_checked >= other_checks_max) return;
+    f.other_checked += 1;
     const q = f.quiet();
     defer f.loud(q);
     const wide = f.leaf_wide;
@@ -3624,28 +3641,48 @@ fn checkOtherLeaves(f: *Frame, v: Val, k: u32, hit: OtherHit) Error!void {
     const dup = try f.leaves(v, k, &again);
     // A check that passed the budget read nothing to compare.
     if (f.m.steps_over) return;
-    const sameBut = struct {
-        fn ctx(x: Atom, y: Atom) bool {
-            var a = x;
-            var b = y;
-            a.ctx = none;
-            b.ctx = none;
-            return atomEql(a, b);
-        }
-    }.ctx;
     const kept = f.scratch.items;
     var same = dup == hit.dup;
-    for (kept) |x| {
-        const found = for (again.items) |y| {
-            if (sameBut(x, y)) break true;
-        } else false;
-        if (!found) same = false;
-    }
-    for (again.items) |y| {
-        const found = for (kept) |x| {
-            if (sameBut(x, y)) break true;
-        } else false;
-        if (!found) same = false;
+    if (kept.len <= 16 and again.items.len <= 16) {
+        const sameBut = struct {
+            fn ctx(x: Atom, y: Atom) bool {
+                var a = x;
+                var b = y;
+                a.ctx = none;
+                b.ctx = none;
+                return atomEql(a, b);
+            }
+        }.ctx;
+        for (kept) |x| {
+            const found = for (again.items) |y| {
+                if (sameBut(x, y)) break true;
+            } else false;
+            if (!found) same = false;
+        }
+        for (again.items) |y| {
+            const found = for (kept) |x| {
+                if (sameBut(x, y)) break true;
+            } else false;
+            if (!found) same = false;
+        }
+    } else {
+        var seen: std.AutoHashMapUnmanaged(Atom, bool) = .empty;
+        defer seen.deinit(f.gpa);
+        try seen.ensureTotalCapacity(f.gpa, @intCast(kept.len + again.items.len));
+        for (kept) |x| {
+            var a = x;
+            a.ctx = none;
+            seen.putAssumeCapacity(a, false);
+        }
+        for (again.items) |y| {
+            var b = y;
+            b.ctx = none;
+            if (seen.getPtr(b)) |met| met.* = true else same = false;
+        }
+        var it = seen.valueIterator();
+        while (it.next()) |met| {
+            if (!met.*) same = false;
+        }
     }
     if (!same) std.debug.panic("own3: the atoms that a call kept for an operand's location are not what a new read finds (kernel §8)", .{});
 }
@@ -11366,6 +11403,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     var written: usize = 0;
     for (c.flags) |x| written += @intFromBool(x & flag_w != 0);
     f.other_on = written > 1;
+    f.other_checked = 0;
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
         const n = c.off[j + 1] - c.off[j];

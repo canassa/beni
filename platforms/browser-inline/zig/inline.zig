@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 44 },
+    .targets = .{ .major = 1, .minor = 45 },
     .runtime = &.{
         // `(f, x, read)`: the dispatch guard, which every entry into program
         // code goes through; `read`, an event's `via` extractor, is called
@@ -96,6 +96,10 @@ pub const lowering: m.Lowering = .{
         // which remounts its body when the key changes (§8.2, amended
         // 2026-11-23, *A `Show`*).
         .{ .name = "keyShown", .arity = 5 },
+        // `(state)`: the body a `Show` keyed by identity shows made a new
+        // one at its next `armShown`, the shown arm's node removed then
+        // (§8.2, amended 2026-11-27, *A `Show` keyed by identity*).
+        .{ .name = "renew", .arity = 1 },
         // A row whose top is a branch (§9, amended 2026-11-24): `()` a row
         // whose node is an empty comment, which `(row, k, make, set)` makes
         // the node of arm `k`, the old one replaced in the page, and sets.
@@ -992,8 +996,9 @@ const Function = struct {
     writes: std.ArrayList(u32) = .empty,
     /// An entry with no write (§8.2, amended 2026-11-23): the `view`'s
     /// statements, or the memo node of the view root's `let` `memo`, which
-    /// evaluates it into its slot.
-    kind: enum { writes, statements, memo } = .writes,
+    /// evaluates it into its slot, or the renewal of the `Show` of region
+    /// `memo` (§8.2, amended 2026-11-27).
+    kind: enum { writes, statements, memo, renew } = .writes,
     memo: u32 = 0,
 };
 
@@ -1056,6 +1061,12 @@ const RegionUse = struct {
     marker: ?u32 = null,
     /// The name of its state, made at the mount.
     state: m.Name = undefined,
+    /// A `Show` keyed by identity over a value that is not primitive-`eq`
+    /// (§8.2, amended 2026-11-27, *A `Show` keyed by identity*): the read
+    /// set of its payload's identity, whose renewal entry (`renew`) runs
+    /// before the `Show`'s at a key whose writes conflict with it. Null for
+    /// any other region.
+    renew: ?u32 = null,
 
     /// An arm's unit and the root its values are of: the arm's markup, or
     /// the body of the function it calls.
@@ -1252,6 +1263,18 @@ const RowBuild = struct {
         const tree = pg.tree;
         const cx = pg.cx;
         const f = tree.for_(n);
+        // By reference over items that are not primitive-`eq`, the rows are
+        // matched by the items' identity, which would keep each item from
+        // one pass to the next, and an item written in place keeps its
+        // identity where a copy makes another (§9, amended 2026-11-27;
+        // `boundary.md` §9.4.8).
+        if (f.mode == .reference and !f.item_is_primitive) return cx.notImplemented(n,
+            \\A limit of the compiler: `browser-inline` does not compile a `For` keyed by reference yet
+            \\when its items are not a `String`, a number, a `Char`, a `Bool` or an `Order`: it would
+            \\match the rows by keeping each item and comparing its identity, which a write in place
+            \\keeps (`docs/design/browser-inline.md` §9; §5, class 1). Key the rows by a key function,
+            \\`keyed={.id}`, or by position, `keyed={False}`.
+        );
         const row = tree.row(f.row);
         if (row.kind == .lambda) if (cx.programBranch(n)) |br| return branchRow(pg, n, br, scope);
         if (row.kind == .function) return namedRow(pg, n, scope, "a `For`", true);
@@ -3070,7 +3093,13 @@ const Page = struct {
             pg.row_events = pg.row_events or arm.plan.events;
         };
         const facts = try pg.known(n, cx.programHole(.{ .node = n }));
-        try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null, .marker = if (place.marker) try pg.wantMarker(place.parent) else null });
+        // By identity over a value that may hold a record or a list (not
+        // primitive-`eq`, not identity-safe), the runtime keeps no key
+        // (`boundary.md` §9.4.8): the body is a new one when a key's writes
+        // may make the payload another object, its selector's read set —
+        // all of the `Show`'s where the pass has none.
+        const renew: ?u32 = if (s.mode == .identity and !s.value_is_primitive and !tree.identitySafe(s.when)) facts.selector_group orelse facts.group else null;
+        try pg.regions.append(pg.a(), .{ .node = n, .arms = arms, .parent = place.parent, .at_mount = place.at_mount, .end = if (place.next) pg.count else null, .marker = if (place.marker) try pg.wantMarker(place.parent) else null, .renew = renew });
         try pg.writes.append(pg.a(), .{ .target = place.parent, .ctx = ctx, .groups = try pg.withStatements(facts.group, statements_from), .what = .{ .region = @intCast(pg.regions.items.len - 1) } });
     }
 
@@ -3142,9 +3171,16 @@ const Page = struct {
         const then = try js.block();
         const payload = try cx.fresh("item");
         try js.constant(then, payload, try cx.maybe(try js.name(chosen)));
-        const key = if (s.mode == .key) try cx.call(try cx.value(s.key.?), &.{try js.name(payload)}) else try js.name(payload);
+        // By identity over a value that is not primitive-`eq`, no key: the
+        // region is `armShown`'s, and its renewal entry, which ran before
+        // this one at a key whose writes may make `v` another object, made
+        // the body a new one (§8.2, amended 2026-11-27).
+        const renewed = u.renew != null;
         const key_name = try cx.fresh("key");
-        try js.constant(then, key_name, key);
+        if (!renewed) {
+            const key = if (s.mode == .key) try cx.call(try cx.value(s.key.?), &.{try js.name(payload)}) else try js.name(payload);
+            try js.constant(then, key_name, key);
+        }
         const body = u.arms[1].?;
         const body_shown: [2]m.Expr = if (body.plan.branch) |arms| shown: {
             // A body whose top is a branch (§8.2, amended 2026-11-24): `v`
@@ -3193,13 +3229,17 @@ const Page = struct {
             } else _ = try cx.rowValues(then, s.body, payload, null, captures);
             break :shown try pg.showArm(body);
         };
-        try js.expression(then, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(1), try js.name(key_name), body_shown[0], body_shown[1] }));
+        if (renewed) {
+            try js.expression(then, try js.call(try js.name(try cx.runtime("armShown")), &.{ try js.name(u.state), try pg.num(1), body_shown[0], body_shown[1] }));
+        } else try js.expression(then, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(1), try js.name(key_name), body_shown[0], body_shown[1] }));
         // On `Nothing`: the fallback, or nothing, its values evaluated only
         // then, as a `For`'s are (`language.md` §11.18, amended 2026-11-24;
         // #459's rule for an arm).
         const otherwise = try js.block();
         const fb_shown: [2]m.Expr = if (u.arms[0]) |fb| try pg.fallbackShown(otherwise, u.node, fb) else .{ try js.literal(.null), try js.literal(.null) };
-        try js.expression(otherwise, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(0), try js.literal(.undefined), fb_shown[0], fb_shown[1] }));
+        if (renewed) {
+            try js.expression(otherwise, try js.call(try js.name(try cx.runtime("armShown")), &.{ try js.name(u.state), try pg.num(0), fb_shown[0], fb_shown[1] }));
+        } else try js.expression(otherwise, try js.call(try js.name(try cx.runtime("keyShown")), &.{ try js.name(u.state), try pg.num(0), try js.literal(.undefined), fb_shown[0], fb_shown[1] }));
         try js.@"if"(blk, try cx.isJust(try js.name(chosen)), then, otherwise);
         pg.leave(entered);
     }
@@ -4762,6 +4802,9 @@ const Page = struct {
             // A branch region is a binding function alone (§8.2, amended
             // 2026-11-23): it evaluates its branch once and writes its arm.
             if (w.what == .region) {
+                // A `Show`'s renewal entry stands just before it, so a pass
+                // that runs both runs it first (§8.2, amended 2026-11-27).
+                if (pg.regions.items[w.what.region].renew) |g| try pg.functions.append(pg.a(), .{ .groups = try sorted(pg.a(), &.{g}), .kind = .renew, .memo = w.what.region });
                 try pg.functions.append(pg.a(), .{ .groups = w.groups });
                 try pg.functions.items[pg.functions.items.len - 1].writes.append(pg.a(), @intCast(i));
                 continue;
@@ -5467,6 +5510,11 @@ const Page = struct {
                 try cx.rootValues(blk, pg.index, &.{lv});
                 try js.assign(blk, try js.name(pg.memo[f.memo].?), try cx.value(lv));
                 pg.leave(arms);
+                return;
+            },
+            // A `Show` keyed by identity renewed: it evaluates nothing.
+            .renew => {
+                try js.expression(blk, try js.call(try js.name(try cx.runtime("renew")), &.{try js.name(pg.regions.items[f.memo].state)}));
                 return;
             },
         }
