@@ -2786,6 +2786,71 @@ test "ownership v3: a record of 250 fields through 10 calls that write each fiel
     }
 }
 
+test "ownership v3: a write with two entries of one root marks the kept reads at each" {
+    // `l` is the list of `p.a` or of `p.b`: two atoms of one root, at two
+    // entries. `q.f0` holds `l` and `q.f3` holds the list of `p.b`. The
+    // write of `q.f0` marks the kept reads at the root and entry of each of
+    // its atoms (kernel §8), so it passes the kept read of `q.f3`, which
+    // reaches it, and is refused; the write of `q.f3` is refused for `q.f0`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\type alias Q =
+        \\    f0 : List Int
+        \\    f1 : List Int
+        \\    f2 : List Int
+        \\    f3 : List Int
+        \\
+        \\
+        \\type alias P =
+        \\    a : List Int
+        \\    b : List Int
+        \\
+        \\
+        \\grow : Q → Q
+        \\grow q =
+        \\    { q
+        \\        | f0 = List.push q.f0 0
+        \\        , f1 = List.push q.f1 1
+        \\        , f2 = List.push q.f2 2
+        \\        , f3 = List.push q.f3 3
+        \\    }
+        \\
+        \\
+        \\go : P, Bool → Int
+        \\go p c =
+        \\    l = if c then p.a else p.b
+        \\    q =
+        \\        { f0 = l
+        \\        , f1 = [ 1 ]
+        \\        , f2 = [ 2 ]
+        \\        , f3 = p.b
+        \\        }
+        \\    s = grow q
+        \\    List.length s.f0 + List.length s.f3
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (go { a = [ 7 ], b = [ 8, 9 ] } False))
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    const want = [_][]const u8{
+        "35:9 call Main.grow q.f0: rejected disjoint: another operand of the same operation reaches it",
+        "35:9 call Main.grow q.f1: accepted fresh",
+        "35:9 call Main.grow q.f2: accepted fresh",
+        "35:9 call Main.grow q.f3: rejected disjoint: another operand of the same operation reaches it",
+        "demands 15: accepted 13 (fresh 8, call 0, param 5,",
+    };
+    for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+        std.debug.print("wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
 test "ownership v3: a write is compared with a kept read that holds a function parameter's answer" {
     // `grow` writes 8 locations of `r`, so the call keeps an index of its
     // kept reads by the root and entry of their atoms, and a write passes
