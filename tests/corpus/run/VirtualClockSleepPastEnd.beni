@@ -1,0 +1,53 @@
+-- run: a sleep on a virtual clock whose wake time is past
+-- 9007199254740991, the last millisecond an `Int` holds, never wakes: the
+-- clock cannot read that time (transparent-effects-proposal.md §17.6 and
+-- §17.7, amended 2026-11-27; #2022). Before the fix of 2026-11-24 the
+-- clock moved past its last reading, and the 6 ms sleeper below woke at
+-- 9007199254740992.
+--
+-- The clock reads 5 ms before its last reading. A 5 ms sleep is due at
+-- the last reading and wakes there. A 6 ms sleep is due 1 ms later: no
+-- `adjust` reaches it, and it ends only when it is cancelled, its release
+-- run. A `timeout` of 6 ms never passes, so work that ends at the last
+-- reading gives its value. A sleep of `zero` at the last reading returns.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+last : Int
+last = 9007199254740991
+
+
+main : Program
+main = Io.run λ⊤ →
+    clock = Clock.virtual (last - 5)
+
+    near = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.sleep (Duration.millis 5)
+            Debug.log "the 5 ms sleeper woke at" (Clock.now ⊤)
+
+    far = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.bracket (λ⊤ → ⊤) (λ_ _ → Debug.log "the 6 ms sleeper was released" ⊤) λ_ →
+                Task.sleep (Duration.millis 6)
+                Debug.log "the 6 ms sleeper woke at" (Clock.now ⊤)
+
+    limited = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.timeout (Duration.millis 6) λ⊤ →
+                Task.sleep (Duration.millis 5)
+                Clock.now ⊤
+    _ = Debug.log "5 ms" (Clock.adjust clock (Duration.millis 5))
+    _ = Debug.log "1 ms more" (Clock.adjust clock (Duration.millis 1))
+    _ = Task.join near
+    _ = Debug.log "under a timeout of 6 ms" (Task.join limited)
+    _ = Debug.log "the 6 ms sleeper" (Task.poll far)
+    Task.cancel far
+    _ = Debug.log "the 6 ms sleeper, cancelled" (Task.wait far)
+    Clock.run clock λ⊤ → Task.sleep Duration.zero
+    _ = Debug.log "a sleep of zero at the last reading" "returned"
+    Node.print "the clock reads ${String.fromInt (Clock.run clock Clock.now)}"

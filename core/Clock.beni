@@ -24,7 +24,8 @@
 --! A virtual clock reads an `Int`, so its last reading is 9007199254740991,
 --! 2⁵³ − 1. `adjust` answers a `Result`: an `Err` when the clock cannot move
 --! that far, and then no sleeper wakes. The `_ =` above says that this test
---! does not look at it.
+--! does not look at it. A sleep that ends after the last reading never
+--! wakes: the clock cannot read that time.
 --!
 --! Nothing here is `foreign`.
 
