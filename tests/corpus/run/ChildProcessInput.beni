@@ -13,7 +13,8 @@
 --     do not wait for each other;
 --   - `NoInput`, which `command` gives, and `Text ""`: an end of file at
 --     once from each. But the child sees which one it has: the first is a
---     character device (`/dev/null`), and the second, a pipe, is not;
+--     character device (`/dev/null`), and the second, a pipe, is not
+--     (`[ -c /dev/stdin ]`; measured on Linux, and not on macOS);
 --   - two children at once, each with its own text;
 --   - a program that is not found: the answer is the start's, and the
 --     input, which has a pipe and no child, changes nothing.

@@ -14,7 +14,9 @@
 --     route for a write that failed, is a child that stopped reading, and
 --     not an error: `run` goes on waiting, and answers with what the child
 --     did after that. The write of an empty text fails the same way
---     (measured: Node gives `EPIPE` for it when the child stopped first);
+--     (measured: Node gives `EPIPE` for it when the child stopped first).
+--     The child notes each write that it fails, so each of the two lines
+--     shows that the write came: of 0 bytes, and of 4;
 --   - a start that failed: nothing writes to the child's standard input,
 --     which Node makes all the same;
 --   - output over `maxOutput` from a child that never reads: the platform
@@ -59,28 +61,36 @@ quote : String → String
 quote text = "\"" ++ String.replace text "\n" "\\n" ++ "\""
 
 
+-- The line, and what the children noted up to now. The run of the line is
+-- over when this is called: an argument is a value before its call.
+noted : String → String
+noted line = line ++ "; the child noted: " ++ Fault.notes ⊤
+
+
 main : Program
 main = Io.run λ⊤ →
     Fault.failInput "EPIPE"
-    none = describe "no input" (ChildProcess.run child)
+    none = noted (describe "no input" (ChildProcess.run child))
     empty =
-        describe "an empty text, EPIPE" (ChildProcess.run { child | stdin = ChildProcess.Text "" })
+        noted
+            (describe "an empty text, EPIPE"
+                (ChildProcess.run { child | stdin = ChildProcess.Text "" })
+            )
     broken =
-        describe "a text, EPIPE" (ChildProcess.run { child | stdin = ChildProcess.Text "text" })
+        noted
+            (describe "a text, EPIPE"
+                (ChildProcess.run { child | stdin = ChildProcess.Text "text" })
+            )
     Fault.failStart ⊤
     failed =
-        describe "a start that failed"
-            (ChildProcess.run { child | stdin = ChildProcess.Text "text" })
-    failedNotes = Fault.notes ⊤
+        noted
+            (describe "a start that failed"
+                (ChildProcess.run { child | stdin = ChildProcess.Text "text" })
+            )
     Fault.neverRead ⊤
     tooLarge =
-        describe "too large, input not read"
-            (ChildProcess.run { child | stdin = ChildProcess.Text "text", maxOutput = 10 })
-    tooLargeNotes = Fault.notes ⊤
-    Node.printLines
-        [ none
-        , empty
-        , broken
-        , failed ++ "; the child noted: " ++ failedNotes
-        , tooLarge ++ "; the child noted: " ++ tooLargeNotes
-        ]
+        noted
+            (describe "too large, input not read"
+                (ChildProcess.run { child | stdin = ChildProcess.Text "text", maxOutput = 10 })
+            )
+    Node.printLines [ none, empty, broken, failed, tooLarge ]

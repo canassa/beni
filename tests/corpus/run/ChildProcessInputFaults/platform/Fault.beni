@@ -6,9 +6,10 @@
 
 --| From now on, every `child_process.spawn` gives a child that starts. A
 --| child whose standard input is a pipe fails its first write with an
---| error whose `code` is the given one. After that, or at once when it has
---| no pipe, the child writes what `spawn` was asked for as its standard
---| input (`pipe`, `ignore`) and exits 0.
+--| error whose `code` is the given one, and notes that write and its
+--| length in bytes. After that, or at once when it has no pipe, the child
+--| writes what `spawn` was asked for as its standard input (`pipe`,
+--| `ignore`) and exits 0.
 pub foreign impure failInput : String → ⊤
 
 

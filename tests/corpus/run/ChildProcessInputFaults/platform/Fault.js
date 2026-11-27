@@ -24,8 +24,10 @@ export const notes = (unit) => {
 // event and then its `close`, as a `net.Socket` that destroys itself with
 // the error. A write of no bytes fails too: Node writes the empty text of
 // an `end("")` and gives `EPIPE` for it when the child stopped reading
-// first (measured). The child goes on after that `close`, as one that
-// closed its standard input does, and never without it. Asked for
+// first (measured). The child notes each write that it fails, with its
+// length, so the program shows that the write came and by which route the
+// pipe closed. The child goes on after that `close`, as one that closed
+// its standard input does, and never without it. Asked for
 // anything else, it has no `stdin`, as a child of Node's with `"ignore"`,
 // and goes on at once.
 export const failInput = (code) => {
@@ -44,6 +46,7 @@ export const failInput = (code) => {
     if (options.stdio[0] === "pipe") {
       child.stdin = new Writable({
         write: (chunk, encoding, callback) => {
+          noted.push(`a write of ${chunk.length} bytes failed with ${code}`);
           const error = new Error(`write ${code}`);
           error.code = code;
           error.syscall = "write";

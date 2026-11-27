@@ -9315,8 +9315,9 @@ Three choices are the owner's, asked on the dashboard as `node-process-spawn-q1`
 (a)), `q2` (the environment, (b)) and `q3` (the kill policy, (d)). All three are decided as
 recommended (Jayson, 2026-11-05); (i) records the answers. Amended 2026-11-24, for issue #2023:
 (k) gives the child a standard input, a text written and then closed, and (a), (d), (e), (f), (h),
-(i) and (j) each say where it changes them. The shape of (k)'s field is the owner's choice too,
-asked as `child-stdin-q1` (Cesar, 2026-11-27); (i) records it.* A `node` program cannot start
+(i) and (j) each say where it changes them. The shape of (k)'s field is the owner's choice too:
+`child-stdin-q1`, asked on 2026-11-24 and decided on 2026-11-27 (Cesar); (i) records it.* A `node`
+program cannot start
 another program today. Rex web (`jaysonsantos/rex-web`) must call the installed `rex` CLI (`rex ls
 --json`, `rex api call …`) from a beni server. The `node` platform gains one module,
 **`ChildProcess`** (`platforms/node/ChildProcess.beni`), beni over `Js` with no sibling, as `Io` and
@@ -9591,20 +9592,23 @@ none uses `/bin/echo`, which NixOS lacks.
   whose test platform gives its own children in place of `spawn`'s. One says what `spawn` was
   asked for as its standard input: `ignore` with `NoInput`, `pipe` with `Text ""` and with a
   text. Its input pipe fails its first write with `EPIPE`, by Node's route, also a write of no
-  bytes (the child that stopped before the `spawn` event of (k)): `Ok`. Its child goes on only
-  when the pipe is closed, so a platform that does not end the pipe of an empty text leaves the
-  program with nothing to wake it. One does not start, and notes a write to its
-  standard input: there is none. One never reads and writes over `maxOutput`, and notes that its
-  input pipe is destroyed before the signal comes. Each of the three fails with its rule broken
-  in the emitted JavaScript, checked by hand. `ChildProcessInputUnknownCode`: the input pipe
+  bytes (the child that stopped before the `spawn` event of (k)): `Ok`. The child notes each
+  write that it fails, with its length, so the two lines show that the write came: of 0 bytes,
+  and of 4. Its child goes on only when the pipe is closed, so a platform that does not end the
+  pipe of an empty text leaves the program with nothing to wake it. One does not start, and
+  notes a write to its standard input: there is none. One never reads and writes over
+  `maxOutput`, and notes that its input pipe is destroyed before the signal comes. Each of the
+  three fails with its rule broken in the emitted JavaScript, checked by hand. `ChildProcessInputUnknownCode`: the input pipe
   fails with `ENOMEM`, a code the start's table names and the input pipe's does not: a defect,
   with a `.crash` golden.
 - The rows with no fixture: `OutputTooLarge`'s clamp to `MAX_STRING_LENGTH` (a string of 512 MiB
   is no test); an `error` event after the start (no program can make Node's `kill` fail); an
-  output pipe's `error` (left to Node). *Amended 2026-11-24 (#2023):* and two facts of (k) that
-  are Node's and measured only: a descendant that reads after the child's exit gets an early end
-  of file (how much it reads is the kernel's), and Node's `close` does not wait for the input
-  pipe.
+  output pipe's `error` (left to Node). *Amended 2026-11-24 (#2023):* and three facts of (k)
+  that are Node's and measured only: a descendant that reads after the child's exit gets an early
+  end of file (how much it reads is the kernel's); Node's `close` does not wait for the input
+  pipe; and Node gives `EPIPE` for the end of an empty text when the child stopped before the
+  `spawn` event (a real child shows that only when the event is held back; the test platform's
+  child of `ChildProcessInputFaults` stands for it).
 
 **(i) The owner's decisions**, taken on the dashboard.
 
