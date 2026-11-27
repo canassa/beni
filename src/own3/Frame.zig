@@ -10102,6 +10102,17 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     if (c.renews()) try f.renewCells(&base, c, args, args_apart, casts, inst, path_ctx);
     // An answer of a type with no location holds `outside` (`rootVal`).
     if (es.len == 0) return v_outside;
+    // Where the arguments are not apart, the claims fail only through a cell
+    // at two places of them: the cells that can be one (`argsDuplicated`).
+    // A result entry none of whose cells is one of those keeps the callee's
+    // claims (kernel §4.4, *The claims of a call whose arguments are not
+    // apart*).
+    var dups: std.ArrayList(Atom) = .empty;
+    defer dups.deinit(f.gpa);
+    // A large set is read as every cell, the claims of no entry kept, as
+    // before: the test of each entry against it is work in pairs (kernel §8).
+    // So is a call of one argument that holds a cell: every cell of it can be one.
+    const dups_known = !args_apart and f.cellArgs(args) > 1 and try f.argsDuplicated(args, c, &dups) and dups.items.len <= share_small;
     // A new cell's handle that the answer holds is the answer's alone only
     // where the answer names it first: not one the call's renewals or flows
     // put in another holder (`cellResult`, kernel §13).
@@ -10170,9 +10181,12 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // in its run, or outside the frame; a captured cell is `twice`
         // already) holds no cell of the arguments, so a cell at two places
         // of them is at no two places of it.
-        const twice = !single and (st.twice or (!args_apart and (sources > 1 or (answers and st.handed))));
+        const tainted = !args_apart and (!dups_known or f.holdsDuplicated(f.atoms.items[start..], dups.items));
+        const twice = !single and (st.twice or (tainted and (sources > 1 or (answers and st.handed))));
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = twice };
-        has_answer[e] = answers;
+        // An entry that can hold such a cell is tested by its atoms, as an
+        // answer's is: the callee's claim does not cover it.
+        has_answer[e] = answers or tainted;
     }
     // The callee's claim is about its own locations. Two locations of the
     // caller at one wide location of the callee's result (a type variable,
@@ -10208,9 +10222,85 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
             sp[seen[cr]] = cr;
         }
     }
-    try f.deriveLinearSplit(root, !c.nonlinear and args_apart, has_answer, split);
+    try f.deriveLinearSplit(root, !c.nonlinear and (args_apart or dups_known), has_answer, split);
     try f.cellResult(root, roots_before, inst);
     return f.rootVal(root);
+}
+
+/// The cells that can be at two places of the arguments `args` of a call of
+/// `c`, as atoms, into `out`: every cell of an argument that cannot claim
+/// that its own parts are apart (`partsOf`, `argSplit`), and every cell of
+/// two parts that can hold one cell (`dupOverlap`). False where the set is
+/// not known (the budget): then every cell can be one. A cell of no other
+/// kind is at one place of the arguments (kernel §4.4, *The claims of a call
+/// whose arguments are not apart*).
+fn argsDuplicated(f: *Frame, args: []const Val, c: *const Contract, out: *std.ArrayList(Atom)) Error!bool {
+    var buf: std.ArrayList(Atom) = .empty;
+    defer buf.deinit(f.gpa);
+    var runs: std.ArrayList([2]u32) = .empty;
+    defer runs.deinit(f.gpa);
+    var every: std.ArrayList(bool) = .empty;
+    defer every.deinit(f.gpa);
+    for (args, 0..) |v, j| {
+        const start: u32 = @intCast(buf.items.len);
+        const rstart = runs.items.len;
+        var ok = try f.partsOf(v, &buf, &runs, 0);
+        if (ok and j < c.arity) ok = !try f.argSplit(v, c, j);
+        if (ok) {
+            while (every.items.len < runs.items.len) try every.append(f.gpa, false);
+            continue;
+        }
+        // Every cell of it can be at two places.
+        runs.shrinkRetainingCapacity(rstart);
+        every.shrinkRetainingCapacity(rstart);
+        buf.shrinkRetainingCapacity(start);
+        _ = try f.allLeaves(v, &buf);
+        try runs.append(f.gpa, .{ start, @intCast(buf.items.len) });
+        try every.append(f.gpa, true);
+    }
+    // A large set is not tested in pairs: every cell can be one.
+    if (buf.items.len > share_small) return false;
+    // Each pair of parts is work of its own (kernel §8).
+    for (runs.items, 0..) |x, i| {
+        if (f.charge(runs.items.len - i)) return false;
+        for (runs.items[i + 1 ..], i + 1..) |y, k| {
+            if (every.items[i] and every.items[k]) continue;
+            if (f.dupOverlap(buf.items[x[0]..x[1]], buf.items[y[0]..y[1]])) {
+                every.items[i] = true;
+                every.items[k] = true;
+            }
+        }
+    }
+    for (runs.items, every.items) |x, w| if (w) try out.appendSlice(f.gpa, buf.items[x[0]..x[1]]);
+    return true;
+}
+
+/// How many of `args` can hold a cell of the frame.
+fn cellArgs(f: *const Frame, args: []const Val) usize {
+    var k: usize = 0;
+    for (args) |v| {
+        if (v == v_none or v == v_outside) continue;
+        switch (f.nodes.items[v].tag) {
+            .none, .outside, .fnref => {},
+            .ref, .built, .join, .closure, .unknown, .later => k += 1,
+        }
+    }
+    return k;
+}
+
+/// Whether one of the atoms `xs` can be a cell of `dups`. Two atoms outside
+/// the frame are read as one cell: the outside names no cell apart.
+fn holdsDuplicated(f: *const Frame, xs: []const Atom, dups: []const Atom) bool {
+    if (xs.len > share_small) return true;
+    for (xs) |x| {
+        // Each comparison made is work (kernel §8); past the budget it can.
+        if (f.charge(dups.len)) return true;
+        for (dups) |y| {
+            if (x.root == 0 and y.root == 0) return true;
+            if (f.overlap(x, y)) return true;
+        }
+    }
+    return false;
 }
 
 /// A callee that casts can hand a cast value on as well as answer one: it
@@ -10805,20 +10895,25 @@ fn positionedParam(m: *Mod, c: *const Contract, j: usize) ?usize {
 /// at two places of it, which the argument's own layout cannot show apart.
 /// The contract is written for arguments that are apart (kernel §4.4).
 fn argsSplit(f: *Frame, args: []const Val, c: *const Contract) Error!bool {
-    const m = f.m;
     for (args, 0..) |v, j| {
         if (j >= c.arity) break;
-        const n = f.nodes.items[v];
-        switch (n.tag) {
-            .ref, .built, .join => {},
-            .none, .fnref, .outside, .closure, .unknown => continue,
-            .later => unreachable, // read through `capVal` only
-        }
-        const sig = c.layouts[j];
-        const h = (try m.loc.holes(sig, try m.loc.layoutOf(n.place))) orelse continue;
-        if (try splitAbove(m, sig, h)) return true;
+        if (try f.argSplit(v, c, j)) return true;
     }
     return false;
+}
+
+/// `argsSplit` of the one argument `v` at parameter `j`.
+fn argSplit(f: *Frame, v: Val, c: *const Contract, j: usize) Error!bool {
+    const m = f.m;
+    const n = f.nodes.items[v];
+    switch (n.tag) {
+        .ref, .built, .join => {},
+        .none, .fnref, .outside, .closure, .unknown => return false,
+        .later => unreachable, // read through `capVal` only
+    }
+    const sig = c.layouts[j];
+    const h = (try m.loc.holes(sig, try m.loc.layoutOf(n.place))) orelse return false;
+    return try splitAbove(m, sig, h);
 }
 
 /// Whether one wide entry of `holes` is above two entries of `view`, or
