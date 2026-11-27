@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -823,6 +823,63 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    11). Before, the capture was the frame's own function parameter, and a lambda that writes its
    parameter handed to it was refused as going where the checker does not follow it
    (`browser/inline/NestedFoldValue`).
+
+   **A function held in a value** (*added 2026-11-27, #2657*; `Contract.held`, `Src.held`,
+   `Frame.heldOf`, `callHeld`, `heldVal`, `answerOfHeld`). Every function that goes into a value met
+   the `top` use where it went in (`mention`, rule 8): it asks nothing, and it keeps what it is
+   handed. So a call of a function read at a location of a function type below a parameter or a
+   capture (a list's elements, a field, a constructor's argument; `heldOf`, never a sender) is a call
+   of unknown code in all but its answer: each argument and the function escape there (`callHeld`).
+   Its answer is the answer root of that location's draft, and the contract names it `held(i, e)`:
+   what the functions at parameter location `i` answer at their answer entry `e`. The draft's `Fn`
+   (`Contract.held[i]`) says what the body hands them. A caller reads `held(i, e)` off each function
+   its argument holds at location `i` (`heldVal`): a list literal's elements (`Root.elems`), a
+   construction's parts, or the frame's own location below a parameter or a capture, whose answer is
+   its own draft's in turn; each known function's answer is its contract's, handed what `held[i]`
+   says. A list made with a spread, a base or a front, a list a callee answers, and any value the walk
+   cannot name there give the lost answer (§3.2). Before, the answer of such a call was the answer of
+   unknown code, `outside` and every cell in sight, and a list it answered was refused
+   (`browser/inline/FunctionElements`).
+
+   **What the holder hands back** (`Fn.ans_own`, `handedAnswersOwn`, `fnsAnswerOwn`). Where a known
+   function at a use writes what the holder hands it, and that is an answer of a function the holder
+   hands the known function at a parameter of its own, or of one it captured (a fold's callback that
+   answers `work ⊤`), the answer must be `own` (rule 8): the known function passes it on once
+   (`passesOn`), and each function that can be there answers its own. A known one is judged there
+   (`answerOwn`). The frame's own function parameter, and the functions held below a parameter or a
+   capture, are their caller's to judge: their draft is `ans_own`, a direct call judges each function
+   its argument holds there (`applyAt`, `flowCode`, `flowCaptures`), and a holder that does not know
+   them refuses (`asksOwnAnswers`, `flowUnknown`, `flowCode` at a lost use). Before, only a captured
+   function that the walk knew could answer `own` there.
+
+   **A function a body answers** (`Contract.answers`, `Frame.answersOf`, `madeVal`, `neverVal`).
+   Where a body's result is of a function type and each function it answers is a known code of its
+   module whose every capture is a whole parameter or capture of the body, or holds no cell, the
+   contract names those codes, each with its contract and the parameter each capture is. A caller
+   makes the closure the call answers out of them, over its own arguments, as if it made it there: it
+   is one more holder of those arguments, whose escapes the contract lists, since the answer met `top`
+   in the callee. Where no fact says, the answer is a function the caller does not know, as before. A
+   group's rounds start from no code answered, and the codes of two rounds join code by code; a call
+   of what a callee that answers no code answers runs no code and answers nothing (`neverVal`): no run
+   of that callee answers a function, so no run reaches the call. Before, the closure a function
+   answered was unknown code to its caller (`browser/inline/ReturnedValidator`).
+
+   **A field called as a method** (`Frame.fieldCall`, `Fn.receiver`, `Contract.fn_known`,
+   `knownFns`). `r.f a` compiles to `r.f(a)`, which JavaScript runs with `r` as `this`; a host's
+   function there (a `Js.to` of a host function, a declaration whose body is JavaScript, what
+   `Js.method` makes) can read `r` and keep it, and beni code reads no `this`. So where each function
+   `r.f` can be is beni code (a closure, a constructor, a declaration whose body is beni), the call is
+   a call of that function, and `r` is no operand of it. Where `r` is a parameter or a capture and
+   `r.f` a location below it, the location's draft is `receiver`: a caller lets its argument escape
+   unless each function the argument holds there is beni code, and a holder that does not know them
+   lets what it hands there escape (`flowCode`, `flowCaptures`). Anywhere else `r` escapes, as at
+   unknown code. At an entry (rule 13) the model's functions are those its producers answer: each
+   producer's contract says, per answer entry of a function type, whether every function there is
+   beni code or the function at a parameter location passed on (`fn_known`), and its `param` sources
+   there must name the model alone. Where that fails at a location of a function type of the model,
+   and a function of the record calls a function of the model as a method of it, no location of the
+   model is `own`; a message with such a call (`msgOwn`) is never `update`'s own. The lowering is not
+   changed. Before, the model escaped at every such call (`browser/inline/ModelCallback`).
 3. **Capture** (`capture`, `codeValue`, `solveCodes`): a lambda or a local function is walked in its own
    frame, its captures are parameters of its contract, and the closure value holds them (`closureOf`). A
    capture bound after the closure is made is a `later` slot read as the value bound there (`capVal`;
