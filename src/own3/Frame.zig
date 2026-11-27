@@ -5567,11 +5567,16 @@ fn runtimeCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val, item: Val) Error!voi
     if (arity == 1 or arity == 2) {
         if (try f.codeOf(fv)) |code| if (code.own_params == arity) {
             _ = try f.applyAt(inst, fn_inst, code, args[0..arity], &.{}, try m.placeOfInst(inst));
+            // As at a call of known code (`knownRuns`): the run hosts what
+            // its contract says, where the markup renders.
+            try f.knownRuns(inst, code.contract);
             return;
         };
         const root = f.ownFnRoot(fv);
         if (f.isFnRoot(root)) {
             _ = try f.callParam(inst, fn_inst, root, args[0..arity], &.{});
+            // As at a call of the frame's own function parameter (`call`).
+            try f.noteRunsOn(inst, false);
             return;
         }
     }
@@ -5604,6 +5609,10 @@ fn eventCall(f: *Frame, inst: u32, fn_inst: u32, fv: Val) Error!void {
     if (code.own_params != 1) return f.escape(fv, inst);
     const args = [1]Val{v_outside};
     const answer = try f.applyAt(inst, fn_inst, code, &args, &.{}, try m.placeOf(ft.result.toOptional()));
+    // A run of known code: what its contract says it does to the fiber it
+    // runs on is noted as at a call (`knownRuns`, kernel §13 item 12, *A
+    // defect*, (d), *The ways in*; code reader CR15's U1).
+    try f.knownRuns(inst, code.contract);
     try f.escape(answer, inst);
 }
 
@@ -6123,6 +6132,7 @@ fn listOf(f: *Frame, place: PlaceId, inst: u32, elems: []const Val, spreads: []c
             for (f.atoms.items[start..]) |*a| a.dead = f.timeOf(inst);
             try f.uniqueTail(&f.atoms, start);
             f.rents.items[r.ent + e] = .{ .kind = .version, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
+            f.checkOldNames(start, true, true);
             continue;
         }
         // The elements: the cells of other roots, each element one part.
@@ -6403,6 +6413,7 @@ fn recordOf(f: *Frame, place: PlaceId, kids: []const Kid, inst: u32, base: Val) 
         for (f.atoms.items[start..]) |*a| a.dead = f.timeOf(inst);
         try f.uniqueTail(&f.atoms, start);
         f.rents.items[r.ent + e] = .{ .kind = .version, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = dup };
+        f.checkOldNames(start, true, true);
     }
     try f.deriveLinear(root, null, &.{});
     if (!any_slot) return f.built(place, kids);
@@ -8419,6 +8430,7 @@ fn renewHandleOf(f: *Frame, base: *const Use, c: *const Contract, j: u32, h: u32
             if (!strong or (maybe and !selfRenew(c, j, cr))) _ = try f.leavesAs(v, r.place, k, &f.atoms);
             try f.uniqueTail(&f.atoms, start);
             f.rents.items[ent0 + k] = .{ .kind = if (st.written) .version else .alias, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = !xes[k].single and (st.twice or !strong or f.curTwice(v, k)) };
+            if (st.written) f.checkOldNames(start, st.olds, false);
         }
         // Two entries of the version at one wide location of the callee (a
         // type variable) are one location to it, which says nothing of
@@ -9924,6 +9936,11 @@ fn runWriter(f: *Frame, w: Writer, inst: u32, ops: []const Val, followed: []cons
             try f.m.addRefusal(f, inst, .disjoint, held_at_other);
             break;
         }
+        if (try f.heldInOtherCell(capv, sig, @intCast(e))) {
+            f.atoms.shrinkRetainingCapacity(wa);
+            try f.m.addRefusal(f, inst, .disjoint, held_in_other_cell);
+            break;
+        }
         try f.demand(wa, .{
             .point = inst,
             .loc = ses[e].loc,
@@ -10583,6 +10600,9 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     // Another fiber can run inside the call (kernel §13 item 12).
     const run = try f.runBegin(inst, vals.items, if (code) |c| c.contract else null);
     const casts_before = f.casts;
+    // The contract of the function a field called as a method was applied
+    // with (`fieldCall`), or null.
+    var field_code: ?*const Contract = null;
     const result: Val = blk: {
         switch (target) {
             .reads => {
@@ -10590,7 +10610,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
                 try f.derivedEffect(inst, derived, vals.items, all.items);
                 break :blk try f.unknownResult(inst, vals.items);
             },
-            .field => break :blk try f.fieldCall(inst, mc, vals.items, all.items),
+            .field => break :blk try f.fieldCall(inst, mc, vals.items, all.items, &field_code),
             .decl, .unknown => {},
         }
         if (code) |c| break :blk try f.apply(inst, inst, c, vals.items, all.items);
@@ -10603,6 +10623,12 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
     if (code) |c| {
         try f.knownRuns(inst, c.contract);
     } else if (target != .reads) try f.noteRunsOn(inst, true);
+    // A field's function applied with its contract hosts what that says,
+    // as at any call of known code (`knownRuns`, kernel §13 item 12, *A
+    // defect*, (d), *The ways in*). Before, only `noteRunsOn` ran here, and
+    // a hosting function in a field was refused only where it met the
+    // default use on its way into the record (code reader CR15's U1).
+    if (field_code) |c| try f.knownRuns(inst, c);
     f.revokeAt(inst, false, wrote);
     try f.noteJsSite(.{ inst, none }, vals.items, result, f.casts and !casts_before);
     return result;
@@ -10616,7 +10642,7 @@ fn methodCall(f: *Frame, inst: u32) Error!Val {
 /// capture of the frame, called as a method of that root, is the caller's
 /// to name (`Fn.receiver`). Any other function can be a host's, which can
 /// read the record and keep it: the record escapes, as at unknown code.
-fn fieldCall(f: *Frame, inst: u32, mc: Bir.MethodCall, vals: []const Val, all: []const Inst.Index) Error!Val {
+fn fieldCall(f: *Frame, inst: u32, mc: Bir.MethodCall, vals: []const Val, all: []const Inst.Index, applied: *?*const Contract) Error!Val {
     const m = f.m;
     const recv = vals[0];
     const argv = vals[1..];
@@ -10631,7 +10657,10 @@ fn fieldCall(f: *Frame, inst: u32, mc: Bir.MethodCall, vals: []const Val, all: [
             return f.callHeld(inst, inst, di, fv, argv, all[1..]);
         };
         if (try f.knownFns(fv, .strict)) {
-            if (try f.codeOf(fv)) |code| if (code.own_params == argv.len) return f.apply(inst, inst, code, argv, all[1..]);
+            if (try f.codeOf(fv)) |code| if (code.own_params == argv.len) {
+                applied.* = code.contract;
+                return f.apply(inst, inst, code, argv, all[1..]);
+            };
             // Several, or one of another arity: unknown code, of the
             // function and its arguments.
             var in_sight: std.ArrayList(Val) = .empty;
@@ -10711,7 +10740,7 @@ fn evidenceAt(f: *Frame, inst: u32, with_decl: bool) Error!CMod.Effect {
             .derived, .ext_derived, .codec, .primitive => true,
             .top, .ext, .undetermined, .param, .field, .identity, .text => false,
         } else false;
-        if (within) try f.noteHostsForked(inst) else try m.addRefusal(f, inst, .call, "a function in which a writer or a reader of a cell it made runs in another fiber is handed as evidence (`where`), and the code it is handed to can run it masked, under a scheduler of its own, or after the call, so its code runs on after a throw");
+        if (within) try f.noteHostsForked(inst) else if (ev_info.effect.no_contract) try m.addRefusal(f, inst, .call, "a function with no contract, which can host a writer or a reader of a cell in another fiber, is handed as evidence (`where`), and the code it is handed to can run it masked, under a scheduler of its own, or after the call, so its code could run on after a throw") else try m.addRefusal(f, inst, .call, "a function in which a writer or a reader of a cell it made runs in another fiber is handed as evidence (`where`), and the code it is handed to can run it masked, under a scheduler of its own, or after the call, so its code runs on after a throw");
     }
     for ([_]u4{ 1, 2, 4, 8 }) |b| if (texts & b != 0) try m.addEvidenceRefusal(f, inst, Check.RowInfo.text(b));
     return x;
@@ -11497,6 +11526,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         const tainted = !args_apart and (!dups_known or f.holdsDuplicated(f.atoms.items[start..], dups.items));
         const twice = !single and (st.twice or (tainted and (sources > 1 or (answers and st.handed))));
         f.rents.items[ent0 + e] = .{ .kind = kind, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = twice };
+        if (kind == .version) f.checkOldNames(start, st.olds, false);
         // An entry that can hold such a cell is tested by its atoms, as an
         // answer's is: the callee's claim does not cover it.
         has_answer[e] = answers or tainted;
@@ -12356,6 +12386,8 @@ const SrcState = struct {
     /// parts are not apart (`REntry.twice`).
     twice: bool = false,
     written: bool = false,
+    /// `oldNames` marked at least one atom (`checkOldNames`).
+    olds: bool = false,
     inst: u32 = none,
     /// The labels of the caller's result entry below the callee's result entry in work.
     suffix: []const u64 = &.{},
@@ -12400,6 +12432,25 @@ fn oldNames(f: *Frame, from: usize, st: *SrcState) void {
     const at = f.timeOf(st.inst);
     for (f.atoms.items[from..]) |*a| a.dead = at;
     st.written = true;
+    if (from < f.atoms.items.len) st.olds = true;
+}
+
+/// In safe builds: a `.version` entry made at `f.atoms[start..]` holds its
+/// old names beside its own new one, each with `dead` set (kernel §13 item
+/// 12 (e), §5.1). `overlap` compares atoms by name, so a holder of the old
+/// cells meets a later write of the new name only through them; a version
+/// entry without them would be a cell no holder is compared with (code
+/// reader CR14's U1). `had`: the old names were not empty. `all`: every
+/// atom of the entry is an old name (the storage of a push or an update).
+fn checkOldNames(f: *const Frame, start: u32, had: bool, all: bool) void {
+    if (!safety or !had) return;
+    const xs = f.atoms.items[start..];
+    if (all) {
+        for (xs) |a| if (a.dead == none) @panic("own3: a version entry holds a name that is not old (kernel §13 item 12 (e))");
+        return;
+    }
+    for (xs) |a| if (a.dead != none) return;
+    @panic("own3: a version entry lost its old names (kernel §13 item 12 (e))");
 }
 
 /// Append to `f.atoms` what the sources `srcs` of the callee's result entry
@@ -13679,6 +13730,15 @@ const FlowKey = struct {
     fnc: usize,
     holder: u64,
     args: u64,
+    /// The location a use of held functions reads (`Use.held`, an entry of
+    /// the contract's `flags` whose `held` fact the judgment reads), the
+    /// frame's own held draft (`Use.di`), and whether the use is an entry's
+    /// default (`Use.entry`): a judgment reads each, so two uses that differ
+    /// in one are two judgments (code reader CR15's U4). No use with one of
+    /// them reaches `flow` today; the key does not rest on that.
+    held: u32,
+    di: u32,
+    entry: bool,
 };
 
 fn flowKey(f: *const Frame, v: Val, use: *const Use) FlowKey {
@@ -13699,6 +13759,9 @@ fn flowKey(f: *const Frame, v: Val, use: *const Use) FlowKey {
         .fnc = if (known) @intFromPtr(use.fnc) else 0,
         .holder = use.holder,
         .args = std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(use.args)),
+        .held = use.held,
+        .di = use.di,
+        .entry = use.entry,
     };
 }
 
@@ -14264,6 +14327,11 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
                 try f.refuse(use, .disjoint, held_at_other);
                 break;
             }
+            if (try f.heldInOtherCell(capv, sig, @intCast(e))) {
+                f.atoms.shrinkRetainingCapacity(w);
+                try f.refuse(use, .disjoint, held_in_other_cell);
+                break;
+            }
             try f.demand(w, .{
                 .point = site.inst,
                 .callee_inst = site.callee,
@@ -14315,6 +14383,8 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
 }
 
 const held_at_other = "a function writes in place a location of the contents of a cell it captured, and another location of the contents holds the same cell: the write changes both";
+
+const held_in_other_cell = "a function writes in place the contents of a cell it captured, and another cell holds the same value: the write changes both";
 
 const kept_written = "a function writes in place the contents of a cell it captured and stores nothing back, and it can run again: its next run reads the written value as the old one";
 
@@ -14830,6 +14900,74 @@ fn heldAtOther(f: *Frame, v: Val, sig: u32, e: u32, inner: []const bool) Error!b
         const n2 = f.atoms.items.len - s2;
         if (try f.cellsMeet(f.atoms.items[start..][0..ne], f.atoms.items[s2..][0..n2])) return true;
         f.atoms.shrinkRetainingCapacity(s2);
+    }
+    return false;
+}
+
+/// Whether the contents of another cell than those of value `v`'s handles
+/// (read at layout `sig`) hold a cell of its entry `e` now: a cell of a
+/// root the frame tracks, at its latest version, by the cells the atoms
+/// name (`sameCell`), whoever holds its handle. A write in place of `e` is
+/// then a write of that cell's contents too, which a holder of the other
+/// handle (another writer, a reader, the frame) reads under the name it
+/// has there (kernel §13 item 12 (e), *One cell at two places is decided on
+/// cells*). `heldAtOther` asks it of the other locations of one cell's
+/// contents. Before, two cells that held one list were kept apart only
+/// because every way to put it in both was an operand of a switch point
+/// (code reader CR14's U2). Each root and atom compared is work (kernel
+/// §8); past the budget the answer is yes.
+fn heldInOtherCell(f: *Frame, v: Val, sig: u32, e: u32) Error!bool {
+    const m = f.m;
+    const ses = m.loc.layoutEntries(sig);
+    var own: std.ArrayList([3]u32) = .empty;
+    defer own.deinit(f.gpa);
+    const start = f.atoms.items.len;
+    defer f.atoms.shrinkRetainingCapacity(start);
+    // The cells `v`'s handles name: their contents are `heldAtOther`'s.
+    for (ses, 0..) |he, h| if (he.kind == .cell) {
+        const s0 = f.atoms.items.len;
+        _ = try f.argLeaves(v, sig, @intCast(h), &.{}, false, &f.atoms);
+        for (s0..f.atoms.items.len) |i| try f.cellOrigins(f.atoms.items[i], &own);
+        f.atoms.shrinkRetainingCapacity(s0);
+    };
+    _ = try f.argLeaves(v, sig, e, &.{}, false, &f.atoms);
+    const ne = f.atoms.items.len - start;
+    if (ne == 0) return false;
+    // Every cell the frame follows, by the name `cellOrigins` gives it: a
+    // handle a call answered (a `fresh` root's `cell_root`, `cellResult`),
+    // and a handle of a tracked parameter or capture. The roots are counted
+    // before the walk: reading a value can add roots.
+    var cells: std.ArrayList([2]u32) = .empty;
+    defer cells.deinit(f.gpa);
+    const nroots = f.roots.items.len;
+    if (f.charge(nroots)) return true;
+    for (0..nroots) |x| {
+        const r = f.roots.items[x];
+        if (r.kind == .fresh and r.cell_root != none) try cells.append(f.gpa, .{ r.cell_root, r.cell_e });
+    }
+    for (f.params.items) |p| {
+        const r = f.roots.items[p];
+        if (!r.tracked) continue;
+        for (m.loc.layoutEntries(r.layout), 0..) |he, h| if (he.kind == .cell) try cells.append(f.gpa, .{ p, @intCast(h) });
+    }
+    var ks: std.ArrayList(u32) = .empty;
+    defer ks.deinit(f.gpa);
+    for (cells.items) |c| {
+        const mine = for (own.items) |x| {
+            if (x[0] == c[0] and x[1] == c[1]) break true;
+        } else false;
+        if (mine) continue;
+        const r = f.roots.items[c[0]];
+        const cur = f.latestOf(c[0]) orelse try f.rootVal(c[0]);
+        ks.clearRetainingCapacity();
+        try f.contentsAt(r.layout, c[1], &ks);
+        for (ks.items) |k| {
+            const s2 = f.atoms.items.len;
+            _ = try f.leavesAs(cur, r.place, k, &f.atoms);
+            const n2 = f.atoms.items.len - s2;
+            if (try f.cellsMeet(f.atoms.items[start..][0..ne], f.atoms.items[s2..][0..n2])) return true;
+            f.atoms.shrinkRetainingCapacity(s2);
+        }
     }
     return false;
 }

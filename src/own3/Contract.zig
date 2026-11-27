@@ -686,6 +686,11 @@ pub const Published = struct {
     /// message a command builds*, fact 4). Read by the modules that import
     /// it, each of which is checked after it.
     keeps_messages: bool = true,
+    /// By declaration: the module reads it as a view's root that no entry
+    /// of its own names (`Check.Mod.viewRoots`, kernel §6 rule 12, *A
+    /// handler read at the event*, fact 1 (b)): an importer may name it only
+    /// as a piece of a view's markup (`Check.Mod.checkPieces`).
+    views: []const bool = &.{},
 
     pub fn deinit(p: *Published, gpa: Allocator) void {
         p.arena.deinit();

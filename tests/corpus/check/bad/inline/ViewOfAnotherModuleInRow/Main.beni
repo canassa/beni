@@ -1,0 +1,40 @@
+-- Another module's view, whose handlers its module reads where their event
+-- fires because no module of its own names it, is called in a keyed `For`
+-- row, which keeps the closures a render made. Each importer may name such
+-- a view only as a piece of a view's markup (ownership-v3-kernel.md §6 rule
+-- 12, *A handler read at the event*, fact 1 (b); code reader CR15's U2):
+-- the reference is refused. Before, only the lowering's own limit kept it
+-- out of a row (`build/bad/inline/ForRowOtherModule`). Its accepted side is
+-- `browser/inline/PieceHandler` and the other `PieceHandler` pages.
+import Html exposing (Html)
+import List
+import Page exposing (Msg)
+import Tea
+
+
+type alias Model =
+    xs : List Int
+    got : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Page.Got n →
+            { model | got = n }
+
+        Page.Bump →
+            { model | xs = List.push model.xs 9 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <For each={[ model.xs ]} keyed={List.length}>{λr → <li>{Page.item r}</li>}</For>
+        <button id="b" onClick={Page.Bump}>b</button>
+        <p id="g">{model.got}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { xs = [ 1 ], got = 0 }, update = update, view = view }

@@ -1,0 +1,1 @@
+Each second cell holds a copy of the first cell's list, so each writer fiber or race branch pushes in place onto a list no other cell holds, and every program is accepted (ownership-v3-kernel.md §13 item 12 (e), code reader CR14's U2). Its live twin is CellTwoCellsOneListLive.
