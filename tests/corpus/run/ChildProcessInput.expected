@@ -4,11 +4,14 @@ a NUL: exited 0, 3 characters, the text sent
 a lone surrogate: exited 0, stdout "a�b", stderr ""
 1 MiB: exited 0, 1048576 characters, the text sent
 no input: exited 0, stdout "end\n", stderr ""
-empty input: exited 0, stdout "end\n", stderr ""
+an empty text: exited 0, stdout "end\n", stderr ""
+no input is: exited 0, stdout "a device\n", stderr ""
+an empty text is: exited 0, stdout "not a device\n", stderr ""
 first of two: exited 0, stdout "first", stderr ""
 second of two: exited 0, stdout "second", stderr ""
 no such program: not found
 reads one line: exited 4, stdout "got first\n", stderr ""
+reads nothing, empty: exited 3, stdout "", stderr ""
 reads nothing, short: exited 3, stdout "", stderr ""
 reads nothing, 1 MiB: exited 3, stdout "", stderr ""
 closes its input: exited 0, stdout "still here\n", stderr ""

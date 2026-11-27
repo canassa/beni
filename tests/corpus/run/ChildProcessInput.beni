@@ -1,7 +1,8 @@
--- run: a command's `input` is the text its child reads on standard
--- input: written whole as UTF-8, and then the pipe is closed (boundary.md
--- §9.14 (k)). Every child is `/bin/sh`, and a script names only `cat` and
--- `sleep`, which the suite's `PATH` holds (`World.program_path`).
+-- run: a command's `stdin` is its child's standard input. `Text text` is
+-- a pipe: the text is written whole as UTF-8, and then the pipe is closed
+-- (boundary.md §9.14 (k)). Every child is `/bin/sh`, and a script names
+-- only `cat` and `sleep`, which the suite's `PATH` holds
+-- (`World.program_path`).
 --
 --   - a text sent to `cat` and read back;
 --   - text that is not ASCII, and a NUL character, which is a byte of the
@@ -10,7 +11,9 @@
 --     `Char` make none; an escape of JSON brings one into a string;
 --   - 1 MiB through `cat`, more than a pipe holds: the write and the reads
 --     do not wait for each other;
---   - no `input`, and an `input` of `""`: an end of file at once;
+--   - `NoInput`, which `command` gives, and `Text ""`: an end of file at
+--     once from each. But the child sees which one it has: the first is a
+--     character device (`/dev/null`), and the second, a pipe, is not;
 --   - two children at once, each with its own text;
 --   - a program that is not found: the answer is the start's, and the
 --     input, which has a pipe and no child, changes nothing.
@@ -19,8 +22,9 @@
 -- answer is the one any child gets:
 --
 --   - a child that reads one line of 1 MiB and exits;
---   - a child that exits and reads nothing, with a short text, which the
---     kernel's buffer takes, and with 1 MiB, where the write fails;
+--   - a child that exits and reads nothing, with an empty text, with a
+--     short text, which the kernel's buffer takes, and with 1 MiB, where
+--     the write fails;
 --   - a child that closes its standard input and writes after that: the
 --     write's failure does not end the wait.
 --
@@ -41,6 +45,16 @@ import Task
 
 sh : String → Command
 sh script = ChildProcess.command "/bin/sh" [ "-c", script ]
+
+
+-- The child `sh script` that reads `text` on its standard input.
+fed : String, String → Command
+fed script text = { sh script | stdin = ChildProcess.Text text }
+
+
+-- Is the child's standard input a character device?
+device : String
+device = "if [ -c /dev/stdin ]; then echo a device; else echo not a device; fi"
 
 
 -- 1 048 576 bytes, each line 16 of them.
@@ -115,41 +129,39 @@ quote text = "\"" ++ String.replace text "\n" "\\n" ++ "\""
 main : Program
 main = Io.run λ⊤ →
     binary = "a\u{0}b"
-    both = Task.par (λ⊤ → ChildProcess.run { sh "sleep 0.05; cat" | input = "first" }) λ⊤ →
-        ChildProcess.run { sh "cat" | input = "second" }
+    both = Task.par (λ⊤ → ChildProcess.run (fed "sleep 0.05; cat" "first")) λ⊤ →
+        ChildProcess.run (fed "cat" "second")
     timedOut =
-        case
-            Task.timeout (Duration.millis 50) λ⊤ →
-                ChildProcess.run { sh "exec sleep 1000" | input = big }
-        of
+        case Task.timeout (Duration.millis 50) λ⊤ → ChildProcess.run (fed "exec sleep 1000" big) of
             Just _ →
                 "timeout: the sleeper answered"
 
             Nothing →
                 "timeout: the sleeper timed out"
     Node.printLines
-        [ describe "cat" (ChildProcess.run { sh "cat" | input = "hello, child\n" })
-        , describe "not ASCII" (ChildProcess.run { sh "cat" | input = "é ✓ 😀" })
-        , same "a NUL" binary (ChildProcess.run { sh "cat" | input = binary })
-        , describe "a lone surrogate" (ChildProcess.run { sh "cat" | input = lone })
-        , same "1 MiB" big (ChildProcess.run { sh "cat" | input = big })
+        [ describe "cat" (ChildProcess.run (fed "cat" "hello, child\n"))
+        , describe "not ASCII" (ChildProcess.run (fed "cat" "é ✓ 😀"))
+        , same "a NUL" binary (ChildProcess.run (fed "cat" binary))
+        , describe "a lone surrogate" (ChildProcess.run (fed "cat" lone))
+        , same "1 MiB" big (ChildProcess.run (fed "cat" big))
         , describe "no input" (ChildProcess.run (sh "cat; echo end"))
-        , describe "empty input" (ChildProcess.run { sh "cat; echo end" | input = "" })
+        , describe "an empty text" (ChildProcess.run (fed "cat; echo end" ""))
+        , describe "no input is" (ChildProcess.run (sh device))
+        , describe "an empty text is" (ChildProcess.run (fed device ""))
         , describe "first of two" both.0
         , describe "second of two" both.1
         , describe "no such program"
-            (ChildProcess.run { ChildProcess.command "/no/such/program" [] | input = big })
-        , describe "reads one line"
             (ChildProcess.run
-                { sh "read line; echo \"got $line\"; exit 4" | input = "first\n" ++ big }
+                { ChildProcess.command "/no/such/program" [] | stdin = ChildProcess.Text big }
             )
-        , describe "reads nothing, short" (ChildProcess.run { sh "exit 3" | input = "ignored\n" })
-        , describe "reads nothing, 1 MiB" (ChildProcess.run { sh "exit 3" | input = big })
+        , describe "reads one line"
+            (ChildProcess.run (fed "read line; echo \"got $line\"; exit 4" ("first\n" ++ big)))
+        , describe "reads nothing, empty" (ChildProcess.run (fed "exit 3" ""))
+        , describe "reads nothing, short" (ChildProcess.run (fed "exit 3" "ignored\n"))
+        , describe "reads nothing, 1 MiB" (ChildProcess.run (fed "exit 3" big))
         , describe "closes its input"
-            (ChildProcess.run { sh "exec 0<&-; sleep 0.1; echo still here" | input = big })
+            (ChildProcess.run (fed "exec 0<&-; sleep 0.1; echo still here" big))
         , timedOut
         , describe "too large"
-            (ChildProcess.run
-                { sh "printf 12345678901; exec sleep 1000" | input = big, maxOutput = 10 }
-            )
+            (ChildProcess.run { fed "printf 12345678901; exec sleep 1000" big | maxOutput = 10 })
         ]

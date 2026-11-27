@@ -29,9 +29,7 @@ import Task exposing (Exit, Resume)
 --|   character in them has a meaning.
 --| - `cwd`: the child's working directory; `Nothing` is the program's own.
 --| - `env`: the child's environment.
---| - `input`: the text the child reads on its standard input, written as
---|   UTF-8, and then an end of file. `""` is no input: the standard input
---|   is empty.
+--| - `stdin`: the child's standard input.
 --| - `killAfter`: when the fiber is cancelled, the child gets `SIGTERM`,
 --|   and `SIGKILL` if it has not exited this long after.
 --| - `maxOutput`: the most bytes kept of standard output, and of standard
@@ -41,7 +39,7 @@ pub type alias Command =
     args : List String
     cwd : Maybe String
     env : Environment
-    input : String
+    stdin : Input
     killAfter : Duration
     maxOutput : Int
 
@@ -57,6 +55,17 @@ pub type Environment
     = Inherit
     | Extend (List (String × String))
     | Only (List (String × String))
+
+
+--| The child's standard input.
+--|
+--| - `NoInput`: nothing to read. The standard input is empty, and it is
+--|   not a pipe.
+--| - `Text text`: a pipe. The child reads the text, written as UTF-8, and
+--|   then an end of file. `Text ""` is an empty pipe.
+pub type Input
+    = NoInput
+    | Text String
 
 
 --| How the child ended, and what it wrote. Both streams are decoded as
@@ -116,7 +125,7 @@ pub type RunError
 
 
 --| `program` with `args`, and every other field its default: the
---| program's own working directory and environment, no `input`, a
+--| program's own working directory and environment, `NoInput`, a
 --| `killAfter` of one second and a `maxOutput` of 16 MiB.
 pub command : String, List String → Command
 command program args =
@@ -124,7 +133,7 @@ command program args =
     , args = args
     , cwd = Nothing
     , env = Inherit
-    , input = ""
+    , stdin = NoInput
     , killAfter = Duration.seconds 1
     , maxOutput = 16777216
     }
@@ -137,9 +146,10 @@ command program args =
 --| A descendant of the child that keeps its output open keeps `run`
 --| waiting.
 --|
---| The child reads `input` on its standard input. `run` does not wait for
---| the child to read it: a child that exits, or closes its standard input,
---| before it has read all of it is not an error, and the rest is dropped.
+--| The child reads the text of `stdin` on its standard input. `run` does
+--| not wait for the child to read it: a child that exits, or closes its
+--| standard input, before it has read all of it is not an error, and the
+--| rest is dropped.
 --|
 --| When the fiber is cancelled, the child gets `SIGTERM`, then `SIGKILL`
 --| after `killAfter`, and the cancellation ends when the child has exited.
@@ -214,7 +224,7 @@ start cmd =
             λerror → refused p error
     if not (Js.isNull child) then
         Js.set p "child" child
-        listen p child cmd.input
+        listen p child cmd.stdin
     p
 
 
@@ -274,12 +284,18 @@ push array value =
 
 -- `spawn`'s options: no shell, both outputs piped, the working directory
 -- when there is one, and the environment when it is not the program's own
--- as it is. Standard input is a pipe when there is an `input`. With none
--- it is empty (`/dev/null`), which a child can tell from a pipe closed at
--- once (`boundary.md` §9.14 (k)).
+-- as it is. Standard input is a pipe for a `Text`, also an empty one. For
+-- `NoInput` it is empty (`/dev/null`), which a child can tell from a pipe
+-- closed at once (`boundary.md` §9.14 (k)).
 options : Command → Value
 options cmd =
-    stdin = if String.isEmpty cmd.input then "ignore" else "pipe"
+    stdin =
+        case cmd.stdin of
+            NoInput →
+                "ignore"
+
+            Text _ →
+                "pipe"
     o =
         Js.object
             [ ( "shell", Js.from False )
@@ -332,7 +348,7 @@ setAll env pairs =
 -- it makes them. An output pipe's own `error` has no listener: Node
 -- throws it, a defect. The input pipe's has one, for the one failure of
 -- a write that is not a defect (`inputFailed`).
-listen : Value, Value, String → ⊤
+listen : Value, Value, Input → ⊤
 listen p child input =
     _ = Js.call child "on" [ Js.from "error", Js.from λerror → failed p error ]
     _ = Js.call child "on" [ Js.from "spawn", Js.from λ_ → started p child input ]
@@ -347,17 +363,20 @@ listen p child input =
 
 
 -- The child has started: Node's `spawn` event, which comes before every
--- other event of the child and never after a start that failed. The
--- input is written whole, as UTF-8, and the pipe is closed after it; the
--- answer does not wait for that (`boundary.md` §9.14 (k)). There is no
--- pipe when the input is `""` (`options`).
-started : Value, Value, String → ⊤
+-- other event of the child and never after a start that failed. A text
+-- is written whole, as UTF-8, and the pipe is closed after it, also when
+-- the text is `""`; the answer does not wait for that (`boundary.md`
+-- §9.14 (k)). `NoInput` has no pipe (`options`).
+started : Value, Value, Input → ⊤
 started p child input =
     Js.set p "spawned" (Js.from True)
-    stdin = Js.get child "stdin"
-    if not (Js.isNullish stdin) then
-        _ = Js.call stdin "end" [ Js.from input, Js.from "utf8" ]
-        ⊤
+    case input of
+        NoInput →
+            ⊤
+
+        Text text →
+            _ = Js.call (Js.get child "stdin") "end" [ Js.from text, Js.from "utf8" ]
+            ⊤
 
 
 -- An `error` event of the input pipe. `EPIPE` is a child that closed its

@@ -16,7 +16,10 @@ main : Program
 main = Io.run λ⊤ →
     Fault.failInput "ENOMEM"
     Debug.log "before the run" ⊤
-    case ChildProcess.run { ChildProcess.command "/bin/sh" [ "-c", "true" ] | input = "text" } of
+    case
+        ChildProcess.run
+            { ChildProcess.command "/bin/sh" [ "-c", "true" ] | stdin = ChildProcess.Text "text" }
+    of
         Ok _ →
             Node.print "ran"
 

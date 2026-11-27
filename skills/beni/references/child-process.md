@@ -35,7 +35,7 @@ main = Io.run λ⊤ →
 - The answer is `Ok { status, stdout, stderr }` when the child started. `status` is `Exited code`
   or `Signalled name` (`"SIGTERM"`, …). A non-zero exit is `Ok`, not `Err`.
 - Both streams are decoded as UTF-8.
-- Standard input is empty, unless the command has an `input` (below).
+- Standard input is empty, unless the command sets `stdin` (below).
 - A child that leaves a descendant with its output open keeps `run` waiting.
 
 ## Change a default
@@ -46,7 +46,7 @@ Use record update on the command:
 |---|---|---|
 | `cwd` | `Nothing` | the child's working directory |
 | `env` | `ChildProcess.Inherit` | `Inherit`, `Extend pairs` (the program's environment with these set), or `Only pairs` |
-| `input` | `""` | the text the child reads on its standard input; `""` is no input |
+| `stdin` | `ChildProcess.NoInput` | the child's standard input: `NoInput`, or `Text text` |
 | `killAfter` | `Duration.seconds 1` | the time between `SIGTERM` and `SIGKILL` when the fiber is cancelled |
 | `maxOutput` | 16 MiB | the most bytes kept of each stream; more is `Err OutputTooLarge` |
 
@@ -56,8 +56,8 @@ ChildProcess.run { ChildProcess.command "make" [] | cwd = Just "build" }
 
 ## Send input
 
-Set `input` to give the child its standard input. The text is written as UTF-8, and then the
-child reads an end of file.
+Set `stdin` to `ChildProcess.Text text` to give the child its standard input. The text is written
+as UTF-8, and then the child reads an end of file.
 
 ```beni platform=node
 import ChildProcess
@@ -67,7 +67,7 @@ import Node exposing (Program)
 
 main : Program
 main = Io.run λ⊤ →
-    sort = { ChildProcess.command "sort" [] | input = "pear\napple\n" }
+    sort = { ChildProcess.command "sort" [] | stdin = ChildProcess.Text "pear\napple\n" }
     case ChildProcess.run sort of
         Err _ →
             Node.exitWith "cannot run sort" 1
@@ -80,7 +80,8 @@ main = Io.run λ⊤ →
   standard input, before it has read all of the text is not an error. The rest of the text is
   dropped, and the answer is the child's status and output, as always.
 - The answer does not say how much of the text the child read.
-- With `input = ""`, the standard input is empty (`/dev/null`), not a pipe.
+- With `NoInput`, the standard input is empty (`/dev/null`), not a pipe. `Text ""` is an empty
+  pipe. The child reads an end of file at once from each, but it can see which one it has.
 - A streamed input is not available.
 
 ## Errors
