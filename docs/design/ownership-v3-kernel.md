@@ -1125,10 +1125,15 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    (`Check.bottom`), as a function does: with no
    contract at the start, a member walked before it read it as unknown code, and what escaped then stayed.
    Fresh names of drafts are bounded (§4.2). A member
-   whose walk gave up has no contract in that round and after. A group that has not settled after 64
-   rounds publishes no contract for any member (§8): a contract of a round before the fixed point says
-   less than the group does. The rounds of a member share its one step budget (§8): a member past it
-   stops the rounds, and no member publishes a contract.
+   whose walk gave up has no contract in that round and after. The rounds of a group have no bound of
+   their own; their bound is the budget (§8). Each walk of a member, in each round, counts against
+   that member's one step budget and against the module's budget. So the work of a group is at most
+   the sum of the budgets of its members, and at most the module's budget, whatever the number of its
+   rounds. A member past its budget, or a module past its, stops the rounds in that round: the member
+   has its `limit` line, no member publishes a contract, and the round accepts nothing, since a contract
+   of a round before the fixed point says less than the group does. *Before (#2513), a group that had
+   not settled after 64 rounds was a limit whatever its work: a function that rotates a tuple of 70
+   lists needs 70 rounds and about the work of one of 64, and it was not judged.*
 10. **`foreign` and the rows of `core/`** (`Check.wordedContract`, `Check.wordedFn`): a declaration with
     ownership words is not walked; its words are its contract, a trusted row. A result the words do not
     describe is `undescribed`: `outside` (no frame may write it) and every cell of every parameter at any
@@ -2605,7 +2610,7 @@ for all of them filled the 24 with the answers of a wide message type, and the m
 `updateWith` escaped through `Cmd.map`'s function, research report 143); a `partsOf` deeper than 8 claims nothing (the parts are not apart); `isView` deeper
 than 4 is no view (its answer is kept); an alias of `sender` deeper than 8 is no sender (a message
 sent through it is not a demand, and it is never `own` anyway, rule 13); a frame nested past 200 or a group of local functions past 16
-rounds gives up (§3.3); a group of declarations past 64 rounds is a `limit` line that names the member first by name, and none of its members
+rounds gives up (§3.3); a group of declarations has no bound on its rounds but the budget (§3.3 item 9): the member that passes its budget has the `limit` line, and none of its members
 publishes a contract (a round's contract that is not the last says less than the group does, and a limit
 line of a module outside the app is no error, so an importer would read it). A limit line of a declaration
 points at its name (`Check.declLimit`; research report 141: every limit line pointed at the module's
