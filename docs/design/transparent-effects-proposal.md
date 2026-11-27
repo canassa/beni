@@ -3021,16 +3021,36 @@ pub adjust : Virtual, Duration → Result AdjustError ⊤
   this section does.
 - **`Metadata.elapsed` and a log span's time** are differences of two readings. A difference can
   be more than `L`: a clock that began at −`L` can read 10. §17.8 and §17.11 give each its answer.
-- **Open: a sleeper's wake time.** `Task.sleep` on a virtual clock still computes the wake time
-  as the reading plus the duration, with no bound (`virtualSleep` in `core/Task.beni`). That time
-  is internal, so the decision above does not settle it, and the answer is the owner's (dashboard
-  question `clock-int-range-q1`, 2026-11-24). Until this section states that answer, the headline
-  of this amendment does not cover that sum. Since this amendment a clock never reads past `L`,
-  so today a sleeper with a later wake time is never due.
+- **A wait whose wake time is past `L` never wakes.** *Added 2026-11-27 (#2022; Jayson's answer
+  of 2026-11-25 to the dashboard question `clock-int-range-q1`: "It never wakes").* A sleeper's
+  wake time is the reading plus the duration. That time is internal: no caller supplies it as a
+  value, so the decision above did not settle it. When the sum is more than `L`, no `Int` holds
+  the wake time, and the clock never reads it, because `adjust` refuses each move past `L`. The
+  wait is then never due.
+  - **`Task.sleep` does not fail, and its type does not change.** The fiber waits until it is
+    cancelled, as a fiber that waits on a `Task.never` does. The cancel ends the wait and runs
+    the fiber's cleanup. A program whose last fiber waits so can never wake (§17.10).
+  - **The test comes before the sum.** It is the test of `adjust`: a reading at or below 0 has
+    room for each duration, and above 0 the test is `d > L − reading`. The kernel computes no
+    wake time past `L`, and it does not put such a wait in the list of sleepers.
+  - **Each wait on a virtual clock is a `Task.sleep`**, so this holds for each of them: the timer
+    of `Task.timeout` (§17.7), the delay that `Task.retry` and `Task.repeat` sleep (§17.8), and a
+    platform's `Time.sleep`.
+  - **What does not change.** A wait due at `L` wakes when the clock reads `L`. A wait of `zero`
+    returns at once, also on a clock that reads `L`. The real clock has no such sum: its wait is
+    a chain of host timers.
+  - **What a program saw before.** Before the first part of this amendment (2026-11-24) the clock
+    moved past `L`, and a sleeper due 1 ms after `L` woke at the reading 9007199254740992. Since
+    that part, `adjust` refuses that move, so such a sleeper did not wake. The kernel still
+    computed its wake time, with no bound, and kept it in the list of sleepers. This part states
+    the answer and removes that sum. No `run/` program can see the difference between the two
+    parts.
 - **Fixtures.** `run/VirtualClockAdjustTooFar`: a clock at `L` − 5 refuses 6 ms with
   `TooFar (5 ms)` and still reads `L` − 5, a sleeper due at `L` − 3 did not wake, 5 ms then moves
   the clock to `L` and wakes it, each later `adjust` but `zero` is `TooFar zero`, and a clock at
-  −`L` moves by `L` twice.
+  −`L` moves by `L` twice. `run/VirtualClockSleepPastEnd`: on a clock at `L` − 5, a sleep of 5 ms
+  wakes at `L`; a sleep of 6 ms does not wake, `Task.poll` gives `Nothing`, and a cancel ends it
+  and runs its release; a `timeout` of 6 ms around work that ends at `L` gives `Just` its value.
 
 ### 17.7 Structured combinators (P3)
 
@@ -3120,6 +3140,12 @@ clock — the one reading that does not depend on how fast a timer fires. A chil
 `Maybe` (report 23 §0.2 row 6), and `Maybe.withDefault` is `timeoutOrElse`. HTTP's own per-request
 `timeout` (`boundary.md` §9.8.12) stays: it answers `Error.Timeout`, this cancels the fiber, which
 aborts the request through its canceller; `Http`'s doc says which to reach for.
+
+*Amended 2026-11-27 (#2022).* **On a virtual clock, a `d` that ends past the clock's last reading
+never passes.** The timer of `timeout` is a `Task.sleep d`, and a wait whose wake time is past
+9007199254740991 never wakes (§17.6, amended the same day). So `timeout` then puts no limit on
+`work`: when `work` returns, the answer is `Just` its value, and the timer is cancelled as each
+timer is. `timeout` gets no typed failure and no new case. Fixture: `run/VirtualClockSleepPastEnd`.
 
 **Fixtures** (report 23 rows 25–33 under these names, both builds): `run/ParBoth`,
 `run/ParChildCancelled`, `run/ParOkFailCancelsSibling`, `run/ForEachOrder`, `run/ForEachBounded`
@@ -3370,6 +3396,10 @@ in milliseconds.
   duration when the difference is more than `L`. A virtual clock that began at −`L` and reads 10
   ran for more than `L` milliseconds. The runner tests before it subtracts. A start at or above 0
   leaves a difference that fits. For a start below 0 the test is `now > L + start`.
+- **The delay that a runner sleeps** *(added 2026-11-27)* is a `Task.sleep` on the running
+  fiber's clock. On a virtual clock, a delay that ends past `L` is a wait that never wakes
+  (§17.6). `retry` and `repeat` then do not run `work` again, and they end only when their fiber
+  is cancelled.
 - **Nothing else in `Schedule` adds times with no bound.** `delays` sums with `Duration.sum`,
   `fibonacci` also, `exponential` and `jittered` go through `Duration.times`, and `concat`'s
   shift subtracts one duration from another.
