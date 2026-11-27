@@ -1,3 +1,4 @@
+the repeated work ran at: 9007199254740986
 the 5 ms sleeper woke at: 9007199254740991
 5 ms: Ok ⊤
 1 ms more: Err (TooFar (Duration 0))
@@ -5,5 +6,7 @@ under a timeout of 6 ms: Just 9007199254740991
 the 6 ms sleeper: Nothing
 the 6 ms sleeper was released: ⊤
 the 6 ms sleeper, cancelled: Cancelled
+the repeat: Nothing
+the repeat, cancelled: Cancelled
 a sleep of zero at the last reading: "returned"
 the clock reads 9007199254740991

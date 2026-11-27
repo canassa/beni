@@ -3050,7 +3050,8 @@ pub adjust : Virtual, Duration → Result AdjustError ⊤
   the clock to `L` and wakes it, each later `adjust` but `zero` is `TooFar zero`, and a clock at
   −`L` moves by `L` twice. `run/VirtualClockSleepPastEnd`: on a clock at `L` − 5, a sleep of 5 ms
   wakes at `L`; a sleep of 6 ms does not wake, `Task.poll` gives `Nothing`, and a cancel ends it
-  and runs its release; a `timeout` of 6 ms around work that ends at `L` gives `Just` its value.
+  and runs its release; a `timeout` of 6 ms around work that ends at `L` gives `Just` its value;
+  a `repeat` with a delay of 6 ms runs its work one time; a sleep of `zero` at `L` returns.
 
 ### 17.7 Structured combinators (P3)
 
@@ -3399,7 +3400,8 @@ in milliseconds.
 - **The delay that a runner sleeps** *(added 2026-11-27)* is a `Task.sleep` on the running
   fiber's clock. On a virtual clock, a delay that ends past `L` is a wait that never wakes
   (§17.6). `retry` and `repeat` then do not run `work` again, and they end only when their fiber
-  is cancelled.
+  is cancelled. `run/VirtualClockSleepPastEnd` pins it for `repeat`: with a delay of 6 ms on a
+  clock at `L` − 5, the work runs one time.
 - **Nothing else in `Schedule` adds times with no bound.** `delays` sums with `Duration.sum`,
   `fibonacci` also, `exponential` and `jittered` go through `Duration.times`, and `concat`'s
   shift subtracts one duration from another.
