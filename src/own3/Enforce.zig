@@ -338,6 +338,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         .kept_lets = lowered.kept_lets,
         .handlers_at_event = lowered.handlers_at_event,
         .holes_once = lowered.holes_once,
+        .not_total_calls = if (lowered.holes_once.len != 0) try notTotalCalls(arena, d, m, bir) else &.{},
         .library = session.options.library and session.graph.modulePackage(m) == .app,
         .rows = session.graph.modulePackage(m) != .app,
         .deps = try depsOf(arena, session, m),
@@ -488,6 +489,39 @@ const Lowered = struct {
     /// `Lowering.evaluates_hole_once`).
     holes_once: []const u32 = &.{},
 };
+
+/// The call instructions of module `m` that are not pure and total for
+/// certain: a call of a declaration the checker did not prove total (this
+/// module's `Dispatch.EffectDecl.total`, an import's `Interface.Scheme.total`),
+/// a call of something else, and a list append. Ascending. A markup lowering
+/// evaluates such a call once, where its value stands, never eagerly in an
+/// arm not taken nor again at an event (`browser-inline.md` §8.2), so only
+/// its writes are read with *A hole evaluated once* (kernel §6 rule 12).
+fn notTotalCalls(arena: Allocator, d: *const Driver, m: Graph.Index, bir: *const Bir) Allocator.Error![]const u32 {
+    const mi = m.int();
+    const dispatch: ?*const Dispatch = if (mi < d.dispatch.len) &d.dispatch[mi] else null;
+    var out: std.ArrayList(u32) = .empty;
+    for (0..bir.insts.len) |i| {
+        const at: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+        if (bir.instTag(at) != .call) continue;
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(at).lhs));
+        const c = bir.instData(callee);
+        const total = switch (bir.instTag(callee)) {
+            .top => if (dispatch) |dt| dt.effectDecl(c.lhs).total else false,
+            .ext_value => blk: {
+                if (c.lhs >= d.interfaces.len) break :blk false;
+                const iface = &d.interfaces[c.lhs];
+                if (c.rhs >= iface.values.len) break :blk false;
+                const scheme = iface.values[c.rhs].scheme;
+                break :blk scheme != .none and iface.schemes[@backingInt(scheme)].total;
+            },
+            else => false,
+        };
+        const append = if (dispatch) |dt| dt.isListAppend(at) or dt.isListAppend(callee) else false;
+        if (!total or append) try out.append(arena, @intCast(i));
+    }
+    return out.items;
+}
 
 fn keptByLowering(arena: Allocator, session: *const Session, d: *const Driver, m: Graph.Index, bir: *const Bir) Allocator.Error!Lowered {
     const mk = session.graph.markup;

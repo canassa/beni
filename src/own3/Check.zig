@@ -204,6 +204,10 @@ pub const Options = struct {
     /// once in each evaluation of the function, ascending (kernel §6 rule
     /// 12, *A hole evaluated once*; `Enforce.keptByLowering`).
     holes_once: []const u32 = &.{},
+    /// The call instructions that are not pure and total for certain,
+    /// ascending (`Enforce.notTotalCalls`; kernel §6 rule 12, *A hole
+    /// evaluated once*): only their writes are read with `holes_once`.
+    not_total_calls: []const u32 = &.{},
     /// The build's schema plans, as the backend reads them: which decoding
     /// runs answer what their workers build (kernel §6 rule 14, *What a
     /// decoding run answers*). Null: no run is known to.
@@ -305,6 +309,8 @@ pub const Mod = struct {
     handlers_at_event: []const u32 = &.{},
     /// `Options.holes_once`.
     holes_once: []const u32 = &.{},
+    /// `Options.not_total_calls`.
+    not_total_calls: []const u32 = &.{},
     /// Per instruction, whether it is a `markup` root that is the whole body
     /// of a function its module names only as a program's `view`
     /// (`viewRoot`), made once.
@@ -1713,6 +1719,16 @@ pub const Mod = struct {
     /// at most once in each evaluation of its function (`Options.holes_once`).
     pub fn holeOnce(m: *const Mod, inst: u32) bool {
         return std.sort.binarySearch(u32, m.holes_once, inst, struct {
+            fn order(a: u32, b: u32) std.math.Order {
+                return std.math.order(a, b);
+            }
+        }.order) != null;
+    }
+
+    /// Whether the call `inst` is not pure and total for certain
+    /// (`Options.not_total_calls`).
+    pub fn notTotalCall(m: *const Mod, inst: u32) bool {
+        return std.sort.binarySearch(u32, m.not_total_calls, inst, struct {
             fn order(a: u32, b: u32) std.math.Order {
                 return std.math.order(a, b);
             }
@@ -4341,6 +4357,7 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .kept_lets = options.kept_lets,
         .handlers_at_event = options.handlers_at_event,
         .holes_once = options.holes_once,
+        .not_total_calls = options.not_total_calls,
         .schema_graph = options.schema_graph,
         .library = options.library,
         .deps = options.deps,

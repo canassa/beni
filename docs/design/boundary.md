@@ -2897,7 +2897,8 @@ at an earlier evaluation. A helper's call in such a hole is made there, at most 
 arguments evaluated there. Its default is `false` for every hole. When a hole's evaluation writes a cell
 in place, the old value of that cell is read again only by another evaluation of the hole, so the
 ownership checker does not count the markup as holding the values of which every cell the hole's own
-evaluation wrote; the hole's value, and every value the evaluation read of a cell it did not write, it
+evaluation wrote at a call that is not pure and total (a pure, total value may still be evaluated in
+an arm not taken, or again at an event); the hole's value, and every value the evaluation read of a cell it did not write, it
 still holds (`ownership-v3-kernel.md` §6.12, *A hole evaluated once*). `inline` says so of each hole
 that the root reaches through elements and fragments alone, in a root with no `let`: it evaluates the
 hole in the binding function of its group, once on each pass that runs that function, and it evaluates
@@ -2905,8 +2906,9 @@ again in that function each `let` and each helper's argument the hole reads (`br
 *Evaluation order*); a branch's arm is a root of its own, evaluated only when its value takes the arm,
 or, eagerly, for an arm whose values are proven pure and total (no list writer). A `For` row, a `Show`
 body and a component are not reached, and the `let`s of a root are memo nodes or values of one
-binding. The test is `browser/inline/TotalCallBranchOwnership`, a page written in place under the
-sanitiser.
+binding. The tests are `browser/inline/TotalCallBranchOwnership`, a page written in place under the
+sanitiser, and `browser/inline/HoleOnceDispatchLive` and `HoleOnceEagerArmsLive`, whose `Dict` inserts
+are pure and total and stay refused.
 
 **What the checker concludes from the rule** (`ownership-v3-kernel.md` §6.12, §6.13). The rule is
 about the runtime, so the checker uses it only where the program gives markup to the runtime:

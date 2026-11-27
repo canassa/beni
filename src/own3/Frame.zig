@@ -6835,7 +6835,10 @@ fn holeOnceMarkup(f: *Frame, inst: u32) Error!bool {
 
 /// Of `held[from..]`, drop each value of which every cell is one that a
 /// write since demand `d0` names (kernel §6 rule 12, *A hole evaluated
-/// once*): a value with no cell, too.
+/// once*): a value with no cell, too. Only a write made at a call that is
+/// not pure and total for certain counts (`Mod.notTotalCall`): a lowering
+/// can evaluate a pure, total value eagerly in an arm not taken, or again
+/// where an event fires (a `Dict` writer is total).
 fn dropWritten(f: *Frame, held: *std.ArrayList(Val), from: usize, d0: usize) Error!void {
     if (f.demands.items.len == d0 or from >= held.items.len) return;
     var lv: std.ArrayList(Atom) = .empty;
@@ -6852,6 +6855,7 @@ fn dropWritten(f: *Frame, held: *std.ArrayList(Val), from: usize, d0: usize) Err
         }
         const all = for (lv.items) |a| {
             const written = for (f.demands.items[d0..]) |d| {
+                if (!f.m.notTotalCall(d.point)) continue;
                 if (for (f.atoms.items[d.w..][0..d.wn]) |w| {
                     if (w.root == a.root and w.path == a.path and w.e == a.e) break true;
                 } else false) break true;

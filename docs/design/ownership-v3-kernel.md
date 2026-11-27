@@ -1439,8 +1439,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     (`Lowering.evaluates_hole_once`, `boundary.md` §9.4.8, *A hole evaluated once*), the old value of
     a cell that the hole's own evaluation wrote is read by nothing but another evaluation of the hole.
     So a value the evaluation read, or handed to a helper's call in the hole, of which every cell
-    (`allLeaves`) is a cell that a write of that evaluation names, is no value the markup holds; the
-    hole's value, a closure the hole makes, and every other value it read stay held. The checker
+    (`allLeaves`) is a cell that a write of that evaluation names, made at a call that is not pure and
+    total for certain (`Mod.notTotalCall`, `Enforce.notTotalCalls`: a callee the checker did not prove
+    total, or a list append), is no value the markup holds; the hole's value, a closure the hole makes,
+    and every other value it read stay held. A pure, total value is evaluated where the lowering
+    likes: eagerly in an arm the branch does not take, or again where an event fires from an argument
+    of a helper (`browser-inline.md` §8.2), and a `Dict` writer is total; so its writes do not count. The checker
     reads a hole so where two facts hold:
     1. the markup is the whole body of a declaration with parameters, or the markup of an arm of an
        `if` or a `case` (no `let` around it) that is a hole's value of such markup, itself read so,
