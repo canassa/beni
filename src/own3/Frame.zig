@@ -11628,6 +11628,14 @@ fn checkSharedRun(f: *Frame, base: *const Use, cr: u32, layout: u32, e: u32, typ
     const c = base.c;
     const start = f.atoms.items.len;
     defer f.atoms.shrinkRetainingCapacity(start);
+    // An expansion makes a value for each part that it walks to (`project`,
+    // on the way to a function held in an argument, `heldVal`): the second
+    // expansion makes them again. They are dropped here, before `loud`
+    // compares the frame's parts: no step of the walk keeps one, and a part
+    // that kept one (a memo, a list of parts) is a part that `loud` finds
+    // grown.
+    const nodes = f.nodes.items.len;
+    defer f.nodes.shrinkRetainingCapacity(nodes);
     var st: SrcState = .{ .inst = inst, .typed = typed };
     if (cr == Loc.all) {
         for (c.res, 0..) |srcs, ri| try f.expandSrcs(base, srcs, c.layouts[c.arity], @intCast(ri), layout, e, &st);
