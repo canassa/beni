@@ -15,6 +15,8 @@
 //! - one directory serves a run that does not enforce and one that does, the
 //!   checker v1 and the checker v3, `--library` and a program;
 //! - a block is damaged;
+//! - a record is written in place with a read that is read first (the
+//!   lowering channel and the hoisted reads of an installed module);
 //! - a module that importers read is installed in a session with other
 //!   symbols and other types than the one that stored it.
 //!
@@ -395,6 +397,57 @@ test "a warm build under --ownership=v3 is the same at --jobs=1 and --jobs=8" {
         try expectSame(&w, arena, oracle, "out-oracle", warm, out);
         try testing.expectEqual(warm.counters.modules, warm.counters.hits);
     }
+}
+
+test "a record written in place, with a read that is read first: an installed module writes the same JavaScript" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", manifest);
+    // `p.x` is read after the update of `p` through the older name: the
+    // lowering reads it before the update's stores and writes the record in
+    // place (kernel §11, *A read of a written field, read first*). The
+    // accepted update is in the module's lowering channel and the read in
+    // its hoisted reads: an installed module has both from its block.
+    try w.write("src/Points.beni",
+        \\pub type alias P =
+        \\    x : Int
+        \\    y : Int
+        \\
+        \\
+        \\pub inLet : P, Int → Int
+        \\inLet p n =
+        \\    q = { p | x = n }
+        \\    q.x * 100 + p.x
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Node
+        \\import Points
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (Points.inLet { x = 3, y = 4 } 6))
+        \\
+    );
+    const in_place = [_][]const u8{ "build", "--ownership=v3", "--records-in-place", "--lists-in-place" };
+    const oracle = try run(&w, arena, &in_place, &.{ "--no-cache", "--out=out-oracle" });
+    const cold = try run(&w, arena, &in_place, &.{ "--cache-dir=cache", "--out=out-cold" });
+    const warm = try run(&w, arena, &in_place, &.{ "--cache-dir=cache", "--out=out-warm" });
+    try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
+    try expectSame(&w, arena, oracle, "out-oracle", cold, "out-cold");
+    try expectSame(&w, arena, oracle, "out-oracle", warm, "out-warm");
+    try testing.expectEqual(warm.counters.modules, warm.counters.hits);
+    // The warm build wrote the record in place, with the read first: a
+    // store into `p`, and no copy of it. A plain build copies.
+    const points = try w.read("out-warm/Points.mjs");
+    try testing.expect(std.mem.indexOf(u8, points, ".x = n") != null);
+    try testing.expect(std.mem.indexOf(u8, points, "...p") == null);
+    const plain = try run(&w, arena, &.{"build"}, &.{ "--no-cache", "--out=out-plain" });
+    try testing.expectEqual(@as(u8, 0), plain.result.exit_code);
+    try testing.expect(std.mem.indexOf(u8, try w.read("out-plain/Points.mjs"), "...p") != null);
 }
 
 // ---------------------------------------------------------------------------

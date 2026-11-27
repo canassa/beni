@@ -12,12 +12,19 @@
 // `TypeId`) would give that root another verdict. `--own-cache` gives each root a directory of its
 // own instead.
 //
-//     TMPDIR=<disk> node bench/ownership-v3-cache.mjs <beni> <out> [jobs] [--roots=<text>] [--own-cache]
+//     TMPDIR=<disk> node bench/ownership-v3-cache.mjs <beni> <out> [jobs] [--roots=<text>] [--own-cache] [--build]
 //
 // It writes `<out>/RESULTS` (one line for each root: its name, the three exit codes, and the hits,
 // misses and checked modules of the last run) and `<out>/FAULTS` (each root where a run with the
 // cache differs from the oracle, with both outputs). It exits 1 when `FAULTS` has a line.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+//
+// `--build` compares the emitted JavaScript instead: each root that names a platform is built three
+// times as above, under two sets of flags that make the output depend on the accepted writes
+// (`--ownership-everywhere --lists-in-place`, and `--records-in-place --lists-in-place`), and each
+// build with the cache must also have the oracle's output tree, byte for byte. Both sets share the one
+// cache directory: neither flag is in a module's key, so one entry serves both lowerings.
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 
@@ -26,11 +33,12 @@ const flags = args.filter((a) => a.startsWith("--"));
 const [beni, out, jobsArg] = args.filter((a) => !a.startsWith("--"));
 const only = flags.find((f) => f.startsWith("--roots="))?.slice("--roots=".length);
 const ownCache = flags.includes("--own-cache");
+const buildMode = flags.includes("--build");
 const repo = join(dirname(new URL(import.meta.url).pathname), "..");
 const { o1Roots } = await import(join(repo, "bench/ownership-roots.mjs"));
 mkdirSync(out, { recursive: true });
 const scratch = mkdtempSync(join(process.env.TMPDIR, "roots-"));
-const roots = o1Roots(repo, scratch).filter((r) => !only || r.name.includes(only));
+const roots = o1Roots(repo, scratch).filter((r) => (!only || r.name.includes(only)) && (!buildMode || r.argv[0]?.startsWith("--platform=")));
 const jobs = Number(jobsArg ?? 6);
 const base = ["check", "--ownership=v3", "--ownership-everywhere", "--diagnostics=json"];
 
@@ -59,10 +67,49 @@ function counters(trace) {
   return c;
 }
 
+/// The files of an output tree as one digest: their count, then each path and its bytes.
+function tree(dir) {
+  const h = createHash("sha1");
+  let files = 0;
+  const walk = (d, rel) => {
+    let es;
+    try { es = readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)); } catch { return; }
+    for (const e of es) {
+      if (e.isDirectory()) walk(join(d, e.name), `${rel}${e.name}/`);
+      else { h.update(`${rel}${e.name}\0`); h.update(readFileSync(join(d, e.name))); h.update("\0"); files += 1; }
+    }
+  };
+  walk(dir, "");
+  return `${files}:${h.digest("hex")}`;
+}
+
+const buildSets = [
+  { name: "lists", flags: ["--ownership=v3", "--ownership-everywhere", "--lists-in-place"] },
+  { name: "records", flags: ["--ownership=v3", "--records-in-place", "--lists-in-place"] },
+];
+
 const results = [];
 const faults = [];
 let next = 0;
+async function built(r, i) {
+  const cache = ownCache ? join(out, "caches", String(i)) : join(out, "cache");
+  const lines = [];
+  for (const s of buildSets) {
+    const dirs = [0, 1, 2].map((k) => join(scratch, `o-${i}-${s.name}-${k}`));
+    const oracle = await run(["build", ...s.flags, "--no-cache", `--out=${dirs[0]}`, ...r.argv]);
+    const first = await run(["build", ...s.flags, `--cache-dir=${cache}`, `--out=${dirs[1]}`, ...r.argv]);
+    const second = await run(["build", ...s.flags, `--cache-dir=${cache}`, `--out=${dirs[2]}`, ...r.argv]);
+    const t = dirs.map(tree);
+    const same = (x, k) => x.code === oracle.code && x.stderr === oracle.stderr && t[k] === t[0];
+    lines.push(`${r.name} ${s.name} exit ${oracle.code} ${first.code} ${second.code} tree ${t[0]}`);
+    const which = !same(first, 1) ? "first" : !same(second, 2) ? "second" : null;
+    if (which) faults.push(`== ${r.name} [${s.name}]: the ${which} build with the cache differs (trees ${t.join(" ")})\n-- no cache (exit ${oracle.code})\n${oracle.stderr}\n-- first (exit ${first.code})\n${first.stderr}\n-- second (exit ${second.code})\n${second.stderr}\n`);
+    for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  }
+  results[i] = lines.join("\n");
+}
 async function one(r, i) {
+  if (buildMode) return built(r, i);
   const cache = ownCache ? join(out, "caches", String(i)) : join(out, "cache");
   const trace = join(scratch, `trace-${i}.json`);
   const oracle = await run([...base, "--no-cache", ...r.argv]);
@@ -84,5 +131,5 @@ writeFileSync(join(out, "RESULTS"), results.join("\n") + "\n");
 writeFileSync(join(out, "FAULTS"), faults.join("\n"));
 rmSync(scratch, { recursive: true, force: true });
 const warm = results.filter((l) => / misses 0 /.test(l)).length;
-console.log(`${roots.length} roots, ${faults.length} faults, ${warm} with no miss in the second run`);
+console.log(buildMode ? `${roots.length} roots, ${buildSets.length} sets of flags, ${faults.length} faults` : `${roots.length} roots, ${faults.length} faults, ${warm} with no miss in the second run`);
 process.exit(faults.length === 0 ? 0 : 1);
