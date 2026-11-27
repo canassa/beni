@@ -1,0 +1,80 @@
+-- A closure that writes a field of a record it captured, where the write
+-- is not safe in place (ownership-v3-kernel.md §11 item 11), each refused:
+-- `rev` runs `a` after `u`, so `a` would read the written field; `twice`
+-- runs `u` twice, so its second run would write the record the first
+-- answered; `both` runs `u` before `v`, and `u` answers the record that `v`
+-- writes; `kept` keeps the closure in a list, which runs it at any time;
+-- `late` reads the record after the call. The copying program prints
+-- `1 11`, `2 1`, `1 1 m!`, `1`, `1 5`.
+import Node exposing (Program)
+
+
+type alias M =
+    n : Int
+    s : String
+
+
+rev : (⊤ → Int), (Int → r) → r
+rev a u =
+    x = u 0
+    y = a ⊤
+    if y > 100 then x else x
+
+
+twice : (⊤ → Int), (Int → r) → r
+twice a u =
+    x = u (a ⊤)
+    y = u 2
+    if 1 > 0 then y else x
+
+
+both : (Int → r), (Int → r) → r × r
+both u v =
+    x = u 0
+    y = v 1
+    ( x, y )
+
+
+keep : (Int → r) → List (Int → r)
+keep u = [ u ]
+
+
+reversed : M → String
+reversed m =
+    out = rev (λ⊤ → m.n + 10) λr → { m | n = r }
+    "${String.fromInt out.n} ${String.fromInt (m.n + 10)}"
+
+
+ranTwice : M → String
+ranTwice m =
+    out = twice (λ⊤ → 1) λr → { m | n = r }
+    "${String.fromInt out.n} ${String.fromInt m.n}"
+
+
+pair : M → String
+pair m =
+    ( x, y ) = both (λr → { m | n = r + 1 }) λ_ → { m | s = m.s ++ "!" }
+    "${String.fromInt x.n} ${String.fromInt y.n} ${y.s}"
+
+
+kept : M → String
+kept m =
+    fs = keep λr → { m | n = r }
+    String.fromInt (List.length fs)
+
+
+late : M → String
+late m =
+    out = (λr → { m | n = r }) 5
+    "${String.fromInt m.n} ${String.fromInt out.n}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ reversed { n = 1, s = "m" }
+        , ranTwice { n = 1, s = "m" }
+        , pair { n = 1, s = "m" }
+        , kept { n = 1, s = "m" }
+        , late { n = 1, s = "m" }
+        ]

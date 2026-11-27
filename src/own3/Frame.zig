@@ -236,6 +236,9 @@ const Code = struct {
     }
 };
 
+/// One point of `Frame.sights`.
+const Sight = struct { di: u32, inst: u32, at: u32, within: bool };
+
 /// What the frame hands one function parameter, while it is walked.
 const FnDraft = struct {
     root: u32,
@@ -392,6 +395,11 @@ const Other = struct {
     flags: []const u8 = &.{},
     /// A spread item: its own storage is read.
     self_only: bool = false,
+    /// Where set, the cells it holds are these atoms alone: a function
+    /// that the callee runs only before the function that writes, of which
+    /// the callee still holds what its runs left (kernel §11 item 11,
+    /// `capAfter`).
+    atoms: ?[]const Atom = null,
 };
 
 const Demand = struct {
@@ -744,6 +752,11 @@ within_hosts_calls: std.ArrayList(u32) = .empty,
 /// opens (kernel §13 item 12, *A defect*, (d), *The ways in*; #2633).
 within_known_calls: std.ArrayList(u32) = .empty,
 within_own: std.ArrayList([2]u32) = .empty,
+/// Each point at which the walk runs one of the frame's own function
+/// parameters or hands it to a holder: the draft, the instruction, the time,
+/// and whether a call runs it within itself there (`runsWithin`). What
+/// `Fn.before` is read from (kernel §11 item 11, *The order of a callee's runs*).
+sights: std.ArrayList(Sight) = .empty,
 
 const Frame = @This();
 pub const Error = Allocator.Error;
@@ -3457,6 +3470,7 @@ const DemandIn = struct {
 /// written part below it. Another part below the same entry is another
 /// operand: a cell at two parts of one value is no `own` cell.
 fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []const u64) Error!bool {
+    if (o.atoms) |as| return f.atomsReach(as, ws);
     if (o.v == v_none or o.v == v_outside) return false;
     const n = f.nodes.items[o.v];
     if (n.tag == .fnref) return false;
@@ -3709,7 +3723,10 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
             // The contents of a captured cell are written as a parameter's
             // are: each holder that runs the code judges the write against
             // its own holders (kernel §13 item 11).
-            .capture => if (!try f.captureContents(a)) {
+            // So are a captured record's field slots: the holder that runs
+            // the code once within a call judges the write there (kernel
+            // §11 item 11).
+            .capture => if (!try f.captureContents(a) and !try f.captureSlot(a)) {
                 d.refused = .captured;
             },
             .answer => if (in.op != .supply) {
@@ -6504,9 +6521,78 @@ pub fn finish(f: *Frame, result_place: PlaceId) Error!*const Contract {
     var renew_shared = false;
     const renew = try f.publishRenew(flags, off, total, &renew_shared);
     const paths = try f.publishPaths(flags, off, renew);
+    try f.publishBefore(fns, flags, off, renew);
     const c = try m.arena.create(Contract);
     c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns, .nonlinear = nonlinear, .old_result = f.tail_old, .casts = f.casts, .exact = f.answersParam0(), .switches = f.switched, .runs_on = f.runs_on or f.runsOnParams() != 0 or f.runsOnBody(), .hosts = f.hosts, .hosts_forked = f.hosts_forked, .renew = renew, .renew_shared = renew_shared, .paths = paths };
     return c;
+}
+
+/// The order of the frame's runs of its function parameters (`Fn.before`;
+/// kernel §11 item 11, *The order of a callee's runs*). Parameter `i` runs
+/// only before parameter `k` where every point at which the walk runs `i`
+/// is a call that runs it within itself (`Frame.sights`), the frame keeps it
+/// nowhere (no escape, no answer, no draft that loses it or holds it past
+/// the call, no function or cell it is handed to, no renewal that names it),
+/// `k` escapes nowhere but through a holder the walk sees, and each point of
+/// `i` is at another instruction than each point of `k` and at an earlier
+/// time. A function that the frame does not run is no exception: none of
+/// its points is after one of `k`'s.
+fn publishBefore(f: *Frame, fns: []?*const CMod.Fn, flags: []const u8, off: []const u32, renew: []const ?[]const Src) Error!void {
+    const ds = f.drafts.items;
+    if (ds.len < 2) return;
+    _ = f.charge(ds.len * ds.len + f.sights.items.len * f.sights.items.len);
+    const free = try f.gpa.alloc(bool, ds.len);
+    defer f.gpa.free(free);
+    for (ds, 0..) |dr, di| {
+        const idx = f.roots.items[dr.root].index;
+        free[di] = false;
+        if (idx >= 64 or idx >= fns.len or fns[idx] == null) continue;
+        if (dr.lost or dr.kept_out) continue;
+        if (flags[off[idx]..off[idx + 1]].len == 0) continue;
+        const kept = for (flags[off[idx]..off[idx + 1]]) |x| {
+            if (x & (flag_e | flag_a) != 0) break true;
+        } else false;
+        if (kept) continue;
+        const named = blk: {
+            for (ds) |d2| for (d2.supply) |l| for (l.items) |x| if (x.kind == .param and x.a == idx) break :blk true;
+            for (renew) |ro| if (ro) |srcs| for (srcs) |x| if (x.kind == .param and x.a == idx) break :blk true;
+            break :blk false;
+        };
+        if (named) continue;
+        const unbounded = for (f.sights.items) |s| {
+            if (s.di == di and !s.within) break true;
+        } else false;
+        if (unbounded) continue;
+        free[di] = true;
+    }
+    for (ds, 0..) |dr, di| {
+        if (!free[di]) continue;
+        const idx = f.roots.items[dr.root].index;
+        var mask: u64 = 0;
+        for (ds, 0..) |dk, dki| {
+            if (dki == di) continue;
+            const kdx = f.roots.items[dk.root].index;
+            if (kdx >= 64 or kdx >= fns.len or fns[kdx] == null) continue;
+            const escapes = for (flags[off[kdx]..off[kdx + 1]]) |x| {
+                if (x & flag_e != 0) break true;
+            } else false;
+            if (escapes) continue;
+            const ordered = for (f.sights.items) |si| {
+                if (si.di != di) continue;
+                const ok = for (f.sights.items) |sk| {
+                    if (sk.di != dki) continue;
+                    if (si.inst == sk.inst or si.at >= sk.at) break false;
+                } else true;
+                if (!ok) break false;
+            } else true;
+            if (ordered) mask |= @as(u64, 1) << @intCast(kdx);
+        }
+        if (mask == 0) continue;
+        const g = try f.m.arena.create(CMod.Fn);
+        g.* = fns[idx].?.*;
+        g.before = mask;
+        fns[idx] = g;
+    }
 }
 
 /// Safe builds: a location of a published result with no source holds no
@@ -6686,6 +6772,17 @@ fn captureContents(f: *Frame, a: Atom) Error!bool {
     if (r.kind != .capture or !r.tracked) return false;
     const inner = try f.innerOf(r.layout);
     return a.e < inner.len and inner[a.e];
+}
+
+/// Whether atom `a` of a capture root is a field slot of a record it
+/// captured, in no cell's contents (kernel §11 item 11): a write there is
+/// judged where the code runs, at a call that runs it once within
+/// (`captureSlots`), and refused at every other holder.
+fn captureSlot(f: *Frame, a: Atom) Error!bool {
+    const r = f.roots.items[a.root];
+    if (r.kind != .capture or !f.isSlotAtom(a)) return false;
+    const inner = try f.innerOf(r.layout);
+    return !(a.e < inner.len and inner[a.e]);
 }
 
 /// Whether the location `loc` is in the deep level of a cycle.
@@ -12321,6 +12418,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
         const forked = f.cells_any and !defectAt(&use) and forkedAt(&use);
         for (reg, 0..) |*x, k| x.* = forked and (f.isWriter(code, k) or try f.registerWriter(v, code, @intCast(k), inst));
         if (try f.writesCapturedBut(code, reg)) try f.refuse(&use, .call, "a function that writes the contents of a cell it captured goes where the checker does not follow it");
+        if (try f.writesCapturedSlot(code)) try f.refuse(&use, .call, slot_kept);
         // One that writes in place what it stored in a cell it captured,
         // after another fiber could run: another fiber can hold the cell
         // (kernel §13 item 12).
@@ -12377,6 +12475,7 @@ fn flowCode(f: *Frame, v: Val, code: Code, use_in: *const Use) Error!void {
     }
     try f.escapeUnplacedAnswer(code, &use);
     try f.captureCells(v, code, &use);
+    try f.captureSlots(code, &use);
     try f.flowRenews(code, &use, true);
     try f.flowCaptures(code, &use);
 }
@@ -12844,6 +12943,141 @@ fn captureCells(f: *Frame, v: Val, code: Code, use: *const Use) Error!void {
 
 const kept_written = "a function writes in place the contents of a cell it captured and stores nothing back, and it can run again: its next run reads the written value as the old one";
 
+const slot_kept = "a function that writes a field of a record it captured goes where the checker does not follow it";
+
+/// Whether the known function `code` writes a field slot of a record it
+/// captured, in no cell's contents (kernel §11 item 11).
+fn writesCapturedSlot(f: *Frame, code: Code) Error!bool {
+    const m = f.m;
+    const lc = code.contract;
+    for (0..code.ncaps) |k| {
+        const j = code.own_params + k;
+        if (j >= lc.arity) break;
+        const ses = m.loc.layoutEntries(lc.layouts[j]);
+        const inner = try f.innerOf(lc.layouts[j]);
+        _ = f.charge(Loc.scanUnits(ses.len));
+        for (ses, 0..) |e, i| {
+            if (e.kind != .field or (i < inner.len and inner[i])) continue;
+            if (lc.flags[lc.off[j] + i] & flag_w != 0) return true;
+        }
+    }
+    return false;
+}
+
+/// What the known function `code` writes of the records it captured, where
+/// it runs (kernel §11 item 11). Only a call whose callee runs it within the
+/// call, at most once and as its own argument (`Fn.once`, `Fn.single`),
+/// judges it: each written slot is a demand at that call on what the frame
+/// holds there, against the call's other arguments and the function's other
+/// captures. A run more than once would write in place what an earlier run
+/// answered; one below another function, or where no call runs it within,
+/// runs at times the frame does not see. Of an argument that the callee runs
+/// only before the parameter that holds `code` (`Fn.before`), what its runs
+/// leave is the operand (`capAfter`): its reads are over by the write.
+fn captureSlots(f: *Frame, code: Code, use: *const Use) Error!void {
+    const m = f.m;
+    if (!try f.writesCapturedSlot(code)) return;
+    if (use.kind == .top or lostAt(use) or code.own_params != use.fnc.arity) return; // refused in `flowCode`
+    const top = runsWithin(use) orelse return f.refuse(use, .call, slot_kept);
+    if (top != use or !(use.fnc.once or use.fnc.single)) return f.refuse(use, .call, "a function that writes a field of a record it captured can run more than once within the call, or inside another function");
+    const lc = code.contract;
+    const site = use.site;
+    var after: std.ArrayList(Atom) = .empty;
+    defer after.deinit(f.gpa);
+    var others: std.ArrayList(Other) = .empty;
+    defer others.deinit(f.gpa);
+    // The bounds of each operand's atoms in `after`, set once `after` stops growing.
+    var bounds: std.ArrayList([2]usize) = .empty;
+    defer bounds.deinit(f.gpa);
+    for (site.others, 0..) |o, i| {
+        if (i == use.j) {
+            try others.append(f.gpa, .{ .v = v_none });
+            continue;
+        }
+        if (i < use.c.arity and o.v != v_none and f.nodes.items[o.v].tag == .closure) if (use.c.fns[i]) |g| if (i < 64 and use.j < 64 and (g.before >> @intCast(use.j)) & 1 != 0) {
+            const start = after.items.len;
+            if (try f.capAfter(o.v, &after)) {
+                try bounds.append(f.gpa, .{ others.items.len, start });
+                try others.append(f.gpa, o);
+                continue;
+            }
+            after.shrinkRetainingCapacity(start);
+        };
+        try others.append(f.gpa, o);
+    }
+    for (bounds.items, 0..) |b, bi| {
+        const end = if (bi + 1 < bounds.items.len) bounds.items[bi + 1][1] else after.items.len;
+        others.items[b[0]].atoms = after.items[b[1]..end];
+    }
+    const first: usize = others.items.len;
+    for (0..code.ncaps) |k| {
+        const j = code.own_params + k;
+        if (j >= lc.arity) break;
+        try others.append(f.gpa, .{ .v = try f.capVal(code, k), .sig = lc.layouts[j], .flags = lc.flags[lc.off[j]..lc.off[j + 1]] });
+    }
+    for (0..code.ncaps) |k| {
+        const j: u32 = @intCast(code.own_params + k);
+        if (j >= lc.arity) break;
+        const sig = lc.layouts[j];
+        const ses = m.loc.layoutEntries(sig);
+        const inner = try f.innerOf(sig);
+        const capv = others.items[first + k].v;
+        var read = false;
+        for (ses, 0..) |se, e| {
+            if (se.kind != .field or (e < inner.len and inner[e])) continue;
+            if (lc.flags[lc.off[j] + e] & flag_w == 0) continue;
+            // The code reads what its contract reads of the capture where
+            // it runs, as a direct call reads its arguments.
+            if (!read) try f.readBy(capv, site.inst, sig, lc.flags[lc.off[j]..lc.off[j + 1]]);
+            read = true;
+            const w: u32 = @intCast(f.atoms.items.len);
+            const dup = try f.argLeaves(capv, sig, @intCast(e), &.{}, false, &f.atoms);
+            try f.demand(w, .{
+                .point = site.inst,
+                .callee_inst = site.callee,
+                .loc = se.loc,
+                .others = others.items,
+                .arg = first + k,
+                .se = @intCast(e),
+                .dup = dup and !se.single,
+                .kind = .callsite,
+            });
+        }
+    }
+}
+
+/// The leaves of the closure `v`'s captures at the locations that outlast
+/// its runs, appended to `out`: what it answers, lets escape, hands to a
+/// function, writes or stores in a cell (`capHeld` with no location that it
+/// only reads). False, with what it appended, where it is held whole: a
+/// captured function, a contract that casts, a draft.
+fn capAfter(f: *Frame, v: Val, out: *std.ArrayList(Atom)) Error!bool {
+    const m = f.m;
+    const code = f.codes.items[f.nodes.items[v].a];
+    const lc = code.contract;
+    if (m.isDraft(lc) or lc.casts or code.own_params + code.ncaps > lc.arity) return false;
+    for (0..code.ncaps) |k| if (lc.fns[code.own_params + k] != null) return false;
+    for (0..code.ncaps) |k| {
+        const j: u32 = @intCast(code.own_params + k);
+        const capv = try f.capVal(code, k);
+        const n = lc.off[j + 1] - lc.off[j];
+        _ = f.charge(Loc.scanUnits(n) + Loc.scanUnits(lc.flags.len));
+        for (0..n) |e| {
+            var touched = lc.flags[lc.off[j] + e] & ~flag_r != 0 or handsOn(lc, j, @intCast(e));
+            if (!touched) for (lc.res) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j and s.e == e) {
+                touched = true;
+            };
+            if (!touched) for (0..lc.arity) |a| for (lc.off[a]..lc.off[a + 1]) |i| if (lc.renewAt(i)) |srcs| for (srcs) |s| if (s.kind == .param and s.a == j and s.e == e) {
+                touched = true;
+            };
+            if (lc.renewAt(lc.off[j] + e) != null) touched = true;
+            if (!touched) continue;
+            _ = try f.argLeaves(capv, lc.layouts[j], @intCast(e), &.{}, false, out);
+        }
+    }
+    return true;
+}
+
 /// Whether every holder from `use` up to the call that runs the function
 /// within it runs it at most once (`Fn.once`: `Ref.update`'s and
 /// `Ref.modify`'s function).
@@ -13217,6 +13451,8 @@ fn flowOwn(f: *Frame, root: u32, use_in: *const Use) Error!void {
     // the caller refuses a hosting function here (kernel §13 item 12, *A
     // defect*, (d), *Up*; #2622).
     if (runsWithin(&use) == null and !try f.startedAt(&use)) f.drafts.items[di].kept_out = true;
+    // Where it runs, or from where a holder can run it (`Fn.before`).
+    try f.sights.append(f.gpa, if (runsWithin(&use)) |cu| .{ .di = di, .inst = cu.site.inst, .at = f.clock, .within = true } else .{ .di = di, .inst = inst, .at = f.clock, .within = false });
     // Run within a call after a call of another of the frame's own
     // functions opened a window: the caller judges the pair (#2622).
     if (f.runs_on_window and !f.runs_on_window_known and runsWithin(&use) != null) f.drafts.items[di].after_call = true;
@@ -14396,6 +14632,7 @@ fn callParam(f: *Frame, inst: u32, callee: u32, root: u32, vals: []const Val, ar
     }
     f.drafts.items[di].called = true;
     f.drafts.items[di].calls +|= 1;
+    try f.sights.append(f.gpa, .{ .di = di, .inst = inst, .at = f.timeOf(inst), .within = true });
     // Called after a call that can leave this fiber masked or under a
     // scheduler of its own: it runs there (`flowOwn`; #2622).
     if (f.runs_on_window_known) f.drafts.items[di].runs_on = true;

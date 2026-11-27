@@ -4099,6 +4099,7 @@ pub const Mod = struct {
                 if (fnc.starts) w.writeAll(" starts") catch return error.OutOfMemory;
                 if (fnc.kept_out) w.writeAll(" kept-out") catch return error.OutOfMemory;
                 if (fnc.after_call) w.writeAll(" after-call") catch return error.OutOfMemory;
+                for (0..64) |b| if ((fnc.before >> @intCast(b)) & 1 != 0) w.print(" before-π{d}", .{b + 1}) catch return error.OutOfMemory;
                 for (0..fnc.arity) |k| for (m.loc.layoutEntries(fnc.layouts[k]), 0..) |e, i| {
                     const slot = fnc.off[k] + i;
                     w.print(" ({d}{s}{s}", .{ k + 1, try m.locText(e.loc), if (fnc.free[slot]) "" else " held" }) catch return error.OutOfMemory;
