@@ -2851,6 +2851,120 @@ test "ownership v3: a write with two entries of one root marks the kept reads at
     };
 }
 
+test "ownership v3: a location that the callee only answers is passed by a later write" {
+    // `o` holds the record `i` at `x` and at `y`. `g` writes the four
+    // locations of `o.x` and only answers `o.y`. The first write is of the
+    // slot `v`: of the answered locations it passes only the slot `v` of
+    // `o.y` (the slots of two fields are two cells, kernel §11), which is
+    // the written cell. The second write is of the slot `w`, and the slot
+    // `w` of `o.y` has no kept read yet: the write passes it (kernel §8, *A
+    // write passes only the kept reads that have an atom at a root and
+    // entry of it*), and is refused for it, as each of the four writes is.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\type alias In =
+        \\    v : List Int
+        \\    w : List Int
+        \\
+        \\
+        \\type alias Out =
+        \\    x : In
+        \\    y : In
+        \\
+        \\
+        \\bump : In → In
+        \\bump i =
+        \\    { i
+        \\        | v = List.push i.v 1
+        \\        , w = List.push i.w 2
+        \\    }
+        \\
+        \\
+        \\wrap : In → Out
+        \\wrap i =
+        \\    { x = i
+        \\    , y = i
+        \\    }
+        \\
+        \\
+        \\g : Out → Out
+        \\g o =
+        \\    { x = bump o.x
+        \\    , y = o.y
+        \\    }
+        \\
+        \\
+        \\go : In → Int
+        \\go i =
+        \\    o = wrap i
+        \\    p = g o
+        \\    List.length p.x.v + List.length p.y.w
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (go { v = [ 7 ], w = [ 8, 9 ] }))
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    const want = [_][]const u8{
+        "39:9 call Main.g o.x.v=: rejected disjoint: another operand of the same operation reaches it",
+        "39:9 call Main.g o.x.w=: rejected disjoint: another operand of the same operation reaches it",
+        "39:9 call Main.g o.x.v: rejected disjoint: another operand of the same operation reaches it",
+        "39:9 call Main.g o.x.w: rejected disjoint: another operand of the same operation reaches it",
+    };
+    for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+        std.debug.print("wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
+test "ownership v3: a later read of a function parameter's answer is tested against the write" {
+    // `ys` is the answer of the function parameter `f`, which was handed
+    // `xs` and can answer it. The write of `xs` has no atom of the answer's
+    // root, and the answer has no run; but what the function was handed can
+    // be in its answer (`rootReach`), so the facts of the root do not settle
+    // the pair (kernel §8, *A later read that its root's facts settle is no
+    // step*), and the write is refused for the later read of `ys`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\run : (List Int → List Int), List Int → Int
+        \\run f xs =
+        \\    ys = f xs
+        \\    zs = List.push xs 1
+        \\    List.length ys + List.length zs
+        \\
+        \\
+        \\keep : (List Int → List Int), Int → Int
+        \\keep f n =
+        \\    xs = [ n ]
+        \\    ys = f xs
+        \\    zs = List.push xs 1
+        \\    List.length ys + List.length zs
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (run (λxs → xs) [ 7, 8 ] + keep (λxs → xs) 3))
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    const want = [_][]const u8{
+        "7:10 List.push xs: rejected later-use: it is read again at 8:5 (<call List.length>)",
+        "15:10 List.push xs: rejected later-use: it is read again at 16:5 (<call List.length>)",
+    };
+    for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+        std.debug.print("wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
 test "ownership v3: a write is compared with a kept read that holds a function parameter's answer" {
     // `grow` writes 8 locations of `r`, so the call keeps an index of its
     // kept reads by the root and entry of their atoms, and a write passes

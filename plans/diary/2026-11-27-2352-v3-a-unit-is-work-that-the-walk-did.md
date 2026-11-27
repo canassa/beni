@@ -27,12 +27,12 @@
 - Checked rule 1 of the brief directly: a base with every budget lifted gives
   the same dump as the change for each of the 2 943 roots with no limit, and
   for each of 60 generated programs that the base stops on.
-- Ran 13 mutations, one for each condition of the three rules. Two had no
-  fixture. One has a test now (a write with two entries of one root). For the
-  other two I found no program that tells them from the code: in each of 678
-  decisions of the one-step rule the lowest and the highest time of a root's
-  runs are equal, and a location that the callee only answers is passed at
-  the first write where the written slot is a new cell of the frame.
+- Ran 13 mutations, one for each condition of the three rules. Four passed
+  the 910 programs. Three have a test now: a write with two entries of one
+  root, a location that the callee only answers and that a later write is,
+  and a later read of a function parameter's answer. For the fourth (the
+  highest time of a root's runs in place of the lowest) I found no program:
+  in each of 678 decisions of the one-step rule the two are equal.
 
 **What I learned**
 
