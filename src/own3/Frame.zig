@@ -603,6 +603,17 @@ ctxs: std.ArrayList(Ctx) = .empty,
 cur_ctx: u32 = 0,
 returns: std.ArrayList(Val) = .empty,
 scratch: std.ArrayList(Atom) = .empty,
+/// The atoms of an operand's location that the call in work read for one of
+/// its writes, kept for its later writes (kernel §8, *A call reads each
+/// location of an operand once*; `otherLeaves`). On while `applyAt` judges
+/// the locations that one call writes.
+other_on: bool = false,
+other_memo: std.AutoHashMapUnmanaged(OtherKey, OtherHit) = .empty,
+other_buf: std.ArrayList(Atom) = .empty,
+/// A walk of values met a function value or a value of no claim since this
+/// was last set false (`leaves`): what such a value holds can grow while
+/// the frame is walked, so `otherLeaves` keeps no read that met one.
+leaf_wide: bool = false,
 /// While a spread literal or a `++` chain is walked: its root call.
 chain_root: u32 = none,
 /// The next `Use.id`.
@@ -1850,6 +1861,7 @@ fn leaves(f: *Frame, v: Val, e: u32, out: *std.ArrayList(Atom)) Error!bool {
         },
         .ref, .built, .join => return f.leavesOwn(v, &.{e}, out),
         .closure, .unknown => {
+            f.leaf_wide = true;
             if (try f.leafHit(v, &.{}, true, out)) |dup| return dup;
             const start = out.items.len;
             // Once the walk is over (`finish`), each such value's atoms are
@@ -3556,6 +3568,88 @@ const DemandIn = struct {
     reach: ?[]const Atom = null,
 };
 
+const OtherKey = struct { v: Val, k: u32, ctx: u32, at: u32 };
+const OtherHit = struct { start: u32, len: u32, dup: bool };
+
+/// The atoms of operand `v` at entry `k` of its own layout, in `f.scratch`,
+/// and whether one cell can be there twice: `leaves`, read once for all the
+/// locations that one call writes (kernel §8, *A call reads each location of
+/// an operand once*). While `applyAt` judges those writes (`other_on`), it
+/// evaluates nothing, so no value is made and no entry of a root changes;
+/// each write is judged in one context and at one time, which are in the
+/// key. The first read is kept, and each later one copies it: 1 unit and 1
+/// for each atom, where a read is a walk of the value. Not kept: a read
+/// under a set of the callee's paths (`judge_set`), which each write has its
+/// own of, and a read that met a function value or a value of no claim
+/// (`leaf_wide`). A safe build reads again at each copy and compares (kernel
+/// §9).
+fn otherLeaves(f: *Frame, v: Val, k: u32) Error!bool {
+    f.scratch.clearRetainingCapacity();
+    if (!f.other_on or f.judge_set.len != 0) return f.leaves(v, k, &f.scratch);
+    const key: OtherKey = .{ .v = v, .k = k, .ctx = f.judge_ctx, .at = f.judge_at };
+    if (f.other_memo.get(key)) |hit| {
+        // The copy is work of its own (kernel §8). Past the budget a read
+        // finds nothing, as `leaves` does.
+        if (f.charge(1 + hit.len)) return false;
+        try f.scratch.appendSlice(f.gpa, f.other_buf.items[hit.start..][0..hit.len]);
+        try f.checkOtherLeaves(v, k, hit);
+        return hit.dup;
+    }
+    const wide = f.leaf_wide;
+    f.leaf_wide = false;
+    const dup = try f.leaves(v, k, &f.scratch);
+    const keep = !f.leaf_wide and !f.m.steps_over;
+    f.leaf_wide = f.leaf_wide or wide;
+    if (keep) {
+        const start: u32 = @intCast(f.other_buf.items.len);
+        try f.other_buf.appendSlice(f.gpa, f.scratch.items);
+        try f.other_memo.put(f.gpa, key, .{ .start = start, .len = @intCast(f.scratch.items.len), .dup = dup });
+    }
+    return dup;
+}
+
+/// In safe builds: the read that `otherLeaves` kept (`hit`, now in
+/// `f.scratch`) is what a new read of `v` at `k` finds (kernel §9). The
+/// check counts no work, so its read meets no context of an arm (`leaves`,
+/// `quiet_n`) and can keep one of two atoms that differ in their contexts
+/// alone: the two reads are compared as sets of atoms without contexts.
+fn checkOtherLeaves(f: *Frame, v: Val, k: u32, hit: OtherHit) Error!void {
+    if (!safety or f.m.steps_over) return;
+    const q = f.quiet();
+    defer f.loud(q);
+    const wide = f.leaf_wide;
+    defer f.leaf_wide = wide;
+    var again: std.ArrayList(Atom) = .empty;
+    defer again.deinit(f.gpa);
+    const dup = try f.leaves(v, k, &again);
+    // A check that passed the budget read nothing to compare.
+    if (f.m.steps_over) return;
+    const sameBut = struct {
+        fn ctx(x: Atom, y: Atom) bool {
+            var a = x;
+            var b = y;
+            a.ctx = none;
+            b.ctx = none;
+            return atomEql(a, b);
+        }
+    }.ctx;
+    const kept = f.scratch.items;
+    var same = dup == hit.dup;
+    for (kept) |x| {
+        const found = for (again.items) |y| {
+            if (sameBut(x, y)) break true;
+        } else false;
+        if (!found) same = false;
+    }
+    for (again.items) |y| {
+        const found = for (kept) |x| {
+            if (sameBut(x, y)) break true;
+        } else false;
+        if (!found) same = false;
+    }
+    if (!same) std.debug.panic("own3: the atoms that a call kept for an operand's location are not what a new read finds (kernel §8)", .{});
+}
+
 /// What the operation reads of operand `o` reaches the targets `ws`; `skip`
 /// is the written entry of the written operand itself, and `suffix` the
 /// written part below it. Another part below the same entry is another
@@ -3573,8 +3667,7 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
         // The scan of the layout is work (kernel §8).
         if (f.charge(Loc.scanUnits(pes.len))) return true;
         for (pes, 0..) |e, k| if (e.loc == self) {
-            f.scratch.clearRetainingCapacity();
-            _ = try f.leaves(o.v, @intCast(k), &f.scratch);
+            _ = try f.otherLeaves(o.v, @intCast(k));
             if (f.atomsReach(f.scratch.items, ws)) return true;
         };
         return false;
@@ -3693,8 +3786,7 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
                 if (apart_value == null) apart_value = try f.valueApart(o.v, 0);
             }
         } else if (c != none and (o.flags[c] | more) == 0) continue;
-        f.scratch.clearRetainingCapacity();
-        const dup_k = try f.leaves(o.v, @intCast(k), &f.scratch);
+        const dup_k = try f.otherLeaves(o.v, @intCast(k));
         // A summary entry that holds one cell at two of its places is no two sets.
         if (c == Loc.all and skip != none and apart_value.? and !dup_k) continue;
         if (skip != none and n.tag == .ref) {
@@ -11236,7 +11328,15 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         _ = f.charge(npaths * c.flags.len);
     }
     // What the callee writes: a location that some paths write and others
-    // do not is judged on runs through those paths (`judge_set`).
+    // do not is judged on runs through those paths (`judge_set`). Each
+    // other location of an operand is read once for all of these writes
+    // (`otherLeaves`): nothing is evaluated between them, so no call is
+    // applied inside this one's writes. A call that writes one location
+    // reads each other location once already, and keeps nothing.
+    std.debug.assert(!f.other_on and f.other_memo.count() == 0 and f.other_buf.items.len == 0);
+    var written: usize = 0;
+    for (c.flags) |x| written += @intFromBool(x & flag_w != 0);
+    f.other_on = written > 1;
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
         const n = c.off[j + 1] - c.off[j];
@@ -11274,6 +11374,11 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
                 .paths = on,
             });
         };
+    }
+    if (f.other_on) {
+        f.other_on = false;
+        f.other_memo.clearRetainingCapacity();
+        f.other_buf.clearRetainingCapacity();
     }
     // What it reads.
     for (0..c.arity) |j| try f.readBy(args[j], inst, c.layouts[j], c.flags[c.off[j]..c.off[j + 1]]);
