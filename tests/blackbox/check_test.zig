@@ -7279,3 +7279,52 @@ test "ownership v3: nested `if` arms 10 deep end in a limit" {
 test "ownership v3: nested `case` arms 10 deep end in a limit" {
     try expectNestedArms(10, true, false, "limits 1\n");
 }
+
+test "ownership v3: a limit is a pending demand in the totals of the dump" {
+    // Before #2567 the total said `pending 0, rejected 0` beside `limits 1`,
+    // which reads as a program that a build accepts; the build stops on it.
+    try expectNestedArms(10, false, false, "total 2047: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 2046\nlimits 1\n");
+}
+
+/// A loop over a `case` of `n` constructors with two lists each (#2567):
+/// `step` moves the lists to the next constructor and swaps them, `loop`
+/// applies it `k` times. The contract of `loop` needs as many rounds as the
+/// cycle of the 2n list positions is long (n where n is even), and each
+/// round's call writes all 2n of them.
+fn constructorLoop(a: std.mem.Allocator, n: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype T\n");
+    for (0..n) |i| try out.print(a, "    {s} C{d} (List Int) (List Int)\n", .{ if (i == 0) "=" else "|", i });
+    try out.appendSlice(a, "\n\nstep : T → T\nstep t =\n    case t of\n");
+    for (0..n) |i| try out.print(a, "        C{d} a b →\n            C{d} (List.push b {d}) (List.push a {d})\n\n", .{ i, (i + 1) % n, i, i });
+    try out.appendSlice(a,
+        \\
+        \\loop : T, Int → T
+        \\loop t k = if k ≤ 0 then t else loop (step t) (k - 1)
+        \\
+        \\
+        \\size : T → Int
+        \\size t =
+        \\    case t of
+        \\
+    );
+    for (0..n) |i| try out.print(a, "        C{d} a b →\n            List.length a + List.length b\n\n", .{i});
+    try out.appendSlice(a, "\nmain : Node.Program\nmain = Node.print (String.fromInt (size (loop (C0 [] []) 5)))\n");
+    return out.items;
+}
+
+test "ownership v3: a loop over a case of 14 constructors is judged, each push accepted" {
+    // Each write of the recursive call read every other location of its
+    // argument again: 28 x 28 reads in each of 14 rounds, and the walk of
+    // `loop` passed its budget (#2567). A call now reads each location once
+    // for all of its writes (kernel §8), and the walks take about half of
+    // the budget (871 018 of 1 658 496 units when this was written).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try constructorLoop(w.arena.allocator(), 14));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 20_000 });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 112: accepted 112 ") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 112: accepted 112` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}

@@ -580,5 +580,76 @@ pub fn dump(gpa: Allocator, session: *Session, targets: []const u32, w: *std.Io.
         const kept: ?*Report.Kept = if (state) |s| (if (m < s.reports.len) s.reports[m] else null) else null;
         try reports.append(gpa, if (kept) |k| k.report else .{ .module = m, .checked = false });
     }
-    try Report.write(w, reports.items, ins.names, .{ .totals_only = options.totals_only });
+    try writeReport(w, reports.items, ins.names, options.totals_only);
+}
+
+/// The counts of one module's lines, or of all: `own2/Report.zig`'s, with
+/// the limits as pending demands.
+const Counts = struct {
+    accepted: [@typeInfo(Facts.Verdict.Accepted).@"enum".field_names.len]u32 = @splat(0),
+    rejected: [@typeInfo(Facts.Cause).@"enum".field_names.len]u32 = @splat(0),
+    pending: u32 = 0,
+
+    fn merge(c: *Counts, o: Counts) void {
+        for (&c.accepted, o.accepted) |*x, y| x.* += y;
+        for (&c.rejected, o.rejected) |*x, y| x.* += y;
+        c.pending += o.pending;
+    }
+
+    fn write(c: Counts, w: *std.Io.Writer, label: []const u8) std.Io.Writer.Error!void {
+        var acc: u32 = 0;
+        for (c.accepted) |x| acc += x;
+        var rej: u32 = 0;
+        for (c.rejected) |x| rej += x;
+        const a = c.accepted;
+        try w.print("{s} {d}: accepted {d} (fresh {d}, call {d}, param {d}, callback-param {d}, once {d}, entry {d}; assumed {d}), pending {d}, rejected {d}\n", .{
+            label,                                                 acc + rej + c.pending,                       acc,
+            a[@backingInt(Facts.Verdict.Accepted.fresh)],          a[@backingInt(Facts.Verdict.Accepted.call)], a[@backingInt(Facts.Verdict.Accepted.param)],
+            a[@backingInt(Facts.Verdict.Accepted.callback_param)], a[@backingInt(Facts.Verdict.Accepted.once)], a[@backingInt(Facts.Verdict.Accepted.entry)],
+            a[@backingInt(Facts.Verdict.Accepted.assumed)],        c.pending,                                   rej,
+        });
+    }
+};
+
+/// The report of `dump --stage=ownership --ownership=v3`: the grammar of
+/// `own2/Report.write`, with one difference (kernel §8, *A limit in the
+/// dump*). Each `limit` line of a module is one pending demand, in the
+/// module's count and in the total: the walk that passed the limit judged
+/// no write, and a build of the program stops on it. Before, the total said
+/// `pending 0, rejected 0` beside `limits 1`, which reads as a program
+/// that a build accepts (#2567).
+fn writeReport(w: *std.Io.Writer, reports: []Report.Module, module_names: []const []const u8, totals_only: bool) std.Io.Writer.Error!void {
+    var total: Counts = .{};
+    var limits: u32 = 0;
+    for (reports) |*r| {
+        if (!totals_only) try w.print("module {s}", .{module_names[r.module]});
+        if (!r.checked) {
+            if (!totals_only) try w.writeAll(" (not checked)\n");
+            continue;
+        }
+        if (!totals_only) try w.writeByte('\n');
+        const sorted = @constCast(r.lines);
+        std.mem.sort(Facts.Line, sorted, {}, struct {
+            fn less(_: void, a: Facts.Line, b: Facts.Line) bool {
+                return a.position.line < b.position.line or (a.position.line == b.position.line and a.position.col < b.position.col);
+            }
+        }.less);
+        var counts: Counts = .{ .pending = r.limits };
+        for (sorted) |l| {
+            if (l.refused) counts.rejected[@backingInt(l.cause)] += 1 else counts.accepted[@backingInt(l.accepted)] += 1;
+            if (!totals_only) try Report.writeLine(w, l);
+        }
+        if (!totals_only) {
+            for (r.others) |text| try w.print("  {s}\n", .{text});
+            try counts.write(w, "  demands");
+        }
+        total.merge(counts);
+        limits += r.limits;
+    }
+    try total.write(w, "total");
+    if (limits != 0) try w.print("limits {d}\n", .{limits});
+    for (total.rejected, 0..) |n, i| {
+        if (n == 0) continue;
+        try w.print("cause {s} {d}\n", .{ Facts.causeText(@fromBackingInt(@intCast(i))), n });
+    }
 }
