@@ -1,0 +1,41 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      ""
+      <section data-arm="right">"1"</section>
+      <button>"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click button
+<body>
+  <div id="root">
+    <main>
+      <section data-arm="left">"2"</section>
+      ""
+      <button>"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click button
+<body>
+  <div id="root">
+    <main>
+      ""
+      <section data-arm="right">"1"</section>
+      <button>"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click button
+<body>
+  <div id="root">
+    <main>
+      <section data-arm="left">"2"</section>
+      ""
+      <button>"Toggle"</button>
+    </main>
+  </div>
+</body>

@@ -1,0 +1,42 @@
+-- One arm of an if in a hole writes a value at a call that is not total; the
+-- other arm reads it with a pure, total value, which inline evaluates eagerly
+-- after the write: the write is refused (ownership-v3-kernel.md §6 rule 12,
+-- *A hole evaluated once*).
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Toggle
+
+
+update : Msg, Bool → Bool
+update _ shown = not shown
+
+
+choices : Dict String Int, Bool → Html Msg
+choices d shown =
+    <>
+        {if shown then
+            <section data-arm="left">{Dict.size ((Dict.insert _ "zz" 1) d)}</section>
+         else
+            <section data-arm="right">{Dict.size d}</section>
+        }
+    </>
+
+
+view : Bool → Html Msg
+view shown =
+    <main>
+        {choices (Dict.fromList [ ( "a", if shown then 1 else 0 ) ]) shown}
+        <button onClick={Toggle}>Toggle</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → False, update = update, view = view })
+        "root"

@@ -7690,8 +7690,12 @@ fn holeOnceMarkup(f: *Frame, inst: u32) Error!bool {
             .branch => {
                 if (d.rhs != x) return false;
                 arms += 1;
+                if (try f.siblingsReadEagerly(p, x)) return false;
             },
-            .case => if (d.lhs == x) return false,
+            .case => {
+                if (d.lhs == x) return false;
+                if (try f.siblingsReadEagerly(p, x)) return false;
+            },
             .markup => {
                 if (arms == 0 or !f.m.holeOnce(x)) return false;
                 return f.holeOnceMarkup(p);
@@ -7700,6 +7704,36 @@ fn holeOnceMarkup(f: *Frame, inst: u32) Error!bool {
         }
         x = p;
     }
+}
+
+/// Whether an operand of the `if` or `case` `p` other than the arm `x`
+/// reads a local that can hold a cell outside a call that is not pure and
+/// total for certain (`Mod.notTotalCall`). A lowering can evaluate such a
+/// read eagerly, in an arm not taken, after the arm `x`'s writes: the arms
+/// are then not apart, and the hole's markup keeps what it holds (kernel §6
+/// rule 12, *A hole evaluated once*). A lambda is another frame's; each
+/// instruction is work (kernel §8), and past the budget the answer is yes.
+fn siblingsReadEagerly(f: *Frame, p: u32, x: u32) Error!bool {
+    const bir = f.m.bir;
+    var stack: std.ArrayList(Inst.Index) = .empty;
+    defer stack.deinit(f.gpa);
+    try bir.operands(f.gpa, @fromBackingInt(p), &stack);
+    var kids: std.ArrayList(Inst.Index) = .empty;
+    defer kids.deinit(f.gpa);
+    while (stack.pop()) |k| {
+        if (k.int() == x) continue;
+        if (f.charge(1)) return true;
+        switch (bir.instTag(k)) {
+            .lambda => continue,
+            .call => if (f.m.notTotalCall(k.int())) continue,
+            .local => if (try f.layoutLen(try f.m.placeOfInst(k.int())) != 0) return true,
+            else => {},
+        }
+        kids.clearRetainingCapacity();
+        try bir.operands(f.gpa, k, &kids);
+        try stack.appendSlice(f.gpa, kids.items);
+    }
+    return false;
 }
 
 /// Of `held[from..]`, drop each value of which every cell is one that a

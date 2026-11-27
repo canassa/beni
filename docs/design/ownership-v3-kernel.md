@@ -1614,6 +1614,12 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
        `if` or a `case` (no `let` around it) that is a hole's value of such markup, itself read so,
        through arms alone (`holeOnceMarkup`): a `let`'s markup, a constant's and an argument's are
        evaluated where a hole shows them, which can be twice;
+       and no other operand of an `if` or a `case` on the way reads a local that can hold a cell
+       outside a call that is not pure and total for certain (`siblingsReadEagerly`): a lowering
+       evaluates such a read eagerly, in the arm not taken, after the arm's writes (*amended
+       2026-11-27, #2657*: before, `{if c then <b>{Dict.size ((λq → Dict.insert q "zz" 1) d)}</b>
+       else <b>{Dict.size d}</b>}` was accepted, and the eager `Dict.size d` read the inserted
+       dictionary; `browser/inline/HoleOnceSibling*Live`);
     2. the lowering names the hole (`inline`: one that the root reaches through elements and
        fragments alone, in a root with no `let`).
     *The argument.* A later reader of the old name is a holder that observes the cell as it was
