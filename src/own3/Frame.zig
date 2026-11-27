@@ -513,6 +513,8 @@ blocks: std.ArrayList(Block) = .empty,
 items_done: std.ArrayList([3]u32) = .empty,
 /// The `let_def` whose binding the frame is making, or `none`.
 binding_now: u32 = none,
+/// The locals the code's text reads whole (`readsWhole`), made once.
+whole_locals: ?[]const u32 = null,
 codes: std.ArrayList(Code) = .empty,
 drafts: std.ArrayList(FnDraft) = .empty,
 answers: std.ArrayList(Answer) = .empty,
@@ -3824,44 +3826,48 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
 /// The row of the lowering channel that reads `u` before the stores of the
 /// accepted update `d` (kernel §11, *A read of a written field, read
 /// first*), or before the call `d` whose callee writes a record it was
-/// handed, or null where no rule places it there. The read is a chain of
+/// handed, appended to `out` (true), or false where no rule places it
+/// there. The read is a chain of
 /// field reads from a parameter, which is bound before any expression of
 /// the body runs; and the write runs on every path that reaches the read,
 /// so a temporary bound just before its stores (or the call) is in scope at
 /// the read and holds what the read reads in the copying program.
-fn hoistRow(f: *Frame, d: Demand, u: Read) Error!?OwnHoists.Read {
+fn hoistRow(f: *Frame, d: Demand, u: Read, out: *std.ArrayList(OwnHoists.Read)) Error!bool {
     const bir = f.m.bir;
-    if (u.point >= bir.insts.len or d.point >= bir.insts.len) return null;
+    if (u.point >= bir.insts.len or d.point >= bir.insts.len) return false;
     const phase: u32 = switch (bir.instTag(@fromBackingInt(d.point))) {
         .record_update => 1,
         // A call that writes a record (kernel §11 item 10, *a call*): read
         // before the call, which evaluates its arguments after.
-        .call => if (d.op == .call and d.record) 0 else return null,
-        else => return null,
+        .call => if (d.op == .call and d.record) 0 else return false,
+        else => return false,
     };
     // A captured field path read where its closure is made (kernel §6 rule
     // 3): read first in its turn, the whole path, where the closure's text
     // holds it and the update runs before where the lowering reads it.
     if (u.ev != none) {
         const e = f.eagers.items[u.ev];
-        if (!e.lex) return null;
-        if (!try f.boundBefore(e.local, d.point)) return null;
-        if (!try f.runsBefore(d.point, e.placement)) return null;
+        if (!e.lex) return false;
+        if (!try f.boundBefore(e.local, d.point)) return false;
+        if (!try f.runsBefore(d.point, e.placement)) return false;
         var n: u32 = 0;
         var y: Inst.Index = @fromBackingInt(e.x);
         while (bir.instTag(y) == .field_access) : (n += 1) y = @fromBackingInt(@intCast(bir.instData(y).lhs));
-        return .{ .decl = f.decl, .demand = d.point, .inst = e.x, .holder = e.local, .path_len = n, .placement = d.point, .phase = phase, .capture = e.capture };
+        const xs = try f.gpa.dupe(u32, f.m.eagerAliases(&e.x));
+        for (xs) |z| try out.append(f.gpa, .{ .decl = f.decl, .demand = d.point, .inst = z, .holder = e.local, .path_len = n, .placement = d.point, .phase = phase, .capture = e.capture });
+        return true;
     }
-    if (bir.instTag(@fromBackingInt(u.point)) != .field_access) return null;
+    if (bir.instTag(@fromBackingInt(u.point)) != .field_access) return false;
     var x: Inst.Index = @fromBackingInt(u.point);
     var len: u32 = 0;
     while (bir.instTag(x) == .field_access) : (len += 1) x = @fromBackingInt(@intCast(bir.instData(x).lhs));
-    if (bir.instTag(x) != .local) return null;
+    if (bir.instTag(x) != .local) return false;
     const local = bir.instData(x).lhs;
-    if (f.d.locals_start + local >= bir.locals.len) return null;
-    if (bir.locals[f.d.locals_start + local].kind != .param) return null;
-    if (!try f.runsBefore(d.point, u.point)) return null;
-    return .{ .decl = f.decl, .demand = d.point, .inst = u.point, .holder = local, .path_len = len, .placement = d.point, .phase = phase };
+    if (f.d.locals_start + local >= bir.locals.len) return false;
+    if (bir.locals[f.d.locals_start + local].kind != .param) return false;
+    if (!try f.runsBefore(d.point, u.point)) return false;
+    try out.append(f.gpa, .{ .decl = f.decl, .demand = d.point, .inst = u.point, .holder = local, .path_len = len, .placement = d.point, .phase = phase });
+    return true;
 }
 
 /// The rows of one chain of field reads stand apart (kernel §11 item 10):
@@ -4241,10 +4247,9 @@ fn finishDemands(f: *Frame) Error!void {
                     break;
                 }
                 if (try f.useReaches(u, ws)) {
-                    if (d.op == .update or d.op == .call) if (try f.hoistRow(d.*, u)) |row| {
-                        try hoists.append(f.gpa, row);
+                    if ((d.op == .update or d.op == .call) and try f.hoistRow(d.*, u, &hoists)) {
                         continue;
-                    };
+                    }
                     d.refused = .later_use;
                     d.detail = try f.m.useText(f, u.point);
                     break;
@@ -4801,7 +4806,7 @@ fn capture(f: *Frame, local: u32) Error!Val {
 /// is a capture of this code (kernel §6 rule 3, *A field path a closure
 /// captures*): null where the chain has another step, the local is this
 /// frame's, or no capture of this frame is read early (`no_eager`).
-fn eagerLocal(f: *Frame, x: u32) ?u32 {
+fn eagerLocal(f: *Frame, x: u32) Error!?u32 {
     if (f.no_eager or !f.is_lambda) return null;
     const m = f.m;
     var i = x;
@@ -4811,7 +4816,64 @@ fn eagerLocal(f: *Frame, x: u32) ?u32 {
     const l = f.d.locals_start + local;
     // A code in work, a local of this frame, bound or later: no capture.
     if (m.lframe[l] == none or m.lframe[l] == f.id or m.lbinder[l] == f.id) return null;
+    // A local the code's text also reads whole is captured whole: the
+    // closure holds its record's slots through that capture, and an early
+    // read of a path would add a second holder of the same cells.
+    if (try f.readsWhole(local)) return null;
+    // A path that holds a cell's handle (`Ref`, kernel §13) is read where
+    // the code runs: a handle is followed by its versions, and the early
+    // read would make it a second root of one cell.
+    if ((try f.innerOf(try m.loc.layoutOf(try m.placeOfInst(x)))).len != 0) return null;
     return local;
+}
+
+/// Whether the code's text (its body and every code inside it) names
+/// `local` other than at the root of a chain of field reads. Past the
+/// budget, yes: the capture is whole, as before the rule.
+fn readsWhole(f: *Frame, local: u32) Error!bool {
+    if (f.whole_locals == null) f.whole_locals = try f.scanWhole();
+    const ls = f.whole_locals orelse return true;
+    return std.mem.indexOfScalar(u32, ls, local) != null;
+}
+
+fn scanWhole(f: *Frame) Error!?[]const u32 {
+    const m = f.m;
+    const bir = m.bir;
+    if (f.body_root == none) return null;
+    var out: std.ArrayList(u32) = .empty;
+    var stack: std.ArrayList([2]u32) = .empty;
+    defer stack.deinit(f.gpa);
+    var kids: std.ArrayList(Inst.Index) = .empty;
+    defer kids.deinit(f.gpa);
+    try stack.append(f.gpa, .{ f.body_root, none });
+    while (stack.pop()) |e| {
+        // Each instruction is work (kernel §8).
+        if (f.charge(1)) return null;
+        const n = e[0];
+        if (m.tags[n] == .local) {
+            const chain = e[1] != none and m.tags[e[1]] == .field_access and m.datas[e[1]].lhs == n;
+            if (!chain and std.mem.indexOfScalar(u32, out.items, m.datas[n].lhs) == null) try out.append(f.gpa, m.datas[n].lhs);
+            continue;
+        }
+        kids.clearRetainingCapacity();
+        try bir.operands(f.gpa, @fromBackingInt(n), &kids);
+        for (kids.items) |k| try stack.append(f.gpa, .{ k.int(), n });
+    }
+    return out.items;
+}
+
+/// Whether the chains of field reads `x` and `y` read the same fields of
+/// the same local.
+fn samePath(f: *const Frame, x: u32, y: u32) bool {
+    const m = f.m;
+    var i = x;
+    var j = y;
+    while (m.tags[i] == .field_access and m.tags[j] == .field_access) {
+        if (m.datas[i].rhs != m.datas[j].rhs) return false;
+        i = m.datas[i].lhs;
+        j = m.datas[j].lhs;
+    }
+    return m.tags[i] == .local and m.tags[j] == .local and m.datas[i].lhs == m.datas[j].lhs;
 }
 
 /// The capture of the field path `x` of the captured `local`: a root of
@@ -4826,8 +4888,21 @@ fn eagerCapture(f: *Frame, x: u32, local: u32, lex: bool) Error!Val {
         return f.unknownOf(try m.placeOfInst(x), &.{});
     }
     const key = eager_bit | x;
-    for (f.cap_locals.items, 0..) |*l, k| if (l.* & ~eager_lex == key) {
-        if (lex) l.* |= eager_lex;
+    // One capture for each local and fields: two reads of `m.world` in one
+    // code are one value. Each read in the code's text is a row of its own
+    // (`Mod.eagerAlias`), read where the one capture is.
+    for (f.cap_locals.items, 0..) |*l, k| if (isEagerKey(l.*) and (l.* & ~eager_lex == key or f.samePath(eagerX(l.*), x))) {
+        // A capture only another code's read stood for takes this read as
+        // its own: the rows it writes are of this code's text alone.
+        if (lex and l.* & eager_lex == 0) {
+            l.* = key | eager_lex;
+        } else if (lex) {
+            const rep = eagerX(l.*);
+            if (rep != x) {
+                const xs = try f.gpa.dupe(u32, m.eagerAliases(&x));
+                for (xs) |y| try m.eagerAlias(rep, y);
+            }
+        }
         const v = try f.rootVal(f.params.items[f.own_params + k]);
         if (f.markup_reads) |mr| try mr.append(f.gpa, v);
         return v;
@@ -4920,7 +4995,7 @@ fn evalInner(f: *Frame, inst: u32, mode: Mode) Error!Val {
         .field_access => {
             // A field path of a captured local: read where the closure is
             // made, and captured as the value read there (kernel §6 rule 3).
-            if (f.eagerLocal(inst)) |local| return f.eagerCapture(inst, local, true);
+            if (try f.eagerLocal(inst)) |local| return f.eagerCapture(inst, local, true);
             const base = try f.eval(data.lhs, .callee, false);
             if (base == v_none) return v_none;
             const rank: u32 = @intCast(m.fieldRank(@fromBackingInt(data.rhs)));
@@ -6585,7 +6660,10 @@ fn eagerRead(f: *Frame, x: u32, local: u32, e: Eager, at: ?u32, ctx: ?u32) Error
         if (at) |t| u.at = t;
         if (ctx) |c| u.ctx = c;
     }
-    if (e.lex) try m.addEagerRow(.{ .decl = f.decl, .demand = none, .inst = x, .holder = local, .path_len = @intCast(chain.items.len), .placement = e.placement, .phase = e.phase, .capture = e.capture });
+    if (e.lex) {
+        const xs = try f.gpa.dupe(u32, m.eagerAliases(&x));
+        for (xs) |y| try m.addEagerRow(.{ .decl = f.decl, .demand = none, .inst = y, .holder = local, .path_len = @intCast(chain.items.len), .placement = e.placement, .phase = e.phase, .capture = e.capture });
+    }
     return v;
 }
 

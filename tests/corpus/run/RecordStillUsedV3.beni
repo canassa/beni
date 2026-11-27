@@ -1,9 +1,10 @@
 -- Records are written in place (research report 142, kernel §11): an
 -- update the checker v3 accepts writes its base's own object. Each
--- refusal here reads, from a name older than the write, a field it wrote
--- through a call, or the record whole; in place it would read the new value.
--- The accepted updates read only fields the write left alone, or the new
--- name. Before v3 judged records, it accepted all of them.
+-- refusal here reads, from a name older than the write, a field it wrote,
+-- or the record whole; in place it would read the new value. `inHelper`
+-- reads a field a call writes, which v3 reads before the call (kernel §11
+-- item 10). The accepted updates read only fields the write left alone,
+-- or the new name. Before v3 judged records, it accepted all of them.
 import Node exposing (Program)
 import String
 

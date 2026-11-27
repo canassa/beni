@@ -385,6 +385,10 @@ pub const Mod = struct {
     has_markup: []bool = &.{},
     /// The rows of the reads `eager_ok` makes (`Result.eager`), each once.
     eager_rows: std.ArrayList(OwnHoists.Read) = .empty,
+    /// Per captured field path, by the read instruction that stands for it
+    /// (`Frame.eagerCapture`): every read instruction of the same local and
+    /// fields in the text of the code that captures it, each a row.
+    eager_alias: std.AutoHashMapUnmanaged(u32, std.ArrayList(u32)) = .empty,
     /// Per declaration: its body reaches JavaScript (`reachesJs`).
     js: []bool = &.{},
     /// Per instruction, where the module's bodies are read for JavaScript
@@ -3589,10 +3593,23 @@ pub const Mod = struct {
         return c;
     }
 
-    /// A walk that gave up, or passed its steps, accepts nothing (kernel
-    /// §3.3, §8): each line it made since `mark` that is accepted is
-    /// refused at the limit. A line of a code whose own walk ended well, or
-    /// one judged before a later step passed the budget, is the walk's too.
+    /// Add `x` to the read instructions that `rep` stands for, once.
+    pub fn eagerAlias(m: *Mod, rep: u32, x: u32) Allocator.Error!void {
+        const g = try m.eager_alias.getOrPut(m.gpa, rep);
+        if (!g.found_existing) {
+            g.value_ptr.* = .empty;
+            try g.value_ptr.append(m.gpa, rep);
+        }
+        if (std.mem.indexOfScalar(u32, g.value_ptr.items, x) == null) try g.value_ptr.append(m.gpa, x);
+    }
+
+    /// The read instructions `rep` stands for: itself, and those that
+    /// `eagerAlias` added.
+    pub fn eagerAliases(m: *const Mod, rep: *const u32) []const u32 {
+        if (m.eager_alias.getPtr(rep.*)) |l| return l.items;
+        return @as(*const [1]u32, rep);
+    }
+
     /// A row of a captured field path read where its closure is made
     /// (`Result.eager`), once: the rounds of a group walk a body again.
     pub fn addEagerRow(m: *Mod, r: OwnHoists.Read) Allocator.Error!void {
@@ -3604,6 +3621,10 @@ pub const Mod = struct {
         try m.eager_rows.append(m.gpa, r);
     }
 
+    /// A walk that gave up, or passed its steps, accepts nothing (kernel
+    /// §3.3, §8): each line it made since `mark` that is accepted is
+    /// refused at the limit. A line of a code whose own walk ended well, or
+    /// one judged before a later step passed the budget, is the walk's too.
     fn gaveUp(m: *Mod, mark: usize) void {
         for (m.lines.items[mark..]) |*l| if (!l.refused) {
             l.refused = true;
@@ -4326,6 +4347,11 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         };
     }
     defer m.eager_rows.deinit(gpa);
+    defer {
+        var it = m.eager_alias.valueIterator();
+        while (it.next()) |l| l.deinit(gpa);
+        m.eager_alias.deinit(gpa);
+    }
     m.code_caps = try gpa.alloc([]const u32, bir.insts.len);
     defer gpa.free(m.code_caps);
     @memset(m.code_caps, &.{});

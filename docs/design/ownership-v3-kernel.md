@@ -860,7 +860,11 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
 
    **A field path a closure captures** (*added 2026-11-27, #2657*; `Frame.eagerLocal`,
    `eagerCapture`, `eagerSlot`, `eagerRead`). A read in a code of a chain of field reads `l.f₁.….fₖ`
-   (k ≥ 1, field reads alone) whose local `l` is a capture of the code is **read where the closure
+   (k ≥ 1, field reads alone) whose local `l` is a capture of the code, and which the code's text
+   (its body and every code inside it) names nowhere but at the root of such chains
+   (`Frame.readsWhole`: a local captured whole holds the record's slots through that capture, and an
+   early read would only add a second holder of the same cells), and whose value holds no cell's
+   handle (`Ref`, §13: a handle is followed by its versions where the code runs), is **read where the closure
    is made**, and the closure captures the value read there, not the record: the lowering binds the
    chain to a temporary at that point and the code reads the temporary (`ownership-checker.md`
    §31.6, v1's rule, which the lowering already applies to v1's rows: `backend.md` §4, *Hoists*). A

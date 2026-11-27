@@ -1,5 +1,3 @@
-# The closure mk answers reads m.items, which the push writes in place before the closure runs: the update and the push are refused (ownership-v3-kernel.md §6 rule 3, *Every holder of a closure observes it only through its runs*).
-22:10 record_still_used update
+# The closure mk answers reads m.items, which the push writes in place before the closure runs: the push is refused (ownership-v3-kernel.md §6 rule 3, *Every holder of a closure observes it only through its runs*). The closure holds the list read where it is made, not the record's slot (§6 rule 3, *A field path a closure captures*), so the update of the slot alone is not refused.
 22:25 list_still_used List.push
 27:26 list_still_used call
-27:26 record_still_used call
