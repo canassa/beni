@@ -612,6 +612,18 @@ other_memo: std.AutoHashMapUnmanaged(OtherKey, OtherHit) = .empty,
 other_buf: std.ArrayList(Atom) = .empty,
 /// Safe builds: the copies of the call in work that `checkOtherLeaves` read again.
 other_checked: u32 = 0,
+/// The kept reads of the call in work by the root and entry of their atoms
+/// (`ApartIndex`), and the operand whose locations `otherReaches` tests.
+apart: ApartIndex = .{},
+apart_arg: u32 = none,
+/// The slot of the kept read that `otherLeaves` copied or made last, or `none`.
+other_slot: u32 = none,
+/// Safe builds: the writes of the call in work that `checkApartWrite` compared.
+apart_checked: u32 = 0,
+/// Safe builds: the steps of `runsReach` that `checkRunsOld` made again.
+runs_old_checked: u32 = 0,
+/// Safe builds: the pairs that `checkUseSettled` tested again.
+settled_checked: u32 = 0,
 /// A walk of values met a function value or a value of no claim since this
 /// was last set false (`leaves`): what such a value holds can grow while
 /// the frame is walked, so `otherLeaves` keeps no read that met one.
@@ -2576,7 +2588,12 @@ fn rootReach(f: *Frame, root: u32, path: u32, w: []const Atom) Error!bool {
 /// The entries of a root the frame made whose runs `rootReach` reads: an
 /// `alias`, `derived` or `version` entry with a run (an empty run reaches
 /// nothing, `runReaches`).
-const RunEntries = struct { ents: []const u32 };
+///
+/// `low` is the lowest `RunFact.old` of those runs, once `known` of them
+/// have one (`noteRunOld`): 1 where an atom of one is never old, 0 where no
+/// run has a fact yet. While every run of the root is an old name for the
+/// write in judgement, the test of the root's runs is one step (`runsReach`).
+const RunEntries = struct { ents: []const u32, low: u32 = 0, known: u32 = 0 };
 
 /// `RunEntries` of root `root`, made once, a step for each entry (kernel
 /// §8), when its entries are made: `deriveLinear` ran over them, last. A
@@ -2607,6 +2624,12 @@ fn runEntries(f: *Frame, root: u32, made: *bool) Error!?RunEntries {
             try ents.append(f.gpa, @intCast(i));
         }
         got.* = .{ .ents = ents.items };
+        // The runs whose fact was found before the list was made.
+        for (ents.items) |i| {
+            if (r.ent + i >= f.run_facts.items.len) break;
+            const old = f.run_facts.items[r.ent + i].old;
+            if (old != 0) f.noteRunOld(root, old);
+        }
     }
     if (safety and res.len <= 256) {
         // The entries never change once made.
@@ -2629,6 +2652,13 @@ fn runEntries(f: *Frame, root: u32, made: *bool) Error!?RunEntries {
 fn runsReach(f: *Frame, root: u32, p: Loc.Path, re: RunEntries, w: []const Atom, made: bool) Error!bool {
     const r = f.roots.items[root];
     const len = f.m.loc.layouts.items[r.layout].len;
+    // Every run of the root is an old name for the write in judgement
+    // (`RunEntries.low`): each of them reaches nothing (`runReaches`), so
+    // the test of them all is one step, not one for each run.
+    if (!made and re.known == re.ents.len and re.low > 1 and !f.judge_probe and (f.judge_at == none or f.judge_at <= re.low - 2)) {
+        f.checkRunsOld(root, re);
+        return f.charge(1);
+    }
     // The list costs what the scan of every entry cost, where it was made
     // (`runEntries`), and its own entries after.
     if (!made and f.charge(@min(1 + re.ents.len, len))) return true;
@@ -3263,6 +3293,59 @@ fn readBy(f: *Frame, v: Val, point: u32, sig: u32, flags: []const u8) Error!void
     try f.uses.append(f.gpa, .{ .point = point, .at = f.timeOf(point), .val = try f.cellsNowIn(v), .ctx = f.cur_ctx, .mask = start, .nmask = nmask, .all = all });
 }
 
+/// Whether what is known of the root that the later read `u` reads says
+/// that it reaches no cell of the write `ws` in judgement, with no walk
+/// (kernel §8, *A later read that its root's facts settle*): null where it
+/// does not say, true past the budget. `u` reads the whole of a part of one
+/// root (`rootReach`); the write has no atom of that root; and the root has
+/// no runs to test: it is not one that the frame made, or its list of runs
+/// is made and each of them is an old name for the write (`RunEntries.low`,
+/// as in `runsReach`). Then `useReaches` says no. The pair costs the scan of
+/// the write that `rootReach` counts and one unit, in place of two steps,
+/// that scan and a unit.
+fn useSettled(f: *Frame, u: Read, ws: []const Atom) ?bool {
+    if (!u.all) return null;
+    const n = f.nodes.items[u.val];
+    if (n.tag != .ref or n.pos != none) return null;
+    const root = n.a;
+    switch (f.roots.items[root].kind) {
+        // What the function was handed can be in its answer (`rootReach`).
+        .answer => return null,
+        .outside, .param, .capture, .fresh => {},
+        .local => {
+            if (root >= f.run_ents.items.len) return null;
+            const re = f.run_ents.items[root] orelse return null;
+            const old = re.known == re.ents.len and re.low > 1 and !f.judge_probe and (f.judge_at == none or f.judge_at <= re.low - 2);
+            if (re.ents.len != 0 and !old) return null;
+        },
+    }
+    const indexed = f.wIndexed(ws);
+    if (indexed) {
+        if (f.w_ix.ofRoot(root).len != 0) return null;
+    } else for (ws) |x| {
+        if (x.root == root) return null;
+    }
+    return f.charge(1 + if (indexed) @min(Loc.lookup_units, ws.len) else ws.len);
+}
+
+/// The pairs of one frame that a safe build tests again after `useSettled`
+/// settled them (`checkUseSettled`).
+const settled_checks_max = 64;
+
+/// In safe builds: a later read that `useSettled` settled reaches no cell
+/// of the write by the walk that it was spared (kernel §9), for the first
+/// `settled_checks_max` such pairs of a frame. The check counts no work; one
+/// that passed the budget tested nothing.
+fn checkUseSettled(f: *Frame, u: Read, ws: []const Atom) Error!void {
+    if (!safety or f.m.steps_over or f.settled_checked >= settled_checks_max) return;
+    f.settled_checked += 1;
+    const q = f.quiet();
+    defer f.loud(q);
+    const reaches = try f.useReaches(u, ws);
+    if (f.m.steps_over) return;
+    if (reaches) std.debug.panic("own3: a later read that its root's facts settled reaches the write (kernel §8)", .{});
+}
+
 fn useReaches(f: *Frame, u: Read, ws: []const Atom) Error!bool {
     if (u.all) return f.reach(u.val, ws);
     const n = f.nodes.items[u.val];
@@ -3329,12 +3412,43 @@ fn runReaches(f: *Frame, root: u32, re: u32, ent: REntry, w: []const Atom) Error
             low = @min(low, a.dead);
         }
         rf.old = if (never) 1 else low +| 2;
+        f.noteRunOld(root, rf.old);
     }
     if (!f.judge_probe and rf.old != 1 and (f.judge_at == none or f.judge_at <= rf.old - 2)) {
         if (safety and run.len <= 64) for (run) |a| std.debug.assert(f.isOld(a));
         return f.charge(1);
     }
     return f.atomsReach(run, w);
+}
+
+/// The fact `old` of one more run of root `root` is known (`RunFact.old`,
+/// found once for each run): keep the lowest for the root's list of runs
+/// (`RunEntries.low`), where the root has one.
+fn noteRunOld(f: *Frame, root: u32, old: u32) void {
+    if (root >= f.run_ents.items.len) return;
+    if (f.run_ents.items[root]) |*re| {
+        re.known += 1;
+        re.low = if (old == 1 or re.low == 1) 1 else if (re.low == 0) old else @min(re.low, old);
+    }
+}
+
+/// The tests of a root's runs that a safe build makes again one by one
+/// after `runsReach` took them as one step (`checkRunsOld`).
+const runs_old_checks_max = 64;
+
+/// In safe builds: each run of `re` has its fact, and is an old name for
+/// the write in judgement by the test that `runReaches` makes of one run
+/// (kernel §9), for the first `runs_old_checks_max` such steps of a frame.
+/// The check reads the facts only and counts no work.
+fn checkRunsOld(f: *Frame, root: u32, re: RunEntries) void {
+    if (!safety or f.runs_old_checked >= runs_old_checks_max) return;
+    f.runs_old_checked += 1;
+    const r = f.roots.items[root];
+    for (re.ents) |i| {
+        const old = f.run_facts.items[r.ent + i].old;
+        const is_old = old > 1 and !f.judge_probe and (f.judge_at == none or f.judge_at <= old - 2);
+        if (!is_old) std.debug.panic("own3: a run of a root whose runs are all old names is not one (kernel §8)", .{});
+    }
 }
 
 fn escape(f: *Frame, v: Val, point: u32) Error!void {
@@ -3573,7 +3687,7 @@ const DemandIn = struct {
 const OtherKey = struct { v: Val, k: u32, ctx: u32, at: u32 };
 /// A kept read: its atoms in `other_buf`, its `dup`, and the units that the
 /// read cost. A copy costs no more than that.
-const OtherHit = struct { start: u32, len: u32, dup: bool, units: u32 };
+const OtherHit = struct { start: u32, len: u32, dup: bool, units: u32, slot: u32 };
 
 /// The atoms of operand `v` at entry `k` of its own layout, in `f.scratch`,
 /// and whether one cell can be there twice: `leaves`, read once for all the
@@ -3590,9 +3704,11 @@ const OtherHit = struct { start: u32, len: u32, dup: bool, units: u32 };
 /// compares (kernel §9).
 fn otherLeaves(f: *Frame, v: Val, k: u32) Error!bool {
     f.scratch.clearRetainingCapacity();
+    f.other_slot = none;
     if (!f.other_on or f.judge_set.len != 0) return f.leaves(v, k, &f.scratch);
     const key: OtherKey = .{ .v = v, .k = k, .ctx = f.judge_ctx, .at = f.judge_at };
     if (f.other_memo.get(key)) |hit| {
+        f.other_slot = hit.slot;
         // The copy is work of its own (kernel §8), and no more work than
         // the walk that it stands for. Past the budget a read finds
         // nothing, as `leaves` does.
@@ -3610,7 +3726,9 @@ fn otherLeaves(f: *Frame, v: Val, k: u32) Error!bool {
     if (keep) {
         const start: u32 = @intCast(f.other_buf.items.len);
         try f.other_buf.appendSlice(f.gpa, f.scratch.items);
-        try f.other_memo.put(f.gpa, key, .{ .start = start, .len = @intCast(f.scratch.items.len), .dup = dup, .units = @intCast(@min(f.m.steps - before, std.math.maxInt(u32))) });
+        const units: u32 = @intCast(@min(f.m.steps - before, std.math.maxInt(u32)));
+        f.other_slot = try f.keepApart(f.scratch.items, start, units, v, k);
+        try f.other_memo.put(f.gpa, key, .{ .start = start, .len = @intCast(f.scratch.items.len), .dup = dup, .units = units, .slot = f.other_slot });
     }
     return dup;
 }
@@ -3663,6 +3781,234 @@ fn sameButCtx(f: *Frame, kept: []const Atom, again: []const Atom) Error!bool {
         if (!met.*) same = false;
     }
     return same;
+}
+
+/// The kept reads of one call by the root and entry of their atoms (kernel
+/// §8, *A write passes only the kept reads that have an atom at a root and
+/// entry of it*). Two atoms are one cell only at one root and one entry
+/// (`overlap`), so a kept read with no atom at a root and entry of a write
+/// reaches no cell of it, whatever its old names, its contexts and its
+/// paths: the tests that `otherReaches` makes of the pair (`atomsReach`, or
+/// the pairs of a part of one root) all say no. A kept read is a slot. A
+/// write marks the slots that have an atom at a root and entry of one of
+/// its atoms (`markWrite`), and `otherReaches` passes only those and the
+/// entries of the operand with no slot (`apartFew`): a slot that the write
+/// did not mark is not read, not copied and not compared.
+const ApartIndex = struct {
+    /// On for a call that writes `apart_min_writes` locations or more.
+    on: bool = false,
+    /// A root and an entry: the newest link of the slots with an atom there.
+    by_re: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+    links: std.ArrayList(KeptLink) = .empty,
+    slots: std.ArrayList(Kept) = .empty,
+    /// For each operand of the call (`Frame.apart_arg`), its row of `slot_of`.
+    rows: std.ArrayList(KeptRow) = .empty,
+    /// For each entry of an operand's own layout, the slot of its kept read, or `none`.
+    slot_of: std.ArrayList(u32) = .empty,
+    /// For each operand, the entries of its own layout that a write can test
+    /// and that had no slot when a write last passed them (`KeptRow`).
+    open: std.ArrayList(u32) = .empty,
+    /// The slots that the write in judgement marked.
+    hits: std.ArrayList(u32) = .empty,
+    /// The entries of the operand in judgement that the write passes, in
+    /// the order of its map.
+    pass: std.ArrayList(u32) = .empty,
+    /// The write in judgement: its number, its atoms, whether its marks are made.
+    gen: u32 = 0,
+    of: []const Atom = &.{},
+    marked: bool = false,
+    /// The work of the index that no write paid yet (`otherReaches`).
+    debt: u64 = 0,
+    /// Safe builds: the writes of the call that passed few entries of an operand.
+    seen: u32 = 0,
+
+    const KeptLink = struct { slot: u32, next: u32 };
+    const Kept = struct {
+        /// The write that marked the slot last (`gen`).
+        stamp: u32,
+        /// The kept atoms, in `other_buf`.
+        start: u32,
+        len: u32,
+        /// The operand's value and the entry of its own layout that was read.
+        v: Val,
+        k: u32,
+    };
+    /// The row of one operand: its `slot_of` (`start`, `len`), what it was
+    /// made for (`v`, `ctx`, `at`), and its run of `open`.
+    const KeptRow = struct { start: u32 = none, len: u32 = 0, v: Val = v_none, ctx: u32 = none, at: u32 = none, open_start: u32 = 0, open_len: u32 = 0 };
+
+    fn clear(ix: *ApartIndex) void {
+        ix.on = false;
+        ix.by_re.clearRetainingCapacity();
+        ix.links.clearRetainingCapacity();
+        ix.slots.clearRetainingCapacity();
+        ix.rows.clearRetainingCapacity();
+        ix.slot_of.clearRetainingCapacity();
+        ix.open.clearRetainingCapacity();
+        ix.hits.clearRetainingCapacity();
+        ix.pass.clearRetainingCapacity();
+        ix.gen = 0;
+        ix.of = &.{};
+        ix.marked = false;
+        ix.debt = 0;
+        ix.seen = 0;
+    }
+};
+
+/// The fewest written locations of a call that has an index of its kept
+/// reads: with fewer, the index costs what it spares.
+const apart_min_writes = 4;
+
+/// Make the slot of a read that `otherLeaves` keeps (`xs`, at `start` of
+/// `other_buf`), and put it in the index at the root and entry of each of
+/// its atoms, old names too. `none`: the read has no slot, and each write is
+/// compared with it as before. That is a read with the answer of a function
+/// parameter, which holds the cells of its base too (`atomsReach`). The
+/// index is linear in the kept atoms, each counted where the read made it;
+/// its work is a debt that the writes it spares work pay (`otherReaches`).
+fn keepApart(f: *Frame, xs: []const Atom, start: u32, units: u32, v: Val, k: u32) Error!u32 {
+    const ix = &f.apart;
+    if (!ix.on) return none;
+    for (xs) |x| if (f.roots.items[x.root].kind == .answer) return none;
+    const slot: u32 = @intCast(ix.slots.items.len);
+    // A read that is kept while a write is in judgement has that write's
+    // mark: the write is compared with it.
+    _ = units;
+    try ix.slots.append(f.gpa, .{ .stamp = ix.gen, .start = start, .len = @intCast(xs.len), .v = v, .k = k });
+    var last: [2]u32 = .{ none, none };
+    for (xs) |x| {
+        // The atom outside the frame (root 0) is no cell of the frame (`overlap`).
+        if (x.root == 0 or (x.root == last[0] and x.e == last[1])) continue;
+        last = .{ x.root, x.e };
+        ix.debt += Loc.lookup_units;
+        const gop = try ix.by_re.getOrPut(f.gpa, last);
+        if (gop.found_existing and ix.links.items[gop.value_ptr.*].slot == slot) continue;
+        try ix.links.append(f.gpa, .{ .slot = slot, .next = if (gop.found_existing) gop.value_ptr.* else none });
+        gop.value_ptr.* = @intCast(ix.links.items.len - 1);
+    }
+    return slot;
+}
+
+/// Mark the slots that have an atom at a root and entry of an atom of the
+/// write `ws` in judgement. A write that walks more links than four for
+/// each slot has no marks: each kept read is compared with it as before.
+/// So is a write under a set of the callee's paths, which keeps no read.
+fn markWrite(f: *Frame, ws: []const Atom) Error!void {
+    const ix = &f.apart;
+    ix.marked = false;
+    ix.hits.clearRetainingCapacity();
+    if (!ix.on or f.judge_set.len != 0 or ix.slots.items.len == 0) return;
+    ix.gen += 1;
+    ix.of = ws;
+    try ix.hits.ensureTotalCapacity(f.gpa, ix.slots.items.len);
+    const most = 4 * ix.slots.items.len + 64;
+    var walked: usize = 0;
+    var last: [2]u32 = .{ none, none };
+    for (ws) |w| {
+        if (w.root == 0 or (w.root == last[0] and w.e == last[1])) continue;
+        last = .{ w.root, w.e };
+        ix.debt += Loc.lookup_units;
+        var l = ix.by_re.get(last) orelse continue;
+        while (l != none) : (l = ix.links.items[l].next) {
+            walked += 1;
+            if (walked > most) {
+                ix.debt += walked;
+                return;
+            }
+            const slot = &ix.slots.items[ix.links.items[l].slot];
+            if (slot.stamp == ix.gen) continue;
+            slot.stamp = ix.gen;
+            ix.hits.appendAssumeCapacity(ix.links.items[l].slot);
+        }
+    }
+    ix.debt += walked;
+    ix.marked = true;
+}
+
+/// The row of the operand in judgement (`apart_arg`, value `v`), or null:
+/// the call has no index, or the write is under a set of the callee's
+/// paths. `cov`, `flags` and `extra` are the operand's map, flags and hole
+/// flags as `otherReaches` has them. A row is made at the operand's first
+/// write, with every entry that a write can test in its `open` run: each
+/// but an entry at a location of the signature with no flag, which no write
+/// tests. A slot is put in `slot_of` when `otherReaches` reads or copies its
+/// location. An operand has one row for a call: a test of another value at
+/// the same operand (none is known) has no row, so no row moves while one
+/// is read.
+fn apartRow(f: *Frame, v: Val, cov: []const u32, flags: []const u8, extra: []const u8) Error!?*ApartIndex.KeptRow {
+    const ix = &f.apart;
+    if (!ix.on or f.apart_arg == none or f.judge_set.len != 0) return null;
+    if (ix.rows.items.len <= f.apart_arg) try ix.rows.appendNTimes(f.gpa, .{}, f.apart_arg + 1 - ix.rows.items.len);
+    const row = &ix.rows.items[f.apart_arg];
+    if (row.start == none) {
+        row.* = .{ .start = @intCast(ix.slot_of.items.len), .len = @intCast(cov.len), .v = v, .ctx = f.judge_ctx, .at = f.judge_at, .open_start = @intCast(ix.open.items.len) };
+        try ix.slot_of.appendNTimes(f.gpa, none, cov.len);
+        try ix.open.ensureUnusedCapacity(f.gpa, cov.len);
+        for (cov, 0..) |c, k| {
+            const more: u8 = if (extra.len != 0) extra[k] else 0;
+            if (c < Loc.all and (flags[c] | more) == 0) continue;
+            ix.open.appendAssumeCapacity(@intCast(k));
+        }
+        row.open_len = @intCast(ix.open.items.len - row.open_start);
+    } else if (!f.rowFits(row.*, v, cov.len)) return null;
+    return row;
+}
+
+fn rowFits(f: *const Frame, row: ApartIndex.KeptRow, v: Val, n: usize) bool {
+    return row.len == n and row.v == v and row.ctx == f.judge_ctx and row.at == f.judge_at;
+}
+
+/// Whether the write `ws` tests only a few entries of the operand in
+/// judgement (value `v`, `n` entries): the write has its marks, and the
+/// operand has its row from an earlier write. Then each entry with a kept
+/// read is in `slot_of`, or it is in the row's `open` run; a kept read that
+/// the write did not mark has no atom at a root and entry of the written
+/// cells and reaches none of them, so `otherReaches` passes only the kept
+/// reads that the write marked and the entries of `open`.
+fn apartFew(f: *const Frame, v: Val, ws: []const Atom, n: usize) bool {
+    const ix = &f.apart;
+    if (!ix.on or f.apart_arg == none or f.judge_set.len != 0) return false;
+    if (!ix.marked or ws.ptr != ix.of.ptr or ws.len != ix.of.len) return false;
+    if (ix.rows.items.len <= f.apart_arg) return false;
+    const row = ix.rows.items[f.apart_arg];
+    return row.start != none and f.rowFits(row, v, n);
+}
+
+/// The writes of one call whose unmarked kept reads a safe build compares
+/// with the write (`checkApartWrite`).
+const apart_checks_max = 64;
+
+/// In safe builds: each kept read of the row `slots` that the write `ws`
+/// did not mark reaches no atom of it by the test that the write was spared
+/// (kernel §9): `atomsReach`, or for another location of the written operand
+/// itself, a part of one root (`part_of_root`), each pair by `overlap`. The
+/// first 4 writes of a call that pass few entries are checked and each 64th
+/// after them, up to `apart_checks_max`. The check counts no work and reads
+/// the kept atoms where they are; one that passed the budget compared
+/// nothing.
+fn checkApartWrite(f: *Frame, slots: []const u32, ws: []const Atom, part_of_root: bool) void {
+    if (!safety or f.m.steps_over) return;
+    const ix = &f.apart;
+    ix.seen += 1;
+    if (ix.seen > 4 and ix.seen % 64 != 0) return;
+    if (f.apart_checked >= apart_checks_max) return;
+    f.apart_checked += 1;
+    const q = f.quiet();
+    defer f.loud(q);
+    for (slots) |slot| {
+        if (slot == none) continue;
+        const sl = ix.slots.items[slot];
+        if (sl.stamp == ix.gen) continue;
+        const kept = f.other_buf.items[sl.start..][0..sl.len];
+        var reaches = false;
+        if (part_of_root) {
+            for (kept) |x| for (ws) |w| {
+                if (f.overlap(x, w)) reaches = true;
+            };
+        } else reaches = f.atomsReach(kept, ws);
+        if (f.m.steps_over) return;
+        if (reaches) std.debug.panic("own3: a kept read with no atom at a root and entry of the write reaches it (kernel §8)", .{});
+    }
 }
 
 /// The copies of one call that a safe build reads again (`checkOtherLeaves`).
@@ -3724,8 +4070,11 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
     }
     const own_layout = try f.m.loc.layoutOf(n.place);
     const cov = try f.m.loc.cover(o.sig, own_layout);
-    // The scans of the flags, of the layout and of the map are work (kernel §8).
-    if (f.charge(Loc.scanUnits(o.flags.len / 4) + 2 * cov.len)) return true;
+    // The scans of the flags, of the layout and of the map are work (kernel
+    // §8). A write that passes only a few entries of the map (`apartFew`)
+    // counts each entry that it passes, below.
+    const few = f.apartFew(o.v, ws, cov.len);
+    if (f.charge(Loc.scanUnits(o.flags.len / 4) + if (few) 0 else 2 * cov.len)) return true;
     var any_flag = false;
     for (o.flags) |x| if (x != 0) {
         any_flag = true;
@@ -3795,7 +4144,55 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
     // Whether the operand holds each cell once, asked at the first entry
     // the map cannot place (below).
     var apart_value: ?bool = null;
-    for (cov, 0..) |c, k| {
+    const row = try f.apartRow(o.v, cov, o.flags, extra);
+    const slot_of: []u32 = if (row) |r| f.apart.slot_of.items[r.start..][0..r.len] else &.{};
+    // A write with few entries to pass (`apartFew`): the kept reads of this
+    // operand that it marked, and the entries with no kept read (`open`; one
+    // that has a slot now leaves the run). They are passed in the order of
+    // the map, as the scan of every entry passes them, so the first entry
+    // that reaches is the one that the scan finds, with no more work before
+    // it. Each entry passed is 2 units, as in the scan, and one that leaves
+    // `open` is 1; the write never counts more for them than the scan of
+    // every entry cost (`room`).
+    std.debug.assert(!few or row != null);
+    var room: u64 = 2 * @as(u64, cov.len);
+    if (few) {
+        const ix = &f.apart;
+        ix.pass.clearRetainingCapacity();
+        for (ix.hits.items) |s| {
+            const sl = ix.slots.items[s];
+            if (sl.v != o.v or sl.k >= slot_of.len or slot_of[sl.k] != s) continue;
+            if (f.chargeIn(&room, 2)) return true;
+            try ix.pass.append(f.gpa, sl.k);
+        }
+        var at: usize = row.?.open_len;
+        while (at != 0) {
+            at -= 1;
+            const open = ix.open.items[row.?.open_start..][0..row.?.open_len];
+            const k = open[at];
+            if (slot_of[k] != none) {
+                if (f.chargeIn(&room, 1)) return true;
+                open[at] = open[open.len - 1];
+                row.?.open_len -= 1;
+                continue;
+            }
+            if (f.chargeIn(&room, 2)) return true;
+            try ix.pass.append(f.gpa, k);
+        }
+        std.mem.sort(u32, ix.pass.items, {}, std.sort.asc(u32));
+    }
+    var next: usize = 0;
+    while (true) {
+        var k: usize = undefined;
+        if (few) {
+            if (next == f.apart.pass.items.len) break;
+            k = f.apart.pass.items[next];
+        } else {
+            if (next == cov.len) break;
+            k = next;
+        }
+        next += 1;
+        const c = cov[k];
         const more: u8 = if (extra.len != 0) extra[k] else 0;
         if (!any_kind and c < Loc.all and (o.flags[c] | more) == flag_a) {
             if (f.charge(nwes)) return true;
@@ -3833,6 +4230,7 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
             }
         } else if (c != none and (o.flags[c] | more) == 0) continue;
         const dup_k = try f.otherLeaves(o.v, @intCast(k));
+        if (row != null) slot_of[k] = f.other_slot;
         // A summary entry that holds one cell at two of its places is no two sets.
         if (c == Loc.all and skip != none and apart_value.? and !dup_k) continue;
         if (skip != none and n.tag == .ref) {
@@ -3862,7 +4260,24 @@ fn otherReaches(f: *Frame, o: Other, ws: []const Atom, skip: u32, suffix: []cons
         }
         if (f.atomsReach(f.scratch.items, ws)) return true;
     }
+    if (few) {
+        f.checkApartWrite(slot_of, ws, skip != none and n.tag == .ref);
+        // The work of the index that no write paid yet, up to what is left
+        // of the cost of the scan of every entry: so the write costs no
+        // more than before.
+        const pay = @min(f.apart.debt, room);
+        if (f.charge(pay)) return true;
+        f.apart.debt -= pay;
+    }
     return false;
+}
+
+/// Count `n` units of the `room` that is left, or what is left of it: true
+/// past the budget.
+fn chargeIn(f: *const Frame, room: *u64, n: u64) bool {
+    const c = @min(n, room.*);
+    room.* -= c;
+    return f.charge(c);
 }
 
 /// Whether atom `a` names a record's field slot (kernel §11).
@@ -3975,8 +4390,13 @@ fn demand(f: *Frame, w: u32, in: DemandIn) Error!void {
         f.judge_set = in.paths;
         defer f.judge_set = &.{};
         f.judge_at = d.at;
+        const targets = in.reach orelse f.atoms.items[w..][0..wn];
+        try f.markWrite(targets);
+        defer f.apart.marked = false;
+        defer f.apart_arg = none;
         for (in.others, 0..) |o, k| {
-            if (try f.otherReaches(o, in.reach orelse f.atoms.items[w..][0..wn], if (k == in.arg) in.se else none, if (k == in.arg) in.suffix else &.{})) {
+            f.apart_arg = @intCast(k);
+            if (try f.otherReaches(o, targets, if (k == in.arg) in.se else none, if (k == in.arg) in.suffix else &.{})) {
                 d.refused = .disjoint;
                 break;
             }
@@ -4434,7 +4854,18 @@ fn finishDemands(f: *Frame) Error!void {
                 // A read at a later time: the walk goes in the program's order (`timeOf`).
                 if (u.at <= d.at) continue;
                 if (!f.compatible(u.ctx, d.ctx)) continue;
-                // Each pair of a write and a later read is a step (kernel §8).
+                // A pair that the facts of the read's root settle is no step
+                // (`useSettled`): the scan of the write, and one unit.
+                if (f.useSettled(u, ws)) |over| {
+                    if (over) {
+                        d.refused = .limit;
+                        d.detail = "the walk of this declaration gave up";
+                        break;
+                    }
+                    try f.checkUseSettled(u, ws);
+                    continue;
+                }
+                // Each other pair of a write and a later read is a step (kernel §8).
                 if (f.tick()) {
                     d.refused = .limit;
                     d.detail = "the walk of this declaration gave up";
@@ -11409,10 +11840,13 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
     // applied inside this one's writes. A call that writes one location
     // reads each other location once already, and keeps nothing.
     std.debug.assert(!f.other_on and f.other_memo.count() == 0 and f.other_buf.items.len == 0);
+    std.debug.assert(!f.apart.on and f.apart.slots.items.len == 0);
     var written: usize = 0;
     for (c.flags) |x| written += @intFromBool(x & flag_w != 0);
     f.other_on = written > 1;
+    f.apart.on = written >= apart_min_writes;
     f.other_checked = 0;
+    f.apart_checked = 0;
     for (0..c.arity) |j| {
         const sig = c.layouts[j];
         const n = c.off[j + 1] - c.off[j];
@@ -11455,6 +11889,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         f.other_on = false;
         f.other_memo.clearRetainingCapacity();
         f.other_buf.clearRetainingCapacity();
+        f.apart.clear();
     }
     // What it reads.
     for (0..c.arity) |j| try f.readBy(args[j], inst, c.layouts[j], c.flags[c.off[j]..c.off[j + 1]]);
