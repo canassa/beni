@@ -18,6 +18,7 @@ const Bir = @import("../bir/Bir.zig");
 const Types = @import("../check/Types.zig");
 const CheckModule = @import("../check/Check.zig").Module;
 const Dispatch = @import("../check/Dispatch.zig");
+const SchemaGraph = @import("../js/SchemaGraph.zig");
 const Driver = @import("../check/Driver.zig");
 const CheckDiagnostics = @import("../check/Diagnostics.zig");
 const Enforce2 = @import("../own2/Enforce.zig");
@@ -342,12 +343,29 @@ const BlockCtx = struct {
         return null;
     }
 
+    fn moduleName(ctx: *anyopaque, index: u32) ?Block.ModuleName {
+        const c: *BlockCtx = @ptrCast(@alignCast(ctx));
+        if (index >= c.session.graph.count()) return null;
+        const m: Graph.Index = @fromBackingInt(@intCast(index));
+        const name: Block.ModuleName = .{ .package = @backingInt(c.session.graph.modulePackage(m)), .name = c.session.interner.slice(c.session.graph.moduleName(m)) };
+        // As a type: a name that does not give this module back has no block.
+        if (moduleIndex(ctx, name) != index) return null;
+        return name;
+    }
+
+    fn moduleIndex(ctx: *anyopaque, n: Block.ModuleName) ?u32 {
+        const c: *BlockCtx = @ptrCast(@alignCast(ctx));
+        const package = std.enums.fromInt(SourceStore.Package, n.package) orelse return null;
+        const name = c.session.interner.find(n.name) orelse return null;
+        return (c.session.graph.find(package, name) orelse return null).int();
+    }
+
     fn names(c: *BlockCtx) Block.Names {
-        return .{ .ctx = c, .field = field, .type = typeName };
+        return .{ .ctx = c, .field = field, .type = typeName, .module = moduleName };
     }
 
     fn remap(c: *BlockCtx) Block.Remap {
-        return .{ .ctx = c, .field = rankOf, .type = typeId };
+        return .{ .ctx = c, .field = rankOf, .type = typeId, .module = moduleIndex };
     }
 };
 
@@ -358,17 +376,41 @@ fn inDecl(bir: *const Bir, decl: u32, inst: u32) bool {
     return inst >= d.inst_start.int() and inst < d.inst_end.int();
 }
 
-/// Whether what a block gave names only what module `bir` has: the lowering
-/// indexes the BIR with each number (`Lower.hoistReads`, as
-/// `own/Hoists.Table.verifyAgainstBir` checks v1's rows).
-fn fitsBir(bir: *const Bir, l: *const Block.Loaded) bool {
-    if (l.published) |p| if (p.contracts.len != bir.decls.len) return false;
+/// Whether the functions that contract `c` of module `mi` answers, at any
+/// depth, name instructions of that module and declarations of a module of
+/// the build (`Contract.Made`; `Frame.madeVal` makes a code of each).
+fn madeFits(birs: []const *const Bir, mi: u32, c: *const Contract.Contract, depth: u32) bool {
+    if (depth > 64) return false;
+    for (c.answers orelse return true) |x| {
+        if (x.inst != Contract.none and x.inst >= birs[mi].insts.len) return false;
+        if (x.decl[0] != Contract.none and (x.decl[0] >= birs.len or x.decl[1] >= birs[x.decl[0]].decls.len)) return false;
+        if (!madeFits(birs, mi, x.contract, depth + 1)) return false;
+    }
+    return true;
+}
+
+/// Whether what a block gave for module `mi` names only what the module's
+/// BIR has: the lowering indexes the BIR with each number of a row
+/// (`Lower.hoistReads`, as `own/Hoists.Table.verifyAgainstBir` checks v1's
+/// rows), and a walk with each instruction and declaration of a function
+/// that a contract answers.
+fn fitsBir(birs: []const *const Bir, mi: u32, l: *const Block.Loaded) bool {
+    const bir = birs[mi];
+    if (l.published) |p| {
+        if (p.contracts.len != bir.decls.len) return false;
+        for (p.contracts) |co| if (co) |c| if (!madeFits(birs, mi, c, 0)) return false;
+    }
     for (l.channel.writes) |w| if (w.inst >= bir.insts.len) return false;
+    const none = std.math.maxInt(u32);
     for (l.reads) |r| {
-        if (!inDecl(bir, r.decl, r.inst) or !inDecl(bir, r.decl, r.placement) or !inDecl(bir, r.decl, r.demand)) return false;
+        if (!inDecl(bir, r.decl, r.inst) or !inDecl(bir, r.decl, r.placement)) return false;
+        // The update, or none for a closure's read alone; the closure, or
+        // none for a read of the body itself (`Reads.Read`).
+        if (r.demand != none and !inDecl(bir, r.decl, r.demand)) return false;
+        if (r.capture != none and !inDecl(bir, r.decl, r.capture)) return false;
         const decl = bir.decls[r.decl];
         if (r.holder >= decl.locals_end - decl.locals_start) return false;
-        if (r.phase > 1) return false;
+        if (r.phase > 2) return false;
         // A chain of `path_len` field reads, from the holder.
         var at: Bir.Inst.Index = @fromBackingInt(r.inst);
         var left = r.path_len;
@@ -397,7 +439,7 @@ pub fn restore(ctx: *const Context, d: *Driver, m: Graph.Index, bytes: []const u
         error.OutOfMemory => return error.OutOfMemory,
         error.BadBlock => return false,
     };
-    if (!fitsBir(ctx.ins.birs[mi], &loaded)) {
+    if (!fitsBir(ctx.ins.birs, mi, &loaded)) {
         loaded.deinit(gpa);
         return false;
     }
@@ -408,6 +450,23 @@ pub fn restore(ctx: *const Context, d: *Driver, m: Graph.Index, bytes: []const u
     gpa.free(d.hoist_reads[mi]);
     d.hoist_reads[mi] = loaded.reads;
     return true;
+}
+
+/// The modules `m` imports, by index (kernel §6.13, *A message a command
+/// builds*, fact 4): each is checked before it.
+fn depsOf(arena: Allocator, session: anytype, m: Graph.Index) Allocator.Error![]const u32 {
+    const ds = session.graph.dependencies(m);
+    const out = try arena.alloc(u32, ds.len);
+    for (out, ds) |*o, d| o.* = d.int();
+    return out;
+}
+
+/// Per module of the build, whether a platform package holds it.
+fn platformModules(arena: Allocator, session: anytype) Allocator.Error![]const bool {
+    const n = session.graph.count();
+    const out = try arena.alloc(bool, n);
+    for (out, 0..) |*o, i| o.* = session.graph.modulePackage(@fromBackingInt(@intCast(i))) == .platform;
+    return out;
 }
 
 /// The Driver's hook: in the worker that checked module `m`, after its type
@@ -449,7 +508,7 @@ fn keepBlock(ctx: *const Context, d: *Driver, m: Graph.Index, before: usize) All
         };
         defer back.deinit(gpa);
         if (!Block.same(module, &back)) std.debug.panic("own3: the block of module {s} reads back as another", .{ctx.ins.names[mi]});
-        if (!fitsBir(ctx.ins.birs[mi], &back)) std.debug.panic("own3: the block of module {s} does not fit its BIR", .{ctx.ins.names[mi]});
+        if (!fitsBir(ctx.ins.birs, mi, &back)) std.debug.panic("own3: the block of module {s} does not fit its BIR", .{ctx.ins.names[mi]});
     }
     if (stores) ctx.state.blocks[mi] = bytes else gpa.free(bytes);
 }
@@ -493,12 +552,29 @@ fn walkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocat
     const kept = session.options.ownership_v3_dump;
     const mk = session.graph.markup;
     const markup_type: ?Check.MarkupType = if (mk.type_module.unwrap()) |mm| if (mk.type_name.unwrap()) |mn| .{ .module = mm, .name = mn } else null else null;
+    // The plans as the backend reads them (`js/SchemaGraph.zig`): this
+    // module's is filled by its check, and each import's before it.
+    const schema_graph: SchemaGraph = .{
+        .graph = &session.graph,
+        .plans = d.plans,
+        .birs = ctx.ins.birs,
+        .interfaces = session.resolution.interfaces,
+        .provenance = session.resolution.provenance,
+        .interner = &session.interner,
+    };
+    const lowered = try keptByLowering(arena, session, d, m, bir);
     const r = try Check.checkModule(gpa, arena, &mi, &ctx.state.shared, nc.names(), .{
+        .schema_graph = &schema_graph,
         .summaries = if (kept) |k| k.summaries else false,
         .markup_type = markup_type,
-        .kept_lets = try keptLets(arena, session, d, m, bir),
+        .kept_lets = lowered.kept_lets,
+        .handlers_at_event = lowered.handlers_at_event,
+        .holes_once = lowered.holes_once,
+        .not_total_calls = if (lowered.holes_once.len != 0) try notTotalCalls(arena, d, m, bir) else &.{},
         .library = session.options.library and session.graph.modulePackage(m) == .app,
         .rows = session.graph.modulePackage(m) != .app,
+        .deps = try depsOf(arena, session, m),
+        .platform = try platformModules(arena, session),
     });
     ctx.state.shared.published[mi_u] = r.published;
 
@@ -562,9 +638,14 @@ fn walkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocat
         gpa.free(d.hoist_reads[mi_u]);
         d.hoist_reads[mi_u] = &.{};
     }
-    if (table.writes.len != 0 and mi_u < d.hoist_reads.len) {
+    // And the field paths its closures captured, read where each is made
+    // (kernel §6 rule 3, *A field path a closure captures*), in every module
+    // of the application, whatever it writes: a record that one module's
+    // closure holds can be written in place by another's update.
+    if ((table.writes.len != 0 or r.eager.len != 0) and mi_u < d.hoist_reads.len) {
         var reads: std.ArrayList(Reads.Read) = .empty;
-        for (r.lines) |l| if (!l.refused) try reads.appendSlice(arena, l.hoists);
+        if (table.writes.len != 0) for (r.lines) |l| if (!l.refused) try reads.appendSlice(arena, l.hoists);
+        if (session.graph.modulePackage(m) == .app) try reads.appendSlice(arena, r.eager);
         d.hoist_reads[mi_u] = try gpa.dupe(Reads.Read, reads.items);
     }
     if (mi_u < d.channels.len) d.channels[mi_u] = table else table.deinit(gpa);
@@ -626,27 +707,76 @@ fn walkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Allocat
     for (r.limits) |o| try dest.append(gpa, .{ .ownership = true, .code = .ownership_limit, .module = m, .region = @fromBackingInt(0), .token = o.token orelse 0, .message = try gpa.dupe(u8, o.text) });
 }
 
-/// The `let`s of module `m` whose values the build's markup lowering keeps
-/// beyond the call of the function that made them (kernel §6.14,
-/// `boundary.md` §9.4.8, *What a lowering keeps*). The lowering says which it
-/// keeps (`Lowering.keeps_let`), of the `let`s that the compiler moves into
-/// a root (`MarkupTree.keptLets`): the tree is built here as the emitter
-/// builds it, so the checker and the lowering read one answer. A build with
-/// no lowering, or a module with no markup, keeps none.
-fn keptLets(arena: Allocator, session: *const Session, d: *const Driver, m: Graph.Index, bir: *const Bir) Allocator.Error![]const u32 {
+/// What the build's markup lowering says it keeps of module `m`, and what it
+/// reads where an event fires (kernel §6.12, §6.14, `boundary.md` §9.4.8):
+/// the tree is built here as the emitter builds it, so the checker and the
+/// lowering read one answer. A build with no lowering, or a module with no
+/// markup, keeps no `let` and reads no handler at its event.
+const Lowered = struct {
+    /// The `let`s whose values the lowering keeps beyond the call of the
+    /// function that made them (*What a lowering keeps*): of the `let`s that
+    /// the compiler moves into a root (`MarkupTree.keptLets`), those it says
+    /// it keeps (`Lowering.keeps_let`).
+    kept_lets: []const u32 = &.{},
+    /// The handlers it reads where their event fires (*A handler read at the
+    /// event*, `MarkupTree.handlersAtEvent`, `Lowering.reads_handler_at_event`).
+    handlers_at_event: []const u32 = &.{},
+    /// The hole values it evaluates at most once in each evaluation of the
+    /// function (*A hole evaluated once*, `MarkupTree.holesOnce`,
+    /// `Lowering.evaluates_hole_once`).
+    holes_once: []const u32 = &.{},
+};
+
+/// The call instructions of module `m` that are not pure and total for
+/// certain: a call of a declaration the checker did not prove total (this
+/// module's `Dispatch.EffectDecl.total`, an import's `Interface.Scheme.total`),
+/// a call of something else, and a list append. Ascending. A markup lowering
+/// evaluates such a call once, where its value stands, never eagerly in an
+/// arm not taken nor again at an event (`browser-inline.md` §8.2), so only
+/// its writes are read with *A hole evaluated once* (kernel §6 rule 12).
+fn notTotalCalls(arena: Allocator, d: *const Driver, m: Graph.Index, bir: *const Bir) Allocator.Error![]const u32 {
+    const mi = m.int();
+    const dispatch: ?*const Dispatch = if (mi < d.dispatch.len) &d.dispatch[mi] else null;
+    var out: std.ArrayList(u32) = .empty;
+    for (0..bir.insts.len) |i| {
+        const at: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+        if (bir.instTag(at) != .call) continue;
+        const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(at).lhs));
+        const c = bir.instData(callee);
+        const total = switch (bir.instTag(callee)) {
+            .top => if (dispatch) |dt| dt.effectDecl(c.lhs).total else false,
+            .ext_value => blk: {
+                if (c.lhs >= d.interfaces.len) break :blk false;
+                const iface = &d.interfaces[c.lhs];
+                if (c.rhs >= iface.values.len) break :blk false;
+                const scheme = iface.values[c.rhs].scheme;
+                break :blk scheme != .none and iface.schemes[@backingInt(scheme)].total;
+            },
+            else => false,
+        };
+        const append = if (dispatch) |dt| dt.isListAppend(at) or dt.isListAppend(callee) else false;
+        if (!total or append) try out.append(arena, @intCast(i));
+    }
+    return out.items;
+}
+
+fn keptByLowering(arena: Allocator, session: *const Session, d: *const Driver, m: Graph.Index, bir: *const Bir) Allocator.Error!Lowered {
     const mk = session.graph.markup;
-    const name = mk.lowering.unwrap() orelse return &.{};
+    const name = mk.lowering.unwrap() orelse return .{};
     const lowering = for (markup_lowerings) |*l| {
         if (std.mem.eql(u8, l.name, session.interner.slice(name))) break l;
-    } else return &.{};
-    if (!lowering.groups) return &.{};
+    } else return .{};
+    // A lowering that does not group evaluates no `let` of its own, and is
+    // read as keeping each handler (`Lowering.reads_handler_at_event`'s
+    // default): no answer is asked of it.
+    if (!lowering.groups) return .{};
     const mi = m.int();
     // No shortcut by the dispatch table: a component's call has no row in
     // it, and a root made of one is a root all the same. The tree finds
     // the roots as the emitter does, from the `markup` instructions.
-    if (mi >= d.dispatch.len) return &.{};
-    const vocabulary = mk.vocabulary orelse return &.{};
-    if (vocabulary.int() >= d.interfaces.len) return &.{};
+    if (mi >= d.dispatch.len) return .{};
+    const vocabulary = mk.vocabulary orelse return .{};
+    if (vocabulary.int() >= d.interfaces.len) return .{};
     const live = try arena.alloc(u32, bir.decls.len);
     for (live, 0..) |*x, i| x.* = @intCast(i);
     const built = try MarkupTree.build(arena, .{
@@ -659,8 +789,12 @@ fn keptLets(arena: Allocator, session: *const Session, d: *const Driver, m: Grap
         .interfaces = d.interfaces,
         .debug_module = if (session.graph.lookup(.core, InternPool.WellKnown.Debug.symbol())) |x| x.int() else null,
         .parameterised_templates = lowering.parameterised_templates,
-    }) orelse return &.{};
-    return MarkupTree.keptLets(arena, &built, bir, lowering);
+    }) orelse return .{};
+    return .{
+        .kept_lets = try MarkupTree.keptLets(arena, &built, bir, lowering),
+        .handlers_at_event = try MarkupTree.handlersAtEvent(arena, &built, lowering),
+        .holes_once = try MarkupTree.holesOnce(arena, &built, lowering),
+    };
 }
 
 const markup_lowerings = @import("markup_lowerings").all;

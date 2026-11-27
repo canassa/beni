@@ -1,0 +1,23 @@
+-- A constant of markup that builds a list is shown twice: inline evaluates it
+-- at each place that shows it, so a write of the list it builds is refused
+-- (ownership-v3-kernel.md §7, *A constant read once*).
+import Html exposing (Html)
+import Tea
+
+
+seed : List Int
+seed = List.range 1 2
+
+
+banner : Html Int
+banner =
+    xs = seed ++ [ 3 ]
+    <span>{String.fromInt (List.sum xs)}</span>
+
+
+view : Int → Html Int
+view n = <button onClick={n + 1}>{String.fromInt n}{banner}{banner}</button>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }

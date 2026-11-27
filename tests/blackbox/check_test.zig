@@ -2868,7 +2868,9 @@ test "ownership v3: the faults of round 2 are refused" {
         "  136:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         // Report 111's prototype accepted each of the 14 demands that it made here.
         // The two more are the writes of `later`'s group in its own frames; `joinArgLive` adds two.
-        "total 28: accepted 18 (fresh 3, call 1, param 0, callback-param 14, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
+        // `nest` adds three refusals at 18:9 since `comp`'s answer is the closure it makes
+        // (kernel §6 rule 2, *A function a body answers*): the write of `s` it reaches.
+        "total 31: accepted 18 (fresh 3, call 1, param 0, callback-param 14, once 0, entry 0; assumed 0), pending 0, rejected 13\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });

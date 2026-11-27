@@ -1,0 +1,9 @@
+# The handler sends the x the page holds now.
+click #bump
+click #bump
+click #send
+# Out and back in: the new arm keeps the x of its pass.
+click #toggle
+click #bump
+click #toggle
+click #send

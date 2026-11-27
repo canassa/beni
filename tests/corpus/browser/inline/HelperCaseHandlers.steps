@@ -1,0 +1,13 @@
+click #x>.a
+click #y>.b
+click #bump
+click #x>.a
+click #y>.b
+# Both calls take their other arms, and their handlers read the new n.
+click #flip
+click #x>.b
+click #y>.a
+click #bump
+click #x>.b
+click #flip
+click #x>.a

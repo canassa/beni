@@ -1,0 +1,58 @@
+-- A message that is a record, split on its field `op`: the key `.op · Rename`
+-- passes a record step, so its handler takes the message whole
+-- (browser-inline.md §8.7, amended 2026-11-23). A closure in the arm reads
+-- `msg.n`, which the eager read of a captured field (ownership-checker.md
+-- §31.6) hoists to where the closure is made: that read is of the message
+-- too. The first version of the change read it by the name of a local the
+-- handler never declares (a `ReferenceError` in development, `undefined`
+-- in release).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Op
+    = Rename String
+    | Drop
+
+
+type alias Msg =
+    op : Op
+    n : Int
+
+
+type alias Model =
+    log : List String
+
+
+name : Op → String
+name op =
+    case op of
+        Rename s →
+            s
+
+        Drop →
+            "drop"
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg.op of
+        Drop →
+            { model | log = List.push model.log "d${String.fromInt msg.n}" }
+
+        Rename s →
+            { model | log = List.map model.log λx → x ++ s ++ String.fromInt msg.n }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="rr" onClick={{ op = Rename "RR", n = 3 }}>rr</button>
+        <button id="dd" onClick={{ op = Drop, n = 4 }}>dd</button>
+        <p id="log">{String.join model.log ","}</p>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { log = [ "a" ] }, update = update, view = view }

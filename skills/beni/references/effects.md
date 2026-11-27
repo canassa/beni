@@ -61,8 +61,9 @@ patient work = Task.timeout (Duration.seconds 2) work
 Every fiber resumes through the program's one queue. `Task.scheduler hook` makes a queue of its
 own, and `Task.withScheduler scheduler (λ⊤ → work)` runs `work` on it: `work`'s fiber resumes
 through that queue while inside, and the fibers `work` starts belong to the scheduler. A defect
-under a scheduler runs its `hook` and stops that scheduler alone: its fibers are cancelled and
-their releases run; on `node` the throw then ends the process, as every defect does.
+under a scheduler runs its `hook`, stops that scheduler and then stops the program, as every
+defect does: on a page every program of the page stops, and on `node` the process ends. Only a
+platform's scheduler (`Task.schedulerWith`, one per request or object) keeps a defect to itself.
 `Task.stopScheduler scheduler deadline done` cancels the fibers of one scheduler — the fibers
 started under it and the fiber inside its `withScheduler`, whole — runs their releases, and calls
 `done` with how many releases the deadline cut short; the fibers of every other scheduler run on.
@@ -88,6 +89,10 @@ apart left right =
   waits until it is set, `Deferred.poll d`.
 - `Clock.now ⊤` is the time in milliseconds on the calling fiber's clock. A test can run a fiber on
   a virtual clock with `Clock.run`.
+- `Clock.virtual t` makes a virtual clock that reads `t`. `Clock.adjust clock d` moves it forward by
+  `d` and wakes each fiber whose sleep ends. It gives a `Result`: `Err (Clock.TooFar left)` when
+  the new reading is more than 9007199254740991, the largest `Int`. The clock then does not move.
+  A test that does not use the result writes `_ = Clock.adjust clock d`.
 - `Clock.elapsed ⊤` is a `Float` of milliseconds since a start that the host chooses. It never goes
   back, so `Clock.elapsed ⊤ - start` is how long the work took. Compare it only with another
   `elapsed` reading. On a virtual clock it is that clock's reading.

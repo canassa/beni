@@ -1,0 +1,40 @@
+-- A closure writes a field of a record it captured (ownership-v3-kernel.md
+-- §11 item 11): a direct call of it, and a call of a function that runs it
+-- once within the call, judge the write there. `seq` runs `a` only before
+-- `u` (*The order of a callee's runs*), so the read of `m.n` in `a` is over
+-- before `u` writes `m.n` in place. Expected `11 1`, `4 1`, `7 2`.
+import Node exposing (Program)
+
+
+type alias M =
+    n : Int
+    k : Int
+
+
+seq : (⊤ → Int), (Int → r) → r
+seq a u = u (a ⊤)
+
+
+show : M → String
+show m = "${String.fromInt m.n} ${String.fromInt m.k}"
+
+
+ordered : M → M
+ordered m = seq (λ⊤ → m.n + 10) λr → { m | n = r }
+
+
+direct : M → M
+direct m = (λr → { m | n = r }) 4
+
+
+answered : M → M
+answered m = seq (λ⊤ → m.k + 1) λr → { m | n = 7, k = r }
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (ordered { n = 1, k = 1 })
+        , show (direct { n = 1, k = 1 })
+        , show (answered { n = 1, k = 1 })
+        ]

@@ -1,0 +1,15 @@
+-- A `For` in a prerendered page: the simple form (browser-inline.md §9,
+-- amended 2026-11-23) has no string form of its rows and no takeover of
+-- them, so the build refuses it, class 1 (§5).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : List String → Html ⊤
+view items = <ul><For each={items}>{λs → <li>{s}</li>}</For></ul>
+
+
+main : Tea.Program
+main =
+    Browser.prerender (Tea.sandbox { init = λ⊤ → [ "a" ], update = λ_ m → m, view = view }) [ "/" ]

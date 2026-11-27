@@ -1,0 +1,3 @@
+A lambda reads a field of a record its block binds after it (#2658):
+built again in place under the stale-read sanitiser, as shipped, and as a release ships it,
+against the answers recorded under spreads.

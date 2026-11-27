@@ -1,0 +1,114 @@
+-- load
+console.log: show element: 0
+console.log: show text: "0"
+console.log: for element: 0
+console.log: for text: "0"
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section id="show">
+      <p>"0"</p>
+    </section>
+    <section id="show-text">"0"</section>
+    <ul id="for">
+      <li>"0"</li>
+    </ul>
+    <ul id="for-text">"0"</ul>
+  </main>
+</body>
+-- click #bump
+console.log: show element: 1
+console.log: show text: "1"
+console.log: for element: 1
+console.log: for text: "1"
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section id="show">
+      <p>"1"</p>
+    </section>
+    <section id="show-text">"1"</section>
+    <ul id="for">
+      <li>"1"</li>
+    </ul>
+    <ul id="for-text">"1"</ul>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section id="show">
+      <b>"1"</b>
+    </section>
+    <section id="show-text">
+      <b>"1"</b>
+    </section>
+    <ul id="for">
+      <li>"1"</li>
+    </ul>
+    <ul id="for-text">
+      <li>"1"</li>
+    </ul>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section id="show">
+      <b>"2"</b>
+    </section>
+    <section id="show-text">
+      <b>"2"</b>
+    </section>
+    <ul id="for">
+      <li>"2"</li>
+    </ul>
+    <ul id="for-text">
+      <li>"2"</li>
+    </ul>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section id="show">
+      <b>"3"</b>
+    </section>
+    <section id="show-text">
+      <b>"3"</b>
+    </section>
+    <ul id="for">
+      <li>"3"</li>
+    </ul>
+    <ul id="for-text">
+      <li>"3"</li>
+    </ul>
+  </main>
+</body>
+-- click #toggle
+console.log: show element: 3
+console.log: show text: "3"
+console.log: for element: 3
+console.log: for text: "3"
+<body>
+  <main>
+    <button id="bump">"bump"</button>
+    <button id="toggle">"toggle"</button>
+    <section id="show">
+      <p>"3"</p>
+    </section>
+    <section id="show-text">"3"</section>
+    <ul id="for">
+      <li>"3"</li>
+    </ul>
+    <ul id="for-text">"3"</ul>
+  </main>
+</body>

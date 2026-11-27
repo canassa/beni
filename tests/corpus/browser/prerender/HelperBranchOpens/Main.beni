@@ -1,0 +1,62 @@
+-- `ArmOpens` with its panel written as a view helper whose body is the `if`
+-- (docs/design/browser-inline.md §8.4, amended 2026-11-23, #2498): the
+-- helper's branch is the same eager `when` at its hole, so the page the
+-- build writes and its transcript are `ArmOpens`'s.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    open : Bool
+    count : Int
+
+
+type Msg
+    = Toggle
+    | Bump
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | open = not model.open }
+
+        Bump →
+            { model | count = model.count + 1 }
+
+
+panel : Bool, Int → Html Msg
+panel open count =
+    if open then
+        <section data-role="panel">
+            <p>{count}</p>
+            <button data-role="inner" onClick={Bump}>+1</button>
+            {if count > 1 then <em>big</em> else <></>}
+        </section>
+    else
+        <></>
+
+
+view : Model → Html Msg
+view model =
+    <main data-role="app">
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+        {panel model.open model.count}
+        <div data-role="shown">
+            {if model.open then <></> else <span data-role="closed">closed at {model.count}</span>}
+            {if model.count > 0 then <b>{model.count}</b> else <></>}
+            <button data-role="bump" onClick={Bump}>Bump</button>
+        </div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { open = False, count = 0 }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

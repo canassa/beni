@@ -1,0 +1,2 @@
+# A command sends one list in two messages: the second update would see the first one's write, so the write is refused (ownership-v3-kernel.md §6 rule 13, *A message a command builds*).
+37:5 list_still_used entry

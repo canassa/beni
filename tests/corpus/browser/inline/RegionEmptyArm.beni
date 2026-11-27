@@ -1,0 +1,46 @@
+-- A `case` in markup whose shown arm reads what the branch binds, and
+-- whose other arm is `<></>`, is a branch region (docs/design/browser-inline.md
+-- §8.2, amended 2026-11-23); it was refused before, as `build/bad/inline/WhenBinds`.
+-- The arm with no node holds none: the region stands at its element's end.
+-- Its transcript is `browser-tea`'s for the same source but for one difference: the
+-- arm `<></>` shows no node here, where `browser-tea` keeps a comment.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Name
+    | Clear
+
+
+type alias Model =
+    name : Maybe String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Name →
+            { model | name = Just "ada" }
+
+        Clear →
+            { model | name = Nothing }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="name" onClick={Name}>name</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        {case model.name of
+            Just name →
+                <p>{name}</p>
+
+            Nothing →
+                <></>
+        }
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { name = Nothing }, update = update, view = view }

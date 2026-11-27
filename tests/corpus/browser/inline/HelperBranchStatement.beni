@@ -1,0 +1,70 @@
+-- A view helper whose body is a `case` with an arm whose `let`s no hole reads
+-- (browser-inline.md §8.4 and §8.2, amended 2026-11-24, *An arm's
+-- statements*): was `build/bad/inline/HelperBranchStatement`. The arm's `let`s
+-- run in the choice of the arm, so `unused`'s `Debug.todo` runs: choosing
+-- `Just` stops the page, as it does on `browser-tea` (checked against it for
+-- the same source, the same DOM, dev and release). One difference, of order:
+-- `loud`, which a hole and the button's message read, is evaluated with the
+-- arm's values, after the choice, so the throw comes before its log line,
+-- which `browser-tea` writes first.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : Maybe String
+    k : Int
+    got : String
+
+
+type Msg
+    = Set String
+    | Clear
+    | Inc
+    | Got String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Set s →
+            { model | name = Just s }
+
+        Clear →
+            { model | name = Nothing }
+
+        Inc →
+            { model | k = model.k + 1 }
+
+        Got s →
+            { model | got = s }
+
+
+shout : Maybe String, Int → Html Msg
+shout name k =
+    case name of
+        Just s →
+            loud = Debug.log "loud" "${String.toUpper s}${String.fromInt k}"
+            unused : Int
+            unused = Debug.todo "boom"
+            <button id="loud" onClick={Got loud}>{loud}</button>
+
+        Nothing →
+            <i id="quiet">{k}</i>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="ada" onClick={Set "ada"}>ada</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="inc" onClick={Inc}>inc</button>
+        <p id="got">{model.got}</p>
+        <div>{shout model.name model.k}</div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { name = Nothing, k = 0, got = "-" }, update = update, view = view }

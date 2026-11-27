@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <button id="again">"again"</button>
+    <output id="log">"visit 1"</output>
+  </main>
+</body>
+-- click #again
+<body>
+  <main>
+    <button id="again">"again"</button>
+    <output id="log">"visit 1 / saving 2"</output>
+  </main>
+</body>
+-- click #again
+<body>
+  <main>
+    <button id="again">"again"</button>
+    <output id="log">"visit 1 / saving 2 / saving 3"</output>
+  </main>
+</body>

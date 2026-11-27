@@ -1,0 +1,54 @@
+-- A set of subscriptions that reads the model is made again only by the
+-- handlers whose writes conflict with what `subscriptions` reads
+-- (browser-inline.md §3, amended 2026-11-23): `Toggle` writes `on`, so its
+-- handler hands `settle` the new set after its write pass; `Resized`
+-- writes only `resizes`, so its handler leaves the set as it is. The set
+-- only listens, so the runtime's diff has no fiber code: its `Waits` arms
+-- are gone.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Resized Browser.Events.Size
+    | Toggle
+
+
+type alias Model =
+    on : Bool
+    resizes : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Resized _ →
+            ( { model | resizes = model.resizes + 1 }, Cmd.none )
+
+        Toggle →
+            ( { model | on = not model.on }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model = if model.on then Browser.Events.onResize Resized else Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Toggle}>toggle</button>
+        <p>{model.resizes}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { on = True, resizes = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

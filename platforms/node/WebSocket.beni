@@ -670,13 +670,15 @@ readHeader ws =
             else if short == 127 && Js.bitAnd (readU32 head 2) 0x80000000 ≠ 0 then
                 refuse ws 1002 "a frame's length sets its highest bit"
             else
-                -- A length past 2³² is over any `maxMessage` a session uses; the
-                -- sum below is exact up to 2⁵³ (amendment item 24).
+                -- A length past 2³² − 1 is over any `maxMessage` a session
+                -- uses (amendment item 24), so a high word that is not 0
+                -- stands for 2³², and no sum of the peer's 63 bits is made:
+                -- `high * 2³²` is past 2⁵³ for a high word past 2²¹ (#1995).
                 frameLength =
                     if short == 126 then
                         readU16 head 2
                     else if short == 127 then
-                        readU32 head 2 * 4294967296 + readU32 head 6
+                        if readU32 head 2 ≠ 0 then 4294967296 else readU32 head 6
                     else
                         short
                 case headerFault ws fin opcode frameLength of

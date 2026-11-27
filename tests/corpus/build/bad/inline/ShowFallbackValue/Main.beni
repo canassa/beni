@@ -1,0 +1,20 @@
+-- A `Show` whose fallback is markup held in a value other than markup
+-- written in place or `Html.text` (browser-inline.md §8.2, amended
+-- 2026-11-23, *A `Show`*), class 1 (§5).
+import Html exposing (Html)
+import Tea
+
+
+empty : String → Html msg
+empty s = if s == "" then <i>none</i> else <b>{s}</b>
+
+
+view : Maybe Int → Html ⊤
+view shown =
+    <main>
+        <Show when={shown} keyed fallback={empty "x"}>{λn → <b>{n}</b>}</Show>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Just 1, update = λ_ m → m, view = view }

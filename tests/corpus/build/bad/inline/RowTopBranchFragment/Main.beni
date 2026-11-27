@@ -1,0 +1,25 @@
+-- A `For` whose row is a branch with an arm of two elements: a row whose
+-- top is a branch is compiled (browser-inline.md §9, amended 2026-11-24),
+-- each arm one element or `<></>`; an arm of more nodes is a limit of the
+-- compiler, class 1 (§5), as in a region.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : List Int → Html ⊤
+view items =
+    <ul>
+        <For each={items} keyed={False}>
+            {λx →
+                if x > 0 then
+                    <><li>{x}</li><li>again</li></>
+                else
+                    <></>
+            }
+        </For>
+    </ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ 1 ], update = λ_ m → m, view = view }

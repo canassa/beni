@@ -1,0 +1,16 @@
+-- The WebGPU engine is not part of `browser-inline`'s surface
+-- (docs/design/webgpu.md §2.1): it re-exports the public `Gpu` modules of
+-- `browser-base` only, so a program that imports `Gpu.Engine` is
+-- `unknown_module`.
+import Gpu.Engine
+import Html exposing (Html)
+import Tea
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → Gpu.Engine.openChannelCount ⊤
+        , update = λ_ m → m
+        , view = λn → <p>{String.fromInt n}</p>
+        }

@@ -1,0 +1,24 @@
+-- A view helper whose body is a `case` with an arm that is a markup value,
+-- not markup written in place: refused as the same `case` written at the
+-- hole is (docs/design/browser-inline.md §8.4, amended 2026-11-23, #2498;
+-- §5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+banner : Maybe String → Html {}
+banner name =
+    case name of
+        Just s →
+            <b>{s}</b>
+
+        Nothing →
+            Html.text "nobody"
+
+
+view : Maybe String → Html {}
+view name = <main>{banner name}</main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Just "ada", update = λ_ m → m, view = view }

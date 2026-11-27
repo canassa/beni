@@ -1,0 +1,1 @@
+The pushes in a hole of a branch arm, and the helper call that writes its argument, are holes the lowering evaluates once: in place under --ownership=v3 (ownership-v3-kernel.md §6 rule 12, *A hole evaluated once*).

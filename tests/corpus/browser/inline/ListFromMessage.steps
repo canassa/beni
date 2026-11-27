@@ -1,0 +1,13 @@
+# Mark every row.
+input li:nth-child(1)>input "1's"
+input li:nth-child(2)>input "2's"
+input li:nth-child(3)>input "3's"
+# Reversed: the ends trade places, the middle stays.
+click #reverse
+# Key 1 twice: its first item takes its row, the second a new one.
+click #twice
+# Two new keys around a kept one.
+click #new
+# A subsequence: only the rows of 3 and 8 stay.
+click #keep
+click #back

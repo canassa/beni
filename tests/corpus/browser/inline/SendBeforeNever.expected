@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <output id="status">"ready"</output>
+    <button id="ping">"ping"</button>
+  </main>
+</body>
+-- click #ping
+<body>
+  <main>
+    <output id="status">"ready!"</output>
+    <button id="ping">"ping"</button>
+  </main>
+</body>

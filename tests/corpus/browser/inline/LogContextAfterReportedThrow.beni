@@ -1,0 +1,52 @@
+-- A throw out of an event handler does not reach the code that fired the
+-- event: the DOM reports it, and `Dom.focus` returns (boundary.md
+-- §9.8.16 (b), amended 2026-10-24, #859). A command body made inside
+-- `Log.annotate` keeps that context (#597). It waits, so it runs in a
+-- fiber, and then it focuses an input whose `onFocus` sends `Boom`.
+-- `Boom`'s `update` has the program's context (#818), annotates it and
+-- throws. The rest of the body goes on with the body's own context, not
+-- with `update`'s. `LogContextAfterReportedThrowSoon` is the same body with
+-- no fiber.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( n + 1
+                , Cmd.perform λ_ →
+                    Time.sleep (Time.millis 5)
+                    _ = Dom.focus "target"
+                    Log.info "the body, after the focus"
+                )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ → Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+        <input id="target" onFocus={Boom} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

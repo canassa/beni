@@ -4313,6 +4313,13 @@ again (`boundary.md` §9.8.16 (b), amended the same day). None of them writes `o
 does, and `finished` still calls it with the work's answer. So the words of `spawn`, `spawnIn`, `spawnDetached`
 and `join` hold. The new helpers `withStranded`, `stranded` and `stranding` are pinned.
 
+*Amended 2026-11-10 (#2093):* two more of those helpers changed, and I read them again. `expiredFor` also asks
+whether the deadline of the scheduler the fiber belongs to (`memberOf`) has passed, through the new helper
+`expiredOf`, and `countCut` counts a cut against that scheduler once its deadline has passed
+(`transparent-effects-proposal.md` §17.5, amended the same day). Both read fields of the fiber and of a scheduler
+record and write a counter; neither writes `outcome` nor keeps a value. So the words of `spawn`, `spawnIn`,
+`spawnDetached` and `join` hold. `expiredOf` is pinned.
+
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.
 
@@ -7204,6 +7211,36 @@ and their later additions. No cause is new: a record demand is rejected for the 
   (`language.md` §11.11), so making it earlier is unobservable. A capture of a record **whole** (`x` itself, used
   whole in the body) holds the object, and is a whole use wherever the closure is consumed (§31.4 item 5).
   Report mode counts the eager reads (§31.12).
+  *Amended 2026-11-23 (#2617): a closure inside a closure.* A closure is made when the closure around it
+  runs, which may be after a write of the field: `(λs → Cmd.perform λsend → … model.count …) "x"` after
+  `{ model | count = … }`, or a body that makes its inner closure after a sleep. So a path read in a nested
+  closure is read once, when the **outermost** closure made in the holder's frame is made, and every closure
+  inside it uses that temporary; the table lists the read at that creation alone (a holder bound inside a closure
+  counts that closure's frame as its own). A local function runs where it is called (§18.8): made inside a
+  closure, its reads of a local of a frame around that closure are that closure's; made in the holder's own
+  frame, a read in a closure in its body is listed at the outermost closure there, and a direct read is made
+  when the function runs (#2620 is the call after a write).
+  *Amended 2026-11-24 (#2620): a local function made in the holder's frame.* Such a function runs where it is
+  called, and it may be called anywhere in its block, before a write of the field or after it: its closure exists
+  from the block's entry (§18.7), and it is a hoisted `function`. A read in its body of a field path of a local
+  of the frame that makes it, made directly or by a closure in its body, is therefore read **once in the block**,
+  after the local is bound and before any call: at the block's entry when the local is bound by then (a
+  parameter, an outer `let`, a pattern), else just after the item of the block that binds it, where the lowering
+  then writes the function. Every call uses that temporary, as every inner closure uses a closure's. The read
+  at that point is a use of the path, so a write made before it hoists it further, before that write. The
+  sentence above that read the direct read where the function runs, and a closure's where it is made, is
+  withdrawn: a call after a write read the new value (`x1` where value semantics prints `x0`), and a holder
+  bound after the function was read before it existed, a `ReferenceError` (#2617's placement).
+  `run/RecordReadLocalFunction`, `browser/inline/RecordReadLocalFunction`.
+  *Amended 2026-11-24 (#2658): a lambda made before the record it reads.* A lambda that is the value of an item
+  of a block may read a local that a later item of the same block binds; nothing may name the lambda between the
+  two items, since naming it may call it (`let_forward_reference`), so it runs only after that later item. Its
+  creation is before the record exists, so the read is not made there: it is made **just after the item that
+  binds the record**, the same placement as a local function's (§31.10), and the lambda stays where it is and
+  reads that temporary, which JavaScript lets a closure name before its `const` is reached. The same holds for a
+  closure, or a local function, inside such a lambda: its read is carried out to the lambda, as above, and placed
+  there. Reading at the creation was a `ReferenceError` under records in place. `run/RecordReadLambdaBoundAfter`,
+  `browser/inline/RecordReadLambdaBoundAfter`.
 - **A send gives up every cell its payload holds** (§23.2, `bit_d`). Record objects are among those cells now, so
   `send (Saved model.form)` from a body whose arm keeps `model` is `later-use` at the send, as a list is.
 - **A command, a subscription or a view handler that keeps a closure** escapes what the closure holds (§31.4
@@ -7493,7 +7530,8 @@ ownership path, cell, frame or interner id. A field path is copied from the BIR 
 record demand names its instruction and written fields; each hoist names its holder, the read
 instruction or record-pattern binding to rewrite, the prefix through the written field, and its
 placement. Captured paths additionally name the closure creation at which they are read eagerly.
-A placement says either before an instruction or after an update's operands and before its stores;
+A placement says either before an instruction or after an update's operands and before its stores,
+or (*amended 2026-11-24*, §31.6) after a `let` item, for a local function's or a lambda's read of what the item binds;
 a call's hoists go before the call. A write in a branch with reads after the join uses the enclosing
 statement before the branch. Two writes that invalidate the same read retain the first placement.
 A bad or unknown table format is a cache miss. The table is implementation information, outside the
@@ -7559,6 +7597,28 @@ store's target as a write, never as a read it may fold, and its value as no lite
 (`unique-components`, `--lists none`) is smaller than before R6 at every size measured, where R6 and R7's
 block-bodied helpers had stopped slice 8 from writing them in. `run/RecordInPlaceExpressions` pins the forms,
 and every `.in-place` fixture is built a third time in place, as a release ships it.
+
+*Amended 2026-11-24 (#2642): **a call that writes is a store**.* A record update made inside a callee is a
+store as much as one written where it stands, and the barrier holds for its call: a call at which the table
+has an accepted demand (§31.7, a callee that writes a record argument, at any depth and across modules, since
+each writing call in a callee's body is a demand of that body in turn) is a store for every rule above. It is
+never dropped as an unused pure value, and a pass moves it past nothing but names and literals. The lowering
+marks the call node, as it marks a `Js.apply` (`JsIr.Node.stores`), and every pass that copies a call keeps the
+mark, so a binding a pass makes from part of a value — scalar replacement of a pair, `backend.md` §9 — holds
+the mark with the call. A call whose function is not known where it is written — a parameter, a pattern's
+variable, a field, an evidence parameter — is marked too, in every module, core's included. It has no demand of
+its own: `apply f m s = f m s` writes nothing until it is handed a writer, and the demand is at the call of
+`apply`. But whole-program specialisation writes a small callee's body where it is called, with the arguments in
+its parameters' places, and `apply said model "x"` then becomes a call of `said` copied from `f m s`. That call
+must carry the mark the call of `apply` had. Value semantics alone could not see the drop: every later read of the old version is
+hoisted before the call (§31.14), so an unread call's write is unobservable to the program. But a lowering
+that keeps the object across the write sees it. `browser-inline`'s handler stores nothing back when no key gives
+the model another object (`programModelKept`), and its write pass reads the object the arm wrote. Under
+`--release`, the pair `( said model "later", Cmd.perform … )` was split into one binding per slot, and the
+model's slot had no read. It was dropped with the write in `said`, and the page never showed it. A list write
+made by a callee is not marked. No lowering keeps a list's object across a write whose result is unread.
+`browser/inline/ReleaseCalleeWrite` pins the page, with helpers at depth two, across modules, through a
+function a helper is handed, and inside a tuple, a record and `Cmd.batch`.
 
 ### 31.11 Identity, on every platform
 
@@ -7865,7 +7925,10 @@ update's own result, or through anything bound after `D`, names the new version 
   version does not see**, on every path from the holder's binding to the read. When two updates write `f` in turn
   (`s = { r | a = 1 }; u = { s | a = 2 }; … r.a`), the read of `r.a` is placed before the first.
 
-For a capture of a field path, `P` is the closure's creation (§31.6). For a write made by a callee (§31.7), it is
+For a capture of a field path, `P` is the closure's creation (§31.6): of the outermost closure made in the holder's frame, when closures nest. For a
+read in a local function made in the holder's frame, it is the block's entry or just after the item that binds
+the holder (§31.6, amended 2026-11-24); for a lambda made before the item that binds the holder, just after
+that item (§31.6, amended 2026-11-24, #2658). For a write made by a callee (§31.7), it is
 before the call.
 
 **Soundness.** The argument is the thesis's (§6.3, versions and stale references), with one step for the hoist:
@@ -8246,3 +8309,14 @@ does not change the declaration's package. The implementations cited as
 contract. TaskWords' timeout/raceOk mutation checks first missed both
 mutations after the move while clean master detected them; selecting the
 new defining package restores the checks. No ownership word is weakened.
+
+
+**Browser render-phase amendment (2026-11-10).** `Browser.host` was read
+again after the hosted loop's phase state (the flush, the after-render phase,
+its queue of work and its waiting fibers, the busy latch) moved to the base's
+private `Phase` module. `host` now calls `Phase.mount`, `Phase.after` and
+`Phase.rendering` where it wrote those cells itself. The render callback
+handed to `Phase.rendering` is applied once, synchronously, inside its
+`Js.finally`, and is not kept. `host` still installs each `settle`/`view`
+result in its own `model` and `shown` cells and retains no previous state, so
+the entry-word audit of 2026-10-22 holds unchanged. No word changes.

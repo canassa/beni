@@ -1,0 +1,53 @@
+-- The release output of `browser/inline/MarkupValueHelperArg`: an argument's root in place.
+--
+-- Markup passed to a helper (browser-inline.md §8.2, amended 2026-11-23, *A markup value*):
+-- the argument names a root — markup written at the call, or a constant — and the helper's
+-- hole that reads its parameter enters that root in place, its values read where the call is
+-- written. Two calls, two copies, each with its own listeners.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Reset
+
+
+type alias Model =
+    n : Int
+    resets : Int
+
+
+reset : Html Msg
+reset = <button class="reset" onClick={Reset}>reset</button>
+
+
+frame : String, Html Msg → Html Msg
+frame name child =
+    <section class="frame">
+        <h2>{name}</h2>
+        {child}
+    </section>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {frame "count" (<p><button id="inc" onClick={Inc}>{model.n}</button></p>)}
+        {frame "resets" reset}
+        <p id="resets">{model.resets}</p>
+    </main>
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Reset →
+            { n = 0, resets = model.resets + 1 }
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 0, resets = 0 }, update = update, view = view }

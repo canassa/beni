@@ -37,8 +37,9 @@ sandbox _ = unreachable "Tea.sandbox"
 --| A page with a model and effects: `init ⊤` is the first model and the
 --| work it asks for; each message goes through `update`, which returns the
 --| next model and the work that message asks for, run after the page shows
---| the model; and `subscriptions` says what the program listens to, which
---| on this platform may not depend on the model.
+--| the model; and `subscriptions` says, from the model, what the program
+--| listens to: the set is made again after each message whose `update`
+--| writes what it reads, and what arrived starts and what left stops.
 pub element :
       entry { init : sync (⊤ → model × Cmd msg)
             , update : sync (msg, model → model × Cmd msg)

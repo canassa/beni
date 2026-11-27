@@ -1,0 +1,67 @@
+-- A subscription's start that throws is a defect (browser-inline.md §3,
+-- amended 2026-11-23; boundary.md §9.8.5 point 4): the page stops with the
+-- start's own error, and every listener the set added is removed, the
+-- resize listener started beside it too.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Key
+    = Boom
+
+
+type Msg
+    = On
+    | Resized
+    | Nop
+
+
+type alias Model =
+    on : Bool
+    n : Int
+
+
+boom : (Int → ⊤) → (⊤ → ⊤)
+boom send = Debug.todo "start threw"
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        On →
+            ( { model | on = True }, Cmd.none )
+
+        Resized →
+            ( { model | n = model.n + 1 }, Cmd.none )
+
+        Nop →
+            ( model, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    if model.on then
+        Sub.batch [ Browser.Events.onResize λ_ → Resized, Sub.on Boom boom λ_ → Nop ]
+    else
+        Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="on" onClick={On}>on</button>
+        <p>{model.n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { on = False, n = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

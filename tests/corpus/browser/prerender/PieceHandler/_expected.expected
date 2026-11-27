@@ -1,0 +1,98 @@
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"3"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="add">"+step"</button>
+        <button data-role="back">"-1"</button>
+        ""
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=add]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"5"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="add">"+step"</button>
+        <button data-role="back">"-1"</button>
+        ""
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=back]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"4"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="add">"+step"</button>
+        <button data-role="back">"-1"</button>
+        ""
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"5"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="add">"+step"</button>
+        <button data-role="back">"-1"</button>
+        ""
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=add]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"7"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="add">"+step"</button>
+        <button data-role="back">"-1"</button>
+        <button data-role="reset">"reset"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=reset]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"0"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="add">"+step"</button>
+        <button data-role="back">"-1"</button>
+        ""
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=back]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"-1"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="add">"+step"</button>
+        <button data-role="back">"-1"</button>
+        ""
+      </section>
+    </div>
+  </div>
+</body>

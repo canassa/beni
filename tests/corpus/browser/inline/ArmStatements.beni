@@ -1,0 +1,125 @@
+-- An arm with `let`s no hole reads — statements, `_ = e` — on `browser-inline`
+-- (browser-inline.md §8.2, amended 2026-11-24, *An arm's statements*): they run
+-- where they are written among the arm's `let`s, in the choice of the arm, so a
+-- `let` both a statement and a hole read is evaluated once. A branch region of
+-- the page, a row whose top is a branch, a branch in a row and a helper whose
+-- body is the branch each have one. Checked against `browser-tea` for the same
+-- source: the same DOM, and fewer log lines: a statement runs at the mount
+-- and at each pass that writes what its branch reads, its own reads included
+-- (`#tick` logs "none", which reads `ticks`, and every row's, since the rows
+-- read `ticks`), not at every render (a difference of when, as for a
+-- `view`'s statements).
+import Html exposing (Html)
+import Tea
+
+
+type alias Item =
+    id : Int
+    name : String
+
+
+type alias Model =
+    pick : Maybe String
+    items : List Item
+    ticks : Int
+
+
+type Msg
+    = Pick String
+    | Clear
+    | Rename
+    | Tick
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick s →
+            { model | pick = Just s }
+
+        Clear →
+            { model | pick = Nothing }
+
+        Rename →
+            { model | items = List.map model.items λi → { i | name = i.name ++ "!" } }
+
+        Tick →
+            { model | ticks = model.ticks + 1 }
+
+
+badge : Maybe String → Html Msg
+badge pick =
+    case pick of
+        Just s →
+            _ = Debug.log "badge" s
+            <em id="badge">{s}</em>
+
+        Nothing →
+            <em id="badge">-</em>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="ada" onClick={Pick "ada"}>ada</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="rename" onClick={Rename}>rename</button>
+        <button id="tick" onClick={Tick}>{model.ticks}</button>
+        <section>
+            {case model.pick of
+                Just s →
+                    loud = Debug.log "loud" (String.toUpper s)
+                    _ = Debug.log "picked" loud
+                    <b id="picked">{loud}</b>
+
+                Nothing →
+                    _ = Debug.log "none" model.ticks
+                    <i id="picked">none</i>
+            }
+        </section>
+        <div>{badge model.pick}</div>
+        <ul>
+            <For each={model.items} keyed={λi → i.id}>
+                {λi →
+                    if i.id > 1 then
+                        t = Debug.log "row" i.name
+                        _ = Debug.log "statement" t
+                        <li>{t}</li>
+                    else
+                        _ = Debug.log "first" i.name
+                        <li>first</li>
+                }
+            </For>
+        </ul>
+        <ol>
+            <For each={model.items} keyed={λi → i.id}>
+                {λi →
+                    <li>
+                        {case i.id of
+                            1 →
+                                _ = Debug.log "inner" i.name
+                                <b>{i.name}</b>
+
+                            _ →
+                                _ = Debug.log "ticks in a row" model.ticks
+                                <i>{i.name}</i>
+                        }
+                    </li>
+                }
+            </For>
+        </ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { pick = Nothing
+                , items = [ { id = 1, name = "a" }, { id = 2, name = "b" } ]
+                , ticks = 0
+                }
+        , update = update
+        , view = view
+        }

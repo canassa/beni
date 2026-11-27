@@ -1,0 +1,134 @@
+-- A `For` and a `Show` whose row function is a named function of the
+-- program's module (browser-inline.md §9 and §8.2, amended 2026-11-24): its
+-- call is entered with the item, and the position, bound. A row of one
+-- element keeps its node and its typed text when it moves; a row whose
+-- function's body is a branch turns arm in place, `<></>` an empty comment;
+-- a row's event sends the message its row last kept; and a `Show` whose
+-- body is a lambda whose body is a branch, or a named function, chooses its
+-- arm with `v` bound and remounts when its key changes. A named function's
+-- `let`s read only inside a branch's arm, or only by a `For`'s fallback, are
+-- bound. Its transcript is `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick Int
+    | Reverse
+    | Drop
+    | Add
+    | Bump
+    | Select (Maybe Int)
+
+
+type alias Model =
+    rows : List Int
+    picked : Int
+    n : Int
+    next : Int
+    selected : Maybe Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick id →
+            { model | picked = id }
+
+        Reverse →
+            { model | rows = List.reverse model.rows }
+
+        Drop →
+            { model | rows = List.filter model.rows λr → r ≠ 2 }
+
+        Add →
+            { model | rows = List.push model.rows model.next, next = model.next + 1 }
+
+        Bump →
+            { model | n = model.n + 1 }
+
+        Select s →
+            { model | selected = s }
+
+
+row : Int → Html Msg
+row r =
+    <li>
+        <button id="pick${String.fromInt r}" onClick={Pick r}>{r}</button>
+        <input id="in${String.fromInt r}" />
+    </li>
+
+
+placed : Int, Int → Html Msg
+placed r i = <li>{"${String.fromInt i}: ${String.fromInt r}"}</li>
+
+
+chosen : Int → Html Msg
+chosen r =
+    if r == 3 then
+        <></>
+    else if Int.mod r 2 == 0 then
+        <li class="even">{r}</li>
+    else
+        <li class="odd"><button id="odd${String.fromInt r}" onClick={Pick r}>{r}</button></li>
+
+
+armRow : Int → Html Msg
+armRow r =
+    w = "arm ${String.fromInt r}"
+    <li>{if r > 1 then <b>{w}</b> else <i>low</i>}</li>
+
+
+fallbackOnly : Int → Html Msg
+fallbackOnly s =
+    note = "only ${String.fromInt s}"
+    <section>
+        <ul>
+            <For each={List.repeat "z" (s - 1)} keyed={False} fallback={<li>{note}</li>}>
+                {λx → <li>{x}</li>}
+            </For>
+        </ul>
+    </section>
+
+
+shown : Int → Html Msg
+shown s = <p id="named">{"named ${String.fromInt s}"}</p>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <button id="drop" onClick={Drop}>drop</button>
+        <button id="add" onClick={Add}>add</button>
+        <button id="bump" onClick={Bump}>bump</button>
+        <button id="one" onClick={Select (Just 1)}>one</button>
+        <button id="two" onClick={Select (Just 2)}>two</button>
+        <button id="none" onClick={Select Nothing}>none</button>
+        <p id="picked">{model.picked}</p>
+        <ul id="keyed"><For each={model.rows} keyed={λr → r}>{row}</For></ul>
+        <ol id="placed"><For each={model.rows} keyed={False}>{placed}</For></ol>
+        <ul id="chosen"><For each={model.rows} keyed={λr → r}>{chosen}</For></ul>
+        <div id="show">
+            <Show when={model.selected} keyed={λs → s} fallback={<i>nothing</i>}>
+                {λs →
+                    if s + model.n == 2 then
+                        <b>{"two ${String.fromInt model.n}"}</b>
+                    else
+                        <em><input id="kept" />{s}</em>
+                }
+            </Show>
+        </div>
+        <div id="shownamed"><Show when={model.selected} keyed>{shown}</Show></div>
+        <ul id="armrows"><For each={model.rows} keyed={λr → r}>{armRow}</For></ul>
+        <div id="fallbackonly"><Show when={model.selected} keyed>{fallbackOnly}</Show></div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { rows = [ 1, 2, 3, 4 ], picked = 0, n = 0, next = 5, selected = Nothing }
+        , update = update
+        , view = view
+        }

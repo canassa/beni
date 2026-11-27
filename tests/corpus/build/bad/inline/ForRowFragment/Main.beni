@@ -1,0 +1,14 @@
+-- A `For` row of two elements: the simple form (browser-inline.md §9,
+-- amended 2026-11-23) clones one element per row, class 1 (§5), refused at
+-- the row's markup.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : List String → Html ⊤
+view items = <dl><For each={items}>{λs → <><dt>{s}</dt><dd>{s}</dd></>}</For></dl>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ "a" ], update = λ_ m → m, view = view }

@@ -1,0 +1,10 @@
+# The longest duration from now is past the last millisecond an Int
+# holds: a typed failure, and the program has no time.
+{"path": "/room/a/longest"}
+{"path": "/room/a/__beni/alarms"}
+# An hour from now fits: the program's alarm is the host alarm.
+{"path": "/room/a/hour"}
+{"path": "/room/a/__beni/alarms"}
+# The same failure changes nothing: the alarm that was set stays.
+{"path": "/room/a/longest"}
+{"path": "/room/a/__beni/alarms"}

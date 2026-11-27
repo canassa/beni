@@ -82,6 +82,16 @@ pub const Chain = struct {
         return false;
     }
 
+    /// Whether the chain's programs are judged by the ownership checker v3
+    /// (`boundary.md` §5.2, `"ownership"`): its first `"ownership"`, down
+    /// the chain.
+    pub fn ownershipV3(chain: *const Chain) bool {
+        for (chain.layers) |layer| {
+            if (layer.manifest.ownership) |o| return o == .v3;
+        }
+        return false;
+    }
+
     /// Whether the entry runs in a window: the first explicit `entryHost`
     /// down the platform chain (`boundary.md` §5.2).
     pub fn inPage(chain: *const Chain) bool {

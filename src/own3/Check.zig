@@ -31,6 +31,10 @@ const Contract = @import("Contract.zig");
 const Frame = @import("Frame.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Edges = @import("../check/Edges.zig");
+const SchemaGraph = @import("../js/SchemaGraph.zig");
+const SchemaValid = @import("../js/SchemaValid.zig");
+const Graph = @import("../resolve/Graph.zig");
+const Convention = @import("../check/Convention.zig");
 
 const PlaceId = Ids.PlaceId;
 const Step = Place.Step;
@@ -173,6 +177,11 @@ pub const Result = struct {
     /// body is checked against its walk*): every package's build refuses
     /// each (`Enforce.checkModule`).
     false_words: []const Limit = &.{},
+    /// The field paths that closures captured, each read where its closure
+    /// is made (kernel §6 rule 3, *A field path a closure captures*): rows
+    /// of the lowering channel that no write asks for, read wherever the
+    /// module's records are written in place.
+    eager: []const OwnHoists.Read = &.{},
 };
 
 /// The build's markup type (`boundary.md` §9.2), by the names the manifest
@@ -189,8 +198,25 @@ pub const Options = struct {
     library: bool = false,
     /// The `let_def` instructions whose values the build's markup lowering
     /// keeps beyond the call that made them, ascending (kernel §6.14,
-    /// `Enforce.keptLets`): each is held by the root that keeps it.
+    /// `Enforce.keptByLowering`): each is held by the root that keeps it.
     kept_lets: []const u32 = &.{},
+    /// The handler instructions that the build's markup lowering reads where
+    /// their event fires, ascending (kernel §6 rule 12, *A handler read at the
+    /// event*; `Enforce.keptByLowering`): each is a call made at the event
+    /// in a root of a function named only as a program's `view` (`Mod.viewRoot`).
+    handlers_at_event: []const u32 = &.{},
+    /// The hole values that the build's markup lowering evaluates at most
+    /// once in each evaluation of the function, ascending (kernel §6 rule
+    /// 12, *A hole evaluated once*; `Enforce.keptByLowering`).
+    holes_once: []const u32 = &.{},
+    /// The call instructions that are not pure and total for certain,
+    /// ascending (`Enforce.notTotalCalls`; kernel §6 rule 12, *A hole
+    /// evaluated once*): only their writes are read with `holes_once`.
+    not_total_calls: []const u32 = &.{},
+    /// The build's schema plans, as the backend reads them: which decoding
+    /// runs answer what their workers build (kernel §6 rule 14, *What a
+    /// decoding run answers*). Null: no run is known to.
+    schema_graph: ?*const SchemaGraph = null,
     /// A module of core or a platform, the packages that may write
     /// ownership words: which of its bodies reach JavaScript is worked out
     /// and published (`reachesJs`), for its worded bodies and for those of
@@ -198,6 +224,14 @@ pub const Options = struct {
     /// publishes none: an importer reads each of its declarations as one
     /// that reaches JavaScript.
     rows: bool = false,
+    /// The modules this one imports (`Graph.dependencies`), each checked
+    /// and published before it: what their functions can keep of a message
+    /// is read off what they published (kernel §6.13, *A message a command
+    /// builds*, fact 4).
+    deps: []const u32 = &.{},
+    /// Per module of the build, whether it is a platform package's (kernel
+    /// §6.13, *A message a command builds*, fact 2).
+    platform: []const bool = &.{},
 };
 
 const State = enum(u8) { todo, working, done };
@@ -276,6 +310,38 @@ pub const Mod = struct {
     markup_type: ?MarkupType = null,
     /// `Options.kept_lets`.
     kept_lets: []const u32 = &.{},
+    /// `Options.handlers_at_event`.
+    handlers_at_event: []const u32 = &.{},
+    /// `Options.holes_once`.
+    holes_once: []const u32 = &.{},
+    /// `Options.not_total_calls`.
+    not_total_calls: []const u32 = &.{},
+    /// Per instruction, whether it is a `markup` root that is the whole body
+    /// of a function its module names only as a program's `view`
+    /// (`viewRoot`), made once.
+    view_roots: ?[]bool = null,
+    /// `Options.schema_graph`.
+    schema_graph: ?*const SchemaGraph = null,
+    /// Per definition, whether its decoding runs answer what their workers
+    /// build (`SchemaGraph.buildsFresh`), read once each.
+    builds_fresh: std.AutoHashMapUnmanaged([2]u32, bool) = .empty,
+    /// `Options.library`.
+    library: bool = false,
+    /// `Options.deps`.
+    deps: []const u32 = &.{},
+    /// `Options.platform`.
+    platform: []const bool = &.{},
+    /// Per construction of a constructor of the module, by its instruction
+    /// (the call `C a…`, or a bare `C` handed to a call): whether every walk
+    /// that reached it saw it given up to a command's send (kernel §6.13, *A
+    /// message a command builds*, fact 2; `Frame.noteCmdSite`). One walk
+    /// that did not makes it false for good. Per instruction: 0 no walk
+    /// reached it, 1 given up, 2 not.
+    cmd_sites: []u8 = &.{},
+    /// Per declaration of the module, the one instruction that names it
+    /// (`.top`), or `none` where none or more than one does
+    /// (`soleReference`); made when first asked for.
+    sole_refs: ?[]u32 = null,
 
     places: Place.Table = .{},
     account: Ids.Account = .{ .allowance = std.math.maxInt(u32) },
@@ -332,6 +398,20 @@ pub const Mod = struct {
     spread_root: std.DynamicBitSetUnmanaged = .{},
     lines: std.ArrayList(Line) = .empty,
     limits: std.ArrayList(Limit) = .empty,
+    /// A capture of a field path is read where its closure is made (kernel
+    /// §6 rule 3, *A field path a closure captures*): an application's
+    /// module, whose records the lowering writes in place. Not core's or a
+    /// platform's, whose closures read their captures where they run.
+    eager_ok: bool = false,
+    /// Per declaration: its body has markup, whose lowering can evaluate a
+    /// closure where it renders (§6.12): no capture of it is read early.
+    has_markup: []bool = &.{},
+    /// The rows of the reads `eager_ok` makes (`Result.eager`), each once.
+    eager_rows: std.ArrayList(OwnHoists.Read) = .empty,
+    /// Per captured field path, by the read instruction that stands for it
+    /// (`Frame.eagerCapture`): every read instruction of the same local and
+    /// fields in the text of the code that captures it, each a row.
+    eager_alias: std.ArrayList([2]u32) = .empty,
     /// Per declaration: its body reaches JavaScript (`reachesJs`).
     js: []bool = &.{},
     /// Per instruction, where the module's bodies are read for JavaScript
@@ -1329,6 +1409,10 @@ pub const Mod = struct {
         /// answer is the model), `index` (the item `index` of a tuple).
         answer: enum { none, whole, index } = .none,
         index: u32 = 0,
+        /// `update`'s parameter that is a type variable other than the
+        /// model: the message (kernel §6.13, *A message a command builds*),
+        /// or `none`.
+        msg_param: u32 = none,
         /// The model is in a parameter or the answer in another shape: no
         /// fact says where, and the entry has none of its lists `own`.
         unknown: bool = false,
@@ -1367,7 +1451,9 @@ pub const Mod = struct {
                 if (isVar(bir, p, mv)) {
                     if (o.model_param != none) o.unknown = true;
                     o.model_param = @intCast(k);
-                } else if (try m.mentionsVar(bir, p, mv)) o.unknown = true;
+                } else if (try m.mentionsVar(bir, p, mv)) {
+                    o.unknown = true;
+                } else if (o.name == update_sym and fps.len == 2 and bir.instTag(p) == .type_var) o.msg_param = @intCast(k);
             }
             const r: Inst.Index = @fromBackingInt(bir.instData(fd.value).rhs);
             if (isVar(bir, r, mv)) {
@@ -1399,6 +1485,114 @@ pub const Mod = struct {
         return false;
     }
 
+    /// Kernel §6.13, *A message a command builds*, fact 2 and fact 3:
+    /// whether every construction of constructor `ordinal` of the type
+    /// declared at `ty_decl` of this module is one a walk saw given up to a
+    /// command's send (`cmd_sites`), and the module has no decoder (a
+    /// derived codec, a schema), which makes a message that no construction
+    /// made. A construction that no walk reached is none of those.
+    pub fn cmdBuilt(m: *Mod, ty_decl: u32, ordinal: u32) Allocator.Error!bool {
+        if (m.in.dispatch) |dt| for (dt.terms) |t| if (t == .codec) return false;
+        for (m.bir.decls) |d| if (d.kind == .schema) return false;
+        if (ty_decl >= m.bir.decls.len) return false;
+        const td = m.bir.decl(@fromBackingInt(@intCast(ty_decl)));
+        if (ordinal >= td.ctors_end - td.ctors_start) return false;
+        const want = td.ctors_start + ordinal;
+        // The references that are a pattern's, or a call's callee, are not
+        // read as bare ones.
+        var not_bare: std.DynamicBitSetUnmanaged = try .initEmpty(m.gpa, m.tags.len);
+        defer not_bare.deinit(m.gpa);
+        for (m.tags, m.datas) |t, d| if ((t == .pat_ctor or t == .call) and d.lhs < m.tags.len) not_bare.set(d.lhs);
+        for (m.tags, m.datas, 0..) |t, d, i| {
+            const site = if (t == .call)
+                d.lhs < m.tags.len and m.tags[d.lhs] == .ctor and m.datas[d.lhs].lhs == want
+            else if (t == .ctor) d.lhs == want and !not_bare.isSet(i) else false;
+            if (site and m.cmd_sites[i] != 1) return false;
+        }
+        return true;
+    }
+
+    /// Kernel §6.13, *A message a command builds*, fact 4: whether a
+    /// function of the program can keep a message that it is handed. A
+    /// function value of this module — a lambda, or a declaration read as a
+    /// value — keeps one where a parameter has a location that can hold a
+    /// message (a type variable's, or, with `msg`, one through a
+    /// constructor of that type) and its contract lets that location
+    /// escape, leaves it in a cell or hands it to a function; or where it
+    /// has no contract. So does a module it imports that published so
+    /// (`Contract.Published.keeps_messages`); core's and a platform's
+    /// functions are not the program's, and the platform's fact covers them.
+    pub fn keepsMessages(m: *Mod, msg: ?u32) Allocator.Error!bool {
+        for (m.deps) |d| {
+            if (m.in.isCore(d) or (d < m.platform.len and m.platform[d])) continue;
+            if (d >= m.shared.published.len) return true;
+            const p = m.shared.published[d] orelse return true;
+            if (p.keeps_messages) return true;
+        }
+        var callee: std.DynamicBitSetUnmanaged = try .initEmpty(m.gpa, m.tags.len);
+        defer callee.deinit(m.gpa);
+        for (m.tags, m.datas) |t, d| if (t == .call and d.lhs < m.tags.len) callee.set(d.lhs);
+        for (m.tags, 0..) |t, i| {
+            // A lambda, or a declaration read as a value; every other
+            // instruction makes no function value of the module.
+            const c: *const Contract.Contract = if (t == .lambda)
+                m.code_contract[i] orelse return true
+            else if ((t == .top or t == .ext_value) and !callee.isSet(i)) blk: {
+                if (m.fnType(m.typeOfInst(@intCast(i))) == null) continue;
+                const decl = m.calleeOf(@intCast(i)) orelse return true;
+                break :blk (try m.declContract(decl)) orelse return true;
+            } else continue;
+            const ft = m.fnType(m.typeOfInst(@intCast(i))) orelse return true;
+            const pvars = m.in.store.vars(ft.params);
+            if (pvars.len != c.arity) return true;
+            for (pvars, 0..) |pv, k| {
+                const pl = try m.loc.layoutOf(try m.placeOf(pv.toOptional()));
+                const pes = m.loc.layoutEntries(pl);
+                const ces = m.loc.layoutEntries(c.layouts[k]);
+                for (ces, 0..) |ce, e| {
+                    _ = ce;
+                    const at = c.off[k] + e;
+                    var kept = c.flags[at] & Contract.flag_e != 0;
+                    for (c.fns) |lfo| if (lfo) |g| for (g.supply) |srcs| for (srcs) |x| if (x.kind == .param and x.a == k and x.e == e) {
+                        kept = true;
+                    };
+                    for (c.renew) |ro| if (ro) |srcs| for (srcs) |x| if (x.kind == .param and x.a == k and x.e == e) {
+                        kept = true;
+                    };
+                    if (!kept) continue;
+                    // The contract's own layout of the parameter can be
+                    // wider than the type here: a kept location that the
+                    // parameter's type can hold a message at is a keeper.
+                    if (try m.holdsMsg(pes, msg)) return true;
+                    break;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// Whether a value of a layout with entries `es` can hold a message's
+    /// cells: an entry at a type variable, or, with `msg`, one below a
+    /// constructor of that type (kernel §6.13, *A message a command
+    /// builds*). A function's or a foreign value's entry is not: a message
+    /// it holds is one a function captured or the host was handed, which
+    /// that function kept.
+    pub fn holdsMsg(m: *Mod, es: []const Loc.Entry, msg: ?u32) Allocator.Error!bool {
+        var ls: std.ArrayList(u64) = .empty;
+        defer ls.deinit(m.gpa);
+        for (es) |e| {
+            if (e.kind == .@"var") return true;
+            const t = msg orelse continue;
+            ls.clearRetainingCapacity();
+            try m.loc.labels(e.loc, &ls, m.gpa);
+            for (ls.items) |w| {
+                const l: Loc.Label = @bitCast(w);
+                if (l.kind == .ctor_arg and l.head == t) return true;
+            }
+        }
+        return false;
+    }
+
     pub fn isWorded(m: *const Mod, t: [2]u32) bool {
         const d = m.declOf(t) orelse return false;
         return m.in.birs[t[0]].ownSlotsV2(d).len != 0;
@@ -1418,6 +1612,196 @@ pub const Mod = struct {
         if (m.declOf(t) == null) return false;
         const name = m.names.declName(t[0], t[1]);
         return std.mem.eql(u8, name, "from") or std.mem.eql(u8, name, "to");
+    }
+
+    /// Whether call `inst` is a decoding run whose answer its worker built
+    /// (kernel §6 rule 14, *What a decoding run answers*): the callee is,
+    /// named directly, core's `Json.decode`, `decodeWith` or `decodeValue`
+    /// whose `where a.codec` evidence at the call is a derived codec of no
+    /// argument, or core's `Schema.read`, `readWith`, `parse` or `parseWith`
+    /// whose schema is written at the call as `S.schema ⊤`; and the
+    /// definition builds what it answers (`SchemaGraph.buildsFresh`). These
+    /// are the runs that the backend writes as a call of that definition's
+    /// worker or shape (`SchemaValid.sites`, `Schema.compiledRun`). The input
+    /// is the run's last argument.
+    pub fn decodingRun(m: *Mod, inst: u32) Allocator.Error!bool {
+        const g = m.schema_graph orelse return false;
+        if (m.tags[inst] != .call) return false;
+        const callee = m.datas[inst].lhs;
+        if (m.tags[callee] != .ext_value) return false;
+        const cd = m.datas[callee];
+        if (cd.lhs >= m.in.provenance.len or !m.in.isCore(cd.lhs) or cd.lhs >= m.names.module_names.len) return false;
+        const decl = (m.in.provenance[cd.lhs].valueDecl(cd.rhs) orelse return false).int();
+        const module = m.names.module_names[cd.lhs];
+        const name = m.names.declName(cd.lhs, decl);
+        const here: Graph.Index = @fromBackingInt(m.in.module);
+        const ref: SchemaGraph.Ref = if (std.mem.eql(u8, module, "Json")) blk: {
+            if (!eqlAny(name, &.{ "decode", "decodeWith", "decodeValue" })) return false;
+            const dt = m.in.dispatch orelse return false;
+            const site = dt.siteOf(@fromBackingInt(inst)) orelse dt.siteOf(@fromBackingInt(callee)) orelse return false;
+            const roots = dt.argsAt(site.evidence);
+            if (roots.len != 1) return false;
+            const k = switch (dt.term(roots[0])) {
+                .codec => |use| use.index,
+                else => return false,
+            };
+            if (dt.argsOfTerm(roots[0]).len != 0) return false;
+            break :blk g.codecTarget(here, k);
+        } else if (std.mem.eql(u8, module, "Schema")) blk: {
+            if (!eqlAny(name, &.{ "read", "readWith", "parse", "parseWith" })) return false;
+            const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(m.datas[inst].rhs)), Inst.Index);
+            if (args.len < 2 or m.tags[args[0].int()] != .call) return false;
+            const member: Inst.Index = @fromBackingInt(m.datas[args[0].int()].lhs);
+            break :blk SchemaValid.schemaRoot(g.provenance, g.interfaces, m.bir, here, member) orelse return false;
+        } else return false;
+        const key: [2]u32 = .{ ref.module.int(), ref.decl };
+        if (m.builds_fresh.get(key)) |b| return b;
+        var scratch: std.heap.ArenaAllocator = .init(m.gpa);
+        defer scratch.deinit();
+        const b = try g.buildsFresh(scratch.allocator(), ref);
+        try m.builds_fresh.put(m.gpa, key, b);
+        return b;
+    }
+
+    /// Kernel §6 rule 12, *A handler read at the event*: whether the `markup`
+    /// instruction `inst` is the whole body of a function that the module
+    /// names only as the `view` of a program's record — a declaration whose
+    /// body, or whose lambda's body, is `inst`, every reference to which is
+    /// the value of a field of a record written as the one argument of a
+    /// call of an entry (a function whose contract is `entry`), where the
+    /// field's type answers markup; or a lambda written as that value. The
+    /// lowering's answer (`Options.handlers_at_event`) is for such a root
+    /// alone: anywhere else a lowering can write the root inside a row, an
+    /// arm or a helper's call, where it keeps what a render made. No
+    /// method call or evidence of the module may name the declaration
+    /// (`Dispatch` terms), a `via` that keeps a name unresolved
+    /// (`schema_value_ref`, `schema_expr_ref`) may name any, and in a
+    /// `--library` build host JavaScript calls what the module exports: then
+    /// no root is one.
+    pub fn viewRoot(m: *Mod, inst: u32) Allocator.Error!bool {
+        if (m.handlers_at_event.len == 0 or m.library) return false;
+        const roots = m.view_roots orelse blk: {
+            const r = try m.arena.alloc(bool, m.tags.len);
+            @memset(r, false);
+            m.view_roots = r;
+            // The values of the fields of an entry's record whose type
+            // answers markup.
+            const field = try m.arena.alloc(bool, m.tags.len);
+            @memset(field, false);
+            var unresolved = false;
+            for (m.tags, m.datas) |t, data| switch (t) {
+                .call => {
+                    const callee = m.calleeOf(data.lhs) orelse continue;
+                    // An entry is a platform's function, never one of this module.
+                    if (callee[0] == m.in.module) continue;
+                    const c = (try m.declContract(callee)) orelse continue;
+                    if (!c.entry) continue;
+                    const args = m.bir.extraSlice(m.bir.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
+                    if (args.len != 1 or m.tags[args[0].int()] != .record) continue;
+                    for (m.bir.extraSlice(Bir.inlineRange(m.datas[args[0].int()]), Bir.Field)) |fd| {
+                        const ft = m.fnType(m.typeOfInst(fd.value.int())) orelse continue;
+                        if (m.isMarkup(ft.result.toOptional())) field[fd.value.int()] = true;
+                    }
+                },
+                .schema_value_ref, .schema_expr_ref => unresolved = true,
+                else => {},
+            };
+            if (unresolved) break :blk r;
+            // A declaration named anywhere else is no view's.
+            const named = try m.arena.alloc(bool, m.bir.decls.len);
+            @memset(named, false);
+            for (m.tags, m.datas, 0..) |t, data, i| if (t == .top and data.lhs < named.len and !field[i]) {
+                named[data.lhs] = true;
+            };
+            if (m.in.dispatch) |dt| for (dt.terms) |term| switch (term) {
+                .top => |u| if (u.decl.int() < named.len) {
+                    named[u.decl.int()] = true;
+                },
+                .param, .ext, .derived, .ext_derived, .primitive, .undetermined, .field, .identity, .text, .codec => {},
+            };
+            for (m.bir.decls, 0..) |d, di| {
+                if (d.kind != .value or named[di]) continue;
+                const body = (d.body.unwrap() orelse continue).int();
+                const root = if (d.params != 0) body else if (m.tags[body] == .lambda) m.datas[body].rhs else continue;
+                if (root < r.len and m.tags[root] == .markup) r[root] = true;
+            }
+            for (field, 0..) |is, i| if (is and m.tags[i] == .lambda) {
+                const root = m.datas[i].rhs;
+                if (root < r.len and m.tags[root] == .markup) r[root] = true;
+            };
+            break :blk r;
+        };
+        return inst < roots.len and roots[inst];
+    }
+
+    /// Whether the build's markup lowering evaluates the hole value `inst`
+    /// at most once in each evaluation of its function (`Options.holes_once`).
+    pub fn holeOnce(m: *const Mod, inst: u32) bool {
+        return std.sort.binarySearch(u32, m.holes_once, inst, struct {
+            fn order(a: u32, b: u32) std.math.Order {
+                return std.math.order(a, b);
+            }
+        }.order) != null;
+    }
+
+    /// Whether the call `inst` is not pure and total for certain
+    /// (`Options.not_total_calls`).
+    pub fn notTotalCall(m: *const Mod, inst: u32) bool {
+        return std.sort.binarySearch(u32, m.not_total_calls, inst, struct {
+            fn order(a: u32, b: u32) std.math.Order {
+                return std.math.order(a, b);
+            }
+        }.order) != null;
+    }
+
+    /// Whether the build's markup lowering reads the handler `inst` where its
+    /// event fires (`Options.handlers_at_event`).
+    pub fn handlerAtEvent(m: *const Mod, inst: u32) bool {
+        return std.sort.binarySearch(u32, m.handlers_at_event, inst, struct {
+            fn order(a: u32, b: u32) std.math.Order {
+                return std.math.order(a, b);
+            }
+        }.order) != null;
+    }
+
+    /// Kernel §7, *A constant read once*: the one instruction of the module
+    /// that names its declaration `d`, a constant that is not `pub` and is no
+    /// function, in a build that is not `--library`; `none` otherwise. A name
+    /// a `via` keeps unresolved (`schema_value_ref`, `schema_expr_ref`) is
+    /// read by its text, so a module with one has no such instruction.
+    pub fn soleReference(m: *Mod, d: u32) Allocator.Error!u32 {
+        if (m.library or d >= m.bir.decls.len) return none;
+        const refs = m.sole_refs orelse blk: {
+            const r = try m.arena.alloc(u32, m.bir.decls.len);
+            @memset(r, none);
+            const seen = try m.arena.alloc(bool, m.bir.decls.len);
+            @memset(seen, false);
+            var unresolved = false;
+            for (m.tags, m.datas, 0..) |t, data, i| switch (t) {
+                .top => if (data.lhs < r.len) {
+                    r[data.lhs] = if (seen[data.lhs]) none else @intCast(i);
+                    seen[data.lhs] = true;
+                },
+                .schema_value_ref, .schema_expr_ref => unresolved = true,
+                else => {},
+            };
+            if (unresolved) @memset(r, none);
+            m.sole_refs = r;
+            break :blk r;
+        };
+        const decl = m.bir.decls[d];
+        if (decl.is_pub or decl.kind != .value or try m.isFunction(.{ m.in.module, d })) return none;
+        if (!m.runsAtLoad(d)) return none;
+        return refs[d];
+    }
+
+    /// Whether the backend defines declaration `d` of the module as a plain
+    /// constant, evaluated once, where the module loads
+    /// (`Convention.definitionOf`, the answer `Lower` reads): not a memo per
+    /// evidence, as a constant with a `where` clause is (`thunk`).
+    pub fn runsAtLoad(m: *const Mod, d: u32) bool {
+        const dt = m.in.dispatch orelse return false;
+        return Convention.definitionOf(dt, m.bir, d) == .constant;
     }
 
     /// Whether the declaration is a function: a reference to it is a function value.
@@ -1718,6 +2102,12 @@ pub const Mod = struct {
         const c = try m.emptyContract(params, result);
         const fns = @constCast(c.fns);
         for (fns, tys) |*f, ty| f.* = try m.bottomFn(ty);
+        // A body that answers no function yet (kernel §6 rule 2, *A function
+        // a body answers*, *A field called as a method*).
+        c.answers = &.{};
+        const known = try m.arena.alloc(bool, c.res.len);
+        @memset(known, true);
+        c.fn_known = known;
         return c;
     }
 
@@ -1764,6 +2154,8 @@ pub const Mod = struct {
         const fns = try m.arena.alloc(?*const Contract.Fn, arity);
         @memset(fns, null);
         const c = try m.arena.create(Contract.Contract);
+        // A body that answers no function yet: where a group's rounds start
+        // (kernel §6 rule 2, *A function a body answers*).
         c.* = .{ .arity = arity, .layouts = layouts, .off = off, .flags = flags, .res = res, .fns = fns };
         return c;
     }
@@ -2111,6 +2503,8 @@ pub const Mod = struct {
         switch (s.kind) {
             .outside, .twice => return true,
             .fresh => return has(rw, .exclusive) or has(rw, .cellnew) or has(rw, .cellempty),
+            // No row states what a function in a value answers.
+            .held => return false,
             .answer => {
                 const w = pw[s.a];
                 const fnc = c.fns[s.a] orelse return false;
@@ -2443,7 +2837,8 @@ pub const Mod = struct {
             .answer => if (s.a < arity) {
                 answered[s.a] = true;
             },
-            .fresh, .outside, .twice => {},
+            // No parameter location: what a function in a value answers.
+            .fresh, .outside, .twice, .held => {},
         };
         // What a cell's store leaves in its contents is placed there (kernel §13).
         for (c.renew) |ro| if (ro) |srcs| for (srcs) |s| switch (s.kind) {
@@ -2453,7 +2848,7 @@ pub const Mod = struct {
             .answer => if (s.a < arity) {
                 answered[s.a] = true;
             },
-            .fresh, .outside, .twice => {},
+            .fresh, .outside, .twice, .held => {},
         };
         const want = struct {
             fn at(cc: *const Contract.Contract, hd: []const bool, j: usize, e: usize) void {
@@ -2874,7 +3269,7 @@ pub const Mod = struct {
                     return try m.falseText(name, "the body reads again what it hands function parameter {d} at its parameter {d}{s}, and its words `{s}` say that it does not", .{ j + 1, k + 1, try m.atText(fe.loc), words });
                 for (g.supply[slot]) |s| {
                     const covered = switch (s.kind) {
-                        .param, .answer, .twice => srcCovered(s, wg.supply[slot]),
+                        .param, .answer, .twice, .held => srcCovered(s, wg.supply[slot]),
                         // A cell the body made: a caller names it only where the body answers it too.
                         // In a module of core, at a type variable, where the body does not
                         // cast, it is none (`phantomAt`).
@@ -2908,12 +3303,13 @@ pub const Mod = struct {
         for (ws) |w| switch (s.kind) {
             .param => if (w.kind == .param and w.a == s.a and w.e == s.e and (w.p == 0 or w.p == s.p)) return true,
             .answer => if (w.kind == .answer and w.a == s.a and w.e == s.e) return true,
+            .held => if (w.kind == .held and w.a == s.a and w.e == s.e) return true,
             .twice => unreachable,
             .outside => if (w.kind == .outside) return true,
             .fresh => switch (w.kind) {
                 .outside => return true,
                 .fresh => if (s.e == 0 or w.e != 0) return true,
-                .param, .answer => if (s.e == 0) return true,
+                .param, .answer, .held => if (s.e == 0) return true,
                 .twice => {},
             },
         };
@@ -2926,7 +3322,7 @@ pub const Mod = struct {
     /// of its result, so no cell of a parameter is at two of them.
     fn dupsOnly(c: *const Contract.Contract) bool {
         for (c.res, 0..) |srcs, ri| for (srcs) |s| {
-            if (s.kind != .param and s.kind != .answer) continue;
+            if (s.kind != .param and s.kind != .answer and s.kind != .held) continue;
             for (c.res[ri + 1 ..]) |other| for (other) |x| if (x.kind == s.kind and x.a == s.a and x.e == s.e) return false;
         };
         return true;
@@ -2970,6 +3366,7 @@ pub const Mod = struct {
         return switch (s.kind) {
             .param => std.fmt.allocPrint(m.arena, "parameter {d}'s value{s}", .{ s.a + 1, if (s.p == 0) "" else if ((s.p - 1) % 2 == 0) " at the position its key names" else " at the other positions" }),
             .answer => std.fmt.allocPrint(m.arena, "the answer of function parameter {d}", .{s.a + 1}),
+            .held => std.fmt.allocPrint(m.arena, "the answer of a function held at parameter location {d}", .{s.a}),
             .twice => "one cell at two places of a list (`twice`)",
             .outside => "a value outside every frame (a top-level value, or JavaScript's)",
             .fresh => if (s.e != 0) "a new value that it let escape" else "a new value",
@@ -3331,6 +3728,34 @@ pub const Mod = struct {
             return c;
         }
         return c;
+    }
+
+    /// Add `x` to the read instructions that `rep` stands for, once
+    /// (`eager_alias`, pairs of the two).
+    pub fn eagerAlias(m: *Mod, rep: u32, x: u32) Allocator.Error!void {
+        if (x == rep) return;
+        for (m.eager_alias.items) |p| if (p[0] == rep and p[1] == x) return;
+        try m.eager_alias.append(m.gpa, .{ rep, x });
+    }
+
+    /// The read instructions `rep` stands for: itself, and those that
+    /// `eagerAlias` added, in `gpa`.
+    pub fn eagerAliases(m: *const Mod, gpa: Allocator, rep: u32) Allocator.Error![]const u32 {
+        var out: std.ArrayList(u32) = .empty;
+        try out.append(gpa, rep);
+        for (m.eager_alias.items) |p| if (p[0] == rep) try out.append(gpa, p[1]);
+        return out.items;
+    }
+
+    /// A row of a captured field path read where its closure is made
+    /// (`Result.eager`), once: the rounds of a group walk a body again.
+    pub fn addEagerRow(m: *Mod, r: OwnHoists.Read) Allocator.Error!void {
+        for (m.eager_rows.items) |o| if (o.decl == r.decl and o.inst == r.inst and o.capture == r.capture) {
+            // One read has one place where the lowering reads it.
+            if (std.debug.runtime_safety) std.debug.assert(o.placement == r.placement and o.phase == r.phase);
+            return;
+        };
+        try m.eager_rows.append(m.gpa, r);
     }
 
     /// A walk that gave up, or passed its steps, accepts nothing (kernel
@@ -3760,12 +4185,13 @@ pub const Mod = struct {
                 try m.srcsText(w, srcs);
             };
             if (c.fns[j]) |fnc| {
-                w.print(" π{d} fn{s}{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "", if (fnc.defect) " defect" else "" }) catch return error.OutOfMemory;
+                w.print(" π{d} fn{s}{s}{s}{s}{s}{s}", .{ j + 1, if (fnc.called) " called" else "", if (fnc.lost) " lost" else "", if (fnc.ans_escapes) " answer-escapes" else "", if (fnc.rewrites) " rewrites" else "", if (fnc.defect) " defect" else "", if (fnc.ans_own) " answer-own" else "" }) catch return error.OutOfMemory;
                 if (fnc.runs_on) w.writeAll(" runs-on") catch return error.OutOfMemory;
                 if (fnc.forks) w.writeAll(" forks") catch return error.OutOfMemory;
                 if (fnc.starts) w.writeAll(" starts") catch return error.OutOfMemory;
                 if (fnc.kept_out) w.writeAll(" kept-out") catch return error.OutOfMemory;
                 if (fnc.after_call) w.writeAll(" after-call") catch return error.OutOfMemory;
+                for (0..64) |b| if ((fnc.before >> @intCast(b)) & 1 != 0) w.print(" before-π{d}", .{b + 1}) catch return error.OutOfMemory;
                 for (0..fnc.arity) |k| for (m.loc.layoutEntries(fnc.layouts[k]), 0..) |e, i| {
                     const slot = fnc.off[k] + i;
                     w.print(" ({d}{s}{s}", .{ k + 1, try m.locText(e.loc), if (fnc.free[slot]) "" else " held" }) catch return error.OutOfMemory;
@@ -3773,6 +4199,11 @@ pub const Mod = struct {
                     w.writeAll(")") catch return error.OutOfMemory;
                 };
             }
+            // The functions held below the parameter (kernel §6 rule 2, *A
+            // function held in a value*).
+            for (m.loc.layoutEntries(c.layouts[j]), 0..) |e, k| if (c.heldAt(c.off[j] + k)) |fnc| {
+                w.print(" π{d}{s} held{d}{s}{s}{s}", .{ j + 1, try m.locText(e.loc), c.off[j] + k, if (fnc.called) " called" else "", if (fnc.ans_own) " answer-own" else "", if (fnc.receiver) " receiver" else "" }) catch return error.OutOfMemory;
+            };
         }
         // The body's paths (kernel §13 item 13): what each writes and renews.
         for (c.paths, 0..) |p, pk| {
@@ -3788,6 +4219,8 @@ pub const Mod = struct {
         }
         // Kernel §13 item 12, *A defect*, (d).
         if (c.runs_on) w.writeAll(" runs-on") catch return error.OutOfMemory;
+        // The functions it answers (kernel §6 rule 2, *A function a body answers*).
+        if (c.answers) |xs| if (xs.len != 0) w.print(" answers{d}", .{xs.len}) catch return error.OutOfMemory;
         if (c.hosts) w.writeAll(" hosts") catch return error.OutOfMemory;
         if (c.hosts_forked) w.writeAll(" hosts-forked") catch return error.OutOfMemory;
         w.writeAll("; res") catch return error.OutOfMemory;
@@ -3810,6 +4243,7 @@ pub const Mod = struct {
                 if (s.p != 0) w.print("[{s}π{d}]", .{ if ((s.p - 1) % 2 == 0) "" else "≠", (s.p - 1) / 2 + 1 }) catch return error.OutOfMemory;
             },
             .answer => w.print(" answer{d}@{d}", .{ s.a + 1, s.e }) catch return error.OutOfMemory,
+            .held => w.print(" held{d}@{d}", .{ s.a, s.e }) catch return error.OutOfMemory,
             .twice => w.writeAll(" twice") catch return error.OutOfMemory,
         };
     }
@@ -3989,8 +4423,20 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
         .shared = shared,
         .markup_type = options.markup_type,
         .kept_lets = options.kept_lets,
+        .handlers_at_event = options.handlers_at_event,
+        .holes_once = options.holes_once,
+        .not_total_calls = options.not_total_calls,
+        .schema_graph = options.schema_graph,
+        .library = options.library,
+        .deps = options.deps,
+        .platform = options.platform,
+        .eager_ok = !options.rows,
     };
     defer m.walk_arena.deinit();
+    m.cmd_sites = try gpa.alloc(u8, bir.insts.len);
+    defer gpa.free(m.cmd_sites);
+    @memset(m.cmd_sites, 0);
+    defer m.builds_fresh.deinit(gpa);
     defer m.uniq_seen.deinit(gpa);
     defer m.share.deinit(gpa);
     defer m.places.deinit(gpa);
@@ -4040,6 +4486,19 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     m.recalled = try gpa.alloc(bool, bir.insts.len);
     defer gpa.free(m.recalled);
     @memset(m.recalled, false);
+    m.has_markup = try gpa.alloc(bool, bir.decls.len);
+    defer gpa.free(m.has_markup);
+    for (bir.decls, m.has_markup) |d, *h| {
+        h.* = false;
+        for (d.inst_start.int()..d.inst_end.int()) |i| if (m.tags[i] == .markup) {
+            h.* = true;
+            break;
+        };
+    }
+    defer m.eager_rows.deinit(gpa);
+    defer {
+        m.eager_alias.deinit(gpa);
+    }
     m.code_caps = try gpa.alloc([]const u32, bir.insts.len);
     defer gpa.free(m.code_caps);
     @memset(m.code_caps, &.{});
@@ -4219,5 +4678,14 @@ pub fn checkModule(gpa: Allocator, arena: Allocator, in: *const Groups.Input, sh
     var summaries: std.ArrayList([]const u8) = .empty;
     if (options.summaries) for (m.contracts, 0..) |c, di| if (c) |x| try summaries.append(arena, try m.summaryText(@intCast(di), x));
     const published = try Contract.publish(gpa, &m.loc, m.contracts, derived, m.js);
-    return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items, .false_words = m.false_words.items };
+    // What an importer reads of whether a function of the program keeps a
+    // message (kernel §6.13, *A message a command builds*, fact 4): every
+    // walk of the module has run.
+    published.keeps_messages = options.rows or try m.keepsMessages(null);
+    return .{ .lines = try arena.dupe(Line, m.lines.items), .published = published, .limits = m.limits.items, .summaries = summaries.items, .false_words = m.false_words.items, .eager = try arena.dupe(OwnHoists.Read, m.eager_rows.items) };
+}
+
+fn eqlAny(s: []const u8, xs: []const []const u8) bool {
+    for (xs) |x| if (std.mem.eql(u8, s, x)) return true;
+    return false;
 }

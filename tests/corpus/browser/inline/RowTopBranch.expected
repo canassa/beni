@@ -1,0 +1,276 @@
+-- load
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li>
+        <button id="on1">"1/0"</button>
+      </li>
+      <li class="on">
+        <button id="off2">"2"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on4">"4/0"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <li>"zero 1"</li>
+      <!---->
+      <li class="two">"3"</li>
+      <li>"zero 4"</li>
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #on1
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li class="on">
+        <button id="off1">"1"</button>
+      </li>
+      <li class="on">
+        <button id="off2">"2"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on4">"4/0"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <li>"zero 1"</li>
+      <!---->
+      <li class="two">"3"</li>
+      <li>"zero 4"</li>
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #off1
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li>
+        <button id="on1">"1/0"</button>
+      </li>
+      <li class="on">
+        <button id="off2">"2"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on4">"4/0"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <li>"zero 1"</li>
+      <!---->
+      <li class="two">"3"</li>
+      <li>"zero 4"</li>
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li>
+        <button id="on4">"4/0"</button>
+      </li>
+      <!---->
+      <li class="on">
+        <button id="off2">"2"</button>
+      </li>
+      <li>
+        <button id="on1">"1/0"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <li>"zero 4"</li>
+      <!---->
+      <li class="two">"2"</li>
+      <li>"zero 1"</li>
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #off2
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li>
+        <button id="on4">"4/0"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on2">"2/0"</button>
+      </li>
+      <li>
+        <button id="on1">"1/0"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <li>"zero 4"</li>
+      <!---->
+      <li class="two">"2"</li>
+      <li>"zero 1"</li>
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li>
+        <button id="on4">"4/1"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on2">"2/1"</button>
+      </li>
+      <li>
+        <button id="on1">"1/1"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <!---->
+      <li class="two">"3"</li>
+      <li>"zero 2"</li>
+      <!---->
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #on4
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li class="on">
+        <button id="off4">"4"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on2">"2/1"</button>
+      </li>
+      <li>
+        <button id="on1">"1/1"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <!---->
+      <li class="two">"3"</li>
+      <li>"zero 2"</li>
+      <!---->
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #drop
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li class="on">
+        <button id="off4">"4"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on1">"1/1"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <!---->
+      <li class="two">"3"</li>
+      <li>"zero 1"</li>
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li class="on">
+        <button id="off4">"4"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on1">"1/1"</button>
+      </li>
+      <li>
+        <button id="on5">"5/1"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <!---->
+      <li class="two">"3"</li>
+      <li>"zero 1"</li>
+      <!---->
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>
+-- click #on5
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <ul id="keyed">
+      <li class="on">
+        <button id="off4">"4"</button>
+      </li>
+      <!---->
+      <li>
+        <button id="on1">"1/1"</button>
+      </li>
+      <li class="on">
+        <button id="off5">"5"</button>
+      </li>
+    </ul>
+    <ol id="position">
+      <!---->
+      <li class="two">"3"</li>
+      <li>"zero 1"</li>
+      <!---->
+      <li>"end"</li>
+    </ol>
+  </main>
+</body>

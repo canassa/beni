@@ -1,0 +1,63 @@
+-- A class list on an eager arm's element (docs/design/browser-inline.md §8.2,
+-- *A class or style list*, amended 2026-11-23, the review of #2499): the arm's
+-- element is in the markup from the mount and only hidden, so its toggles run
+-- while it is hidden, and a class that turns on is appended to the classes
+-- the element already holds. Its transcript is `browser-tea`'s but for two
+-- differences: `browser-tea` makes the element afresh when the arm is shown,
+-- so after `a` turns on while the arm is hidden, it shows `class="x y"` where
+-- this page shows `class="y x"` (a class list's order carries no meaning,
+-- `language.md` §11.19); and the hidden arm is an empty text node here, a
+-- comment there.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    show : Bool
+    a : Bool
+    b : Bool
+
+
+type Msg
+    = Show
+    | A
+    | B
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Show →
+            { model | show = not model.show }
+
+        A →
+            { model | a = not model.a }
+
+        B →
+            { model | b = not model.b }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <div>
+            {if model.show then
+                <b data-role="w" class={[ ( "x", model.a ), ( "y", model.b ) ]}>w</b>
+             else
+                <></>
+            }
+        </div>
+        <button data-role="show" onClick={Show}>s</button>
+        <button data-role="a" onClick={A}>a</button>
+        <button data-role="b" onClick={B}>b</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { show = False, a = False, b = True }, update = update, view = view }
+        )
+        "root"

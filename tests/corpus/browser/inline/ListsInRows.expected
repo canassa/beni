@@ -1,0 +1,126 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <ul>
+        <li class="row" data-role="row0">"0"</li>
+        <li class="row done" data-role="row1">"1"</li>
+      </ul>
+      <div>
+        <p data-role="shut">"shut"</p>
+      </div>
+      <button data-role="dim">"d"</button>
+      <button data-role="open">"o"</button>
+      <button data-role="add">"a"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=row0]
+<body>
+  <div id="root">
+    <main>
+      <ul>
+        <li class="row done" data-role="row0">"0"</li>
+        <li class="row done" data-role="row1">"1"</li>
+      </ul>
+      <div>
+        <p data-role="shut">"shut"</p>
+      </div>
+      <button data-role="dim">"d"</button>
+      <button data-role="open">"o"</button>
+      <button data-role="add">"a"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=dim]
+<body>
+  <div id="root">
+    <main>
+      <ul>
+        <li class="row done dim" data-role="row0" style="opacity: 0.5;">"0"</li>
+        <li class="row done dim" data-role="row1" style="opacity: 0.5;">"1"</li>
+      </ul>
+      <div>
+        <p data-role="shut" class="dim">"shut"</p>
+      </div>
+      <button data-role="dim">"d"</button>
+      <button data-role="open">"o"</button>
+      <button data-role="add">"a"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=add]
+<body>
+  <div id="root">
+    <main>
+      <ul>
+        <li class="row done dim" data-role="row0" style="opacity: 0.5;">"0"</li>
+        <li class="row done dim" data-role="row1" style="opacity: 0.5;">"1"</li>
+        <li class="row dim" data-role="row2" style="opacity: 0.5;">"2"</li>
+      </ul>
+      <div>
+        <p data-role="shut" class="dim">"shut"</p>
+      </div>
+      <button data-role="dim">"d"</button>
+      <button data-role="open">"o"</button>
+      <button data-role="add">"a"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=open]
+<body>
+  <div id="root">
+    <main>
+      <ul>
+        <li class="row done dim" data-role="row0" style="opacity: 0.5;">"0"</li>
+        <li class="row done dim" data-role="row1" style="opacity: 0.5;">"1"</li>
+        <li class="row dim" data-role="row2" style="opacity: 0.5;">"2"</li>
+      </ul>
+      <div>
+        <section data-role="open" class="panel dim many">"3"</section>
+      </div>
+      <button data-role="dim">"d"</button>
+      <button data-role="open">"o"</button>
+      <button data-role="add">"a"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=row1]
+<body>
+  <div id="root">
+    <main>
+      <ul>
+        <li class="row done dim" data-role="row0" style="opacity: 0.5;">"0"</li>
+        <li class="row dim" data-role="row1" style="opacity: 0.5;">"1"</li>
+        <li class="row dim" data-role="row2" style="opacity: 0.5;">"2"</li>
+      </ul>
+      <div>
+        <section data-role="open" class="panel dim many">"3"</section>
+      </div>
+      <button data-role="dim">"d"</button>
+      <button data-role="open">"o"</button>
+      <button data-role="add">"a"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=dim]
+<body>
+  <div id="root">
+    <main>
+      <ul>
+        <li class="row done" data-role="row0">"0"</li>
+        <li class="row" data-role="row1">"1"</li>
+        <li class="row" data-role="row2">"2"</li>
+      </ul>
+      <div>
+        <section data-role="open" class="panel many">"3"</section>
+      </div>
+      <button data-role="dim">"d"</button>
+      <button data-role="open">"o"</button>
+      <button data-role="add">"a"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=open]
+(the DOM did not change)

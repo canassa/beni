@@ -204,6 +204,10 @@ pack_frontend: []?[]u8 = &.{},
 /// that edits lists in place, the chain optional
 /// (`ownership-checker.md` §28.3): this run enforces.
 enforce_ownership: bool = false,
+/// The chain named the checker v3 and no flag chose one (`"ownership":
+/// "v3"`, `boundary.md` §5.2): a build writes in place every record update
+/// v3 accepted (`Lower.Input.records_v3_plain`).
+ownership_v3_platform: bool = false,
 /// Owned. Per module, the summary block its cache entry carries
 /// (`ownership-checker.md` §28.4), or null; empty unless the pass wrote any.
 ownership_blocks: []?[]u8 = &.{},
@@ -416,6 +420,11 @@ pub const Options = struct {
     /// for `dump --stage=ownership`.
     ownership_v3: bool = false,
     ownership_v3_dump: ?struct { summaries: bool } = null,
+    /// A flag named the ownership checker (`--ownership=`), or the command
+    /// follows no platform's choice. False: a chain whose manifest names
+    /// `"ownership": "v3"` (`Chain.ownershipV3`, `boundary.md` §5.2) is
+    /// judged by the checker v3, as under `--ownership=v3`.
+    ownership_chosen: bool = true,
     /// `build --library`: host JavaScript calls every value the root
     /// package's modules export, with values that it may still hold
     /// (`Reach.collectRoots`). The checker v3 reads it (kernel §6.14).
@@ -628,11 +637,17 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     // a run under `--ownership=v2` reads and writes no cache, so it never
     // installs an entry v1 checked.
     if (options.ownership_v2) session.options.cache = null;
+    // A platform that names the checker v3 (`"ownership": "v3"`): its
+    // programs are judged by it, as under `--ownership=v3`.
+    if (!options.ownership_chosen and !options.ownership_v2) if (options.chain) |c| if (c.ownershipV3()) {
+        session.options.ownership_v3 = true;
+        session.ownership_v3_platform = true;
+    };
     // The checker v3 has no block in the checked core: a run under
     // `--ownership=v3` checks core from source, and the module cache keeps
     // each module's block after that (`ownership-v3-kernel.md` §7.1). A
     // dump's report is of the walk, so a dump reads and writes no cache.
-    if (options.ownership_v3) {
+    if (session.options.ownership_v3) {
         if (options.ownership_v3_dump != null) session.options.cache = null;
         session.options.no_pack = true;
     }
@@ -2239,8 +2254,10 @@ fn checkSerial(session: *Session) RunError!void {
     gpa.free(session.compare_keys);
     session.compare_keys = &.{};
     // Under `--ownership=v3` the keys in use are the transitive ones
-    // (`Check.Cutoff.transitive`), which `compare_keys` holds.
-    if (session.options.cutoff_compare or session.options.ownership_v3) {
+    // (`Check.Cutoff.transitive`), which `compare_keys` holds. A run with no
+    // cache reads and stores under no key, and makes none of them.
+    const transitive = session.options.ownership_v3 and session.options.cache != null;
+    if (session.options.cutoff_compare or transitive) {
         session.compare_keys = try gpa.alloc(Key.Key, n);
         @memset(session.compare_keys, Key.none);
     }
@@ -2266,7 +2283,7 @@ fn checkSerial(session: *Session) RunError!void {
         // v1's rule for an entry with no clean summary block. The checker
         // v3 has its own block and its own rule (`own3/Enforce.restore`).
         .ownership = session.enforce_ownership and !session.options.ownership_v3,
-        .transitive = session.options.ownership_v3,
+        .transitive = transitive,
     };
 
     session.checked.deinit(gpa);

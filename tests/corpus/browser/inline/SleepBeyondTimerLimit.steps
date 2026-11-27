@@ -1,0 +1,7 @@
+# The first timer, clamped by a host, would have fired here.
+advance 1
+# The first link of the chain ends; the rest, 6 ms, is still to come.
+advance 2147483646
+timers
+advance 6
+timers

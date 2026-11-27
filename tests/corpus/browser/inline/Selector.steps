@@ -1,0 +1,21 @@
+# Nothing was selected: only row 1 runs.
+click #pick1
+# Rows 1 and 3 run.
+click #pick3
+# The same id again: no row runs.
+click #pick3
+# An id no row has: only row 3 runs, and loses its class.
+click #pick9
+# Back to none: no row had 9, so none runs.
+click #unpick
+# Both rows on key 2 run, and both show the class.
+click #pick2
+# A selection and an edit in one render: row 1, whose item is new, and
+# the rows on keys 2 and 3.
+click #pickedit
+# The selected row goes: no other row runs.
+click #drop3
+# Only row 1 runs: no row has the old key.
+click #pick1
+# Keyed by reference, compared with `/=`: ids 1 and 2 run.
+click #cursor2

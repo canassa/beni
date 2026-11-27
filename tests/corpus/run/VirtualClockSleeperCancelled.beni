@@ -26,6 +26,6 @@ main = Io.run λ⊤ →
             Debug.log "live woke at" (Clock.now ⊤)
     Task.yieldNow ⊤
     Task.cancel doomed
-    Clock.adjust clock (Duration.millis 10)
+    _ = Clock.adjust clock (Duration.millis 10)
     _ = Task.join live
     Node.print "done"

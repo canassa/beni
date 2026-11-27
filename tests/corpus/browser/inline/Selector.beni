@@ -1,0 +1,118 @@
+-- A copy of `browser/tea/Selector` on `browser-inline` (browser-inline.md §9, amended
+-- 2026-11-23). Its transcript is that page's but for one difference:
+-- every row's `set` runs on each write of what the `For` reads, so the rows' `Debug.log`
+-- lines differ from `browser-tea`'s, which skipped rows whose item and inputs it found the
+-- same object.
+--
+-- Record rows patch on every render under backend.md §15.5 (O3), including
+-- when their selected class stays the same. Their Debug.log lines may
+-- therefore repeat. The scalar reference-keyed list retains its selector:
+-- only the old and new cursor's rows run when that is all that changed.
+-- Duplicate keys, repeated selection, edits and removals preserve the DOM.
+
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick Int
+    | Unpick
+    | PickAndEdit Int
+    | Drop Int
+    | Cursor Int
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    selected : Maybe Int
+    cursor : Int
+    ids : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick id →
+            { model | selected = Just id }
+
+        Unpick →
+            { model | selected = Nothing }
+
+        PickAndEdit id →
+            { model
+                | selected = Just id
+                , rows =
+                    List.map model.rows λrow →
+                        if row.id == 1 then { row | label = "${row.label}!" } else row
+            }
+
+        Drop id →
+            { model | rows = List.filter model.rows λrow → row.id ≠ id }
+
+        Cursor n →
+            { model | cursor = n }
+
+
+rowClass : Model, Row → String
+rowClass model row =
+    Debug.log "row ${String.fromInt row.id}" (if model.selected == Just row.id then "on" else "")
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="pick9" onClick={Pick 9}>9</button>
+        <button id="unpick" onClick={Unpick}>none</button>
+        <button id="pickedit" onClick={PickAndEdit 3}>3, and edit 1</button>
+        <button id="drop3" onClick={Drop 3}>drop 3</button>
+        <button id="cursor2" onClick={Cursor 2}>cursor 2</button>
+        <ul>
+            <For each={model.rows} keyed={.id}>
+                {λrow →
+                    <li class={rowClass model row}>
+                        <a id="pick${String.fromInt row.id}" onClick={Pick row.id}>{row.label}</a>
+                    </li>
+                }
+            </For>
+        </ul>
+        <ol>
+            <For each={model.ids}>
+                {λn →
+                    <li
+                        class={Debug.log
+                                  "id ${String.fromInt n}"
+                                  (if n ≠ model.cursor then "" else "at")
+                              }
+                    >
+                        {n}
+                    </li>
+                }
+            </For>
+        </ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { rows =
+                    [ { id = 1, label = "one" }
+                    , { id = 2, label = "two" }
+                    , { id = 3, label = "three" }
+                    , { id = 2, label = "twin" }
+                    ]
+                , selected = Nothing
+                , cursor = 1
+                , ids = [ 1, 2, 3 ]
+                }
+        , update = update
+        , view = view
+        }

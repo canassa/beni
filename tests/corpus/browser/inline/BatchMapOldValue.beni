@@ -1,0 +1,118 @@
+-- `Cmd.batch (List.map xs λx → Cmd.perform …)` is read again
+-- (browser-inline.md §4, amended 2026-11-23, #2641). Each arm writes a field
+-- of the model in place and, in the same arm, makes one command per
+-- element whose body sends that field. The language sends the value the
+-- field had when `update` was called, so every message must carry the old
+-- value, at each depth the read is nested in:
+--
+--   - `#one`: the body reads `model.count` (one closure deep);
+--   - `#two`: the body calls a lambda made in the callback, which reads
+--     `model.box.n` (two deep, a nested field);
+--   - `#three`: a local function of the callback returns the body, whose
+--     own lambda reads `model.count` and `model.box.n` (three deep);
+--   - `#items`: the list mapped is the model's own, which the arm replaces
+--     with a copy it pushes onto (the ownership checker refuses the push in
+--     place, since the callback reads `model.items` after it).
+--
+-- Each `Got` appends what it carries; the page shows the list. The
+-- transcript is `browser-tea`'s but for the first page: the empty `#log`
+-- has no text node here.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = One
+    | Two
+    | Three
+    | Items
+    | Got String
+
+
+type alias Box =
+    n : Int
+
+
+type alias Model =
+    count : Int
+    box : Box
+    items : List Int
+    log : List String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        One →
+            ( { model | count = model.count + 1 }
+            , Cmd.batch
+                (List.map [ 1, 2 ] λi →
+                    Cmd.perform λsend →
+                        send (Got "one ${String.fromInt i}:${String.fromInt model.count}")
+                )
+            )
+
+        Two →
+            ( { model | box = { n = model.box.n + 10 } }
+            , Cmd.batch
+                (List.map [ 1, 2 ] λi →
+                    read = λ⊤ → model.box.n
+                    Cmd.perform λsend →
+                        send (Got "two ${String.fromInt i}:${String.fromInt (read ⊤)}")
+                )
+            )
+
+        Three →
+            ( { model | count = model.count + 100, box = { n = model.box.n + 100 } }
+            , Cmd.batch
+                (List.map [ 1 ] λi →
+                    body =
+                        λ⊤ →
+                            λsend →
+                                both =
+                                    λ⊤ →
+                                        "${String.fromInt model.count}/${String.fromInt model.box.n}"
+                                send (Got "three ${String.fromInt i}:${both ⊤}")
+                    Cmd.perform (body ⊤)
+                )
+            )
+
+        Items →
+            ( { model | items = List.push (List.copy model.items) 9 }
+            , Cmd.batch
+                (List.map model.items λx →
+                    Cmd.perform λsend →
+                        send
+                            (Got
+                                "item ${String.fromInt x}:${String.fromInt (List.length model.items)}"
+                            )
+                )
+            )
+
+        Got s →
+            ( { model | log = List.push model.log s }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="one" onClick={One}>one</button>
+        <button id="two" onClick={Two}>two</button>
+        <button id="three" onClick={Three}>three</button>
+        <button id="items" onClick={Items}>items</button>
+        <p id="count">{model.count}</p>
+        <p id="n">{model.box.n}</p>
+        <p id="log">{String.join model.log " | "}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { count = 0, box = { n = 0 }, items = [ 1, 2 ], log = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

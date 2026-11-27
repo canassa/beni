@@ -1,0 +1,134 @@
+-- load
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="script">"script"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #push
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="script">"script"</button>
+    <ol>
+      <li>"changed to /a"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /a)
+(the DOM did not change)
+-- click #away
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="script">"script"</button>
+    <ol>
+      <li>"changed to /a"</li>
+      <li>"push refused: CrossOrigin https://example.com/x"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /a)
+(the DOM did not change)
+-- click #replace
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="script">"script"</button>
+    <ol>
+      <li>"changed to /a"</li>
+      <li>"push refused: CrossOrigin https://example.com/x"</li>
+      <li>"changed to /r"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)
+-- click #bad
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="script">"script"</button>
+    <ol>
+      <li>"changed to /a"</li>
+      <li>"push refused: CrossOrigin https://example.com/x"</li>
+      <li>"changed to /r"</li>
+      <li>"replace refused: BadUrl http://["</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)
+-- click #none
+(the DOM did not change)
+-- location
+(location: /r)
+(the DOM did not change)
+-- click #script
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="script">"script"</button>
+    <ol>
+      <li>"changed to /a"</li>
+      <li>"push refused: CrossOrigin https://example.com/x"</li>
+      <li>"changed to /r"</li>
+      <li>"replace refused: BadUrl http://["</li>
+      <li>"load refused: BadUrl javascript:alert(1)"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /r)
+(the DOM did not change)
+-- back
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <button id="replace">"replace"</button>
+    <button id="bad">"bad"</button>
+    <button id="none">"none"</button>
+    <button id="script">"script"</button>
+    <ol>
+      <li>"changed to /a"</li>
+      <li>"push refused: CrossOrigin https://example.com/x"</li>
+      <li>"changed to /r"</li>
+      <li>"replace refused: BadUrl http://["</li>
+      <li>"load refused: BadUrl javascript:alert(1)"</li>
+      <li>"changed to /_page.html"</li>
+    </ol>
+  </main>
+</body>
+-- location
+(location: /_page.html)
+(the DOM did not change)

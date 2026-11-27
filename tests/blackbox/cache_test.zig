@@ -1499,10 +1499,10 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     defer w.deinit();
     try w.write("src/Lib.beni", own_lib_copies);
     try w.write("src/App.beni", own_app);
-    const args = [_][]const u8{ "build", "--library", "--out=out", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--cache-dir=cache", "src" };
+    const args = [_][]const u8{ "build", "--library", "--out=out", "--jobs=1", "--platform=browser-inline", "--ownership=v1", "--diagnostics=json", "--cache-dir=cache", "src" };
     const cold = try runCounted(&w, arena, &args, "own-cold.json");
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
-    const before = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const before = try w.runWith(&.{ "check", "--platform=browser-inline", "--ownership=v1", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), before.exit_code);
     const hashes_before = try parseKeys(arena, before.stdout);
 
@@ -1511,7 +1511,7 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     // └─────────────────────────────────────────┘
     try w.write("src/Lib.beni", own_lib_writes);
     const warm = try runCounted(&w, arena, &args, "own-warm.json");
-    const plain = try w.runWith(&.{ "build", "--library", "--out=plain", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "build", "--library", "--out=plain", "--jobs=1", "--platform=browser-inline", "--ownership=v1", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -1520,7 +1520,7 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     try testing.expect(std.mem.indexOf(u8, plain.stderr, "\"code\":\"list_still_used\"") != null);
     try testing.expectEqual(@as(u8, 1), warm.result.exit_code);
     try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
-    const after = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const after = try w.runWith(&.{ "check", "--platform=browser-inline", "--ownership=v1", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 1), after.exit_code);
     const hashes_after = try parseKeys(arena, after.stdout);
     try testing.expect(!std.mem.eql(u8, lookup(hashes_before, "app:Lib").?, lookup(hashes_after, "app:Lib").?));
@@ -1549,8 +1549,8 @@ test "an in-place build reuses a clean summary from elsewhere and rechecks a rej
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const in_place = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--cache-dir=cache", "src" }, "own-in-place.json");
-    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const in_place = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--platform=browser-inline", "--ownership=v1", "--diagnostics=json", "--cache-dir=cache", "src" }, "own-in-place.json");
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--ownership=v1", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -5562,11 +5562,11 @@ fn hoistCache(corrupt: enum { version, placement }) !void {
         \\set p = p.set
         \\
     );
-    const args = [_][]const u8{ "build", "--library", "--platform=browser-inline", "--jobs=1", "--cache-dir=cache", "--out=out", "src" };
+    const args = [_][]const u8{ "build", "--library", "--platform=browser-inline", "--ownership=v1", "--jobs=1", "--cache-dir=cache", "--out=out", "src" };
     const cold = try runCounted(&w, a, &args, "cold.json");
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
     const js = try a.dupe(u8, try w.read("out/Old.mjs"));
-    const keys = try keysOf(&w, a, &.{ "--platform=browser-inline", "src" });
+    const keys = try keysOf(&w, a, &.{ "--platform=browser-inline", "--ownership=v1", "src" });
     const use_key = lookup(keys, "app:Use") orelse return error.MissingKey;
     const use_relative = entryPathFor(use_key);
     const use_entry = try w.read(try std.fs.path.join(a, &.{ "cache", &use_relative }));
@@ -5589,7 +5589,8 @@ fn hoistCache(corrupt: enum { version, placement }) !void {
     try testing.expect(@as(u64, base) + len <= good.len);
     const table = good[base..][0..len];
     try testing.expectEqualStrings("BENIHOI\x00", table[0..8]);
-    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[8..12], .little));
+    // Hoists format 2: a read may be placed after a `let` item (§31.6).
+    try testing.expectEqual(@as(u32, 2), std.mem.readInt(u32, table[8..12], .little));
     // A module checked under enforcement with every demand accepted is
     // clean: its records are written in place (ownership-checker.md §31.10).
     try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[12..16], .little));
@@ -5645,7 +5646,7 @@ test "whether records are written in place follows the build's mode, not the cac
     const plain = [_][]const u8{ "build", "--library", "--platform=browser-tea", "--jobs=1" };
     // `--ownership-everywhere` keeps a cache directory of its own; a chain
     // that edits in place shares the entries of one that does not.
-    const everywhere = [_][]const u8{ "build", "--library", "--platform=browser-inline", "--jobs=1" };
+    const everywhere = [_][]const u8{ "build", "--library", "--platform=browser-inline", "--ownership=v1", "--jobs=1" };
     const Build = struct {
         /// The module's JavaScript; with `checked`, how many modules the
         /// build checked rather than took from the cache.
@@ -5704,7 +5705,7 @@ test "cached full-type casts specialize in a freshly checked consumer" {
         \\change xs = List.push ((Casts.listMaker ⊤) (Js.from xs)) 1
         \\
     );
-    const args = [_][]const u8{ "check", "--jobs=1", "--platform=browser-inline", "--core", "--diagnostics=json", "--cache-dir=cache", "src" };
+    const args = [_][]const u8{ "check", "--jobs=1", "--platform=browser-inline", "--ownership=v1", "--core", "--diagnostics=json", "--cache-dir=cache", "src" };
     const cold = try w.runWith(&args, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), cold.exit_code);
     // Rebuild only the consumer, with different type-store allocations.
@@ -5724,7 +5725,7 @@ test "cached full-type casts specialize in a freshly checked consumer" {
         \\
     );
     const warm = try runCounted(&w, arena, &args, "cast-warm.json");
-    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--core", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--ownership=v1", "--core", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 1), plain.exit_code);
     try testing.expect(std.mem.indexOf(u8, plain.stderr, "\"code\":\"list_still_used\"") != null);
     try testing.expectEqual(plain.exit_code, warm.result.exit_code);
@@ -5746,11 +5747,11 @@ test "an in-place body edit with the same ownership summary stops at the interfa
     defer w.deinit();
     try w.write("src/Lib.beni", own_lib_copies);
     try w.write("src/App.beni", own_app);
-    const args = [_][]const u8{ "build", "--library", "--out=out", "--jobs=8", "--platform=browser-inline", "--cache-dir=cache", "src" };
+    const args = [_][]const u8{ "build", "--library", "--out=out", "--jobs=8", "--platform=browser-inline", "--ownership=v1", "--cache-dir=cache", "src" };
     const cold = try runCounted(&w, arena, &args, "own-stable-cold.json");
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
     try testing.expectEqualStrings("", cold.result.stderr);
-    const before = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const before = try w.runWith(&.{ "check", "--platform=browser-inline", "--ownership=v1", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), before.exit_code);
 
     // ┌─────────────────────────────────────────┐
@@ -5762,7 +5763,7 @@ test "an in-place body edit with the same ownership summary stops at the interfa
         \\
     );
     const warm = try runCounted(&w, arena, &args, "own-stable-warm.json");
-    const plain = try w.runWith(&.{ "build", "--library", "--out=plain", "--jobs=1", "--platform=browser-inline", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "build", "--library", "--out=plain", "--jobs=1", "--platform=browser-inline", "--ownership=v1", "--no-cache", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -5771,7 +5772,7 @@ test "an in-place body edit with the same ownership summary stops at the interfa
     try testing.expectEqual(@as(u8, 0), plain.exit_code);
     try testing.expectEqualStrings("", warm.result.stderr);
     try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
-    const after = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const after = try w.runWith(&.{ "check", "--platform=browser-inline", "--ownership=v1", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), after.exit_code);
     try testing.expectEqualStrings(before.stdout, after.stdout);
     const warm_js = try arena.dupe(u8, try w.read("out/Lib.mjs"));
@@ -5795,13 +5796,13 @@ test "renaming a private callable behind a public alias preserves its ownership 
     ;
     try w.write("src/Lib.beni", leaf);
     try w.write("src/App.beni", own_app);
-    const args = [_][]const u8{ "check", "--platform=browser-inline", "--iface-hash", "--cache-dir=cache", "src" };
+    const args = [_][]const u8{ "check", "--platform=browser-inline", "--ownership=v1", "--iface-hash", "--cache-dir=cache", "src" };
     const cold = try runCounted(&w, arena, &args, "own-alias-cold.json");
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
     try testing.expectEqualStrings("", cold.result.stderr);
     try w.write("src/Lib.beni", try std.mem.replaceOwned(u8, arena, leaf, "helper", "other"));
     const warm = try runCounted(&w, arena, &args, "own-alias-warm.json");
-    const plain = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "check", "--platform=browser-inline", "--ownership=v1", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
     try testing.expectEqual(@as(u8, 0), plain.exit_code);
     try testing.expectEqualStrings("", warm.result.stderr);
@@ -5831,7 +5832,7 @@ test "an opaque type gaining an ownership slot moves its interface and warm impo
         \\pass x = x
         \\
     );
-    const args = [_][]const u8{ "check", "--jobs=8", "--platform=browser-inline", "--iface-hash", "--cache-dir=cache", "src" };
+    const args = [_][]const u8{ "check", "--jobs=8", "--platform=browser-inline", "--ownership=v1", "--iface-hash", "--cache-dir=cache", "src" };
     const cold = try runCounted(&w, arena, &args, "own-slot-cold.json");
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
     try testing.expectEqualStrings("", cold.result.stderr);
@@ -5841,7 +5842,7 @@ test "an opaque type gaining an ownership slot moves its interface and warm impo
     // └─────────────────────────────────────────┘
     try w.write("src/Lib.beni", "pub opaque type Token = Token (List Int)\n");
     const warm = try runCounted(&w, arena, &args, "own-slot-warm.json");
-    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--ownership=v1", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │

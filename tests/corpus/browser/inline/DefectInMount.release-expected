@@ -1,0 +1,10 @@
+-- throws load
+(threw: Error: TODO: mount threw)
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <p></p>
+  </main>
+</body>
+-- click body
+(the DOM did not change)

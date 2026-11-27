@@ -1,0 +1,25 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"off"</button>
+    <button id="quiet">"quiet"</button>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"on"</button>
+    <button id="quiet">"quiet"</button>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"off"</button>
+    <button id="quiet">"quiet"</button>
+  </main>
+</body>

@@ -1,0 +1,99 @@
+-- A lambda made in an arm before the record it reads, a record the arm then
+-- writes in place (#2658; ownership-checker.md §31.6, amended 2026-11-24).
+-- The read is made just after the item that binds the record, and the
+-- lambda reads it there. The language reads the value the field had when
+-- the record was made, so each line must carry it:
+--
+--   - `#lam`: called once, after the write;
+--   - `#twice`: called before the write and after it, and by `List.map`;
+--   - `#local`: a local function inside the lambda reads it;
+--   - `#slept`: called in a command's body, after a sleep.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Lam
+    | Twice
+    | Local
+    | Slept
+    | Got String
+
+
+type alias Model =
+    count : Int
+    log : String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Lam →
+            a = λs → s ++ " " ++ String.fromInt r.count
+            r = { model | count = model.count + 1 }
+            next = { r | count = r.count + 1 }
+            ( { next | log = next.log ++ " | " ++ a "lam" }, Cmd.none )
+
+        Twice →
+            a = λs → s ++ " " ++ String.fromInt r.count
+            r = { model | count = model.count + 10 }
+            first = a "before"
+            next = { r | count = r.count + 10 }
+            ( { next
+                | log =
+                    next.log
+                        ++ " | "
+                        ++ first
+                        ++ " | "
+                        ++ a "after"
+                        ++ " | "
+                        ++ String.join (List.map [ "m" ] a) ""
+              }
+            , Cmd.none
+            )
+
+        Local →
+            a =
+                λs →
+                    g t = t ++ " " ++ String.fromInt r.count
+                    g s
+            r = { model | count = model.count + 100 }
+            next = { r | count = r.count + 100 }
+            ( { next | log = next.log ++ " | " ++ a "local" }, Cmd.none )
+
+        Slept →
+            a = λs → s ++ " " ++ String.fromInt r.count
+            r = { model | count = model.count + 1000 }
+            ( { r | count = r.count + 1000 }
+            , Cmd.perform λsend →
+                Time.sleep (Time.millis 10)
+                send (Got (a "slept"))
+            )
+
+        Got s →
+            ( { model | log = model.log ++ " | " ++ s }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="lam" onClick={Lam}>lam</button>
+        <button id="twice" onClick={Twice}>twice</button>
+        <button id="local" onClick={Local}>local</button>
+        <button id="slept" onClick={Slept}>slept</button>
+        <p id="count">{model.count}</p>
+        <p id="log">{model.log}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { count = 0, log = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

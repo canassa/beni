@@ -1,0 +1,5 @@
+import Html exposing (Html)
+
+
+pub view : List String → Html msg
+view items = <ul><For each={items}>{λs → <li>{s}</li>}</For></ul>

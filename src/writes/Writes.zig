@@ -127,6 +127,12 @@ pub const Effects = struct {
     cmd_none: Ref = .{},
     cmd_batch: Ref = .{},
     cmd_perform: Ref = .{},
+    cmd_after_render: Ref = .{},
+    /// `browser-inline.md` §4, amended 2026-11-23 (keyed commands).
+    cmd_keyed: Ref = .{},
+    cmd_cancel: Ref = .{},
+    cmd_cancel_all: Ref = .{},
+    cmd_map: Ref = .{},
 
     pub const Ref = struct {
         m: u32 = none,
@@ -644,6 +650,11 @@ pub const Program = struct {
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
     subscription_reads: []const u32 = &.{rho_path},
+    /// A document's or an application's title: the model paths the `title`
+    /// field of the view's result reads (`browser-inline.md` §10.2, amended
+    /// 2026-11-10). ρ for every other kind, and when the view's walk was
+    /// cut short: the top, never a partial read set.
+    title_reads: []const u32 = &.{rho_path},
     /// `Input.effects` only: the subscription set and `init`'s command.
     subscriptions: Subscriptions = .{},
     /// The record's `subscriptions` field, the instruction its value is in
@@ -965,7 +976,7 @@ mu_seen: std.ArrayList(u32) = .empty,
 mu_walk: u32 = 0,
 /// `Input.effects`: the marker terms a subscription set, a declaration
 /// and a command are tuples headed by (`effectTerm`), made on first use.
-markers: [4]u32 = .{ none, none, none, none },
+markers: [5]u32 = .{ none, none, none, none, none },
 /// `Input.effects`: the last value `direct` walked in a key, before the
 /// k-limit cut it (`evalKey`).
 uncut: u32 = none,
@@ -2538,8 +2549,14 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
                     .let_pattern => {
                         const v = try a.eval(f, @fromBackingInt(idata.rhs), g);
                         try a.bind(f, @fromBackingInt(idata.lhs), v);
+                        // A `view`'s statement `_ = e` too: its reads, as a
+                        // `let`'s (`browser-inline.md` §8.2, amended 2026-11-23).
+                        try a.recordLet(f, @fromBackingInt(idata.rhs), v);
                     },
-                    .let_stmt => _ = try a.eval(f, @fromBackingInt(idata.rhs), g),
+                    .let_stmt => {
+                        const v = try a.eval(f, @fromBackingInt(idata.rhs), g);
+                        try a.recordLet(f, @fromBackingInt(idata.rhs), v);
+                    },
                     else => {},
                 }
             }
@@ -2721,6 +2738,7 @@ fn topValue(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
     if (a.in.effects) |fx| {
         if (fx.sub_none.is(m, d)) return a.effectTerm(.sub, &.{});
         if (fx.cmd_none.is(m, d)) return a.effectTerm(.cmd, &.{});
+        if (fx.cmd_cancel_all.is(m, d)) return a.effectTerm(.cmd, &.{try a.marker(.cancel)});
     }
     const id = a.fnId(m, d);
     if (a.ctx.mode != .view) {
@@ -2895,15 +2913,17 @@ fn funArity(a: *Writes, t: u32) u32 {
 // declarations, a declaration one headed by the declaration marker —
 // `key, start, tag`, then each function a `Sub.map` composed onto the tag —
 // and a command one headed by the command marker whose parts are its
-// bodies. A marker is a string literal no program can write (its second
-// half is not 0), so no other value is one of these.
+// bodies — a cancellation (`Cmd.cancel`, `cancelAll`), which has none, is
+// the cancel marker itself among them. A marker is a string literal no
+// program can write (its second half is not 0), so no other value is one
+// of these.
 
-const Marker = enum(u2) { sub = 0, decl = 1, cmd = 2, work = 3 };
+const Marker = enum(u3) { sub = 0, decl = 1, cmd = 2, work = 3, cancel = 4 };
 
 fn marker(a: *Writes, which: Marker) Error!u32 {
     const i = @backingInt(which);
     if (a.markers[i] == none) {
-        const names = [_][]const u8{ "sub", "decl", "cmd", "work" };
+        const names = [_][]const u8{ "sub", "decl", "cmd", "work", "cancel" };
         a.markers[i] = try a.mkLit(lit_string, try a.internBytes(names[i]), 0xffff_ffff);
     }
     return a.markers[i];
@@ -2925,18 +2945,75 @@ fn effectParts(a: *const Writes, t: u32, which: Marker) ?[]const u32 {
     return a.terms.words.items[start .. start + a.termLen(t) - 2];
 }
 
+/// Whether `t` is an effect term of kind `which`, or alternatives each of
+/// which is one; ⊥ is not.
+fn allEffect(a: *const Writes, t: u32, which: Marker) bool {
+    if (a.effectParts(t, which) != null) return true;
+    if (a.termTag(t) != .alt or a.altLen(t) == 0) return false;
+    for (0..a.altLen(t)) |i| {
+        if (!a.allEffect(a.altItem(t, @intCast(i)).term, which)) return false;
+    }
+    return true;
+}
+
 /// A list of effect terms of kind `which` joined into one, or null when
 /// the list is not a literal of them.
 fn effectConcat(a: *Writes, list: u32, which: Marker) Error!?u32 {
-    if (a.termTag(list) == .lst and a.lstElems(list) == 0 and a.termWord(list, 1) == none) return try a.effectTerm(which, &.{});
+    // Only `[]` is empty (`.clear`): a list substitution lost, `replaced`
+    // with no elements, is unknown (browser-inline.md §4, amended 2026-11-23).
+    if (a.termTag(list) == .lst and a.lstElems(list) == 0 and a.termWord(list, 1) == none and
+        @as(Edit, @fromBackingInt(a.termWord(list, 2))) == .clear) return try a.effectTerm(which, &.{});
+    // `List.map`'s list of commands (`applyRow`): every element's command,
+    // its alternatives' bodies joined, and the reads of the list it walked
+    // skipped. It has an element at `*`, the callback's command, so a list
+    // that summary substitution lost, `replaced` with none, stays unread
+    // (browser-inline.md §4, amended 2026-11-23, #2641).
+    if (which == .cmd and a.termTag(list) == .lst and a.termWord(list, 1) == none and
+        @as(Edit, @fromBackingInt(a.termWord(list, 2))) == .replaced)
+    {
+        var parts: std.ArrayList(u32) = .empty;
+        var mapped = false;
+        for (0..a.lstElems(list)) |i| {
+            const e = a.lstElem(list, @intCast(i));
+            if (e.eps == none and a.termTag(e.term) == .fresh) continue;
+            if (e.index != sym_star or !a.allEffect(e.term, .cmd)) return null;
+            if (!try a.commandParts(e.term, &parts)) return null;
+            mapped = true;
+        }
+        if (!mapped) return null;
+        return try a.effectTerm(which, parts.items);
+    }
     if (a.termTag(list) != .lst_lit) return null;
     var parts: std.ArrayList(u32) = .empty;
     var i: u32 = 1;
     while (i < a.termLen(list)) : (i += 1) {
-        const ps = a.effectParts(a.termWord(list, i), which) orelse return null;
+        const item = a.termWord(list, i);
+        if (which == .cmd) {
+            if (!try a.commandParts(item, &parts)) return null;
+            continue;
+        }
+        const ps = a.effectParts(item, which) orelse return null;
         try parts.appendSlice(a.arena(), ps);
     }
     return try a.effectTerm(which, parts.items);
+}
+
+/// The bodies of command term `t` appended to `parts`; false when `t` is
+/// not a command. A command chosen when it is made — `Cmd.batch [ if c then
+/// x else y ]`, `Cmd.map (if c then x else y) …` — has the bodies of each
+/// alternative: the reader asks only whether one may suspend
+/// (`write-sets.md`, amended 2026-11-23). A set of subscriptions that is
+/// chosen is not one, so only commands are read so.
+fn commandParts(a: *Writes, t: u32, parts: *std.ArrayList(u32)) Error!bool {
+    if (a.termTag(t) == .alt) {
+        for (0..a.altLen(t)) |k| {
+            if (!try a.commandParts(a.altItem(t, @intCast(k)).term, parts)) return false;
+        }
+        return true;
+    }
+    const ps = a.effectParts(t, .cmd) orelse return false;
+    try parts.appendSlice(a.arena(), ps);
+    return true;
 }
 
 /// A call of one of `Input.effects`' functions, as its term; null for any
@@ -2945,6 +3022,20 @@ fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!
     if (fx.sub_on.is(m, d) and args.len == 3) return try a.effectTerm(.sub, &.{try a.effectTerm(.decl, args)});
     if (fx.sub_listen.is(m, d) and args.len == 3) return try a.effectTerm(.sub, &.{try a.effectTerm(.work, args)});
     if (fx.cmd_perform.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, args);
+    if (fx.cmd_after_render.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, args);
+    // A keyed body is the body it runs: its key and policy are the
+    // runtime's table's, and a cancellation runs no body (`browser-inline.md`
+    // §4, amended 2026-11-23).
+    if (fx.cmd_keyed.is(m, d) and args.len == 3) return try a.effectTerm(.cmd, args[2..3]);
+    if (fx.cmd_cancel.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, &.{try a.marker(.cancel)});
+    if (fx.cmd_map.is(m, d) and args.len == 3) {
+        // The segment goes in front of each key path and the tagger onto
+        // each body's sends, both when the command runs: its bodies are
+        // the command's own.
+        var parts: std.ArrayList(u32) = .empty;
+        if (!try a.commandParts(args[0], &parts)) return try a.freshCall(args);
+        return try a.effectTerm(.cmd, parts.items);
+    }
     if (fx.sub_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .sub) orelse try a.freshCall(args);
     if (fx.cmd_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .cmd) orelse try a.freshCall(args);
     if (fx.sub_map.is(m, d) and args.len == 2) {
@@ -2986,8 +3077,12 @@ fn commandAt(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64
         for (0..a.altLen(t)) |i| {
             const c = try a.commandIn(a.altItem(t, @intCast(i)).term, pair, memo);
             switch (c.class) {
-                .suspends => return c,
-                .unknown => out = c,
+                // Any unread alternative makes the command unread, even beside
+                // one that suspends (browser-inline.md §4, amended 2026-11-23).
+                .unknown => return c,
+                .suspends => if (out.class != .suspends) {
+                    out = c;
+                },
                 .runs => if (out.class == .none) {
                     out = c;
                 },
@@ -3002,7 +3097,10 @@ fn commandAt(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64
     }
     const bodies = try a.arena().dupe(u32, a.effectParts(t, .cmd) orelse return .{ .class = .unknown });
     if (bodies.len == 0) return .{ .class = .none };
+    const cancel = a.markers[@backingInt(Marker.cancel)];
     for (bodies) |body| {
+        // A cancellation runs, with no body to ask whether it suspends.
+        if (body == cancel) continue;
         if (a.termTag(body) != .fun) return .{ .class = .unknown };
         const at = a.funSite(body);
         if (try a.commandBodySuspends(body)) return .{ .class = .suspends, .module = at.m, .inst = at.inst };
@@ -4417,7 +4515,21 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
         .fold => return a.applyFold(args, g),
         .dict_insert, .dict_remove, .dict_update, .dict_swap, .dict_insert_at, .dict_sort_by, .dict_filter, .dict_map, .dict_get, .dict_empty => return a.applyDictRow(row, m, site, args, g),
         .fresh => return a.freshCall(args),
-        .debug_todo => return a.freshEmpty(),
+        .debug_todo => return a.bottom(),
+        .task_bracket, .task_on_exit => {
+            const n: usize = if (row == .task_bracket) 3 else 2;
+            if (args.len != n) return a.freshCall(args);
+            const unit = try a.mkLit(lit_unit, 0, 0);
+            const resource = if (row == .task_bracket) try a.apply(args[0], &.{unit}, g) else unit;
+            // `bracket`'s use is its last argument, `onExit`'s work its first.
+            const use = if (row == .task_bracket) args[2] else args[0];
+            const r = try a.apply(use, if (row == .task_bracket) &.{resource} else &.{unit}, g);
+            // The release, or the cleanup, answers `⊤`: walked for what it
+            // reads, its answer dropped.
+            const exit = try a.freshEmpty();
+            if (row == .task_bracket) _ = try a.apply(args[1], &.{ resource, exit }, g) else _ = try a.apply(args[1], &.{exit}, g);
+            return r;
+        },
         .log_scope => {
             if (args.len < 2) return a.freshCall(args);
             const r = try a.apply(args[args.len - 1], &.{try a.mkLit(lit_unit, 0, 0)}, g);
@@ -4436,6 +4548,19 @@ fn applyRow(a: *Writes, row: Core.Row, m: u32, site: Inst.Index, args: []const u
             const fun = args[args.len - 1];
             const eps = try a.mintEps(xs);
             const r = try a.apply(fun, &.{try a.mkSame(eps)}, g);
+            // A list of commands, one for each element (`Cmd.batch (List.map
+            // xs λx → Cmd.perform …)`): a list built afresh whose every
+            // element is the callback's command, which is all `Cmd.batch`
+            // needs, and which reads what `xs` reads, as `readsOf` keeps it
+            // (browser-inline.md §4, amended 2026-11-23, #2641).
+            if (row == .map and a.allEffect(r, .cmd)) {
+                // As `freshCall` notes it: the list a key reads of its message.
+                if (a.ctx.mode == .key) try a.noteMu(xs);
+                var elems: std.ArrayList(Elem) = .empty;
+                try elems.append(a.arena(), .{ .index = sym_star, .eps = eps, .term = r });
+                try elems.appendSlice(a.arena(), try a.readsOf(xs, &.{xs}));
+                return a.mkLst(none, .replaced, none, none, elems.items);
+            }
             const p = a.listBase(xs) orelse return a.freshCall(args);
             if (a.isIdentity(r, eps)) return xs;
             const index = if (row == .map) sym_star else try a.argSym(m, site, 1, args[1]);
@@ -6295,7 +6420,13 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         // `Navigation.onUrlRequest onUrlRequest` and
         // `Navigation.onUrlChange onUrlChange`, as `browser-tea`'s
         // `Tea.application` batches them (`browser-inline.md` §10.3).
-        if (kind == .application and a.in.effects != null and result != none) result = a.applicationSubscriptions(&frame, fs, result) catch |err| switch (err) {
+        // A set that reads the model is answered as one (`browser-inline.md`
+        // §3, amended 2026-11-23), which the lowering refuses for an
+        // application, rather than as a set the pass could not read.
+        const own_reads_model = result != none and for (a.deps_t.get(try a.deps(result))) |p| {
+            if (a.rootOf(p) == rho_path) break true;
+        } else false;
+        if (kind == .application and a.in.effects != null and result != none and !own_reads_model) result = a.applicationSubscriptions(&frame, fs, result) catch |err| switch (err) {
             error.WorkCap => none,
             else => |e| return e,
         };
@@ -6322,6 +6453,11 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
             defer reads.deinit(a.gpa);
             try a.anchors(result, &reads);
             prog.view_reads = try a.arena().dupe(u32, reads.items);
+            if (view_complete and (kind == .document or kind == .application)) {
+                reads.clearRetainingCapacity();
+                try a.anchors(a.titleOf(result), &reads);
+                prog.title_reads = try a.arena().dupe(u32, reads.items);
+            }
         }
     };
     a.ctx = .{ .mode = .closed };
@@ -6372,6 +6508,19 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     for (maps, a.map_ctor_acc.items) |*mc, x| mc.* = .{ .path = try a.arena().dupe(u64, if (x[0] == 0 or x[0] >= a.call_paths.items.len) &.{} else a.call_paths.items[x[0]]), .ctor = x[1] };
     prog.map_ctors = maps;
     return prog;
+}
+
+/// The `title` of a document view's result: the field's term when the
+/// result is the record the view wrote, and otherwise the whole result,
+/// which reads no less.
+fn titleOf(a: *const Writes, result: u32) u32 {
+    if (a.termTag(result) != .rec) return result;
+    var i: u32 = 3;
+    while (i < a.termLen(result)) : (i += 2) {
+        const name = a.in.interner.slice(@fromBackingInt(a.termWord(result, i)));
+        if (std.mem.eql(u8, name, "title")) return a.termWord(result, i + 1);
+    }
+    return result;
 }
 
 fn finishViewParams(a: *Writes) Error![]const ViewParam {
@@ -7774,7 +7923,9 @@ pub fn closureLocal(a: *const Writes, t: u32, local: u32) u32 {
 /// it builds, and so may any term deeper than `depth`.
 fn scopedBodies(a: *const Writes, t: u32, depth: u32) bool {
     if (depth == 0) return true;
-    if (a.effectParts(t, .cmd)) |bodies| return bodies.len != 0;
+    if (a.effectParts(t, .cmd)) |bodies| return for (bodies) |body| {
+        if (body != a.markers[@backingInt(Marker.cancel)]) break true;
+    } else false;
     return switch (a.termTag(t)) {
         .same, .lit, .fresh, .ixeq => false,
         .tup => for (1..a.termLen(t)) |k| {

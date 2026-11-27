@@ -1657,6 +1657,10 @@ function step(s) {
     case "dblclick":
       target.dispatchEvent(new MouseEvent("dblclick", { ...init, button: 0, detail: 2 }));
       return null;
+    // `contextmenu` here is the `MouseEvent` that a browser dispatched
+    // before `contextmenu` became a `PointerEvent` (Chrome 92, Firefox 129,
+    // Safari 18.2): it has no `pointerId`, `pointerType` or `isPrimary`.
+    // The `pointer` step dispatches the `PointerEvent`.
     case "mouse":
       target.dispatchEvent(new MouseEvent(s.name, { ...init, button: 0 }));
       return null;
@@ -1668,6 +1672,12 @@ function step(s) {
     // lays out every element. `pointerenter` and
     // `pointerleave` neither bubble nor cancel, and nor does
     // `pointercancel`, as the Pointer Events standard fires them.
+    // `contextmenu` is a `PointerEvent` too (Pointer Events level 3,
+    // §4.2.12), which bubbles and can be cancelled, as Chrome 153
+    // dispatches a user's (`boundary.md` §9.8.20, *As built, 2026-11-24*);
+    // the parser makes it not primary. `button` and `buttons`
+    // are the step's, 0 and 0 when it names none: a step that another
+    // program builds (the fuzzer's) names none.
     case "pointer": {
       const box = s.box === undefined ? target : document.querySelector(s.box);
       if (box === null) return `no element matches \`${s.box}\``;
@@ -1702,13 +1712,15 @@ function step(s) {
         return null;
       }
       const bubbles = s.name !== "pointerenter" && s.name !== "pointerleave";
-      const cancelable = s.name === "pointerdown" || s.name === "pointermove" || s.name === "pointerup" || s.name === "pointerover" || s.name === "pointerout";
+      const cancelable = s.name === "pointerdown" || s.name === "pointermove" || s.name === "pointerup" || s.name === "pointerover" || s.name === "pointerout" || s.name === "contextmenu";
       const event = new PointerEvent(s.name, {
         bubbles,
         cancelable,
         composed: bubbles,
         clientX: r.left + s.x,
         clientY: r.top + s.y,
+        button: s.button ?? 0,
+        buttons: s.buttons ?? 0,
         pointerId: s.id,
         pointerType: s.type,
         isPrimary: s.primary,
@@ -2500,16 +2512,18 @@ function parseStep(written, where) {
         else usage(`${where}: \`key\` takes \`ctrl\`, \`shift\`, \`alt\`, \`meta\`, \`repeat\` or \`code:<code>\` after the key, not \`${w}\``);
       }
     } else if (command === "mouse") {
-      if (!/^mouse[a-z]+$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\``);
+      if (!/^(mouse[a-z]+|contextmenu)$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\`, or \`contextmenu\``);
       s.name = argument;
     } else if (command === "pointer") {
-      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>] [trusted]`;
+      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [button:<n>] [buttons:<n>] [secondary] [box:<selector>] [trusted]`;
       // `type:none` is a `pointerType` of "", a device the browser cannot name.
-      // `trusted` is a user's mouse move: Chrome sends one only as its own
-      // mouse, `pointerId` 1 and primary.
+      // `button:` is the event's `button`, -1 to 5, and `buttons:` its
+      // `buttons`, a sum from 0 to 63; each is 0 when the step does not
+      // name it. `trusted` is a user's mouse move: Chrome sends one only as
+      // its own mouse, `pointerId` 1 and primary, with no button down.
       const words = (argument ?? "").split(/\s+/).filter((w) => w !== "");
-      const names = ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerenter", "pointerleave", "pointerover", "pointerout"];
-      if (!names.includes(words[0])) usage(`${where}: \`pointer\` takes a selector and one pointer event name, such as \`pointermove\``);
+      const names = ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerenter", "pointerleave", "pointerover", "pointerout", "contextmenu"];
+      if (!names.includes(words[0])) usage(`${where}: \`pointer\` takes a selector and one pointer event name, such as \`pointermove\`, or \`contextmenu\``);
       s.name = words[0];
       s.x = 0;
       s.y = 0;
@@ -2526,13 +2540,22 @@ function parseStep(written, where) {
       for (const w of rest) {
         if (/^id:-?[0-9]+$/.test(w)) s.id = Number(w.slice("id:".length));
         else if (/^type:(mouse|pen|touch|none)$/.test(w)) s.type = w === "type:none" ? "" : w.slice("type:".length);
+        else if (/^button:(-1|[0-5])$/.test(w)) s.button = Number(w.slice("button:".length));
+        else if (/^buttons:([0-9]|[1-5][0-9]|6[0-3])$/.test(w)) s.buttons = Number(w.slice("buttons:".length));
         else if (w === "secondary") s.primary = false;
         else if (/^box:\S+$/.test(w)) s.box = w.slice("box:".length);
         else if (w === "trusted") s.trusted = true;
-        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch|none>\`, \`secondary\`, \`box:<selector>\` or \`trusted\` after the name, not \`${w}\``);
+        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch|none>\`, \`button:<-1 to 5>\`, \`buttons:<0 to 63>\`, \`secondary\`, \`box:<selector>\` or \`trusted\` after the name, not \`${w}\``);
       }
-      if (s.trusted && (s.name !== "pointermove" || s.type !== "mouse" || s.id !== 1 || !s.primary))
-        usage(`${where}: \`trusted\` is a user's mouse move: it goes with \`pointermove\`, the mouse, \`id:1\` and a primary pointer`);
+      // A `contextmenu` is never primary: the standard gives it the default
+      // of each pointer attribute but `pointerId` and `pointerType` (Pointer
+      // Events level 3, §4.2.12.1), and Chrome 153 does, for the mouse too.
+      if (s.name === "contextmenu") {
+        if (!s.primary) usage(`${where}: a \`contextmenu\` is never primary: \`secondary\` does not go with it`);
+        s.primary = false;
+      }
+      if (s.trusted && (s.name !== "pointermove" || s.type !== "mouse" || s.id !== 1 || !s.primary || s.button !== undefined || s.buttons !== undefined))
+        usage(`${where}: \`trusted\` is a user's mouse move: it goes with \`pointermove\`, the mouse, \`id:1\`, a primary pointer and no \`button:\` or \`buttons:\``);
     } else if (command === "drag") {
       if (!["dragstart", "drag", "dragenter", "dragover", "dragleave", "drop", "dragend"].includes(argument ?? "")) usage(`${where}: \`drag\` takes a selector and one drag event name: \`dragstart\`, \`drag\`, \`dragenter\`, \`dragover\`, \`dragleave\`, \`drop\` or \`dragend\``);
       s.name = argument;

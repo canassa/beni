@@ -1,0 +1,58 @@
+-- A handler of a branch region's arm whose message reads a field that only
+-- the handler reads (docs/design/browser-inline.md §8.2, amended 2026-11-23):
+-- the region's read set holds it, so a write of the field sets the arm again
+-- and the handler sends the message the page shows now. Its transcript is
+-- `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Bump
+    | Got Int
+    | Toggle
+
+
+type alias Model =
+    open : Maybe String
+    x : Int
+    got : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | x = model.x + 1 }
+
+        Got n →
+            { model | got = n }
+
+        Toggle →
+            case model.open of
+                Just _ →
+                    { model | open = Nothing }
+
+                Nothing →
+                    { model | open = Just "on" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <p id="got">{model.got}</p>
+        {case model.open of
+            Just label →
+                <button id="send" onClick={Got model.x}>{label}</button>
+
+            Nothing →
+                <i>off</i>
+        }
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox { init = λ⊤ → { open = Just "on", x = 0, got = -1 }, update = update, view = view }

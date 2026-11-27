@@ -2280,7 +2280,8 @@ schedulers = Js.array []
 -- `scheduled`), how a drain is queued (`run`) and the drain to queue
 -- (`drain`), how the rest of a long drain is queued (`more`: the
 -- program's macrotask for `scheduler`, `run` again for `schedulerWith`),
--- its defect hook (`hook`), its stop (`stop`) and its
+-- its defect hook (`hook`), whether it contains a defect (`contains`:
+-- only a platform's `schedulerWith` does), its stop (`stop`) and its
 -- end (`ended`) as closures — so that the teardown below is reachable only
 -- from here, and a build that makes no scheduler keeps none of it in
 -- development either — and the teardown's state
@@ -2290,13 +2291,14 @@ schedulers = Js.array []
 -- it and have not ended, since one may be the child of a fiber of
 -- another scheduler and so out of reach of its roots; `lent` the fibers
 -- inside a `withScheduler` of it that belong to another.
-newScheduler : V, V, V → V
-newScheduler runner hook more =
+newScheduler : V, V, V, Bool → V
+newScheduler runner hook more contains =
     Js.write many True
 
     s =
         Js.from
             { abandoned = 0
+            , contains = contains
             , culprit = Js.null
             , deadline = 0
             , drain = Js.null
@@ -2332,16 +2334,20 @@ newScheduler runner hook more =
 
 --| A scheduler whose drains run in a microtask of their own, and go on in
 --| a macrotask after 64 resumptions, as the program's do, so a timer and
---| I/O get their turn. `hook` runs on a defect under it, in the stop,
---| before the throw goes on to the host, as `onDefect`'s does for the
---| program: the one piece of program code that runs there, and it may not
---| wait. `λ⊤ → ⊤` when nothing needs to know.
+--| I/O get their turn. It contains nothing: a defect under it stops it,
+--| then the program, as a defect under the program's own scheduler does
+--| (`transparent-effects-proposal.md` §17.5, amended 2026-11-05, #1994).
+--| `hook` runs on that defect, in the scheduler's stop and before the
+--| program's, as `onDefect`'s does for the program: the one piece of
+--| program code that runs there, and it may not wait. `λ⊤ → ⊤` when
+--| nothing needs to know.
 pub scheduler : sync (⊤ → ⊤) → Scheduler
 scheduler hook =
     Js.to
         (newScheduler (Js.from λd → Js.apply (Js.global "queueMicrotask") [ d ])
             (Js.from hook)
             (Js.from macrotask)
+            False
         )
 
 
@@ -2351,9 +2357,12 @@ scheduler hook =
 --| with the rest of a drain that has used its 64 resumptions, and must run
 --| it in a later turn of the host's event loop — a timer — so that a fiber
 --| that keeps yielding starves nothing (the Worker slice, P705-5); `hook`
---| is `scheduler`'s.
+--| is `scheduler`'s. Unlike `scheduler`'s, a defect under it stops it
+--| alone: the platform defines its unit of failure, a request or an object
+--| (`boundary.md` §9.12), and the program goes on.
 pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler
-schedulerWith runner more hook = Js.to (newScheduler (Js.from runner) (Js.from hook) (Js.from more))
+schedulerWith runner more hook =
+    Js.to (newScheduler (Js.from runner) (Js.from hook) (Js.from more) True)
 
 
 --| Run `work` with the calling fiber's scheduler slot set to `scheduler`,
@@ -2602,20 +2611,30 @@ hasEnded : V → Bool
 hasEnded s = not (Js.isNull s) && Js.to (Js.get s "phase") == 3
 
 
--- Whether the deadline of the fiber's scheduler has passed.
+-- Whether the deadline of the scheduler `s` (null for the program's) has
+-- passed.
+expiredOf : V → Bool
+expiredOf s = if Js.isNull s then Js.read expired else Js.to (Js.get s "expired")
+
+
+-- Whether a deadline that cuts the fiber has passed: the one of the
+-- scheduler it belongs to, or the one of the scheduler it is lent to
+-- (transparent-effects-proposal.md §17.5, amended 2026-11-10).
 expiredFor : V → Bool
 expiredFor fiber =
     if Js.read many then
-        s = schedulerOf fiber
-        if Js.isNull s then Js.read expired else Js.to (Js.get s "expired")
+        expiredOf (memberOf fiber) || expiredOf (schedulerOf fiber)
     else
         Js.read expired
 
 
--- A cleanup cut short counts against the fiber's scheduler.
+-- A cleanup cut short counts against the scheduler the fiber belongs to
+-- once its deadline has passed, and otherwise against the one its slot
+-- names.
 countCut : V → ⊤
 countCut fiber =
-    s = schedulerOf fiber
+    m = memberOf fiber
+    s = if not (Js.isNull m) && expiredOf m then m else schedulerOf fiber
     if Js.isNull s then
         Js.write abandoned (Js.read abandoned + 1)
     else
@@ -2706,8 +2725,11 @@ drainFromS s count =
 
 -- `failed`, for a scheduler: the throw goes on to the host out of
 -- whatever `run` queued the drain in; the scheduler stops, its hook runs,
--- and its teardown is queued. One while it tears down is a cleanup's: the
--- fiber goes on to its next finaliser, the drain in a new turn.
+-- and its teardown is queued. A scheduler that contains nothing — every
+-- one a program makes, `scheduler`'s — then stops the program too, as
+-- `failed` does, and the platform's hook runs (#1994).
+-- One while it tears down is a cleanup's: the fiber goes on to its next
+-- finaliser, the drain in a new turn.
 failedS : V → ⊤
 failedS s =
     fiber = Js.read current
@@ -2722,6 +2744,12 @@ failedS s =
         stoppingS s
         hook = Js.get s "hook"
         if Js.isNull hook then ⊤ else Js.to (Js.apply hook [ Js.null ])
+        if Js.to (Js.get s "contains") || Js.read phase ≥ 2 then
+            ⊤
+        else
+            stopping ⊤
+            d = Js.read defect
+            if Js.isNull d then ⊤ else Js.to (Js.apply d [ Js.null ])
     else
         if not (Js.isNull fiber) && Js.isNull (Js.get fiber "outcome") then
             recover fiber
@@ -2809,7 +2837,7 @@ sweepS s =
 
 
 -- `expire`, for a scheduler: of the fibers inside a finaliser, those
--- whose slot names it.
+-- that belong to it or whose slot names it.
 expireS : V → ⊤
 expireS s =
     Js.set s "timer" Js.null
@@ -2823,7 +2851,10 @@ expireS s =
             (λ⊤ →
                 Js.each (copy c) λfiber →
                     w = Js.get fiber "parked"
-                    if Js.isNull w || not (Js.same (schedulerOf fiber) s) then
+                    if
+                        Js.isNull w
+                            || not (Js.same (schedulerOf fiber) s || Js.same (memberOf fiber) s)
+                    then
                         ⊤
                     else
                         Js.set fiber "parked" Js.null
@@ -2890,16 +2921,47 @@ insertAt sleepers at i =
 --| to its wake time, wakes every sleeper due then, in the order they began
 --| to sleep, and settles again — so a sleeper the woken code registers is
 --| woken too if it is due by the target. Last, the reading is the target.
-pub adjustClock : Js.Value, Js.Value → ⊤
+--|
+--| A target past the last millisecond an `Int` holds is `Err` of the
+--| milliseconds the clock can still move, after the first settle, and the
+--| clock does not move: its reading and its sleepers stay, and no sleeper
+--| wakes (§17.6, amended 2026-11-24).
+pub adjustClock : Js.Value, Js.Value → Result Int ⊤
 adjustClock clock ms =
     by : Int
     by = Js.to ms
 
     if by ≤ 0 then
-        ⊤
+        Ok ⊤
     else
         settle ⊤
-        advance clock (Js.to (Js.get clock "now") + by)
+
+        -- Read after the settle: a fiber that ran in it may have moved
+        -- this clock, and the test is of the sum that follows.
+        reading : Int
+        reading = Js.to (Js.get clock "now")
+
+        if pastLast reading by then
+            Err (lastMillisecond - reading)
+        else
+            advance clock (reading + by)
+            Ok ⊤
+
+
+-- The last millisecond an `Int` holds, 2⁵³ − 1: the last reading of a
+-- virtual clock, and the longest `Duration` (#2022). `Duration`'s
+-- `longest`, `Log`'s `lastMillisecond` and the cloudflare platform's
+-- `Worker.Object` hold the same number: change them together.
+lastMillisecond : Int
+lastMillisecond = 9007199254740991
+
+
+-- Whether `at + ms` is past the last millisecond, for `ms` at least 0.
+-- The test comes before the sum, and stays in the range itself: a time at
+-- or below 0 has room for every duration, and `lastMillisecond - at` for a
+-- negative `at` would be past the range.
+pastLast : Int, Int → Bool
+pastLast at ms = at > 0 && ms > lastMillisecond - at
 
 
 advance : V, Int → ⊤
@@ -2991,9 +3053,25 @@ metadata : i, Int, Int → Schedule.Metadata i
 metadata input attempt began =
     { input = input
     , attempt = attempt
-    , elapsed = Duration.millis (clockMillis ⊤ - began)
+    , elapsed = since began (clockMillis ⊤)
     , random = Js.to (Js.call (Js.global "Math") "random" [])
     }
+
+
+-- The time from the reading `began` to the reading `now`, as a length
+-- (§17.8, amended 2026-11-24): `zero` when `now` is not later, and the
+-- longest duration when the difference is longer, which a virtual clock
+-- that began below 0 can make. The test comes before the difference: a
+-- start at or above 0 leaves one that fits. `Log`'s `since` is the same
+-- rule for a span's milliseconds: change them together.
+since : Int, Int → Duration
+since began now =
+    if now ≤ began then
+        Duration.zero
+    else if began < 0 && now > lastMillisecond + began then
+        Duration.millis lastMillisecond
+    else
+        Duration.millis (now - began)
 
 
 -- The epoch milliseconds of the calling fiber's clock (core's `Clock.now`).

@@ -1,0 +1,844 @@
+-- load
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- input #removed>li:nth-child(3)>input "marked"
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- input #inserted>li:nth-child(3)>input "marked"
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- input #prepended>li:nth-child(2)>input "marked"
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- input #swapped>li:nth-child(1)>input "marked"
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- input #rekeyed>li:nth-child(2)>input "marked"
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #remove
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+      <li>
+        <input .value="marked">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #insert
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+      <li>
+        <input .value="marked">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "new"
+      </li>
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #prepend
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+      <li>
+        <input .value="marked">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "new"
+      </li>
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "new"
+      </li>
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+      <li>
+        <input .value="marked">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "new"
+      </li>
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "new"
+      </li>
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #rekey
+<body>
+  <main>
+    <button id="remove">"remove"</button>
+    <button id="insert">"insert"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="rekey">"rekey"</button>
+    <ul id="removed">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+      <li>
+        <input .value="marked">
+        "two c"
+      </li>
+    </ul>
+    <ul id="inserted">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "new"
+      </li>
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="prepended">
+      <li>
+        <input .value="">
+        "new"
+      </li>
+      <li>
+        <input .value="marked">
+        "two a"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+    <ul id="swapped">
+      <li>
+        <input .value="marked">
+        "two b"
+      </li>
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "two a"
+      </li>
+    </ul>
+    <ul id="rekeyed">
+      <li>
+        <input .value="">
+        "three"
+      </li>
+      <li>
+        <input .value="">
+        "two b"
+      </li>
+    </ul>
+  </main>
+</body>

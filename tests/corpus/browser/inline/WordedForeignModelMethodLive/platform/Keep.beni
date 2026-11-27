@@ -1,0 +1,17 @@
+--! A host function that keeps its receiver.
+
+import Js
+
+
+--| Keeps `this`.
+pub foreign impure keeper : borrowed Int → Int
+
+
+--| How long the kept record's `xs` is, or -1.
+pub keptLen : Int → Int
+keptLen _ =
+    k = Js.get (Js.global "globalThis") "kept"
+    if Js.isNullish k then
+        -1
+    else
+        Js.to (Js.get (Js.get k "xs") "length")

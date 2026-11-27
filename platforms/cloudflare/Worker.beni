@@ -807,11 +807,11 @@ send ref request =
                 Ok (fromHost r)
 
         Err reason →
-            if Js.to (Js.get reason "overloaded") == True then
+            if Js.same (Js.get reason "overloaded") (Js.from True) then
                 Err Overloaded
-            else if Js.to (Js.get reason "durableObjectReset") == True then
+            else if Js.same (Js.get reason "durableObjectReset") (Js.from True) then
                 Err Reset
-            else if Js.to (Js.get reason "retryable") == True then
+            else if Js.same (Js.get reason "retryable") (Js.from True) then
                 Err Transient
             else
                 Js.throw reason
@@ -826,7 +826,10 @@ callService svc request =
             Ok (fromHost r)
 
         Err reason →
-            if Js.to (Js.get reason "retryable") == True then Err Unavailable else Js.throw reason
+            if Js.same (Js.get reason "retryable") (Js.from True) then
+                Err Unavailable
+            else
+                Js.throw reason
 
 
 -- Park on a host promise: `Ok` its value, `Err` its reason, as the fiber's

@@ -1,0 +1,2 @@
+# A function held in a list, reached by a fold's callback, answers the list the callback captured: the push of it is refused (ownership-v3-kernel.md §6 rule 2, *A function held in a value*).
+32:17 list_still_used List.push

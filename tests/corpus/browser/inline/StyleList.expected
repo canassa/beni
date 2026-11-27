@@ -1,0 +1,79 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="color: red; width: 100px;">"0"</p>
+      <span data-role="s">"s"</span>
+      <div data-role="d" style="display:none">"d"</div>
+      <i data-role="c" style="color:blue">"c"</i>
+      <button data-role="widen">"w"</button>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=widen]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="color: red; width: 200px;">"0"</p>
+      <span data-role="s" style="font-weight: bold;">"s"</span>
+      <div data-role="d" style="display:block">"d"</div>
+      <i data-role="c" style="color:blue">"c"</i>
+      <button data-role="widen">"w"</button>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="color: red; width: 200px;">"1"</p>
+      <span data-role="s" style="font-weight: bold;">"s"</span>
+      <div data-role="d" style="display:block">"d"</div>
+      <i data-role="c" style="color:blue">"c"</i>
+      <button data-role="widen">"w"</button>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="color: red; width: 200px; --gap: 2px;">"2"</p>
+      <span data-role="s" style="font-weight: bold;">"s"</span>
+      <div data-role="d" style="display:block">"d"</div>
+      <i data-role="c" style="color:blue">"c"</i>
+      <button data-role="widen">"w"</button>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="color: red; width: 200px; --gap: 3px;">"3"</p>
+      <span data-role="s" style="font-weight: bold;">"s"</span>
+      <div data-role="d" style="display:block">"d"</div>
+      <i data-role="c" style="color:blue">"c"</i>
+      <button data-role="widen">"w"</button>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=widen]
+<body>
+  <div id="root">
+    <main>
+      <p data-role="p" style="color: red; width: 100px; --gap: 3px;">"3"</p>
+      <span data-role="s">"s"</span>
+      <div data-role="d" style="display:none">"d"</div>
+      <i data-role="c" style="color:blue">"c"</i>
+      <button data-role="widen">"w"</button>
+      <button data-role="inc">"i"</button>
+    </main>
+  </div>
+</body>

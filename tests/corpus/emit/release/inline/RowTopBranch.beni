@@ -1,0 +1,35 @@
+-- emit/release/inline: a `For` whose row is a branch (browser-inline.md
+-- §9, amended 2026-11-24): `forRows` makes each row with `emptyRow`, and
+-- its `set` chooses the arm with the row's item bound and shows it as the
+-- row's node with `rowArm`. The page is `browser/inline/RowTopBranch`.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Flip Int
+
+
+update : Msg, List Int → List Int
+update msg items =
+    case msg of
+        Flip n →
+            List.map items λx → if x == n then 0 - x else x
+
+
+view : List Int → Html Msg
+view items =
+    <ul>
+        <For each={items} keyed={False}>
+            {λx →
+                if x > 0 then
+                    <li onClick={Flip x}>{x}</li>
+                else
+                    <></>
+            }
+        </For>
+    </ul>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → [ 1, 2, 3 ], update = update, view = view }

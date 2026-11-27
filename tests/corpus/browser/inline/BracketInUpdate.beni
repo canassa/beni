@@ -1,0 +1,61 @@
+-- An `update` arm inside `Task.bracket` and `Task.onExit`
+-- (write-sets.md §3.7, amended 2026-11-23): each answers what its use or
+-- its work answers, so the write-set pass reads the arm's writes and its
+-- command through them. `Up` writes `count` from the resource the acquire
+-- gives and runs a command; `Mark` writes `mark` inside `onExit`. Each
+-- release logs once, and the hole of the field an arm does not write
+-- stays.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+
+
+type alias Model =
+    count : Int
+    mark : String
+    replies : Int
+
+
+type Msg
+    = Up
+    | Mark
+    | Reply
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Up →
+            Task.bracket (λ⊤ → model.count + 10) (λr _ → Log.info "released ${String.fromInt r}") λr →
+                ( { model | count = r }, Cmd.perform λsend → send Reply )
+
+        Mark →
+            next = { model | mark = model.mark ++ "!" }
+            Task.onExit (λ⊤ → ( next, Cmd.none )) λ_ → Log.info "marked"
+
+        Reply →
+            ( { model | replies = model.replies + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="count">{String.fromInt model.count}</p>
+        <p id="mark">{model.mark}</p>
+        <p id="replies">{String.fromInt model.replies}</p>
+        <button id="up" onClick={Up}>up</button>
+        <button id="add" onClick={Mark}>mark</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { count = 0, mark = "m", replies = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

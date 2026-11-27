@@ -176,14 +176,14 @@ both p = ( { Record.copy p | x = 1 }, p )
 The checker keeps one place for all the levels of one part of a recursive value. For a `Tree`,
 the lists of the left subtree are one place, the left child's own list included. The checker
 cannot show that two levels of that part hold different lists. A write to a list of one level,
-while a list of another level of the same part is read later, is the error `list_may_be_shared`.
+while a list of another level of the same part is read later, is the error `list_still_used`.
 The error occurs also when the two lists are different. This is the one case where the checker
 refuses a safe program.
 
 Here `alternate` puts `a` at the root and two levels down, and `b` between. `grown` changes the
 root's list and reads the left child's list. That is safe, but it is refused:
 
-```beni platform=browser-inline refused=list_may_be_shared
+```beni platform=browser-inline refused=list_still_used
 type Tree
     = Leaf
     | Node Tree (List Int) Tree

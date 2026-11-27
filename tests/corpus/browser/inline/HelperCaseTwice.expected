@@ -1,0 +1,71 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="counts">
+      ""
+      ""
+      ""
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+<body>
+  <div id="root">
+    <div data-role="counts">
+      <p data-role="one">"one cup"</p>
+      ""
+      ""
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+<body>
+  <div id="root">
+    <div data-role="counts">
+      ""
+      <strong data-role="many">"2 cup"</strong>
+      ""
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=coin]
+<body>
+  <div id="root">
+    <div data-role="counts">
+      ""
+      <strong data-role="many">"2 cup"</strong>
+      <p data-role="one">"one coin"</p>
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=reset]
+<body>
+  <div id="root">
+    <div data-role="counts">
+      ""
+      ""
+      ""
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>

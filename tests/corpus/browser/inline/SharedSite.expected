@@ -1,0 +1,250 @@
+-- load
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <section id="one" class="card" title="first">
+      <h2>"first"</h2>
+      <p class="count">
+        "count "
+        <b>"0"</b>
+        " of "
+        <i>"first"</i>
+      </p>
+      <p class="twice">"0"</p>
+      <button id="one-bump">"bump"</button>
+    </section>
+    <section id="two" class="card" title="second">
+      <h2>"second"</h2>
+      <p class="count">
+        "count "
+        <b>"10"</b>
+        " of "
+        <i>"second"</i>
+      </p>
+      <p class="twice">"20"</p>
+      <button id="two-bump">"bump"</button>
+    </section>
+    <section id="three" class="card" title="third">
+      <h2>"third"</h2>
+      <p class="count">
+        "count "
+        <b>"20"</b>
+        " of "
+        <i>"third"</i>
+      </p>
+      <p class="twice">"40"</p>
+      <button id="three-bump">"bump"</button>
+    </section>
+    <section id="four" class="card" title="first">
+      <h2>"first"</h2>
+      <p class="count">
+        "count "
+        <b>"30"</b>
+        " of "
+        <i>"first"</i>
+      </p>
+      <p class="twice">"60"</p>
+      <button id="four-bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #two-bump
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <section id="one" class="card" title="first">
+      <h2>"first"</h2>
+      <p class="count">
+        "count "
+        <b>"0"</b>
+        " of "
+        <i>"first"</i>
+      </p>
+      <p class="twice">"0"</p>
+      <button id="one-bump">"bump"</button>
+    </section>
+    <section id="two" class="card" title="second">
+      <h2>"second"</h2>
+      <p class="count">
+        "count "
+        <b>"11"</b>
+        " of "
+        <i>"second"</i>
+      </p>
+      <p class="twice">"22"</p>
+      <button id="two-bump">"bump"</button>
+    </section>
+    <section id="three" class="card" title="third">
+      <h2>"third"</h2>
+      <p class="count">
+        "count "
+        <b>"20"</b>
+        " of "
+        <i>"third"</i>
+      </p>
+      <p class="twice">"40"</p>
+      <button id="three-bump">"bump"</button>
+    </section>
+    <section id="four" class="card" title="first">
+      <h2>"first"</h2>
+      <p class="count">
+        "count "
+        <b>"30"</b>
+        " of "
+        <i>"first"</i>
+      </p>
+      <p class="twice">"60"</p>
+      <button id="four-bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #four-bump
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <section id="one" class="card" title="first">
+      <h2>"first"</h2>
+      <p class="count">
+        "count "
+        <b>"0"</b>
+        " of "
+        <i>"first"</i>
+      </p>
+      <p class="twice">"0"</p>
+      <button id="one-bump">"bump"</button>
+    </section>
+    <section id="two" class="card" title="second">
+      <h2>"second"</h2>
+      <p class="count">
+        "count "
+        <b>"11"</b>
+        " of "
+        <i>"second"</i>
+      </p>
+      <p class="twice">"22"</p>
+      <button id="two-bump">"bump"</button>
+    </section>
+    <section id="three" class="card" title="third">
+      <h2>"third"</h2>
+      <p class="count">
+        "count "
+        <b>"20"</b>
+        " of "
+        <i>"third"</i>
+      </p>
+      <p class="twice">"40"</p>
+      <button id="three-bump">"bump"</button>
+    </section>
+    <section id="four" class="card" title="first">
+      <h2>"first"</h2>
+      <p class="count">
+        "count "
+        <b>"31"</b>
+        " of "
+        <i>"first"</i>
+      </p>
+      <p class="twice">"62"</p>
+      <button id="four-bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #one-bump
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <section id="one" class="card" title="first">
+      <h2>"first"</h2>
+      <p class="count">
+        "count "
+        <b>"1"</b>
+        " of "
+        <i>"first"</i>
+      </p>
+      <p class="twice">"2"</p>
+      <button id="one-bump">"bump"</button>
+    </section>
+    <section id="two" class="card" title="second">
+      <h2>"second"</h2>
+      <p class="count">
+        "count "
+        <b>"11"</b>
+        " of "
+        <i>"second"</i>
+      </p>
+      <p class="twice">"22"</p>
+      <button id="two-bump">"bump"</button>
+    </section>
+    <section id="three" class="card" title="third">
+      <h2>"third"</h2>
+      <p class="count">
+        "count "
+        <b>"20"</b>
+        " of "
+        <i>"third"</i>
+      </p>
+      <p class="twice">"40"</p>
+      <button id="three-bump">"bump"</button>
+    </section>
+    <section id="four" class="card" title="first">
+      <h2>"first"</h2>
+      <p class="count">
+        "count "
+        <b>"31"</b>
+        " of "
+        <i>"first"</i>
+      </p>
+      <p class="twice">"62"</p>
+      <button id="four-bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <section id="one" class="card" title="renamed">
+      <h2>"renamed"</h2>
+      <p class="count">
+        "count "
+        <b>"1"</b>
+        " of "
+        <i>"renamed"</i>
+      </p>
+      <p class="twice">"2"</p>
+      <button id="one-bump">"bump"</button>
+    </section>
+    <section id="two" class="card" title="second">
+      <h2>"second"</h2>
+      <p class="count">
+        "count "
+        <b>"11"</b>
+        " of "
+        <i>"second"</i>
+      </p>
+      <p class="twice">"22"</p>
+      <button id="two-bump">"bump"</button>
+    </section>
+    <section id="three" class="card" title="third">
+      <h2>"third"</h2>
+      <p class="count">
+        "count "
+        <b>"20"</b>
+        " of "
+        <i>"third"</i>
+      </p>
+      <p class="twice">"40"</p>
+      <button id="three-bump">"bump"</button>
+    </section>
+    <section id="four" class="card" title="renamed">
+      <h2>"renamed"</h2>
+      <p class="count">
+        "count "
+        <b>"31"</b>
+        " of "
+        <i>"renamed"</i>
+      </p>
+      <p class="twice">"62"</p>
+      <button id="four-bump">"bump"</button>
+    </section>
+  </main>
+</body>

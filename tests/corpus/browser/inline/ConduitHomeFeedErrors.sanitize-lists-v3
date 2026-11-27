@@ -1,0 +1,1 @@
+v3 takes the message a command builds as update's own (ownership-v3-kernel.md §6.13, *A message a command builds*): the list it carries is written in place, and the sanitiser traps a later read of it.

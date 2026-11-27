@@ -1,0 +1,11 @@
+# The load wrote "bad" to the text input alone.
+# Another value that is not empty: a patch, and no write to a file input.
+click #other
+# The empty string is what the file inputs show: nothing to write.
+click #clear
+click #other
+# No longer file inputs, `first` and `last` show the model's value.
+click #as-text
+# File inputs again: the browser empties them, and the reconcile that the
+# write of `type` asks for writes nothing back.
+click #as-file

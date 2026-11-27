@@ -213,7 +213,15 @@ export const len = (xs) => {
 // `same` traps an identity compare of two members of one group.
 const groups = new WeakMap();
 
-export const record = (base, copy, site) => {
+//
+// `values` holds the fields the update names. The copy takes each of them
+// from it and every other field from the base, in the base's order; a field
+// the update names is not read of the base, since in place the update writes
+// it and reads nothing of it (`ownership-v3-kernel.md` §11 item 3).
+export const record = (base, values, site) => {
+  const copy = {};
+  for (const key of Object.keys(base)) copy[key] = Object.hasOwn(values, key) ? values[key] : base[key];
+  for (const key of Object.keys(values)) if (!Object.hasOwn(copy, key)) copy[key] = values[key];
   let group = groups.get(base);
   if (group === undefined) {
     group = [base];

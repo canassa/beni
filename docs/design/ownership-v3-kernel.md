@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §7.1 added 2026-11-27 (#2549). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value); §11 item 11 added the same day (*A closure writes a field of a record it captured*, *The order of a callee's runs*, #2657); §7.1 added 2026-11-27 (#2549). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -179,6 +179,34 @@ as a pair: both parts are `x`). Four facts that rest on "apart" are read so:
   casts. Where the argument has no entry at that place, every entry below the wide location is read,
   as before (`suffix_fallback`). A wide location of the caller's own reading still reads every cell
   below it.
+  *Amended 2026-11-27 (#2657): a walked body's own type variables.* A walked body that does not
+  cast makes no value of a type variable of its own: a value of type `b` in it is one it was handed
+  (a parameter, a capture, the answer of a function it runs), a part of one, or the answer of a
+  call. So where no call of the body can answer a new value of `b`, each value at a location of `b`
+  is, at that place, the value one of its sources has there, as it is. A call can where its type,
+  read in the body's variables, names `b` (`Frame.taintCall`): unknown code, markup, an entry's
+  call, a decoding run, an identity that answers `unknown`, a row other than a cell's, and a walked
+  callee one of whose sources at a location of its answer is not at the same place; and a value of
+  no claim made of parts (`unknownOf`: a part the place graph does not name) can be at any location,
+  so it takes the mark off every variable. So can a call
+  that hands a function value to a callee whose supply at a location of a parameter of that function
+  is not at the same place (that parameter's type there), or whose own answer is not (its answer's
+  type), or that hands it where no contract follows it. A call of the frame's own function parameter
+  or capture answers at the same place: the frame's caller reads that answer itself, through the
+  function it handed. `finish` marks each `param` and `answer` source of a result location, and of a
+  location of what the body hands a function parameter, **at the same place** (`Src.same_place`),
+  where the location is a type variable's (`var`, the type there a variable of the store: the type of
+  the body, or of the function parameter's pattern), no call of the frame named that variable, and the
+  frame does not cast. A caller reads such a source as a cell's row's: a parameter's at the same place
+  (`paired_exact`), what is handed there (`resolve_exact`), and the answer of a function that is
+  handed there at and below the place asked, not every part of it (`SrcState.below`; a location the
+  call map cannot place, `Loc.all`, is read as before). In the rounds of a recursive group the mark
+  starts on (a draft with no source names no call) and a round can only take it away, so the rounds
+  end at the greatest fixed point: a run that answers a rebuilt value runs a call that does, at some
+  depth of the recursion. *Before, `List.foldr`, `Dict.foldl` and `Dict.foldr` into a dictionary of
+  lists answered a dictionary whose storage, and the location of a function in a list, held every
+  list of the accumulator, and a write of one was refused `disjoint` (`browser/inline/FoldRight`,
+  `DictFoldLeft`, `DictFoldRight`).*
 
 And a contract that holds one cell of its parameter at two places of its answer (`nonlinear`) answers no
 value as it is: it is applied as a call, not as an identity (`isIdentity`).
@@ -642,6 +670,30 @@ exception (`alternatives`): the answer of a function `g` and a parameter locatio
 `free` are alternatives, because a cell handed `free` is read by the callee no more, so it is in the answer
 or it stays, never both (the `taken` rows of `core/`).
 
+**The claims of a call whose arguments are not apart** (*added 2026-11-27, #2657*;
+`Frame.argsDuplicated`, `holdsDuplicated`). Where the arguments are not apart, the callee's claims
+fail only through a cell that is at two places of them: a cell at one place of the arguments is put
+at a location of the result as many times as the callee's walk puts that one place there, which its
+claims count, whatever the other arguments hold. A cell the callee made, or that a function argument
+made in one of its runs, is no cell of the arguments (no two runs share one, above). So the call
+names the cells that can be at two places (`argsDuplicated`): every cell of an argument that cannot
+say its own parts are apart (`partsOf` fails, or `argsSplit`), and every cell of two parts that can
+hold one cell (`dupOverlap`); and a result entry is read as before (no claim: `twice` where two
+sources or an answer that holds a handed cell feed a summary entry, and tested by its atoms for
+`linear`) only where one of its atoms can be one of those cells (`holdsDuplicated`, two atoms outside
+the frame read as one), or where one is the answer of the frame's own function parameter, an opaque
+root whose atom names none of the cells it was handed (a duplicated one among them: `List.map [ l, l ]
+g` with `g` a parameter). The atoms of an entry name every other cell it can hold (§2), so an entry none of
+whose atoms is such a cell holds each cell of it as the callee's claims say; the result is `linear`
+where the callee is not `nonlinear`, and its other entries are tested by their atoms. Past the budget
+every entry is read as before. *Before, one cell at two places of an argument took every claim of the
+call: a fold over a list in which one subscription's tap was at two places (`Sub.batch [ sub, sub ]`)
+answered a dictionary whose lists, each a list its callback made in a run, were `twice`, and a write
+of one was refused `element` (`browser/inline/FoldRight`, `DictFoldLeft`, `DictFoldRight`).* Those
+pages were refused `disjoint` too, by §3.4's wide reading of the fold's accumulator, a type
+variable of the fold: §3.4's amendment of the same day, *a walked body's own type variables*, reads
+it at the same place.
+
 **Two readings through a later root** (research report 159, #2564). An atom records the first root the frame
 made that it was read through (`via`), and two of its readings are two cells where that root holds each cell
 once and they were read through two of its parts. A cell can then go through a second such root: a call's
@@ -814,6 +866,78 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    every cell the callee can hold or answer is in a demand, an escape or the result.* *Research report
    124 F2 and report 125: a function that hands a list to its callback and then writes it was judged
    only where it was called directly, and never where a holder runs it.*
+
+   **A capture of a named function** (*added 2026-11-27, #2657*; `Frame.namedCapture`). A call, in a
+   lambda's or a local function's frame, of a capture whose local a `let` binds, with no parameter, to a
+   reference to a top-level function (`fl = List.foldl`) is a call of that function's contract, as the
+   reference itself is in the frame that binds it. A local is bound once, so every closure that captures
+   it captures that one function value; the evidence of a reference is judged at the reference (rule
+   11). Before, the capture was the frame's own function parameter, and a lambda that writes its
+   parameter handed to it was refused as going where the checker does not follow it
+   (`browser/inline/NestedFoldValue`).
+
+   **A function held in a value** (*added 2026-11-27, #2657*; `Contract.held`, `Src.held`,
+   `Frame.heldOf`, `callHeld`, `heldVal`, `answerOfHeld`). Every function that goes into a value met
+   the `top` use where it went in (`mention`, rule 8): it asks nothing, and it keeps what it is
+   handed. So a call of a function read at a location of a function type below a parameter or a
+   capture (a list's elements, a field, a constructor's argument; `heldOf`, never a sender) is a call
+   of unknown code in all but its answer: each argument and the function escape there (`callHeld`).
+   Its answer is the answer root of that location's draft, and the contract names it `held(i, e)`:
+   what the functions at parameter location `i` answer at their answer entry `e`. The draft's `Fn`
+   (`Contract.held[i]`) says what the body hands them. A caller reads `held(i, e)` off each function
+   its argument holds at location `i` (`heldVal`): a list literal's elements (`Root.elems`), a
+   construction's parts, or the frame's own location below a parameter or a capture, whose answer is
+   its own draft's in turn; each known function's answer is its contract's, handed what `held[i]`
+   says. A list made with a spread, a base or a front, a list a callee answers, and any value the walk
+   cannot name there give the lost answer (§3.2). Before, the answer of such a call was the answer of
+   unknown code, `outside` and every cell in sight, and a list it answered was refused
+   (`browser/inline/FunctionElements`). The draft holds what the frame's own calls hand the function
+   (`callHeld`), and nothing else: where such a function reaches another use, a callback's parameter
+   through a row (`List.foldl works Valid λwork acc → … work input`), its answer there is the draft's
+   only when the use hands it no cell (`handsCells`), and else the lost answer of what the use hands
+   it (`heldLost`). *Amended 2026-11-27 (#2657):* before, the draft's answer was read there too, with
+   none of what the callback handed it, so a validator answering the list the callback captured was
+   read as a new one (`run/HeldThroughCallbackLive`, `check/bad/inline/FunctionElementBorrowed`).
+
+   **What the holder hands back** (`Fn.ans_own`, `handedAnswersOwn`, `fnsAnswerOwn`). Where a known
+   function at a use writes what the holder hands it, and that is an answer of a function the holder
+   hands the known function at a parameter of its own, or of one it captured (a fold's callback that
+   answers `work ⊤`), the answer must be `own` (rule 8): the known function passes it on once
+   (`passesOn`), and each function that can be there answers its own. A known one is judged there
+   (`answerOwn`). The frame's own function parameter, and the functions held below a parameter or a
+   capture, are their caller's to judge: their draft is `ans_own`, a direct call judges each function
+   its argument holds there (`applyAt`, `flowCode`, `flowCaptures`), and a holder that does not know
+   them refuses (`asksOwnAnswers`, `flowUnknown`, `flowCode` at a lost use). Before, only a captured
+   function that the walk knew could answer `own` there.
+
+   **A function a body answers** (`Contract.answers`, `Frame.answersOf`, `madeVal`, `neverVal`).
+   Where a body's result is of a function type and each function it answers is a known code of its
+   module whose every capture is a whole parameter or capture of the body, or holds no cell, the
+   contract names those codes, each with its contract and the parameter each capture is. A caller
+   makes the closure the call answers out of them, over its own arguments, as if it made it there: it
+   is one more holder of those arguments, whose escapes the contract lists, since the answer met `top`
+   in the callee. Where no fact says, the answer is a function the caller does not know, as before. A
+   group's rounds start from no code answered, and the codes of two rounds join code by code; a call
+   of what a callee that answers no code answers runs no code and answers nothing (`neverVal`): no run
+   of that callee answers a function, so no run reaches the call. Before, the closure a function
+   answered was unknown code to its caller (`browser/inline/ReturnedValidator`).
+
+   **A field called as a method** (`Frame.fieldCall`, `Fn.receiver`, `Contract.fn_known`,
+   `knownFns`). `r.f a` compiles to `r.f(a)`, which JavaScript runs with `r` as `this`; a host's
+   function there (a `Js.to` of a host function, a declaration whose body is JavaScript, what
+   `Js.method` makes) can read `r` and keep it, and beni code reads no `this`. So where each function
+   `r.f` can be is beni code (a closure, a constructor, a declaration whose body is beni), the call is
+   a call of that function, and `r` is no operand of it. Where `r` is a parameter or a capture and
+   `r.f` a location below it, the location's draft is `receiver`: a caller lets its argument escape
+   unless each function the argument holds there is beni code, and a holder that does not know them
+   lets what it hands there escape (`flowCode`, `flowCaptures`). Anywhere else `r` escapes, as at
+   unknown code. At an entry (rule 13) the model's functions are those its producers answer: each
+   producer's contract says, per answer entry of a function type, whether every function there is
+   beni code or the function at a parameter location passed on (`fn_known`), and its `param` sources
+   there must name the model alone. Where that fails at a location of a function type of the model,
+   and a function of the record calls a function of the model as a method of it, no location of the
+   model is `own`; a message with such a call (`msgOwn`) is never `update`'s own. The lowering is not
+   changed. Before, the model escaped at every such call (`browser/inline/ModelCallback`).
 3. **Capture** (`capture`, `codeValue`, `solveCodes`): a lambda or a local function is walked in its own
    frame, its captures are parameters of its contract, and the closure value holds them (`closureOf`). A
    capture bound after the closure is made is a `later` slot read as the value bound there (`capVal`;
@@ -848,6 +972,55 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
    cell of each capture, so `Cmd.task (λ⊤ → Navigation.goBack model.key 0) …` in `update`'s answer
    held every location of the model, none was `update`'s own (rule 13), and every write of `update`
    was refused (`browser/tea/NavigatePush`; `run/ClosureFieldInPlace` and its live twin).*
+
+   **A field path a closure captures** (*added 2026-11-27, #2657*; `Frame.eagerLocal`,
+   `eagerCapture`, `eagerSlot`, `eagerRead`). A read in a code of a chain of field reads `l.f₁.….fₖ`
+   (k ≥ 1, field reads alone) whose local `l` is a capture of the code, and which the code's text
+   (its body and every code inside it) names nowhere but at the root of such chains
+   (`Frame.readsWhole`: a local captured whole holds the record's slots through that capture, and an
+   early read would only add a second holder of the same cells), and whose value holds no cell's
+   handle (`Ref`, §13: a handle is followed by its versions where the code runs), is **read where the closure
+   is made**, and the closure captures the value read there, not the record: the lowering binds the
+   chain to a temporary at that point and the code reads the temporary (`ownership-checker.md`
+   §31.6, v1's rule, which the lowering already applies to v1's rows: `backend.md` §4, *Hoists*). A
+   field read is pure and cannot fail (`language.md` §11.11), so reading it earlier changes no value
+   and no effect; and in the copying program the closure captured the old record, whose fields never
+   change, so a value read before any write of the record is the value the copying program reads.
+   The place is the one §31.6 names:
+   - a lambda's chain is read where the lambda is made; one that an item of a `let` binds, where the
+     walk reaches that item (made earlier because another code named it, its read waits);
+   - a local function's chain is read where its `let` starts, since its closure exists from there
+     (`language.md` §7, a hoisted `function`), and stamped with that time and context however late
+     the walk makes it;
+   - a chain of a local that the frame binds later (a lambda or a local function that names a later
+     item, `let_forward_reference`) is read just after the item that binds it (`eagerAfterItem`);
+   - a chain of a local of a frame around the one that makes the closure is a capture of that
+     closure in its turn, carried out to the closure made in the local's own frame and read there
+     once, for every closure inside it (#2617).
+
+   In the frame that makes the closure, the read is a read of each slot of the chain at that time
+   (§11 item 4, `readSlots`): a write before it in the same run meets it as a later read (§5, test
+   4), and the lowering's read-first rule may place it before the write (§11 item 10). The closure
+   then holds the chain's value at the locations its contract reaches, as for any capture: a list in
+   the field is still held, and a write of that list is still judged against it; the record's slots
+   are not held, so a write of the field after the closure is made, in this run or a later one, is no
+   write of what the closure reads. A chain whose read is no part of the closure's own text (a
+   member of the closure's group named in it, `memberValue`) is read there too, but its row is the
+   other code's: `lex` marks the reads whose rows the frame writes, and only they are read first.
+
+   It holds in an application's module (`Check.Mod.eager_ok`), whose records the lowering writes in
+   place; in a module of core or a platform, and in a declaration with markup (whose lowering can
+   make a closure where it renders, and evaluate a handler at the event, rule 12), every chain is
+   read where the code runs, as before (`Frame.no_eager`). The rows go to the lowering of every
+   module of the application, whether or not it writes (`Check.Result.eager`, `Enforce`): the record
+   that one module's closure captured can be written in place by another's `update`. Before, a
+   tagger `Pulsed model.label _` that `subscriptions` answers held the slot `model.label=`, so the
+   entry found the label kept by a consumer and `update`'s write of it was refused
+   (`browser/inline/LatestTagger`, `SubscriptionArgument`); and a command's body that reads
+   `model.count` held the slot past the arm that wrote it (`BatchMapOldValue`,
+   `ClosureNamesLocalAfterSuspension`, `RecordReadLambdaBoundAfter`, `RecordReadLocalFunction`,
+   `RecordReadNestedClosure`). In place under v3's oracle, the old tagger that `Inline.passOn` can
+   apply after an `update` holds the old label, as the copying program's does.
 4. **Construct** (`built`, `listOf`, `spreadChain`, `appendChain`): a tuple, record or constructor names
    each part that holds a cell; a list literal's storage is the frame's own cell, its elements are the
    items' leaves as one run with `partDup`; a spread's base is written (a demand) and its storage is a new
@@ -1339,7 +1512,8 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     (`Check.edgeEffect`). The runtime's `send` is
     the alias with the word `sender` (`platforms/browser/Browser.beni`, and `platforms/browser-base/Hosted.beni`, whose `Send` every renderer's `Cmd.Send` aliases), followed through aliases of it;
     a message sent is given up, so each cell of it is a demand (`callParam`). No declaration is read by
-    its name, and no method is read as read-only because it is derived, but one: a call of `Js.from` or
+    its name, and no method is read as read-only because it is derived, but two: the decoding runs of
+    rule 14 (*What a decoding run answers*), and a call of `Js.from` or
     `Js.to` of the core package is its argument, since the build writes it so (`Mod.emitsArgument`, the
     key of `js/JsIntrinsic.zig`; §3.4, *What a value was made from*). The fact is of the code the build
     writes, which no word of the rows can say (`returned a → Js.Value` is as true of a row that answers
@@ -1386,6 +1560,76 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     later render (§6.14, *What a lowering keeps*). Each such `let` escapes where it is bound, so no
     write of it, or of a cell it shares, runs in place, in that call or a later one. The lowering
     says which `let`s it keeps; the checker does not guess.
+
+    **A handler read at the event** (*added 2026-11-27, #2657*; `eventCall`, `Mod.viewRoot`,
+    `Enforce.keptByLowering`). A handler that the runtime keeps is a closure made at the render, and
+    it reads what it captured when the event fires, after `update` wrote it: so it escapes. A
+    lowering can instead evaluate the handler where the event fires, from the values the `view` is
+    handed then, and keep nothing of the render for it. Then the closure of the render is never run,
+    and the handler holds none of what it reads: its run is a call, made at the event, whose answer,
+    the message, escapes (the runtime sends it to `update`, and can queue it behind a dispatch). The
+    checker reads an event so where three positive facts hold, and keeps the handler otherwise:
+    1. the markup is the whole body of a function — a declaration, or a lambda — whose module
+       names it only as a field, whose type answers markup, of a record written as the one
+       argument of a call of an entry (rule 13): no other instruction names the declaration, no
+       method call or evidence of the module names it (the `Dispatch` terms), no `via` keeps a
+       name unresolved, and the build is not `--library`;
+    2. the lowering says, of that event, that it reads the handler where the event fires
+       wherever it writes such a root (`Lowering.reads_handler_at_event`, `boundary.md` §9.4.8,
+       *A handler read at the event*; its default keeps every handler). `inline` says so of an
+       event on an element that the root reaches through elements and fragments alone, in a root
+       with no `let`: the page of a program, or the pieces another module's program shows, where
+       no row, arm, region, `Show` or helper's call keeps a closure or an argument of a render
+       (`browser-inline.md` §8.3, §8.4);
+    3. the handler is a known function of one parameter: it is applied to the event's payload,
+       which holds no cell of the frame, as at a call site (`applyAt`), and what it answers
+       escapes. A message that is no function escapes as it is; a function that no rule follows
+       escapes whole, as before.
+
+    The handler stays in the default use where it is evaluated (`mention`), so one that writes
+    what it is handed or a cell it captured is refused as before. *Before, every handler escaped,
+    and a write by `update` of a field that a `view`'s handler read was refused, though the
+    handler read the field again at the event (`browser/inline/KeptHandlerSameField`,
+    `PointerInput`, `PieceHandler`, `PieceHandlerCell`, `PieceHandlerReplaced`). An earlier
+    attempt read every handler so, and was withdrawn: a keyed `For` row, a keyed
+    `Show` body and a helper shown in an arm keep the closure made at the render, which a removed
+    row still runs after `update`.*
+
+    **A hole evaluated once** (*added 2026-11-27, #2657*; `Frame.holeOnceMarkup`, `dropWritten`,
+    `Enforce.keptByLowering`). Markup holds every value a hole's evaluation reads because a lowering
+    may evaluate the hole again, or later, from those values. Where the lowering says that it
+    evaluates a hole at most once in each evaluation of the function the markup is in, from what
+    that evaluation made or was handed and never from a value an earlier evaluation read
+    (`Lowering.evaluates_hole_once`, `boundary.md` §9.4.8, *A hole evaluated once*), the old value of
+    a cell that the hole's own evaluation wrote is read by nothing but another evaluation of the hole.
+    So a value the evaluation read, or handed to a helper's call in the hole, of which every cell
+    (`allLeaves`) is a cell that a write of that evaluation names, made at a call that is not pure and
+    total for certain (`Mod.notTotalCall`, `Enforce.notTotalCalls`: a callee the checker did not prove
+    total, or a list append), is no value the markup holds; the hole's value, a closure the hole makes,
+    and every other value it read stay held. A pure, total value is evaluated where the lowering
+    likes: eagerly in an arm the branch does not take, or again where an event fires from an argument
+    of a helper (`browser-inline.md` §8.2), and a `Dict` writer is total; so its writes do not count. The checker
+    reads a hole so where two facts hold:
+    1. the markup is the whole body of a declaration with parameters, or the markup of an arm of an
+       `if` or a `case` (no `let` around it) that is a hole's value of such markup, itself read so,
+       through arms alone (`holeOnceMarkup`): a `let`'s markup, a constant's and an argument's are
+       evaluated where a hole shows them, which can be twice;
+       and no other operand of an `if` or a `case` on the way reads a local that can hold a cell
+       outside a call that is not pure and total for certain (`siblingsReadEagerly`): a lowering
+       evaluates such a read eagerly, in the arm not taken, after the arm's writes (*amended
+       2026-11-27, #2657*: before, `{if c then <b>{Dict.size ((λq → Dict.insert q "zz" 1) d)}</b>
+       else <b>{Dict.size d}</b>}` was accepted, and the eager `Dict.size d` read the inserted
+       dictionary; `browser/inline/HoleOnceSibling*Live`);
+    2. the lowering names the hole (`inline`: one that the root reaches through elements and
+       fragments alone, in a root with no `let`).
+    *The argument.* A later reader of the old name is a holder that observes the cell as it was
+    before the write. The function's own later reads of it are judged by §5 as before (a read of an
+    old name after the write); the only other reader that the markup stood for is an evaluation of
+    the hole from the values it read, which the lowering rules out. A write by another value of the
+    function, before or after, reads the cell through a name of its own, which §5 judges. *Before,
+    `<section>{helper (List.push xs 2)}</section>` in an arm held `xs`, and the push was refused as
+    read again where the markup is read; and a hole that called a helper which writes its argument
+    held the argument (`browser/inline/TotalCallBranchOwnership`).*
 
     *The argument.* The runtime is a holder that the walk does not follow, and it does two things
     with markup: it reads the values the markup holds while it renders, and it calls code the markup
@@ -1467,7 +1711,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     function of the record the default (rule 2, `defaultParams`). A `view` (a function of the record
     whose answer is the build's markup type, or a record or tuple with markup in it,
     `Check.Mod.isView`) does not keep what its answer holds: the runtime renders the answer before it
-    runs `update` again (rule 12, `boundary.md` §9.4.8). **The message is never `own`**: a handler of
+    runs `update` again (rule 12, `boundary.md` §9.4.8). **The message is never `own`**, except where *A message a command builds*, below, holds: a handler of
     the rendered markup keeps its message until the next render and can send it twice, a message can
     hold a top-level value, and the runtime's commands, subscriptions and platform events make
     messages that no rule of the checker follows; a `send` written in the program is checked where it
@@ -1507,6 +1751,58 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     Research report 121 §4.1–§4.2 and report 122 §3.1–§3.2, §3.4: a field with no known code was
     dropped (neither producer nor consumer), and whether an answer was the model or a pair was guessed
     from its locations, so a tuple model was read at the wrong place.*
+    **A message a command builds** (*the owner's decision, 2026-11-27, #2657*: "a message whose
+    constructor is only ever built inside the program's own commands counts as `update`'s own").
+    The platform's fact: the runtime hands each message that a command's body sends (its `send`, the
+    word `sender`) to `update` once, and keeps none of it after `update` returns (`Inline.commands`,
+    `boundary.md` §9.8.4); a platform makes a message only by calling a function the program handed
+    it, or by handing on a message the program made. So where no construction of a constructor `C`
+    can reach the runtime except through such a send, and nothing but that send holds what it sends,
+    a location of the message at `C` is `update`'s own (`Mod.cmdBuilt`, `Frame.msgOwn`). Each of
+    these is a positive fact, and where one does not hold the message is not `own`, as before:
+
+    1. `update`'s field is a declaration of the entry's module, and its message parameter's type
+       `T` is a type of that module with no type parameter. No other module of the program can
+       name `T`'s constructors: one that imports the entry's module is not imported by it.
+    2. **Every construction of `C`** in the module (`Mod.cmdBuilt`) is one the walk saw as one of
+       these, in each walk of its body (`Frame.noteCmdSite`):
+       - `send (C a…)`: the whole argument of a call of the function's own parameter of sender
+         type, whose demands all hold on the function's own ground (`fresh` or `call`): the
+         function made each cell that a write can edit, and does not read it again; and no cell of the
+         message is at two of its locations (`Pair xs xs`, `Tup ( xs, xs )`), which the demands, each of one
+         location, do not see; and every cell it asks for is one this function made, never an answer of a
+         function parameter (`send (Items (mk ⊤))`), which a demand reads as the function's own (both the review
+         of this rule);
+       - `C`, as an argument of a call of a declaration of a platform package (not core, not the
+         program's), whose contract answers no answer of that function, hands it to no other
+         function parameter, and hands it, at each of its parameter's cells, only the answer of
+         another function parameter, `free`; where each such function is, at this call, known code
+         whose answer there is only cells it made and let go nowhere (`freshOwn`). `Cmd.task
+         (λ⊤ → [ "first" ]) Response` is one: each run calls the work again.
+
+       A constructor used in any other way (in `view`, in a subscription's or a handler's
+       function, partly applied, inside a lambda the send is not the parameter of, in code the
+       walk never reached) makes messages that no send gives up, and is not `C` of this rule.
+    3. **No decoder in the module**: no derived codec and no schema declaration, which make a
+       message that no construction made.
+    4. **No function of the program keeps a message** (`Mod.keepsMessages`, published by each
+       module for those it imports, `Contract.Published.keeps_messages`): every lambda, and every
+       declaration used as a value, whose parameter's type can hold a message — it names `T`, any
+       type of the program, or a type variable, outside a function's parameter — has a contract,
+       and that contract lets no such parameter location escape, hands it to no function and
+       leaves it in no cell. A platform hands a command's messages to the program's functions
+       there (`Cmd.map`'s function, a sender the program made), and one that kept a message could
+       send it again.
+    5. **The model's type does not name `T`** outside a function's parameter: a model that holds a
+       message hands it to `view`, whose handler sends it again.
+    6. **`update` gives the location up**: its contract does not let it escape, leaves it in no
+       cell, hands it to no function, answers it only at the model's item of the answer, and, where
+       the contract is `nonlinear`, at one location there (`paramOwn`).
+
+    So a send in a command asks what it always did (`callParam`), and its line is accepted as
+    before; what changes is that a write of `update` that rests on the message, and a model
+    location answered from it, are `own` where the six facts hold. *Before, the message was never
+    `own`, and `browser/inline/OwnedCommandSend` and the four `Conduit*Errors` pages were refused.*
 14. **Calls into the program that no walked body makes** (`Check.walkSchema`, `Check.walkExports`,
     `Check.checkCovered`). The theorem of §5 needs every call of the program's code to be applied by a
     rule. Code that is not a walked body of the program calls it in the places below, and only there.
@@ -1520,7 +1816,7 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     | the program's own body | a function, with the arguments written | rule 2 |
     | a function of `core/` or a platform, walked or worded, or a `foreign` (a callback of `List.map`, `Ref.update`, `Task`, `Cmd`, `Sub`, `Io`, `Hosted`, `Browser.Worker.program`, a Cloudflare `Worker.program`) | the function it was handed, with what its contract says | rules 2 and 8 (the contract, or the default where it loses it), rule 10 (words; no word is unknown code) |
     | the markup runtime | a `For`'s row and key function and a `Show`'s body and key function, with items of the markup's values | rule 12: applied as at a call site |
-    | the markup runtime | an event's handler, `Html.map`'s function, a component's function (the module's `view`), with an event, a message or the props | rule 12: each is a value at an item of markup, so it goes to the `top` use (rule 8) and writes nothing; the props and what the handlers capture escape |
+    | the markup runtime | an event's handler, `Html.map`'s function, a component's function (the module's `view`), with an event, a message or the props | rule 12: each is a value at an item of markup, so it goes to the `top` use (rule 8) and writes nothing; the props and what the handlers capture escape, but for a handler the lowering reads at the event, which is applied there as a call whose message escapes (*A handler read at the event*) |
     | the markup runtime | a top-level function in a hole (a helper, `language.md` §11.6), re-made where it renders | rule 12: the markup holds what the call is handed |
     | the entry's runtime | each function of the entry's record, with the model, a message or what it makes | rule 13 |
     | derived `eq` and `compare`, `==` and `<`, a method call, return-type dispatch, `where` evidence, `core/`'s derived JavaScript (`listEq` calls the element's comparator) | the methods the dispatch table names, with the operands or their parts | rule 11 |
@@ -1548,6 +1844,45 @@ Each rule keeps the invariants of §2. The argument is one sentence each.
     walked as a declaration, and `Schema.conversion` loses its functions, so they went to `top` there.
     The default costs precision: a print whose value nothing reads after is refused, and a parse worker's
     value is new, so its conversion could write it (research report 129 §9).
+
+    **What a decoding run answers** (*added 2026-11-27, #2657*; `schema.md` §6, *What a run answers,
+    for ownership*). A run of `core/Schema` or `Json` reaches its worker through JavaScript
+    (`compiledRun`, `Js.apply`), so its walked contract answers what JavaScript hands back: `outside`,
+    the input at every location, the issues' cells. For the runs below, the backend writes the
+    decoding worker of a statically known definition, and what that worker answers is a fact of the
+    code it emits (`js/SchemaLower.zig`'s workers, `core/Schema`'s shape readers): **every record,
+    list, tuple and constructor with a payload that it answers is an object it made in that run**
+    (`{ … }`, `[]` filled with `push`, `{ $: tag, a: payload }`), each at one place of the answer; a
+    primitive and a nullary constructor's constant hold no cell; and a `Value` is the input's own
+    object, or a part of it, as it was handed (`v["key"]`). It never answers an object of a former
+    run, and never the host's array (`schema.md` §6, *Lists are arrays*: an array the caller handed
+    in as a host value is never adopted). The runs (`Mod.decodingRun`), each named directly at the
+    call, not through an alias:
+    - `Json.decode`, `decodeWith` and `decodeValue` whose `where a.codec` evidence at the call is a
+      derived codec with no argument (`Dispatch` term `codec`): the backend writes the codec's
+      worker, or its shape (`SchemaValid.sites`, `Schema.compiledRun`);
+    - `Schema.read`, `readWith`, `parse` and `parseWith` whose schema argument is written at the
+      call as `S.schema ⊤` of a declaration (`SchemaValid.schemaRoot`).
+
+    and only where the definition, closed over every declaration and derived codec it names, has
+    no parameter, no `via`, no check and no module `codec` (`SchemaGraph.buildsFresh`): a `via`'s
+    function answers what it likes (a capture, a top-level value), a check's function is handed
+    the value the worker built and can keep it, and a module's `codec` is a runtime builder's,
+    whose adapters no walk follows. At such a call the contract is the walked one with its answer
+    read at the call's own result type (`Frame.decodedContract`): each location below `Ok` that is
+    a list or a record's slot holds a new cell of a site of its own, at no escape, apart from every
+    other; each wide location below `Ok` (a `Value`) holds the run's input, its last argument, or a
+    new cell where the input holds none (`parse`'s text: `JSON.parse` made the objects); every
+    location below `Err` holds every source of the walked answer. No location of the answer is a
+    cast's, and no object of it was there before the call. So a value decoded into the model is
+    the model's own (rule 13, `freshOwn`), and a write of it runs in place. *Before, the answer
+    was the walked one, `outside` at every location, and each loader page of `browser-inline`
+    whose route decodes its slice (`browser/inline/CaseLoader`, `NestedStableLoad`,
+    `PartialRoutes`, `ResearchS3`, `ShapeLoader`, `SnapshotFromTable`, `TickFresh`,
+    `TickInPlace`, `ValidatedLoader`) had every later write of the slice refused at the entry.*
+    This is the second fact the checker reads by a name (rule 11): the fact is of the code the
+    build writes for the call, which no word of a row can say (`fresh` names one site for every
+    location, and none says that a `Value` is the input).
 
     **A `--library` build.** Host JavaScript calls each value that the root package exports, at any time,
     with values that it may still hold and read after. An exported function is a **function in the default
@@ -1635,6 +1970,19 @@ claims less than the walk found refuses the declaration; an alias's words are co
 of the function it names (§6 rule 10, *A worded body is checked against its walk*). A module whose walk reached a limit, or that is not an application
 module, authorises no in-place write (`Enforce.checkModule`, `Hoists.finish`).
 
+**A constant read once** (*added 2026-11-27, #2657*; `Mod.soleReference`, the `.top` arm of
+`Frame.evalInner`). A top-level value is `outside` every frame (§3.1) because every reader has it. A
+constant that is not `pub`, is no function, and that exactly one instruction of the module names has one
+reader; where that instruction is in the body of another constant, evaluated by that constant's own
+frame and in no markup (`Frame.onceInBody`: no lambda's or local function's body, which another frame walks, and no hole, which a lowering can evaluate where the markup renders, as often as it renders it; the module loader runs the rest once), and where that constant runs once (`Mod.runsAtLoad`: the backend defines both as plain constants, not as a memo per evidence as it does a constant with a `where` clause; `Frame.loaderRunsOnce`: its value holds no function and no foreign value, and it has no markup, since a lowering inlines a constant of markup at each place that shows it, `browser-inline.md` §8.2, and runs it there as often as it renders, as the `dom` renderer does per instance, and a program value's parts run at each mount), the reference is the
+constant's evaluation: it is applied as a call of the constant's contract (rule 2), so what the
+constant made and let escape nowhere is the reader's own, and a write of it runs in place. No other code
+can read the value: the module's other instructions do not name it, another module cannot (it is not
+`pub`), and host JavaScript cannot (a `--library` build exports every constant it can call, so the rule
+is off there, as in a module with a name that a `via` keeps unresolved, `schema_value_ref` or
+`schema_expr_ref`). *Before, `extended = seed ++ [ 3 ]` with `seed = List.range 1 2` read nowhere
+else was refused, `unknown` (`browser/inline/InitializationTransfer`).*
+
 ### 7.1 What a build keeps between runs
 
 *Added 2026-11-27 (#2549). Before, a run under `--ownership=v3` read and wrote no cache, so each build
@@ -1650,7 +1998,9 @@ it is the same as a new walk makes.** Four rules keep that true.
    shape of its bodies and the constructors of its private types (`Mod.in.birs`, `Shared.published`).
    The transitive key holds each source byte that can reach the module's check, so an equal key is an
    equal walk. The cost is the one that `fast-compiler.md` states: an edit of a module checks each
-   module that imports it, directly or not, again. *Not built: a cutoff for contracts, where an importer
+   module that imports it, directly or not, again. And the key's term for `core/` is over the key of
+   each module of core in the build (`core_epoch`), so the first import of a module of core that no
+   module of the build imported before moves the key of each module outside core. *Not built: a cutoff for contracts, where an importer
    is checked again only when a contract that it can read changed. It needs a closed list of what a walk
    reads of another module.*
 2. **The key names the run.** The option string of each module has a v3 term, only under v3: the checker,
@@ -1661,19 +2011,35 @@ it is the same as a new walk makes.** Four rules keep that true.
    a run that does not.
 3. **The entry holds v3's block** (`own3/Block.zig`), in the `ownership` section of the cache entry:
    - the module's contracts as its importers read them (`Contract.Published`): each layout, each
-     contract, each fact of a derived method, and which bodies reach JavaScript;
+     contract with the functions that it answers and their contracts (`Contract.Made`), each fact of
+     a derived method, which bodies reach JavaScript, and whether the module can keep a message;
    - the lowering channel (`own2/Hoists.Table`) and the reads that the lowering reads first
      (`Reads.Read`, §11 item 10).
 
-   A block holds no id of a session. A field is written as its name, not its text rank, and a type as
-   its package, its module and its name, not its `TypeId`. A label's `head` is a `TypeId` where the label
+   A block holds no id of a session. A field is written as its name, not its text rank, a type as
+   its package, its module and its name, not its `TypeId`, and the module of a declaration that a
+   contract answers as its package and its name, not its index. A label's `head` is a `TypeId` where the label
    is a constructor's argument, an opaque type's slot, or a member that is a list, an opaque value or a
    cell; it is 0 for each other label. The reader gives each name the id of its own session. A name that
    the reader's session does not have, or a block that does not decode, is a miss: the module is checked
    and walked.
 
-   **A new field of `Contract`, `Fn`, `Path`, `Src`, `Effect`, `DerivedFact` or `Published` is a compile
-   error in `Block.zig`** until the block writes it: a field that a block drops reads as its default at
+   **A block has a digest of its bytes, and the reader checks it first.** A flag of a contract is one
+   bit: a block with one changed bit can decode as another contract, and the structure checks cannot see
+   that. *The review of #2549: one bit of a file turned a refusal into an accepted write, and the
+   importer was then stored with that verdict under its own key, so the wrong verdict stayed after the
+   file was repaired.* With the digest a changed, a missing or an added byte is a miss.
+
+   **A block is at most 32 MiB** (`Block.max_bytes`), and a module with a larger one has none: it is
+   walked in each build. The cache reads no entry above 64 MiB (`cache/Dir.max_entry_bytes`) and now
+   writes none. The entries of a layout share their first labels, and each is written as the count it
+   shares with the entry before and the labels after it. *Before, a chain of types nested 240 deep, with
+   a function for each level, had a block of 83 MB for 38 kB of source, which each build wrote and none
+   read.*
+
+   **A new field of `Contract`, `Fn`, `Path`, `Src`, `Effect`, `Made`, `DerivedFact` or `Published` that
+   can hold an id of a session is a compile error in `Block.zig`** until the block writes it by name (a
+   field of at most 16 bits, or of a type that is written field by field, needs no change): a field that a block drops reads as its default at
    the importer, and the default of a fact such as `switches`, `hosts` or `casts` is the optimistic side.
    A safe build decodes each block that it writes and compares the result with what the walk made
    (`Block.same`).
@@ -2250,8 +2616,16 @@ cells, and an update is a write of some of them.
 3. **An update writes the slots of the fields it names** (`Frame.recordUpdate`). `{ r | f₁ = v₁, … }`
    evaluates `r`, then each value, then writes: a demand (op `update`) of `r`'s atoms at the slots
    `f₁ …`, with each value as another operand (a value that holds `r` would see the store). It reads
-   each slot of `r` at the same time (a copy reads every field, and a name older than an earlier write
-   of the object reads a slot that changed). Its answer is the same object: each slot is `r`'s under a
+   each slot of `r` that it does not name at the same time (the answer holds those fields, and a name
+   older than an earlier write of the object reads a slot that changed). *Amended 2026-11-27 (#2657):*
+   a slot that it names it writes and reads nothing of: in place the store replaces it, and in the
+   copying program the new record takes the new value there, so neither reads the old one. Before, the
+   update read every slot, and `{ model | items = [ n ], count = n }` after `next = { model | count =
+   n }` refused the first update as read again (`browser/inline/RecordUpdateCompare`). The
+   sanitiser's copy reads the same fields (`record(base, values, site)` copies the fields the update
+   does not name out of the base, and none that it names, `sanitize_runtime.mjs`): before, its spread
+   `{ ...base, f: v }` read a named field that an earlier copy had poisoned, and trapped where an
+   in-place run reads nothing. Its answer is the same object: each slot is `r`'s under a
    new name (`version`, §5.1), each field it does not name holds `r`'s part, each field it names the new
    value. An update is not a new object (`makesObject`): a function that answers one answers an object
    that was there before (`Contract.old_result`). An update of a base of no cell (a number read as a
@@ -2329,9 +2703,68 @@ cells, and an update is a write of some of them.
    nextId = model.nextId + 1 } (… model.nextId …)`, refused by v3 and accepted by v1 under
    `--records-in-place` (#2517).*
 
+   *Amended 2026-11-27 (#2657).* Two more reads are read first, under the same three facts:
+   - **a call that writes a record it was handed** (a demand at a call whose cells are slots, §5,
+     `Demand.record`): the read is bound just before the call (phase 0), which evaluates its callee
+     and its arguments after, so a read of the old value placed there reads what the copying program
+     reads. Before, `( said model "tuple", model.count )` with `said` updating `model.count` was
+     refused (`browser/inline/ReleaseCalleeWrite`, the arm `#tuple`);
+   - **a captured field path read where its closure is made** (§6 rule 3, *A field path a closure
+     captures*), whose closure is made after the write: the whole chain is bound at the write's
+     placement, and the closure's reads use that temporary, the row naming the closure
+     (`Reads.Read.capture`, as v1's rows do). Its local need not be a parameter: it is one bound, and
+     in scope, where the write runs (`Frame.boundBefore`: a parameter; a local an earlier item of a
+     `let` around the write binds; a local an arm's pattern binds, for a write in the arm's body).
+     The update must run before the place where the chain is read (`runsBefore` against that
+     place), and the chain must be in the closure's own text (`lex`). `RecordReadNestedClosure`'s
+     arm `#InList` is one: `{ it | n = it.n + 1 }` and then `λs → … it.n` in the same arm.
+11. **A closure writes a field of a record it captured** (*added 2026-11-27, #2657*;
+   `Frame.captureSlot`, `captureSlots`, `writesCapturedSlot`). A capture is a parameter of the
+   closure's contract (§6.3), so in the closure's own frame a write of a captured record's field slot
+   (one in no cell's contents: those are §13 item 11's) passes §5 test 1, is judged there by tests 2
+   to 4 against the closure's own holders, and the contract publishes it (`W` at the capture's
+   slot), as a parameter's write is. The holder judges the closure where it runs it:
+   - **a call of the closure** (`apply`): the captures are arguments, as a direct call's are, and
+     each written slot is a demand at the call against the other arguments;
+   - **a call whose callee runs it within the call, at most once, as its own argument**
+     (`runsWithin` is that call itself, and the callee's `Fn.once` or `Fn.single`): the code reads
+     there what its contract reads of the capture, and each written slot is a demand at that call
+     on what the frame holds there, against the call's other arguments (not the one that holds the
+     closure) and the closure's other captures. Twice in one call, a later run would write in place
+     the record an earlier run answered to the callee, which the copying program keeps apart;
+     inside another function (a capture of a capture, `Use.inner`), what the functions on the way
+     do with it is not judged here; so both are refused (`call`);
+   - **any other holder** (the default, a lost use, one that keeps or answers it, a list, markup, a
+     spawned fiber): the closure runs at times the frame does not see, and the write is refused
+     (`call`).
+
+   **The order of a callee's runs** (`Fn.before`, `Frame.publishBefore`, `Frame.sights`). An
+   argument of that call that is a closure reaching the written record is another operand (§5 test
+   2), which refuses the write: the callee can run it after the write. Where the callee's contract
+   says that it runs the parameter `i` only before the parameter `k` that holds the writing closure,
+   every read of a run at `i` is over before the write, and what the callee still holds of it is
+   what its runs leave: the operand at `i` is the closure's captures at the locations its contract
+   answers, lets escape, hands to a function, writes or renews or stores in a cell (`capAfter`; a
+   location it only reads is not among them; a captured function, a contract that casts and a draft
+   are held whole). A walked body publishes `i` before `k` where:
+   - every point at which its walk runs `i` is a call that runs it within itself: a call of it
+     (`callParam`), or a call whose callee runs it within (`flowOwn` with `runsWithin`);
+   - the body keeps `i` nowhere: no escape and no answer of its location, no draft that loses it
+     (`Fn.lost`) or holds it past the call (`Fn.kept_out`), no function parameter of the body
+     handed it (a supply), no cell's renewal naming it;
+   - `k` escapes nowhere but through a holder the walk sees (each such holder is a point of `k`,
+     from which it can run `k` at any later time);
+   - each point of `i` is at another instruction than each point of `k`, and at an earlier time of
+     the walk's clock (§5.3): one call that is handed both can run them in either order.
+   A row's `before` is empty, and a join of two contracts keeps what both say. `Task.bracket`
+   publishes `acquire` before `use`: it runs `acquire` within `uninterruptible`, then calls `use`.
+   *Before, a closure's write of a captured record was refused in its own frame (`captured`), so
+   `Task.bracket (λ⊤ → model.count + 10) … λr → ( { model | count = r }, … )` in `update` was
+   refused (`browser/inline/BracketInUpdate`).*
+
 Every other rule applies to a slot as to a list's storage: a call's contract flags its slots (read,
 written, escaped), so a write in a helper of another module is a demand at its call (§6.2); a
-capture, an answer of a function parameter and a cell's contents are never `own`; a slot that escaped
+capture (but in its own frame, item 11), an answer of a function parameter and a cell's contents are never `own`; a slot that escaped
 is never written; a function that writes its parameter's slot is refused where the default holds it
 (§6.8: a callback of `List.map` that updates its element, `Ref.update`'s function); markup holds what
 its holes read until it is rendered (§6.12), and the platform rule that §6.12 trusts holds of a record

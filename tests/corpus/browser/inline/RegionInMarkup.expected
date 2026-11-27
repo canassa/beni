@@ -1,0 +1,145 @@
+-- load
+<body>
+  <main>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="add">"add"</button>
+    <button id="toggle">"toggle"</button>
+    <div id="region">
+      <p>"none"</p>
+      <footer>"end"</footer>
+    </div>
+  </main>
+</body>
+-- click #pick
+<body>
+  <main>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="add">"add"</button>
+    <button id="toggle">"toggle"</button>
+    <div id="region">
+      <section>
+        <p>"ada"</p>
+        <em>"closed 1"</em>
+        <button id="rename">"rename"</button>
+      </section>
+      <footer>"end"</footer>
+    </div>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="add">"add"</button>
+    <button id="toggle">"toggle"</button>
+    <div id="region">
+      <section>
+        <p>"ada"</p>
+        <ul>
+          <li>"ada"</li>
+        </ul>
+        <button id="rename">"rename"</button>
+      </section>
+      <footer>"end"</footer>
+    </div>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="add">"add"</button>
+    <button id="toggle">"toggle"</button>
+    <div id="region">
+      <section>
+        <p>"ada"</p>
+        <ul>
+          <li>"ada"</li>
+          <li>"x"</li>
+        </ul>
+        <button id="rename">"rename"</button>
+      </section>
+      <footer>"end"</footer>
+    </div>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="add">"add"</button>
+    <button id="toggle">"toggle"</button>
+    <div id="region">
+      <section>
+        <p>"ada!"</p>
+        <ul>
+          <li>"ada"</li>
+          <li>"x"</li>
+          <li>"ada!"</li>
+        </ul>
+        <button id="rename">"rename"</button>
+      </section>
+      <footer>"end"</footer>
+    </div>
+  </main>
+</body>
+-- click #unpick
+<body>
+  <main>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="add">"add"</button>
+    <button id="toggle">"toggle"</button>
+    <div id="region">
+      <p>"none"</p>
+      <footer>"end"</footer>
+    </div>
+  </main>
+</body>
+-- click #add
+(the DOM did not change)
+-- click #pick
+<body>
+  <main>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="add">"add"</button>
+    <button id="toggle">"toggle"</button>
+    <div id="region">
+      <section>
+        <p>"ada"</p>
+        <ul>
+          <li>"ada"</li>
+          <li>"x"</li>
+          <li>"ada!"</li>
+          <li>"x"</li>
+          <li>"ada"</li>
+        </ul>
+        <button id="rename">"rename"</button>
+      </section>
+      <footer>"end"</footer>
+    </div>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="add">"add"</button>
+    <button id="toggle">"toggle"</button>
+    <div id="region">
+      <section>
+        <p>"ada"</p>
+        <em>"closed 5"</em>
+        <button id="rename">"rename"</button>
+      </section>
+      <footer>"end"</footer>
+    </div>
+  </main>
+</body>

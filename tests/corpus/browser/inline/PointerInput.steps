@@ -1,0 +1,22 @@
+pointer #arena pointerenter 0 50
+pointer #arena pointerdown 12 34
+pointer #arena pointermove 20 40
+# The dot is the target and the arena has the handler: the point is in the
+# arena's box.
+pointer #dot pointermove 55 25 box:#arena
+pointer #arena pointerup 55 25
+# Two fingers, each with its own id; the second is not primary, and its
+# down's default stands.
+pointer #arena pointerdown 100 50 id:7 type:touch
+pointer #arena pointerdown 150 60 id:8 type:touch secondary
+# The first finger leaves the arena: its moves still come to the arena.
+pointer #arena pointermove -10 120 id:7 type:touch
+pointer #arena pointercancel -10 120 id:7 type:touch
+pointer #arena pointerup 150 60 id:8 type:touch secondary
+# The move handler changes in place.
+click #zoom
+pointer #arena pointermove 10 15
+pointer #arena pointerleave 210 15
+pointer #corner pointerdown 3 4 type:pen
+# A pointer whose device the browser cannot name.
+pointer #arena pointerenter 0 0 id:9 type:none

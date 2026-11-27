@@ -1,0 +1,68 @@
+-- Every form of a list write inside a case arm of markup: a dot-call, `++`,
+-- `List.update`, `List.set` and a user function that pushes. v3 refuses the
+-- first: the hole is a pure, total call, which the `inline` lowering may
+-- evaluate where the arm is not shown (kernel §6 rule 12, *A hole evaluated
+-- once*), so the markup still reads `xs` after the write. It was an
+-- `emit/inline` shape fixture while v1 judged `browser-inline`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Next
+
+
+update : Msg, Int → Int
+update _ n = n + 1
+
+
+size : List Int → Html Msg
+size xs = <p>{List.length xs}</p>
+
+
+inc : Int → Int
+inc x = x + 1
+
+
+bump : List Int → List Int
+bump xs = List.push xs 4
+
+
+glue : List Int → List Int
+glue xs = xs ++ List.singleton 1
+
+
+choices : List Int, Int → Html Msg
+choices xs n =
+    <>
+        {case n of
+            0 →
+                <section data-arm="dot">{size (xs.push 2)}</section>
+            1 →
+                <section data-arm="append">{size (xs ++ List.singleton n)}</section>
+            2 →
+                <section data-arm="update">{size (List.update xs 0 inc)}</section>
+            3 →
+                <section data-arm="set">{size (List.set xs 0 9)}</section>
+            4 →
+                <section data-arm="helper">{size (bump xs)}</section>
+            _ →
+                <section data-arm="glue">{size (glue xs)}</section>
+        }
+    </>
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        {choices [ 1 ] n}
+        <button onClick={Next}>Next</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → 0, update = update, view = view })
+        "root"

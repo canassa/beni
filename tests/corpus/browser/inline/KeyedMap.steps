@@ -1,0 +1,22 @@
+# Three keys named "work": two under a child's segment, one the parent's.
+click #start-1
+click #start-2
+click #top
+advance 100
+# A child's Restart restarts its own body only.
+click #start-1
+click #start-2
+click #start-1
+advance 100
+# A child's cancelAll cancels its own bodies only.
+click #start-1
+click #start-2
+click #top
+click #stop-1
+advance 100
+# The parent's cancelAll cancels every key.
+click #start-1
+click #start-2
+click #top
+click #stop-all
+advance 100

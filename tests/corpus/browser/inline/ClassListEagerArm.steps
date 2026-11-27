@@ -1,0 +1,7 @@
+element "root"
+click [data-role=a]
+click [data-role=show]
+click [data-role=show]
+click [data-role=b]
+click [data-role=b]
+click [data-role=show]

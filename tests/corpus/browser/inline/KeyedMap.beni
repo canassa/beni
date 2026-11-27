@@ -1,0 +1,104 @@
+-- `Cmd.map` puts a child's keys under its segment (browser-inline.md §4,
+-- amended 2026-11-23; boundary.md §9.8.2). Two children key their work
+-- `"work"` under the segments 1 and 2, and the parent keys its own
+-- `"work"`: three different keys. A child's `Restart` restarts only its own
+-- body; `Cmd.cancelAll` mapped under a child's segment cancels only that
+-- child's bodies, and the parent's own `Cmd.cancelAll` cancels every key. A
+-- body logs how it ended, and one that ends sends `Finished`, whose
+-- `update` logs it through the tagger.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task exposing (Cancelled, Done)
+import Tea
+import Time
+
+
+type Msg
+    = Start Int
+    | Top
+    | StopChild Int
+    | StopAll
+    | Finished String
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Start id →
+            ( n + 1
+            , Cmd.map
+                (Cmd.keyed
+                    "work"
+                    Cmd.Restart
+                    (work "child ${String.fromInt id} ${String.fromInt n}" _)
+                )
+                id
+                (tagged id _)
+            )
+
+        Top →
+            ( n + 1, Cmd.keyed "work" Cmd.Restart (work "top ${String.fromInt n}" _) )
+
+        StopChild id →
+            ( n, Cmd.map Cmd.cancelAll id (tagged id _) )
+
+        StopAll →
+            ( n, Cmd.cancelAll )
+
+        Finished what →
+            _ = Debug.log "finished" what
+            ( n, Cmd.none )
+
+
+-- A child's message as its parent's: `Finished`'s text names the child.
+tagged : Int, Msg → Msg
+tagged id m =
+    case m of
+        Finished what →
+            Finished "${what} (through ${String.fromInt id})"
+
+        _ →
+            m
+
+
+work : String, Cmd.Send Msg → ⊤
+work name send =
+    Task.bracket
+        (λ⊤ →
+            _ = Debug.log "start" name
+            ⊤
+        )
+        (λ_ exit →
+            case exit of
+                Done _ →
+                    _ = Debug.log "end" name
+                    ⊤
+
+                Cancelled →
+                    _ = Debug.log "cancelled" name
+                    ⊤
+        )
+        λ_ → Time.sleep (Time.millis 100)
+    send (Finished name)
+
+
+view : Int → Html Msg
+view _ =
+    <main>
+        <button id="start-1" onClick={Start 1}>start 1</button>
+        <button id="start-2" onClick={Start 2}>start 2</button>
+        <button id="top" onClick={Top}>top</button>
+        <button id="stop-1" onClick={StopChild 1}>stop 1</button>
+        <button id="stop-all" onClick={StopAll}>stop all</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

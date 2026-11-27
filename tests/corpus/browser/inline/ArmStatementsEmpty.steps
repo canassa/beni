@@ -1,0 +1,4 @@
+click #a
+click #k
+click #a
+throws click #stop

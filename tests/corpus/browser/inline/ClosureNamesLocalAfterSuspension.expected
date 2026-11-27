@@ -1,0 +1,112 @@
+-- load
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"0"</p>
+    <p id="log"></p>
+  </main>
+</body>
+-- click #stmt
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"1"</p>
+    <p id="log"></p>
+  </main>
+</body>
+-- advance 10
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"1"</p>
+    <p id="log">" | stmt 1stmt"</p>
+  </main>
+</body>
+-- click #item
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"11"</p>
+    <p id="log">" | stmt 1stmt"</p>
+  </main>
+</body>
+-- advance 5
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"11"</p>
+    <p id="log">" | stmt 1stmt | item 11later 12"</p>
+  </main>
+</body>
+-- click #join
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"111"</p>
+    <p id="log">" | stmt 1stmt | item 11later 12 | join 113"</p>
+  </main>
+</body>
+-- advance 10
+(the DOM did not change)
+-- click #join
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"211"</p>
+    <p id="log">" | stmt 1stmt | item 11later 12 | join 113"</p>
+  </main>
+</body>
+-- advance 10
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"211"</p>
+    <p id="log">" | stmt 1stmt | item 11later 12 | join 113 | join 212"</p>
+  </main>
+</body>
+-- click #local
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"1211"</p>
+    <p id="log">" | stmt 1stmt | item 11later 12 | join 113 | join 212"</p>
+  </main>
+</body>
+-- advance 10
+<body>
+  <main>
+    <button id="stmt">"stmt"</button>
+    <button id="item">"item"</button>
+    <button id="join">"join"</button>
+    <button id="local">"local"</button>
+    <p id="count">"1211"</p>
+    <p id="log">" | stmt 1stmt | item 11later 12 | join 113 | join 212 | local 1211,1211m1211"</p>
+  </main>
+</body>

@@ -1,0 +1,19 @@
+-- load
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <button id="after">"after"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- throws click #after
+(threw: Error: TODO: after-render threw)
+<body>
+  <main>
+    <p id="count">"10"</p>
+    <button id="after">"after"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- click #inc
+(the DOM did not change)

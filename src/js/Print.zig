@@ -1497,7 +1497,11 @@ const Printer = struct {
                 if (!then_live and !else_live) {
                     // And under `--release` a test that only compares what
                     // it reads is nothing (§9, *Compact statements*, item 9).
-                    if (p.compact and p.testReadsOnly(test_expr)) return;
+                    // `skipped` says so too, so no arm is written as it.
+                    if (p.compact and p.testReadsOnly(test_expr)) {
+                        if (single) try p.push(";");
+                        return;
+                    }
                     try p.statementExpression(test_expr, level);
                     try p.terminate();
                     try p.endLine(level);
@@ -3383,7 +3387,8 @@ const Printer = struct {
     /// Whether `node` prints nothing: a binding §9 item 1 dropped, a
     /// `continue` that ends a loop body (`markLoopTail`), or, in a function
     /// whose result nothing reads, a tail `return` of a value that only
-    /// reads (§4, *A result nothing reads*).
+    /// reads (§4, *A result nothing reads*), or, under `--release`, an `if`
+    /// with nothing in it to print and a test that only reads.
     fn skipped(p: *Printer, node: Index) bool {
         if (p.plan.isDropped(node)) return true;
         if (p.skip_update) |u| if (u == node) return true;
@@ -3405,6 +3410,19 @@ const Printer = struct {
                 if (!p.discarding or !p.isTailReturn(node)) return false;
                 const value = @as(Node.OptionalIndex, @fromBackingInt(@intCast(p.ir.data(node).lhs))).unwrap() orelse return true;
                 return p.readsOnly(value);
+            },
+            // An `if` neither arm of which prints, whose test only reads:
+            // under `--release`, nothing (`statement`'s `if_stmt`, *Compact
+            // statements*, item 9). It must count as skipped here, because
+            // `onlyLive` picks the one statement an unbraced `if` body is
+            // written as, and a body that prints nothing makes the
+            // statement after the `if` its body.
+            .if_stmt => {
+                if (!p.compact) return false;
+                const d = p.ir.data(node);
+                const branches = p.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                return !p.anyLive(branches.thenBody()) and !p.anyLive(branches.elseBody()) and
+                    p.testReadsOnly(@fromBackingInt(@intCast(d.lhs)));
             },
             else => return false,
         }

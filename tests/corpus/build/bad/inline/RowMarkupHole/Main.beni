@@ -1,0 +1,25 @@
+-- A markup value in a `For` row, `Html.text`: a hole of markup that is not
+-- a branch, which the simple form does not compile in a row
+-- (browser-inline.md §9, amended 2026-11-23), class 1 (§5), refused at the
+-- hole.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Item =
+    label : String
+    done : Bool
+
+
+view : List Item → Html ⊤
+view items =
+    <ul>
+        <For each={items} keyed={.label}>
+            {λi → <li>{Html.text i.label}</li>}
+        </For>
+    </ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ { label = "a", done = False } ], update = λ_ m → m, view = view }

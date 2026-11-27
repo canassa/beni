@@ -1,0 +1,27 @@
+-- early event [data-role=pad] contextmenu
+-- load
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <div data-role="pad">"pad"</div>
+      <output data-role="log"></output>
+    </section>
+  </div>
+  "\n  "
+</body>
+-- listeners document
+(listeners: 0)
+(the DOM did not change)
+-- pointer [data-role=pad] contextmenu 3 4 button:2 buttons:2
+(contextmenu's default prevented)
+<body>
+  "\n    "
+  <div id="root">
+    <section data-role="app">
+      <div data-role="pad">"pad"</div>
+      <output data-role="log">" menu 2 at 3.0, 4.0"</output>
+    </section>
+  </div>
+  "\n  "
+</body>

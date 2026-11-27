@@ -1,0 +1,46 @@
+-- load
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <a id="link" href="/linked">"linked"</a>
+    <output id="log"></output>
+  </main>
+</body>
+-- click #push
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <a id="link" href="/linked">"linked"</a>
+    <output id="log">"address /pushed"</output>
+  </main>
+</body>
+-- location
+(location: /pushed)
+(the DOM did not change)
+-- click #link
+(click's default prevented)
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <a id="link" href="/linked">"linked"</a>
+    <output id="log">"address /pushed / internal /linked"</output>
+  </main>
+</body>
+-- location
+(location: /pushed)
+(the DOM did not change)
+-- click #away
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="away">"away"</button>
+    <a id="link" href="/linked">"linked"</a>
+    <output id="log">"address /pushed / internal /linked / cross origin https://example.org/"</output>
+  </main>
+</body>
+-- location
+(location: /pushed)
+(the DOM did not change)

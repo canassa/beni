@@ -1,0 +1,10 @@
+-- A quoted `"oncontextmenu"` stays refused (the owner's refusal,
+-- language.md §11.5; boundary.md §9.8.20 (h)): a page runs the text of an
+-- `on…` attribute as script. The vocabulary now declares the typed event,
+-- so the hint of `untyped_event_attribute` names `onContextMenu` (10:17),
+-- which takes a handler and hands it a `Pointer`.
+import Html exposing (Html)
+
+
+pub view : String → Html msg
+view text = <li "oncontextmenu"={text}>row</li>

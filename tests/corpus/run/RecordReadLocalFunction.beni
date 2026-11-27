@@ -1,0 +1,95 @@
+-- run: a record written in place, and a local function made in the
+-- holder's frame that reads a field the write changes (#2620;
+-- ownership-checker.md §31.6, amended 2026-11-24). A local function runs
+-- where it is called, and may be called anywhere in its block, so its read
+-- is made once in the block: at its entry, or just after the item that
+-- binds the record. Every call reads the value the record had: called
+-- after the write, before and after it, recursively, through a closure it
+-- returns, handed to `List.map`, from a block after the write, and with
+-- the record bound after the function (also inside a lambda, where the
+-- read was once made before the record existed). Its answers are the
+-- spreads'; `.in-place` builds it again with its records written in place.
+import Node exposing (Program)
+
+
+type alias P =
+    n : Int
+    tag : String
+
+
+after : P → String
+after p =
+    g s = s ++ String.fromInt p.n
+    q = { p | n = p.n + 1 }
+    g "x" ++ " " ++ String.fromInt q.n
+
+
+twice : P → String
+twice p =
+    g s = s ++ String.fromInt p.n
+    a = g "a"
+    q = { p | n = p.n + 1 }
+    a ++ " " ++ g "b" ++ " " ++ String.fromInt q.n
+
+
+recursive : P → String
+recursive p =
+    go k = if k == 0 then "" else String.fromInt p.n ++ go (k - 1)
+    q = { p | n = p.n + 1 }
+    go 3 ++ " " ++ String.fromInt q.n
+
+
+returns : P → String
+returns p =
+    g s = λt → s ++ t ++ String.fromInt p.n
+    q = { p | n = p.n + 1 }
+    (g "x") "y" ++ " " ++ String.fromInt q.n
+
+
+mapped : P → String
+mapped p =
+    g s = s ++ String.fromInt p.n ++ p.tag
+    q = { p | n = p.n + 1, tag = "new" }
+    String.join (List.map [ "a", "b" ] g) "," ++ " " ++ String.fromInt q.n ++ q.tag
+
+
+written : P → String
+written p =
+    q = { p | n = p.n + 1 }
+    r =
+        g s = s ++ String.fromInt p.n
+        g "x"
+    r ++ " " ++ String.fromInt q.n
+
+
+boundAfter : Int → String
+boundAfter k =
+    g s = s ++ String.fromInt p.n
+    p = { n = k, tag = "t" }
+    q = { p | n = p.n + 1 }
+    g "x" ++ " " ++ String.fromInt q.n
+
+
+boundAfterInLambda : Int → String
+boundAfterInLambda k =
+    f =
+        λs →
+            g t = t ++ String.fromInt p.n
+            p = { n = k, tag = "t" }
+            q = { p | n = p.n + 1 }
+            g s ++ " " ++ String.fromInt q.n
+    f "x"
+
+
+main : Program
+main =
+    Node.printLines
+        [ after { n = 0, tag = "t" }
+        , twice { n = 0, tag = "t" }
+        , recursive { n = 0, tag = "t" }
+        , returns { n = 0, tag = "t" }
+        , mapped { n = 0, tag = "old" }
+        , written { n = 0, tag = "t" }
+        , boundAfter 0
+        , boundAfterInLambda 0
+        ]

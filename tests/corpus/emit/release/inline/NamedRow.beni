@@ -1,0 +1,67 @@
+-- emit/release/inline: a `For` and a `Show` whose row function is a named
+-- function (browser-inline.md §9 and §8.2, amended 2026-11-24): each row's
+-- `set` enters the call with the item bound, evaluates the function's
+-- values and writes them; a row function whose body is a branch, and a
+-- `Show` whose body is one, hand `rowArm` the arm they choose. A `For` in a
+-- row shows its fallback in a region of the row while its list is empty.
+-- The pages are `browser/inline/NamedRows` and `RowFallback`.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick Int
+
+
+type alias Group =
+    id : Int
+    items : List String
+
+
+type alias Model =
+    groups : List Group
+    picked : Maybe Int
+
+
+row : Group → Html Msg
+row g =
+    <li>
+        <button onClick={Pick g.id}>{g.id}</button>
+        <ol>
+            <For each={g.items} keyed={False} fallback={<li>none</li>}>{λs → <li>{s}</li>}</For>
+        </ol>
+    </li>
+
+
+chosen : Group → Html Msg
+chosen g = if g.id == 2 then <></> else <li>{g.id}</li>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <ul><For each={model.groups} keyed={.id}>{row}</For></ul>
+        <ul><For each={model.groups} keyed={.id}>{chosen}</For></ul>
+        <div>
+            <Show when={model.picked} keyed>
+                {λp → if p == 1 then <b>{p}</b> else <i>{p}</i>}
+            </Show>
+        </div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { groups = [ { id = 1, items = [] }, { id = 2, items = [ "a" ] } ]
+                , picked = Nothing
+                }
+        , update =
+            λmsg model →
+                case msg of
+                    Pick id →
+                        { model | picked = Just id }
+        , view = view
+        }

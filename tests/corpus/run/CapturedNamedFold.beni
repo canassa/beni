@@ -1,0 +1,38 @@
+-- A lambda captures `fl`, which a `let` binds to `List.foldl`: its call is
+-- a call of `List.foldl`'s contract, so the inner fold's lambda, which
+-- writes its accumulator, is judged there (ownership-v3-kernel.md §6 rule
+-- 2, *A capture of a named function*), and v3 accepts the insertion in
+-- place.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+type Item
+    = A
+    | B
+
+
+f : List Item, Dict Int Int → Dict Int Int
+f items d =
+    fl = List.foldl
+    fl items d λx acc →
+        case x of
+            A →
+                fl items acc λy acc2 →
+                    case y of
+                        A →
+                            acc2
+
+                        B →
+                            Dict.insert acc2 1 1
+
+            B →
+                acc
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (Maybe.withDefault (Dict.get (f [ A, B ] (Dict.empty ⊤)) 1) 0) ]

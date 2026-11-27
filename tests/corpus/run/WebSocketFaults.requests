@@ -27,6 +27,9 @@
 {"socket": "highbit", "path": "/highbit"}
 {"send": "highbit", "frame": {"opcode": 1, "text": "x", "length": "9223372036854775808"}}
 {"receive": "highbit"}
+{"socket": "huge", "path": "/huge"}
+{"send": "huge", "frame": {"opcode": 1, "text": "x", "length": "9223372036854775807"}}
+{"receive": "huge"}
 {"socket": "opcode", "path": "/opcode"}
 {"send": "opcode", "frame": {"opcode": 3, "text": "x"}}
 {"receive": "opcode"}

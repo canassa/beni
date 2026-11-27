@@ -525,8 +525,10 @@ module Char
   value toLower : Char → Char
   value toUpper : Char → Char
 module Clock
+  type AdjustError
+    TooFar
   opaque type Virtual
-  value adjust : Virtual, Duration → ⊤  -- suspends
+  value adjust : Virtual, Duration → Result AdjustError ⊤  -- suspends
   value elapsed : ⊤ → Float  -- impure
   value now : ⊤ → Int  -- impure
   value run : Virtual, (⊤ → a) → a  -- impure
@@ -1127,7 +1129,7 @@ module Task
   type Scheduler
   type Scope
   type Soon
-  value adjustClock : Value, Value → ⊤  -- suspends
+  value adjustClock : Value, Value → Result Int ⊤  -- suspends
   value andThen : a, (a → b) → b  -- impure
   value beginUpdate : ⊤ → Value  -- impure
   value bracket : (⊤ → r), (r, Exit a → ⊤), (r → a) → a  -- impure

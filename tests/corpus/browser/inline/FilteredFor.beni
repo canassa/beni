@@ -1,0 +1,121 @@
+-- TodoMVC's shape (browser-direct.md §6.2's last paragraph, §13's kill
+-- criterion 5): a keyed `For` over `List.filter` of the model's todos is a
+-- derived list, so every message whose writes meet what it reads goes
+-- through the reconciler (§6.3, as amended for S3): an add, a toggle (a
+-- `List.map`), a removal (a `List.filter`) and a switch of the filter.
+-- `filter` keeps the very items it is given, so the rows whose todo did
+-- not change are kept where they are and not patched. The inputs are not
+-- controlled, so typed text shows that a kept row keeps its node; a row
+-- filtered out and shown again is a new one. S3's batch times this page at
+-- 100 and 1 000 todos.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Filter
+    = All
+    | Active
+    | Completed
+
+
+type Msg
+    = Add
+    | Toggle Int
+    | Remove Int
+    | Show Filter
+
+
+type alias Todo =
+    id : Int
+    title : String
+    done : Bool
+
+
+type alias Model =
+    todos : List Todo
+    filter : Filter
+    next : Int
+
+
+visible : Filter, Todo → Bool
+visible filter todo =
+    case filter of
+        All →
+            True
+
+        Active →
+            not todo.done
+
+        Completed →
+            todo.done
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model
+                | todos =
+                    model.todos
+                        ++ [ { id = model.next
+                             , title = "todo ${String.fromInt model.next}"
+                             , done = False
+                             }
+                           ]
+                , next = model.next + 1
+            }
+
+        Toggle id →
+            { model
+                | todos =
+                    List.map model.todos λt → if t.id == id then { t | done = not t.done } else t
+            }
+
+        Remove id →
+            { model | todos = List.filter model.todos λt → t.id ≠ id }
+
+        Show filter →
+            { model | filter = filter }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="all" onClick={Show All}>all</button>
+        <button id="active" onClick={Show Active}>active</button>
+        <button id="completed" onClick={Show Completed}>completed</button>
+        <ul>
+            <For each={List.filter model.todos (visible model.filter _)} keyed={.id}>
+                {λt →
+                    <li class={if t.done then "done" else ""}>
+                        <input />
+                        <span>{t.title}</span>
+                        <button id="toggle${String.fromInt t.id}" onClick={Toggle t.id}>
+                            toggle
+                        </button>
+                        <button id="remove${String.fromInt t.id}" onClick={Remove t.id}>x</button>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { todos =
+                    [ { id = 1, title = "one", done = False }
+                    , { id = 2, title = "two", done = True }
+                    , { id = 3, title = "three", done = False }
+                    ]
+                , filter = All
+                , next = 4
+                }
+        , update = update
+        , view = view
+        }

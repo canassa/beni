@@ -1,0 +1,2 @@
+# The `view` is named again in `framed`, so its handler is kept, and the handler reads label, which update writes (ownership-v3-kernel.md §6 rule 12, *A handler read at the event*).
+52:10 list_still_used entry

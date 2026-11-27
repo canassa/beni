@@ -1,0 +1,50 @@
+-- emit/release/inline: a key whose path passes a constructor of two fields,
+-- `Got#1 · Ok`, takes its message whole (browser-inline.md §8.7, amended
+-- 2026-11-23): the event hands the handler the message its constructors
+-- make, and the arm reads `Got`'s first field and `Ok`'s from it. Release
+-- folds each read of that constant message, so the listener stores the
+-- string (`d="a 1"`) and makes no message object. `Plain` passes only
+-- constructors of one field and keeps its leaf's fields. The page is
+-- `browser/inline/MessageWhole`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Got String (Result String Int)
+    | Plain (Maybe Int)
+
+
+update : Msg, String → String
+update msg model =
+    case msg of
+        Got tag r →
+            case r of
+                Ok n →
+                    "${tag} ${String.fromInt n}"
+
+                Err why →
+                    "${tag} ${why}"
+
+        Plain m →
+            case m of
+                Just n →
+                    String.fromInt n
+
+                Nothing →
+                    model
+
+
+view : String → Html Msg
+view model =
+    <main>
+        <button id="ok" onClick={Got "a" (Ok 1)}>ok</button>
+        <button id="err" onClick={Got "b" (Err "e")}>err</button>
+        <button id="plain" onClick={Plain (Just 2)}>plain</button>
+        <p>{model}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → "", update = update, view = view }

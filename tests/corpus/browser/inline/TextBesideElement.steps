@@ -1,0 +1,12 @@
+# Every hole beside an element written in place: the count's, the name's.
+click #bump
+click #rename
+# The eager arm hides and shows again with its current text.
+click #toggle
+click #rename
+click #toggle
+# Rows put before the element after the For, after the text before it; the
+# region's arm after the text before it.
+click #add
+click #add
+click #bump

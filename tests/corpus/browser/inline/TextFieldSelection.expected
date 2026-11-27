@@ -1,0 +1,30 @@
+-- load
+<body>
+  <main>
+    <textarea id="ed" .value=""></textarea>
+    <button id="errors">"errors"</button>
+  </main>
+</body>
+-- input #ed "a😀bcd"
+<body>
+  <main>
+    <textarea id="ed" .value="a😀bcd"></textarea>
+    <button id="errors">"errors"</button>
+  </main>
+</body>
+-- select #ed 1 3
+(the DOM did not change)
+-- key #ed Tab
+console.log: Tab: selection: Just { backward = False, end = 2, start = 1 }
+console.log: select 3 4 backward: ok: ⊤
+(the DOM did not change)
+-- key #ed x
+console.log: x: selection: Just { backward = True, end = 4, start = 3 }
+(the DOM did not change)
+-- key #errors x
+console.log: x: selection: Nothing
+(the DOM did not change)
+-- click #errors
+console.log: select nowhere: no field: "nowhere"
+console.log: select a button: not text: "errors"
+(the DOM did not change)

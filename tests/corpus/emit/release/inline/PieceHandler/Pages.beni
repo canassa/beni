@@ -1,0 +1,42 @@
+--! A pager with a link that prevents its own default.
+
+import Html exposing (Event, Html)
+
+
+pub type alias Model =
+    page : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { page = 1 }
+
+
+pub type Msg
+    = Next
+    | Go Int
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Next →
+            { model | page = model.page + 1 }
+
+        Go n →
+            { model | page = n }
+
+
+last : Event → Msg
+last event =
+    Html.preventDefault event
+    Go 9
+
+
+pub view : Model → Html Msg
+view model =
+    <nav>
+        <output>{model.page}</output>
+        <button onClick={Next}>Next</button>
+        <button onClick={Go 1}>First</button>
+        <a href="/last" onClick={last}>Last</a>
+    </nav>

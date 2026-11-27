@@ -1,0 +1,158 @@
+-- run: the operand of `?` is evaluated for its effect in both builds
+-- (`language.md` §6: `--release` keeps any unread binding that may be
+-- impure or suspend; `backend.md` §9). Each callee does something —
+-- `Ref.modify`, `Ref.set`, `Ref.update`, `Log.info` — and then answers a
+-- constructor `?` lets through, so under `--release` specialisation knows
+-- the answer, folds the failure test, and nothing reads the subject any
+-- more. A callee called from two places stays a call; one called from
+-- one place is written into its caller. Each is called through `?` on a
+-- `Maybe` or a `Result`, with the payload read or not, and every effect
+-- shows: the lists and the log lines print the same in both builds. A
+-- `==` against a constructor binds its other operand the same way, and
+-- keeps it for its effect when the test folds.
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+modifyFirst : Ref (List Int) → Maybe Int
+modifyFirst r =
+    m = Ref.modify r λx → ( 34, List.map x λn → n * 27 )
+    Just 0
+
+
+viaModify : Ref (List Int) → Maybe Int
+viaModify r =
+    t = (modifyFirst r)?
+    Just 1
+
+
+setAll : Ref (List Int) → Maybe Int
+setAll r =
+    Ref.set r [ 5, 6 ]
+    Just 40
+
+
+viaSet : Ref (List Int) → Maybe Int
+viaSet r =
+    t = (setAll r)?
+    Just (t + 2)
+
+
+updateAll : Ref (List Int) → Result String Int
+updateAll r =
+    Ref.update r λx → List.push (List.copy x) 9
+    Ok 0
+
+
+viaUpdate : Ref (List Int) → Result String Int
+viaUpdate r =
+    t = (updateAll r)?
+    Ok 1
+
+
+logged : String → Result String Int
+logged line =
+    Log.info line
+    Ok 7
+
+
+viaLog : String → Result String Int
+viaLog line =
+    t = (logged line)?
+    Ok (t * 3)
+
+
+setOnce : Ref (List Int) → Maybe Int
+setOnce r =
+    Ref.set r [ 8 ]
+    Just 0
+
+
+viaSetOnce : Ref (List Int) → Maybe Int
+viaSetOnce r =
+    t = (setOnce r)?
+    Just 1
+
+
+loggedOnce : String → Result String Int
+loggedOnce line =
+    Log.info line
+    Ok 4
+
+
+viaLogOnce : String → Result String Int
+viaLogOnce line =
+    t = (loggedOnce line)?
+    Ok (t + 1)
+
+
+setFlag : Ref (List Int) → Maybe Int
+setFlag r =
+    Ref.set r [ 3 ]
+    Just 0
+
+
+flagged : Ref (List Int) → Bool
+flagged r = setFlag r == Nothing
+
+
+maybe : Maybe Int → String
+maybe m =
+    case m of
+        Just n →
+            String.fromInt n
+
+        Nothing →
+            "nothing"
+
+
+result : Result String Int → String
+result r =
+    case r of
+        Ok n →
+            String.fromInt n
+
+        Err message →
+            message
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make []
+    Log.setSink λentry → Ref.update seen λlines → [ …List.copy lines, entry.message ]
+    a = Ref.make [ 1, 2 ]
+    u1 = viaModify a
+    w1 = modifyFirst (Ref.make [ 0 ])
+    b = Ref.make [ 1, 2 ]
+    u2 = viaSet b
+    w2 = setAll (Ref.make [ 0 ])
+    c = Ref.make [ 1, 2 ]
+    u3 = viaUpdate c
+    w3 = updateAll (Ref.make [ 0 ])
+    u4 = viaLog "through ?"
+    w4 = logged "direct"
+    d = Ref.make [ 1, 2 ]
+    u5 = viaSetOnce d
+    u6 = viaLogOnce "once through ?"
+    f = Ref.make [ 1, 2 ]
+    u7 = flagged f
+    w7 = setFlag (Ref.make [ 0 ])
+    logLines = String.join (Ref.get seen) "; "
+    Node.printLines
+        [ "modify, two calls: ${ints (Ref.get a)}"
+        , "set, two calls: ${ints (Ref.get b)}, answer ${maybe u2}"
+        , "update, two calls: ${ints (Ref.get c)}"
+        , "log, two calls: answer ${result u4}"
+        , "set, one call: ${ints (Ref.get d)}"
+        , "log, one call: answer ${result u6}"
+        , "== on a constructor: ${ints (Ref.get f)}"
+        , "log lines: ${logLines}"
+        ]

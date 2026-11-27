@@ -619,3 +619,308 @@ remain; no budget/guard or chat golden changed. Exactly approved existing
 emit/ownership goldens were recorded from actual outputs. Full scoped-policy
 and model-dependent subscription APIs remain incomplete; next capability
 family is Dom. Evidence: zig-out/scratch/time-final-report.md.
+
+
+### Dom — built 2026-11-10
+
+`Dom` moves to `browser-base` whole, removed from `browser` in the same
+slice and re-exported by `browser`, `browser-inline` and (through `browser`)
+`browser-tea`. It imports no renderer. §3's render-phase boundary is the
+base's private `Phase` module. It owns the state `Browser` held for the
+hosted loop — the loop's flush, the after-render phase, its queued work,
+its waiting fibers and the busy latch — behind functions, so every cell
+stays module-local and a release build keeps it a `let` (`backend.md`,
+*A `Js.Ref` that does not escape is a `let`*). `Browser.hosted` hands its
+loop to `Phase.mount` and queues work through `Phase.after`; `Dom.rendered`
+and HTTP's after-render wait call `Phase.rendered` / `Phase.onRendered`.
+
+Inline installs nothing. It writes the page inside the dispatch, so its
+after-render point is the end of that dispatch. A fiber's turn runs in the
+scheduler's drain, which `Task.onTurn` wraps in one dispatch, so
+`yieldNow` would resume it before the page is written. With no hosted loop
+mounted, `Phase.rendered` therefore resumes from a microtask, after the
+drain has returned. This is the default when no renderer supplies a loop.
+A page that does not wait for a render reaches none of this code.
+
+Interface 1.29 adds `Lowering.Effects.after_render`: the write-set pass
+reads `Cmd.afterRender` as a body that cannot suspend. The inline runtime
+queues it after the write pass as such a `perform` is queued, through
+`Hosted.callLater`. A prerendered `init` may return it, staged as
+`perform` is (§4.2). Its body runs only on the client. Keyed commands
+remain a compiler limit.
+
+Before: `browser/prerender/BaseDom` and the refusals
+`build/bad/prerender/BaseDomInView` and `BaseDomInInit` failed with an
+unknown module `Dom` (`zig-out/scratch/dom-before/`). After: BaseDom passes
+in all four builds (development and release, prerendered and not) under
+happy-dom. Its load step focuses and measures the hydrated input from
+`init`'s `Cmd.afterRender`. "edit" focuses an input its update showed.
+"open" waits with `Dom.rendered` in a fiber, then focuses. "missing" is
+`Err (NotFound id)`. The first `Dom.rendered` attempt, a scheduler yield,
+failed "open" with `NotFound second`; that failure fixed the microtask
+wait. Both refusals are `prerender_impure` at the host read inside `Dom`,
+with no output written.
+
+Sizes (release JavaScript, Node 24.19.0, brotli 11, gzip 9): the four
+empty-page variants are SHA-identical to master 620c322a45 (498/271/331 and
+1882/881/981), and so are both timer controls (MainOwnedKeys, RootClosures).
+The seven inline command and time pages — CommandInLogScope(+Async),
+SuspendingCommand, BaseInitCommand, BaseInitBatchCommand, TimeCleanup,
+BaseTimeEvents — are byte-identical to the Time commit e9996a71ca. Inline
+emit goldens are unchanged. Four `browser-tea` release goldens move by
+module order and short-name assignment only, pending manager review:
+
+| Golden | Before raw/brotli/gzip | After |
+|---|---:|---:|
+| WindowSize | 3688/1551/1785 | 3694/1551/1784 |
+| DomCapabilities | 5064/2166/2440 | 5070/2169/2439 |
+| HttpSendTracked | 19098/7136/7886 | 19094/7141/7889 |
+| HttpSendUntracked | 12547/4868/5399 | 12553/4894/5410 |
+
+The inline TodoMVC still needs `Storage`, so it is not measured yet.
+Evidence: `zig-out/scratch/dom-*`.
+
+Final validation (2026-11-10, zorg 0.17.1+zorg.3, default mode, Node
+24.19.0, against clean master 620c322a45, run one after another). Chrome:
+the lane and master fail the same single case, `tea/DomCapabilities`. Gates:
+the same known failures on both (six ownership golden mismatches, the two
+APFS case-folding tests, the list-column CPU budget and two own2 tests).
+Two more CPU-budget overruns appeared only in the lane run:
+`obligations: equatable, interpolatable and tuple_index` (1135 ms) and
+`the arity rule of §8.3 …` (1048 ms), against a budget of 1000 ms. This
+slice changes no checker code, and both tests pass alone afterwards. The
+manager accepted the four `browser-tea` release goldens above, and they
+were recorded from a real build. Comparisons:
+`zig-out/scratch/dom-final-{gates,browser}-comparison.json`.
+
+
+### Gpu and media — built 2026-11-10
+
+The whole WebGPU family moves to `browser-base`, with its private
+dependencies: `Gpu`, every `Gpu.*` module (`Gpu.Engine`, `Native`, `Memory`,
+`Make`, `Session`, `Commands` and `Formats` included), and `Browser.Canvas`,
+`Browser.Image`, `Browser.Video` and `Browser.Source`. They are removed from
+`browser` in the same slice. None of them imported a renderer, so no source
+changed. The base, `browser` and `browser-inline` re-export the public list
+that `browser-tea` already published. `src/native/Gpu.zig` writes the
+generated modules to `platforms/browser-base/Gpu`. The binding staleness
+check, the public-signature check, the coverage gate, `fmt-exempt.txt`, the
+P-sync list and the word-body pins follow the files. The typed host bindings
+stay in core.
+
+Private engine modules are now private to every renderer. A direct `browser`
+program could import `Gpu.Engine` before, as the debt of #2256 recorded
+(`browser/dom/GpuEngineReachable`). That page is replaced by the refusals
+`build/bad/managed/GpuEngineHidden` and `build/bad/inline/GpuEngineHidden`,
+beside the existing `tea` one.
+
+Fixtures. `browser/prerender/BaseGpu` is a prerendered inline page. Its
+`init` returns a command that finds the hydrated canvas, configures it,
+presents one frame, reads the pixel back, unconfigures the canvas and
+destroys the device, then reports the loss. "again" repeats it on the same
+canvas node. With no adapter (happy-dom, Chrome under `--disable-gpu`) it
+says "unavailable": this is the gates' transcript, `_expected.expected`, in
+all four builds. The precise absence stays covered by `browser/gpu/Availability`.
+`build/bad/prerender/BaseGpuInView` (`Gpu.available` in `view`) and
+`BaseGpuInInit` (an eager `Gpu.preferredCanvasFormat` in `init`) are
+`prerender_impure` at the host read in `Gpu.Engine`. All three failed before
+the slice with an unknown module `Gpu` (`zig-out/scratch/gpu-before/`).
+
+`_expected.webgpu`, the marker added for this page, puts a `browser/prerender/`
+project into the `test-webgpu` walk. There all four builds compare against
+`_expected.webgpu-expected`, which a blessing `test-webgpu` run writes from
+the first build. `test-webgpu` cannot run on this Mac. *Done 2026-11-10 on
+dagon:* a blessing `test-webgpu` run there recorded the golden, and a
+second run verified it in all four builds on Chrome 153's SwiftShader
+adapter. `browser/gpu/` gives 133 of 134 on the branch and on master, with
+the same `CancelledRequests` timing flake on both; it passes alone on both.
+The `_expected.webgpu` marker works. An exploratory run outside the
+harness in Chrome 157 with `--enable-unsafe-webgpu` on Apple's Metal adapter
+gave, in development and release: configure Ok, one receipt, the pixel
+4294901760 (blue, as `browser/gpu/CanvasPage`), loss `Destroyed`, twice. It is
+evidence, not a golden.
+
+`Gpu.Device.onEvent` keeps inline's existing limit: the device is part of the
+model, so the subscription set depends on the model (`not_implemented`, class
+1). `eachEvent` in a command works.
+
+Sizes (release JavaScript): the four empty-page variants and both timer
+controls are SHA-identical to master. The eight inline pages of the earlier
+families (BaseDom included) are byte-identical to the Dom commit 2cabfd1426.
+No emit golden changed. BaseGpu's release page is 58258 raw / 16815 brotli /
+18958 gzip.
+
+Final validation (2026-11-10, zorg 0.17.1+zorg.3, default mode, run one
+after another against clean master 620c322a45). The gates fail the same set
+on both sides. Chrome: the lane failed `managed/Network` once, with an
+`ECONNRESET` in the Node test server. Master failed `tea/HttpResults`, and
+it failed `managed/Network` in an earlier slot. Run alone with no run-hash
+cache, `managed/Network` passes three times in three on the lane. Otherwise
+both sides fail only `tea/DomCapabilities`. Comparisons:
+`zig-out/scratch/gpu-final-{gates,browser}-comparison.json`.
+Still owed on dagon (`test-webgpu`): the first real run of BaseGpu, which
+writes `_expected.webgpu-expected` and checks all four builds against it;
+the `_expected.webgpu` walk and golden path itself; and the 134
+`browser/gpu/` pages on a real adapter after the move.
+
+
+### Http — built 2026-11-10
+
+`Http` moves to `browser-base` whole and is removed from `browser` in the
+same slice. It has imported no renderer since the Dom slice: its
+after-render wait calls `Phase.onRendered`. The base, `browser` and
+`browser-inline` re-export it, and `browser-tea` does through `browser`.
+The binary response (#1887) is not part of this family.
+
+Fixtures. `browser/prerender/BaseHttp` is a prerendered inline page. Its
+`init` command asks for `/api/greeting`. The build sends nothing; the page
+sends it after the takeover. The driver's scripted `fetch` answers it.
+"missing" is `Err (BadStatus 404)`, "offline" is `Err NetworkError`, and
+"save" is `Http.send`, the command form, posting a text body. Each
+outcome renders as a value, and all four builds share one transcript.
+`build/bad/prerender/BaseHttpInView` and `BaseHttpInInit` call `Http.get` in
+`view` and eagerly in `init`. Both are refused at the call as
+`suspending_callback`: a request suspends, and `view` and `init` are
+synchronous callbacks. The checker refuses this before the prerender
+check, so the code is not `prerender_impure`. All three failed before the
+slice with an unknown module `Http` (`zig-out/scratch/http-before/`).
+
+Not covered yet, and owed to the next functional slice (§7 step 3):
+cancellation that blocks a stale reply. It needs `Cmd.keyed` `Restart` or
+`Cmd.cancel`, which remain inline compiler limits. `Http.track` on inline
+is a static `Sub.on` and has no inline fixture yet.
+
+Sizes (release JavaScript): the four empty-page variants and both timer
+controls are SHA-identical to master. The nine inline pages of the earlier
+families (BaseDom and BaseGpu included) are byte-identical to the Gpu commit
+fdbdfb5005. One emit golden moves and is not regenerated pending manager
+review: `emit/release/tea/HttpSendTracked`, 19094/7141/7889 → 19100/7145/7891
+raw/brotli/gzip. One helper is inlined at its call site and two declarations
+are reordered; the key identity string `platform:Http.Key` is unchanged.
+BaseHttp's release page is 13751/5153/5720.
+
+Final validation (2026-11-10, zorg 0.17.1+zorg.3, default mode, run one
+after another against clean master 620c322a45). The gates fail the same set
+on both sides. Chrome fails only `tea/DomCapabilities` on both. The manager
+accepted the `HttpSendTracked` golden, and it was recorded from a real build.
+Comparisons: `zig-out/scratch/http-final-{gates,browser}-comparison.json`.
+
+
+### Navigation host operations — built 2026-11-10
+
+`Browser.Address`, a private base module, holds what both `Browser.Navigation`
+modules duplicated. That is reading the address, `pushState`/`replaceState` with
+the origin and throttle checks, `go`, `load`, `reload`, URL resolution, the
+link-click guard, the announcement event, and the two shared listeners
+(`requests`, `follow`, over `Listen`). Each renderer keeps its facade with
+its own `Key`, `Error` and `Browser.UrlRequest`, because programs match
+their constructors (§3).
+
+Two shapes were measured on the release navigation pages against the Http
+commit:
+
+- Translating a shared `Problem` into the facade's `Error` cost +37–48
+  brotli bytes on command pages.
+- Handing `Browser.Address` the facade's constructors (`Faults e`, a record
+  of `BadUrl`, `CrossOrigin` and `Throttled`) cost +8–23.
+
+The second is built. For links, a record of the facade's `Internal` and
+`External` was no smaller than a `case` on a shared `Link`, so links use
+the `case`.
+
+Inline's subscriptions `onUrlRequest` and `onUrlChange` keep inline's own
+listener installation, with the `Inline.stopped` guard, and use
+`Browser.Address.link` and `currentUrl`. Moving them onto `Listen.on`
+measured +48–70 brotli bytes more on the link pages (`LinkGuard`,
+`LinkAfterDefect`, `DynamicLink`) for the same behaviour. That choice is the
+manager's to review. Inline gains
+`eachUrlRequest` and `eachUrlChange`: they need a fiber, and the platform
+has scoped tasks since the Time slice.
+
+Fixtures. `browser/prerender/BaseNavigation` is a prerendered inline page.
+Its `init` starts `eachUrlChange` and `eachUrlRequest` fibers after the
+takeover. A `pushUrl` is heard, a click on an internal link arrives as
+`Internal` with its default prevented, and a push to another origin is
+`CrossOrigin`. All four builds share one transcript. It failed before the
+slice, because inline's `Browser.Navigation` did not expose
+`eachUrlChange`/`eachUrlRequest` (`zig-out/scratch/nav-before/`).
+`build/bad/prerender/BaseNavigationInView` refuses `currentUrl` in a
+prerendered `view` as `prerender_impure` at the read in `Browser.Address`.
+It already held before, at the old module's read.
+
+Sizes (release, against 9896224686): the four empty-page variants and both
+timer controls are identical to master. Inline pages without navigation
+are identical. No emit golden changed. Navigation pages, raw/brotli/gzip:
+
+| Page | Before | After |
+|---|---:|---:|
+| inline/NavigateCommands | 4769/1720/1968 | 4787/1735/1984 |
+| inline/LinkGuard | 2724/1214/1392 | 2767/1226/1401 |
+| inline/LinkAfterDefect | 3125/1378/1599 | 3168/1389/1618 |
+| inline/DynamicLink | 3792/1561/1780 | 3835/1568/1793 |
+| prerender/Blog | 13832/5009/5605 | 13875/5023/5623 |
+| tea/NavigateCommands | 14080/5339/5927 | 14088/5362/5943 |
+| tea/InlineNavigateCommands | 12463/4766/5315 | 12476/4785/5326 |
+
+Owner decisions (2026-11-10, relayed by the manager): the `Faults e` shape
+and its +7–23 brotli bytes on navigation pages are accepted. So is inline
+keeping its own URL listener installation. A worker-realm refusal now names
+`Browser.Address.reload` and `Browser.Address.load`, where the raw access
+lives, and `platform_test` expects that. #2448 tracks naming the public
+function the program called, for every private base module.
+
+Final validation (zorg 0.17.1+zorg.3, default mode, run one after another
+against clean master 620c322a45). Chrome: no new failure. The lane fails
+only `tea/DomCapabilities`; master also fails `dom/ScriptedFetch`. The gates
+had two lane-only failures. One was the list-column CPU budget (1050 ms
+against 1000), which passes alone. The other was the `platform_test` naming
+above, now updated and passing. Comparisons:
+`zig-out/scratch/nav-final-{gates,browser}-comparison.json`.
+
+
+### Storage, WebSocket, Random — built 2026-11-10
+
+The last capability family moves whole: `Storage`, `WebSocket` and
+`Random` go to `browser-base` and are removed from `browser` in the same
+slice. None imported a renderer, so no source changed. `Random` keeps
+using core's `Random.Pcg`. The base, `browser` and `browser-inline`
+re-export the three, and `browser-tea` does through `browser`. The P-sync
+row and the word-body pin of `WebSocket.attach` follow the file.
+
+Fixtures, all prerendered inline pages, failed before the slice with an
+unknown module (`zig-out/scratch/last-before/`). All four builds of each
+share one transcript:
+
+- `browser/prerender/BaseStorage`: `init`'s command reads and increments a
+  visit count, and "again" saves through `Storage.save`.
+- `browser/prerender/BaseWebSocket`: `init`'s command connects to the
+  driver's socket after the takeover, writes, reads the server's message,
+  and closes with 1000.
+- `browser/prerender/BaseRandom`: `init` draws a die with `Random.value`
+  in a command, and "roll" uses `Random.generate`. The page shows only
+  that each draw is a die, since a draw differs from run to run.
+
+`build/bad/prerender/BaseStorageInView` and `BaseRandomInInit` are
+`prerender_impure` at the host read inside `Storage` and `Random`.
+
+Sizes: the four empty-page variants and both timer controls are identical
+to master, and no emit golden changed. TodoMVC: with Dom and Storage both
+in the base, `tests/corpus/browser/tea/TodoMVC.beni` no longer stops at an
+unknown capability module. On `browser-inline` it stops at three markup
+limits of the compiler, none of this design's: two "has no markup value
+yet" (markup held by a helper) and one "a `view` whose body is markup
+written in place" (`zig-out/scratch/last-todo-inline.log`). An inline
+TodoMVC comparison waits for a TodoMVC source written within inline's
+markup rules, or for those limits to go.
+
+Every capability family of §7 step 2 has now moved. The capability APIs
+remain incomplete until §7 step 3: full keyed policies and model-dependent
+subscription sets. Owed to that slice: inline stale-reply cancellation
+(`Cmd.keyed`/`Cmd.cancel`), an inline `Http.track` fixture, and
+`Gpu.Device.onEvent`, which depends on the model.
+
+Final validation (zorg 0.17.1+zorg.3, default mode, run one after another
+against clean master 620c322a45). Neither the gates nor Chrome show a new
+failure on the lane. The lane fails only the known set; master also failed
+the list-column CPU budget and `tea/HttpResults`. Comparisons:
+`zig-out/scratch/last-final-{gates,browser}-comparison.json`.

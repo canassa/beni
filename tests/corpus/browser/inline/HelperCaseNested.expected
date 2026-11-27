@@ -1,0 +1,78 @@
+-- load
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <button id="next">"next"</button>
+    <section id="box">
+      <i id="zero">"zero"</i>
+      ""
+      <span>"0"</span>
+    </section>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <button id="next">"next"</button>
+    <section id="box">
+      ""
+      ""
+      <span>"1"</span>
+    </section>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <button id="next">"next"</button>
+    <section id="box">
+      ""
+      <b id="many">"n is 2"</b>
+      <span>"2"</span>
+    </section>
+  </main>
+</body>
+-- click #open
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <button id="next">"next"</button>
+    ""
+  </main>
+</body>
+-- click #next
+(the DOM did not change)
+-- click #open
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <button id="next">"next"</button>
+    <section id="box">
+      <i id="zero">"zero"</i>
+      ""
+      <span>"0"</span>
+    </section>
+  </main>
+</body>
+-- click #next
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <button id="next">"next"</button>
+    <section id="box">
+      ""
+      ""
+      <span>"1"</span>
+    </section>
+  </main>
+</body>
+-- click #open
+<body>
+  <main>
+    <button id="open">"open"</button>
+    <button id="next">"next"</button>
+    ""
+  </main>
+</body>

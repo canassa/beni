@@ -31,6 +31,6 @@ main = Io.run λ⊤ →
             Task.join grandchild
     after = Task.spawn λ⊤ → onClock "after run, the real clock: small?"
     _ = Task.joinAll [ before, after ]
-    Clock.adjust clock (Duration.minutes 1)
+    _ = Clock.adjust clock (Duration.minutes 1)
     _ = Task.join child
     Node.print "done"

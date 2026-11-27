@@ -60,7 +60,8 @@ pub type Level
 --| `annotations` of the log context as key and value, outermost first, the
 --| log `spans` it is inside as label and the milliseconds since that span
 --| began, innermost first, and its `time` in milliseconds since the Unix
---| epoch, on the calling fiber's clock.
+--| epoch, on the calling fiber's clock. A span's milliseconds are a length
+--| of time: never negative, and at most 9007199254740991.
 pub type alias Entry =
     level : Level
     message : String
@@ -107,9 +108,34 @@ log level message =
             { level = level
             , message = message
             , annotations = here.annotations
-            , spans = List.map here.spans λ( label, began ) → ( label, now - began )
+            , spans = List.map here.spans λ( label, began ) → ( label, since began now )
             , time = now
             }
+
+
+-- The milliseconds from the reading `began` to the reading `now`, as a
+-- length of time by `Duration`'s rule (§17.11, amended 2026-11-24): 0 when
+-- `now` is not later, which a clock that went back or a change of clock
+-- makes, and at most the longest duration, 2⁵³ − 1. A virtual clock reads
+-- any `Int`, so the difference alone can leave the `Int` range; the test
+-- comes before it, and a start at or above 0 leaves one that fits.
+-- `Task`'s `since` is the same rule for a schedule's `elapsed`: change
+-- them together.
+since : Int, Int → Int
+since began now =
+    if now ≤ began then
+        0
+    else if began < 0 && now > lastMillisecond + began then
+        lastMillisecond
+    else
+        now - began
+
+
+-- The last millisecond an `Int` holds, 2⁵³ − 1, which is the longest
+-- `Duration`: the number of `Duration`'s `longest` and `Task`'s
+-- `lastMillisecond`.
+lastMillisecond : Int
+lastMillisecond = 9007199254740991
 
 
 -- A level's place in the order.

@@ -1,0 +1,8 @@
+# Two bodies under one key, in one batch, for each policy.
+click #ignore
+# Both ended: the key starts again.
+click #ignore
+click #restart
+click #queue
+click #cancel-all
+click #mapped

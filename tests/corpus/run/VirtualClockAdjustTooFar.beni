@@ -1,0 +1,44 @@
+-- run: `Clock.adjust` answers a `Result`, and a virtual clock never reads
+-- past 9007199254740991, the last millisecond an `Int` holds
+-- (transparent-effects-proposal.md §17.6, amended 2026-11-24; #2022).
+-- Before the fix `adjust` added with no bound: the clock of the first
+-- lines read 9007199254740992 after 6 ms, a number that is not an `Int`.
+--
+-- An `adjust` past the last reading is `Err (TooFar left)`, and the clock
+-- does not move: it reads what it read, and the sleeper due 2 ms later is
+-- not woken. `left` then moves it to its last reading, and wakes the
+-- sleeper on the way. A clock that begins at the first reading an `Int`
+-- holds has room for the longest duration twice.
+import Clock
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+last : Int
+last = 9007199254740991
+
+
+main : Program
+main = Io.run λ⊤ →
+    clock = Clock.virtual (last - 5)
+    sleeper = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Task.sleep (Duration.millis 2)
+            Debug.log "the sleeper woke at" (Clock.now ⊤)
+    _ = Debug.log "6 ms" (Clock.adjust clock (Duration.millis 6))
+    _ = Debug.log "reads" (Clock.run clock Clock.now)
+    _ = Debug.log "5 ms" (Clock.adjust clock (Duration.millis 5))
+    _ = Debug.log "reads" (Clock.run clock Clock.now)
+    _ = Task.join sleeper
+    _ = Debug.log "1 ms at the last reading" (Clock.adjust clock (Duration.millis 1))
+    _ = Debug.log "zero at the last reading" (Clock.adjust clock Duration.zero)
+    _ = Debug.log "reads" (Clock.run clock Clock.now)
+    early = Clock.virtual (negate last)
+    _ = Debug.log "the longest, from the first reading" (Clock.adjust early (Duration.millis last))
+    _ = Debug.log "reads" (Clock.run early Clock.now)
+    _ = Debug.log "the longest again" (Clock.adjust early (Duration.millis last))
+    _ = Debug.log "reads" (Clock.run early Clock.now)
+    _ = Debug.log "1 ms more" (Clock.adjust early (Duration.millis 1))
+    Node.print "the last reading is ${String.fromInt (Clock.run early Clock.now)}"

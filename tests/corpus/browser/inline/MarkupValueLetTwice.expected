@@ -1,0 +1,76 @@
+-- load
+console.log: label: "ADA"
+console.log: label: "ADA"
+<body>
+  <main>
+    <div id="a">
+      <button class="badge">
+        <b>"ADA"</b>
+        <i>"0"</i>
+      </button>
+    </div>
+    <div id="b">
+      <button class="badge">
+        <b>"ADA"</b>
+        <i>"0"</i>
+      </button>
+    </div>
+    <button id="rename">"rename"</button>
+  </main>
+</body>
+-- click #a>button
+<body>
+  <main>
+    <div id="a">
+      <button class="badge">
+        <b>"ADA"</b>
+        <i>"1"</i>
+      </button>
+    </div>
+    <div id="b">
+      <button class="badge">
+        <b>"ADA"</b>
+        <i>"1"</i>
+      </button>
+    </div>
+    <button id="rename">"rename"</button>
+  </main>
+</body>
+-- click #b>button
+<body>
+  <main>
+    <div id="a">
+      <button class="badge">
+        <b>"ADA"</b>
+        <i>"2"</i>
+      </button>
+    </div>
+    <div id="b">
+      <button class="badge">
+        <b>"ADA"</b>
+        <i>"2"</i>
+      </button>
+    </div>
+    <button id="rename">"rename"</button>
+  </main>
+</body>
+-- click #rename
+console.log: label: "ADA!"
+console.log: label: "ADA!"
+<body>
+  <main>
+    <div id="a">
+      <button class="badge">
+        <b>"ADA!"</b>
+        <i>"2"</i>
+      </button>
+    </div>
+    <div id="b">
+      <button class="badge">
+        <b>"ADA!"</b>
+        <i>"2"</i>
+      </button>
+    </div>
+    <button id="rename">"rename"</button>
+  </main>
+</body>

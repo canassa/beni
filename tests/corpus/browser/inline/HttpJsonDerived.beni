@@ -1,0 +1,122 @@
+-- `expectJson` takes no schema (boundary.md §9.8.12 (a), amended
+-- 2026-10-15; schema.md §12.10): the compiler derives it from the type the
+-- answer is used at. `Note` is read from what `shown` says of it — an
+-- annotation — and the tag from what `update` reads of its answer — no
+-- annotation at all, the record closed at `label`. It sends `Accept:
+-- application/json` and reads a 2xx body like `expectSchema`: a body that
+-- is not JSON is `BadBody` with a `ParseFailed` issue, one missing a field
+-- `BadBody` with `MissingKey` at its path, a 500 `BadStatus`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Schema
+import Sub
+import Tea
+
+
+type alias Note =
+    title : String
+    stars : Float
+
+
+type Msg
+    = Run String
+    | Tag
+    | Got String String
+
+
+issue : Schema.Issue → String
+issue i =
+    path = String.join (List.map i.path segment) "."
+    code =
+        case i.code of
+            Schema.ParseFailed →
+                "ParseFailed"
+
+            Schema.MissingKey →
+                "MissingKey"
+
+            _ →
+                "another code"
+    "${code} at [${path}]"
+
+
+segment : Schema.PathSegment → String
+segment s =
+    case s of
+        Schema.Field name →
+            name
+
+        Schema.Index n →
+            String.fromInt n
+
+
+failure : Http.Error → String
+failure err =
+    case err of
+        Http.BadBody list →
+            "BadBody (" ++ String.join (List.map list issue) "; " ++ ")"
+
+        Http.BadStatus code →
+            "BadStatus ${String.fromInt code}"
+
+        _ →
+            "another error"
+
+
+shown : Result Http.Error Note → String
+shown result =
+    case result of
+        Ok note →
+            "ok ${note.title} ${String.fromFloat note.stars}"
+
+        Err err →
+            failure err
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg lines =
+    case msg of
+        Run name →
+            ( lines
+            , Cmd.task (λ⊤ → Http.get { url = "/${name}", expect = Http.expectJson }) λr →
+                Got name (shown r)
+            )
+
+        Tag →
+            ( lines
+            , Cmd.task (λ⊤ → Http.get { url = "/tag", expect = Http.expectJson }) λr →
+                Got
+                    "tag"
+                    (case r of
+                        Ok tag →
+                            "ok " ++ tag.label
+
+                        Err err →
+                            failure err
+                    )
+            )
+
+        Got label line →
+            ( lines ++ [ "${label}: ${line}" ], Cmd.none )
+
+
+view : List String → Html Msg
+view lines =
+    <main>
+        <For each={[ "good", "garbled", "partial", "broken" ]} keyed={False}>
+            {λname → <button id={name} onClick={Run name}>{name}</button>}
+        </For>
+        <button id="tag" onClick={Tag}>tag</button>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

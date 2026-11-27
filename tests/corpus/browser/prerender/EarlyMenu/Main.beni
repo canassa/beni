@@ -1,0 +1,66 @@
+-- A `contextmenu` before the takeover is not recorded
+-- (docs/design/prerender.md §6.5, amended 2026-11-24; boundary.md §9.8.20
+-- (h)). Its extractor is the pointer events': it reads the box of the
+-- element whose listener runs, which a delivery after the dispatch cannot
+-- give, and such a delivery cannot stop the browser's menu. So the capture
+-- script of this page names `click` only, as the page's golden shows. The
+-- `contextmenu` and the `pointerdown` before the program loads reach no
+-- message, and the click after them is delivered. After the takeover, the
+-- pad's handler gets the menu at its point, and stops the browser's menu.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    log : String
+
+
+type Msg
+    = Clicked
+    | Pressed Html.Pointer
+    | Menu Html.Pointer
+
+
+at : Html.Pointer → String
+at p =
+    button = String.fromInt (Html.button p)
+    "${button} at ${String.fromFloat (Html.localX p)}, ${String.fromFloat (Html.localY p)}"
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Clicked →
+            { model | log = model.log ++ " click" }
+
+        Pressed p →
+            { model | log = model.log ++ " down ${at p}" }
+
+        Menu p →
+            { model | log = model.log ++ " menu ${at p}" }
+
+
+menu : Html.Pointer → Msg
+menu p =
+    Html.preventDefault (Html.pointerEvent p)
+    Menu p
+
+
+view : Model → Html Msg
+view model =
+    <section data-role="app">
+        <div data-role="pad" onPointerDown={Pressed} onContextMenu={menu}>pad</div>
+        <button data-role="go" onClick={Clicked}>Go</button>
+        <output data-role="log">{model.log}</output>
+    </section>
+
+
+main : Tea.Program
+main =
+    Browser.prerender
+        (Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → { log = "" }, update = update, view = view })
+            "root"
+        )
+        [ "/" ]

@@ -1,0 +1,34 @@
+--! A pager whose button is a helper's markup.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    page : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { page = 1 }
+
+
+pub type Msg
+    = Go Int
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go n →
+            { model | page = n }
+
+
+jump : Int → Html Msg
+jump target = <button onClick={Go target}>{target}</button>
+
+
+pub view : Model → Html Msg
+view model =
+    <nav>
+        <output>{model.page}</output>
+        {jump (Debug.log "target" (model.page + 1))}
+    </nav>

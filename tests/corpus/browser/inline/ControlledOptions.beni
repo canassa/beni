@@ -1,0 +1,64 @@
+-- `browser/dom/ControlledOptions`, rebuilt for `browser-direct` (its S4
+-- amendment, item 2): a select whose options a `For` this platform writes
+-- renders. Its `value` is written before any of its options exists, at
+-- mount and whenever an option comes with the value that names it, so the
+-- select would show another option until something put the value back:
+-- the rows' scripts inside a controlled element mark it, and the dispatch
+-- ends with it reconciled.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick String
+    | Add
+    | Tick
+
+
+type alias Model =
+    options : List String
+    choice : String
+    n : Int
+
+
+-- An option no other has: two options of one value are a page happy-dom
+-- selects both of, which the two platforms' orders of writes then show
+-- differently (`browser/dom/ControlledOptions` adds "d" each time).
+fresh : Model → String
+fresh m = "o${String.fromInt (List.length m.options)}"
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Pick c →
+            { m | choice = c }
+
+        -- A new option, chosen in the same message.
+        Add →
+            { m | options = List.push (List.copy m.options) (fresh m), choice = fresh m }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <button id="add" onClick={Add}>add</button>
+        <select id="sel" value={m.choice} onInput={Pick}>
+            <For each={m.options} keyed={λo → o}>
+                {λo → <option value={o}>{o}</option>}
+            </For>
+        </select>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { options = [ "a", "b", "c" ], choice = "b", n = 0 }
+        , update = update
+        , view = view
+        }

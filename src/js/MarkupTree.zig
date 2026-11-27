@@ -48,6 +48,12 @@ pub const Input = struct {
     /// §11.11, made precise 2026-10-04). Null: no call is exempt.
     debug_module: ?u32 = null,
     parameterised_templates: bool = false,
+    /// The lowering has no run-time markup value
+    /// (`Lowering.no_markup_values`): a `let` whose value is markup written
+    /// in place is a name for that root, entered where a hole names it, and
+    /// is never moved into another root as a value it evaluates
+    /// (`browser-inline.md` §8.2, amended 2026-11-23, *A markup value*).
+    named_markup_lets: bool = false,
 };
 
 /// How an `==` or `/=` compares (language.md §11.9, *a selector*).
@@ -336,6 +342,87 @@ pub fn keptLets(arena: Allocator, built: *const Built, bir: *const Bir, lowering
     }
     std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
     return out.items;
+}
+
+/// The instructions of the handlers that `lowering` reads where their event
+/// fires (`Lowering.reads_handler_at_event`, `boundary.md` §9.4.8, *A
+/// handler read at the event*): of each root, every event of an element its
+/// markup reaches through elements and fragments, whose handler is an
+/// instruction of the root, that the lowering says it reads at the event.
+/// Ascending. The ownership checker reads each as a call made where the
+/// event fires only in a root that is the whole body of a function its
+/// module names only as a program's `view` (kernel §6 rule 12): the
+/// lowering's answer is for such a root.
+pub fn handlersAtEvent(arena: Allocator, built: *const Built, lowering: *const m.Lowering) Allocator.Error![]const u32 {
+    var out: std.ArrayList(u32) = .empty;
+    for (built.tree.roots, 0..) |root, ri| {
+        if (root.kind != .expression) continue;
+        try handlersBelow(arena, built, lowering, @fromBackingInt(@intCast(ri)), root.node, &out);
+    }
+    std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+    return out.items;
+}
+
+/// The instructions of the hole values that `lowering` evaluates at most
+/// once in each evaluation of the function a root is the body of
+/// (`Lowering.evaluates_hole_once`, `boundary.md` §9.4.8, *A hole evaluated
+/// once*): of each root, every hole its markup reaches through elements and
+/// fragments whose value is an instruction, that the lowering names.
+/// Ascending. The ownership checker reads each so only where the root is
+/// the whole body of a function, or an arm's markup of such a root's hole
+/// (kernel §6 rule 12, *A hole evaluated once*).
+pub fn holesOnce(arena: Allocator, built: *const Built, lowering: *const m.Lowering) Allocator.Error![]const u32 {
+    var out: std.ArrayList(u32) = .empty;
+    for (built.tree.roots, 0..) |root, ri| {
+        if (root.kind != .expression) continue;
+        try holesBelow(arena, built, lowering, @fromBackingInt(@intCast(ri)), root.node, &out);
+    }
+    std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+    return out.items;
+}
+
+fn holesBelow(arena: Allocator, built: *const Built, lowering: *const m.Lowering, ri: m.Root.Index, n: m.Node.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
+    const tree = &built.tree;
+    const children = switch (tree.kind(n)) {
+        .element => tree.element(n).children,
+        .fragment => tree.fragment(n).children,
+        else => return,
+    };
+    for (tree.childrenOf(children)) |c| {
+        if (tree.kind(c) == .hole) {
+            const inst = switch (built.values[@backingInt(tree.hole(c).value)]) {
+                .inst => |i| i,
+                .call => |c2| c2.inst,
+                else => continue,
+            };
+            if (lowering.evaluates_hole_once(tree, ri, c)) try out.append(arena, inst.int());
+            continue;
+        }
+        try holesBelow(arena, built, lowering, ri, c, out);
+    }
+}
+
+fn handlersBelow(arena: Allocator, built: *const Built, lowering: *const m.Lowering, ri: m.Root.Index, n: m.Node.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
+    const tree = &built.tree;
+    switch (tree.kind(n)) {
+        .element => {
+            const e = tree.element(n);
+            for (0..e.items.len) |k| {
+                const at: u32 = e.items.start + @as(u32, @intCast(k));
+                const it = tree.items[at];
+                if (it.kind != .event or it.value.kind != .dynamic) continue;
+                const v = it.value.dynamic orelse continue;
+                const inst = switch (built.values[@backingInt(v)]) {
+                    .inst => |i| i,
+                    else => continue,
+                };
+                if (lowering.reads_handler_at_event(tree, ri, at)) try out.append(arena, inst.int());
+            }
+            for (tree.childrenOf(e.children)) |c| try handlersBelow(arena, built, lowering, ri, c, out);
+        },
+        .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| try handlersBelow(arena, built, lowering, ri, c, out),
+        else => {},
+    }
 }
 
 const Builder = struct {
@@ -1349,6 +1436,7 @@ const Builder = struct {
             if (payload.params_end != payload.params_start) continue;
             const rhs: Inst.Index = @fromBackingInt(@intCast(datas[def].rhs));
             if (tags[rhs.int()] == .lambda) continue;
+            if (b.in.named_markup_lets and tags[rhs.int()] == .markup) continue;
             // Outside the root, and the root within its scope with no
             // function between.
             if (mine.isSet(def - start)) continue;

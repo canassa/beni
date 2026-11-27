@@ -34,6 +34,6 @@ main = Io.run λ⊤ →
                         Task.sleep (Duration.millis 10)
                         "fast"
             Debug.log "winner at ${String.fromInt (Clock.now ⊤)}" winner
-    Clock.adjust clock (Duration.millis 100)
+    _ = Clock.adjust clock (Duration.millis 100)
     _ = Task.join caller
     Node.print "done"

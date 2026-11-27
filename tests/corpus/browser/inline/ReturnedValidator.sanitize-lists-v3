@@ -1,0 +1,1 @@
+v3 reads the closure a function answers off its contract, over the list it captured, and what the functions in that list answer (ownership-v3-kernel.md §6 rule 2, *A function a body answers*): `List.push xs 2` writes in place.

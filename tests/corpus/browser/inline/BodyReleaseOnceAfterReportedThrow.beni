@@ -1,0 +1,63 @@
+-- A body in a fiber, made inside `Log.annotate` (#597), opens a `bracket`
+-- whose use focuses an input. Its `onFocus` sends `Boom`, whose `update`
+-- annotates and throws; the DOM reports the throw, and the use returns
+-- (#859). `update`'s restore stays behind. `send` took it off the body's
+-- list (boundary.md §9.8.16 (b), amended 2026-11-06, #921), so the
+-- `bracket` takes its own entry off when its use returns, and its release
+-- runs once, told `Done`. Before, it took `update`'s entry, and the
+-- teardown ran the release a second time, told `Cancelled`.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Boom
+
+
+released : Task.Exit a → ⊤
+released exit =
+    case exit of
+        Task.Done _ →
+            Log.info "the body's release, done"
+
+        Task.Cancelled →
+            Log.info "the body's release, cancelled"
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( n + 1
+                , Cmd.perform λ_ →
+                    Time.sleep (Time.millis 5)
+                    _ = Task.bracket (λ⊤ → ⊤) (λ_ exit → released exit) λ_ → Dom.focus "target"
+                    Time.sleep (Time.millis 10)
+                    Log.info "the body, after the sleep"
+                )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ → Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+        <input id="target" onFocus={Boom} />
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }

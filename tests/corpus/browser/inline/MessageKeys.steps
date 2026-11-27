@@ -1,0 +1,5 @@
+input #in "hello"
+click #click
+click #click
+click #a
+click #b

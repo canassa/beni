@@ -1,0 +1,94 @@
+-- A `Show` on `browser-inline` (docs/design/browser-inline.md §8.2, amended
+-- 2026-11-23, *A `Show`*): a branch region of two arms that remounts its
+-- body when the key changes. The first is keyed by `.id`, with a fallback
+-- written in place that reads the model; its body mixes text holes with an
+-- uncontrolled input, whose typed text shows whether the body's node
+-- survived, and a button whose handler is wired in the body. The second,
+-- in a `div` of its own, has a fallback written as `Html.text`. The third is
+-- keyed by identity over an `Int`, which is by value: every change of the
+-- number remounts it. A step that keeps the id keeps the body and its text;
+-- another id, or the fallback in between, makes a new one. Its transcript
+-- is `browser-tea`'s for the same source.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Rename
+    | Next
+    | Clear
+    | Bump
+
+
+type alias User =
+    id : Int
+    name : String
+
+
+type alias Model =
+    user : Maybe User
+    n : Int
+    ids : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Rename →
+            { model | user = Maybe.map model.user λu → { u | name = u.name ++ "!" } }
+
+        Next →
+            { model
+                | user =
+                    Just { id = model.ids + 1, name = "user ${String.fromInt (model.ids + 1)}" }
+                , ids = model.ids + 1
+            }
+
+        Clear →
+            { model | user = Nothing }
+
+        Bump →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="rename" onClick={Rename}>rename</button>
+        <button id="next" onClick={Next}>next</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="bump" onClick={Bump}>bump</button>
+        <Show
+            when={model.user}
+            keyed={.id}
+            fallback={<p id="nobody">{"nobody at ${String.fromInt model.n}"}</p>}
+        >
+            {λu →
+                <label>
+                    {u.name}
+                    <input id="by-key" />
+                    {model.n}
+                    <button id="inner" onClick={Bump}>inner</button>
+                </label>
+            }
+        </Show>
+        <p id="after">after</p>
+        <div>
+            <Show
+                when={model.user}
+                keyed={.id}
+                fallback={Html.text "none at ${String.fromInt model.n}"}
+            >
+                {λu → <b>{u.name}</b>}
+            </Show>
+        </div>
+        <section>
+            <Show when={if model.n > 1 then Just model.n else Nothing} keyed>
+                {λk → <i>{k}<input id="by-value" /></i>}
+            </Show>
+        </section>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { user = Nothing, n = 0, ids = 0 }, update = update, view = view }

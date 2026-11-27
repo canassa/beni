@@ -1,0 +1,35 @@
+-- load
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <p id="count">"2"</p>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="reset">"start again"</button>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- click #reset
+<body>
+  <main>
+    <p id="count">"0"</p>
+    <button id="inc">"inc"</button>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <p id="count">"1"</p>
+    <button id="inc">"inc"</button>
+  </main>
+</body>

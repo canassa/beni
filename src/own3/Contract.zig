@@ -42,6 +42,11 @@ pub const none = Loc.none;
 /// - `twice`: the location is a summary location, and one of its cells can
 ///   be at two of its places. It keeps its claim; its parts are not apart,
 ///   so a part of it is all of it, and a callee that writes it is refused.
+/// - `held`: the cells that the functions held at parameter location `a`
+///   (an index of `Contract.flags`: a location of a function type below a
+///   parameter, a list's elements, a field, a closure's capture) answer at
+///   entry `e` of their result layout (kernel §6 rule 2, *A function held
+///   in a value*). `Contract.held[a]` is what the body does with them.
 pub const Src = struct {
     kind: Kind,
     a: u16 = 0,
@@ -55,8 +60,16 @@ pub const Src = struct {
     /// reader that does not read it reads the cells with no position: the
     /// pessimistic side.
     p: u8 = 0,
+    /// A `param` or an `answer` source of a type variable's location of a
+    /// walked body's result, or of what it hands a function parameter, whose
+    /// cells there are the source's value at the same place, as it is: no
+    /// call of the body can answer a new value of that variable (kernel §3.4,
+    /// *a walked body's own type variables*, `Frame.taintCall`). A caller
+    /// reads it as a cell's row's: the part at that place, not every cell
+    /// below the variable. False reads every cell below: the pessimistic side.
+    same_place: bool = false,
 
-    pub const Kind = enum(u8) { outside, fresh, param, answer, twice };
+    pub const Kind = enum(u8) { outside, fresh, param, answer, twice, held };
     pub const outside: Src = .{ .kind = .outside };
     pub const twice: Src = .{ .kind = .twice };
 
@@ -71,7 +84,7 @@ pub const Src = struct {
     }
 
     pub fn key(s: Src) u64 {
-        return (@as(u64, s.p) << 40) | (@as(u64, @backingInt(s.kind)) << 32) | (@as(u64, s.a) << 16) | s.e;
+        return (@as(u64, @intFromBool(s.same_place)) << 48) | (@as(u64, s.p) << 40) | (@as(u64, @backingInt(s.kind)) << 32) | (@as(u64, s.a) << 16) | s.e;
     }
     pub fn eql(x: Src, y: Src) bool {
         return x.key() == y.key();
@@ -194,6 +207,22 @@ pub const Fn = struct {
     /// lend it, this one runs in the window (`Frame.siblingRunsOn`; kernel
     /// §13 item 12, *A defect*, (d), *After such a call*; #2622).
     after_call: bool = false,
+    /// The owner hands what the function answers to a function that writes
+    /// it in place (kernel §6 rule 2, *A function held in a value*): each
+    /// answer must be the function's own, as a fold's callback's is (kernel
+    /// §6 rule 8, `answerOwn`). The caller that knows the function judges it.
+    ans_own: bool = false,
+    /// The owner calls a function held here as a method of the parameter's
+    /// record (`r.f a`, which JavaScript runs with `r` as `this`): a host
+    /// function there can read and keep the record, so the caller lets the
+    /// argument escape unless each function there is beni code (kernel §6
+    /// rule 2, *A function held in a value*, *A field called as a method*).
+    receiver: bool = false,
+    /// Per parameter `k` of the owner (bit `k`): every run of the function
+    /// ends before any run of the function at `k` starts, and the owner keeps
+    /// it nowhere, answers it nowhere and hands it to nothing that can run it
+    /// later (kernel §11 item 11, *The order of a callee's runs*). A row's is 0.
+    before: u64 = 0,
 };
 
 pub const Contract = struct {
@@ -211,6 +240,12 @@ pub const Contract = struct {
     /// not follow it: a caller hands it a function as to the default
     /// (research report 112 §2.2).
     fns: []const ?*const Fn,
+    /// Per parameter location (as `flags`), or empty: what the body does with
+    /// every function that a location of a function type below a parameter
+    /// can hold (a list's elements, a field, a capture), where the body calls
+    /// one of them or hands it on (kernel §6 rule 2, *A function held in a
+    /// value*). Null elsewhere: the flags say all the body does there.
+    held: []const ?*const Fn = &.{},
     /// Parameter 0 has the word `entry`: the argument is a program's record.
     entry: bool = false,
     /// The result has the word `taken`: an element taken out of parameter 0,
@@ -289,11 +324,35 @@ pub const Contract = struct {
     /// renews. Empty where the body has fewer than two, or where no path
     /// says less than the union. Every other fact is the union's.
     paths: []const Path = &.{},
+    /// The functions the body can answer as its whole result, where its
+    /// result is of a function type, each a known code whose every capture
+    /// is a whole parameter of the body or holds no cell (kernel §6 rule 2,
+    /// *A function held in a value*, *A function a body answers*). Null: no
+    /// fact; a caller reads the answer as a function it does not know. A
+    /// group's rounds start from none (`Check.emptyContract`).
+    answers: ?[]const Made = null,
+    /// Per result entry, or empty for none: every function the body answers
+    /// at that entry (a location of a function type) is beni code, or the
+    /// function at a parameter location that it passes on, which a `param`
+    /// source there names (kernel §6 rule 2, *A field called as a method*).
+    /// No host function is there unless an argument holds one.
+    fn_known: []const bool = &.{},
 
     /// The renewal of location `i` of `flags`, or null.
     pub fn renewAt(c: *const Contract, i: usize) ?[]const Src {
         if (c.renew.len == 0) return null;
         return c.renew[i];
+    }
+
+    /// The use of the functions held at location `i` of `flags`, or null.
+    pub fn heldAt(c: *const Contract, i: usize) ?*const Fn {
+        if (c.held.len == 0) return null;
+        return c.held[i];
+    }
+
+    pub fn hasHeld(c: *const Contract) bool {
+        for (c.held) |h| if (h != null) return true;
+        return false;
     }
 
     pub fn renews(c: *const Contract) bool {
@@ -311,6 +370,60 @@ pub const Contract = struct {
         return false;
     }
 };
+
+/// A function a body answers (`Contract.answers`): a lambda or a local
+/// function `inst` of the module that owns the contract, with its contract,
+/// or the named declaration `decl` (`inst` is `none`). `caps[k]`: the
+/// parameter of the answering body that capture `k` is, whole, or `none`
+/// for a capture of no cell.
+pub const Made = struct {
+    contract: *const Contract,
+    inst: u32,
+    decl: [2]u32,
+    own_params: u32,
+    caps: []const u32,
+};
+
+fn madeEql(ao: ?[]const Made, bo: ?[]const Made) bool {
+    const a = ao orelse return bo == null;
+    const b = bo orelse return false;
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| {
+        if (x.inst != y.inst or x.decl[0] != y.decl[0] or x.decl[1] != y.decl[1] or x.own_params != y.own_params) return false;
+        if (!std.mem.eql(u32, x.caps, y.caps)) return false;
+        if (!eql(x.contract, y.contract)) return false;
+    }
+    return true;
+}
+
+/// The answers of a join (`join`): each code of either, a code of both by
+/// the join of its two contracts; none where either has none (no fact).
+fn joinMade(arena: Allocator, ao: ?[]const Made, bo: ?[]const Made) Allocator.Error!?[]const Made {
+    const a = ao orelse return null;
+    const b = bo orelse return null;
+    var out: std.ArrayList(Made) = .empty;
+    try out.appendSlice(arena, a);
+    for (b) |y| {
+        const at = for (out.items, 0..) |x, i| {
+            if (x.inst == y.inst and x.decl[0] == y.decl[0] and x.decl[1] == y.decl[1]) break i;
+        } else null;
+        if (at) |i| {
+            const x = out.items[i];
+            if (x.own_params != y.own_params or !std.mem.eql(u32, x.caps, y.caps) or x.contract.arity != y.contract.arity) return null;
+            out.items[i].contract = try join(arena, x.contract, y.contract);
+        } else try out.append(arena, y);
+    }
+    return out.items;
+}
+
+/// `fn_known` of a join: where both say so. A bottom contract (a group's
+/// rounds start there) answers no function, so each of its entries is known.
+fn joinKnown(arena: Allocator, a: []const bool, b: []const bool) Allocator.Error![]const bool {
+    if (a.len != b.len) return &.{};
+    const out = try arena.alloc(bool, a.len);
+    for (out, a, b) |*o, x, y| o.* = x and y;
+    return out;
+}
 
 /// One path of a body (kernel §13 item 13): a run through one arm of the
 /// `case` that answers it.
@@ -431,7 +544,7 @@ fn union2(arena: Allocator, a: []const Src, b: []const Src) Allocator.Error![]co
 fn fnEql(a: ?*const Fn, b: ?*const Fn) bool {
     const x = a orelse return b == null;
     const y = b orelse return false;
-    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.single != y.single or x.defect != y.defect or x.runs_on != y.runs_on or x.forks != y.forks or x.starts != y.starts or x.kept_out != y.kept_out or x.after_call != y.after_call) return false;
+    if (x.arity != y.arity or x.called != y.called or x.lost != y.lost or x.ans_escapes != y.ans_escapes or x.rewrites != y.rewrites or x.once != y.once or x.single != y.single or x.defect != y.defect or x.runs_on != y.runs_on or x.forks != y.forks or x.starts != y.starts or x.kept_out != y.kept_out or x.after_call != y.after_call or x.ans_own != y.ans_own or x.receiver != y.receiver or x.before != y.before) return false;
     if (!std.mem.eql(u32, x.layouts, y.layouts) or !std.mem.eql(bool, x.free, y.free)) return false;
     for (x.supply, y.supply) |s, t| if (!srcsEql(s, t)) return false;
     return true;
@@ -443,6 +556,7 @@ pub fn eql(a: *const Contract, b: *const Contract) bool {
     if (a.res.len != b.res.len) return false;
     for (a.res, b.res) |s, t| if (!srcsEql(s, t)) return false;
     for (a.fns, b.fns) |f, g| if (!fnEql(f, g)) return false;
+    for (0..a.flags.len) |i| if (!fnEql(a.heldAt(i), b.heldAt(i))) return false;
     for (0..a.flags.len) |i| {
         const x = a.renewAt(i);
         const y = b.renewAt(i);
@@ -451,7 +565,14 @@ pub fn eql(a: *const Contract, b: *const Contract) bool {
     }
     if (a.paths.len != b.paths.len) return false;
     for (a.paths, b.paths) |p, q| if (!pathEql(p, q)) return false;
+    if (!madeEql(a.answers, b.answers)) return false;
+    if (!std.mem.eql(bool, a.fn_known, b.fn_known)) return false;
     return true;
+}
+
+/// Whether contract `c` says each function it answers at result entry `e` is known (`fn_known`).
+pub fn fnKnownAt(c: *const Contract, e: usize) bool {
+    return e < c.fn_known.len and c.fn_known[e];
 }
 
 fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*const Fn {
@@ -479,6 +600,9 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
         out.starts = false;
         out.kept_out = true;
         out.after_call = true;
+        out.ans_own = true;
+        out.receiver = true;
+        out.before = 0;
         return out;
     }
     const supply = try arena.alloc([]const Src, x.supply.len);
@@ -486,7 +610,7 @@ fn joinFn(arena: Allocator, a: ?*const Fn, b: ?*const Fn) Allocator.Error!?*cons
     for (supply, x.supply, y.supply) |*s, p, q| s.* = try union2(arena, p, q);
     for (free, x.free, y.free) |*f, p, q| f.* = p and q;
     const out = try arena.create(Fn);
-    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .single = x.single and y.single, .defect = x.defect or y.defect, .runs_on = x.runs_on or y.runs_on, .forks = x.forks and y.forks, .starts = x.starts and y.starts, .kept_out = x.kept_out or y.kept_out, .after_call = x.after_call or y.after_call };
+    out.* = .{ .arity = x.arity, .layouts = x.layouts, .off = x.off, .supply = supply, .free = free, .called = x.called or y.called, .lost = x.lost or y.lost, .ans_escapes = x.ans_escapes or y.ans_escapes, .rewrites = x.rewrites or y.rewrites, .once = x.once and y.once, .single = x.single and y.single, .defect = x.defect or y.defect, .runs_on = x.runs_on or y.runs_on, .forks = x.forks and y.forks, .starts = x.starts and y.starts, .kept_out = x.kept_out or y.kept_out, .after_call = x.after_call or y.after_call, .ans_own = x.ans_own or y.ans_own, .receiver = x.receiver or y.receiver, .before = x.before & y.before };
     return out;
 }
 
@@ -513,6 +637,12 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
     for (res, a.res, b.res) |*r, x, y| r.* = try union2(arena, x, y);
     const fns = try arena.alloc(?*const Fn, a.fns.len);
     for (fns, a.fns, b.fns) |*f, x, y| f.* = try joinFn(arena, x, y);
+    var held: []const ?*const Fn = &.{};
+    if (a.hasHeld() or b.hasHeld()) {
+        const hs = try arena.alloc(?*const Fn, a.flags.len);
+        for (hs, 0..) |*h, i| h.* = try joinFn(arena, a.heldAt(i), b.heldAt(i));
+        held = hs;
+    }
     // A location that one contract renews and the other leaves as it was
     // holds the renewal's sources or its own cells as they were (kernel §13).
     var renew: []const ?[]const Src = &.{};
@@ -527,7 +657,7 @@ pub fn join(arena: Allocator, a: *const Contract, b: *const Contract) Allocator.
         renew = rn;
     }
     const out = try arena.create(Contract);
-    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .runs_on = a.runs_on or b.runs_on, .hosts = a.hosts or b.hosts, .hosts_forked = a.hosts_forked or b.hosts_forked, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b) };
+    out.* = .{ .arity = a.arity, .layouts = a.layouts, .off = a.off, .flags = flags, .res = res, .fns = fns, .held = held, .entry = a.entry or b.entry, .taken = a.taken or b.taken, .nonlinear = a.nonlinear or b.nonlinear, .old_result = a.old_result or b.old_result, .record_copy = a.record_copy and b.record_copy, .casts = a.casts or b.casts, .exact = a.exact and b.exact, .switches = a.switches or b.switches, .runs_on = a.runs_on or b.runs_on, .hosts = a.hosts or b.hosts, .hosts_forked = a.hosts_forked or b.hosts_forked, .cell_row = a.cell_row and b.cell_row, .renew = renew, .renew_shared = a.renew_shared or b.renew_shared, .paths = try joinPaths(arena, a, b), .answers = try joinMade(arena, a.answers, b.answers), .fn_known = try joinKnown(arena, a.fn_known, b.fn_known) };
     return out;
 }
 
@@ -551,6 +681,11 @@ pub const Published = struct {
     /// kernel §6 rule 10, *A worded body is checked against its walk*). A
     /// declaration past the end is read as one that does.
     js: []const bool = &.{},
+    /// A function of the module, or of a module it imports, can keep a
+    /// message it is handed (`Check.Mod.keepsMessages`; kernel §6.13, *A
+    /// message a command builds*, fact 4). Read by the modules that import
+    /// it, each of which is checked after it.
+    keeps_messages: bool = true,
 
     pub fn deinit(p: *Published, gpa: Allocator) void {
         p.arena.deinit();
@@ -577,7 +712,7 @@ fn dupFn(a: Allocator, f: *const Fn) Allocator.Error!*const Fn {
     const supply = try a.alloc([]const Src, f.supply.len);
     for (supply, f.supply) |*s, x| s.* = try a.dupe(Src, x);
     const out = try a.create(Fn);
-    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .single = f.single, .defect = f.defect, .runs_on = f.runs_on, .forks = f.forks, .starts = f.starts, .kept_out = f.kept_out, .after_call = f.after_call };
+    out.* = .{ .arity = f.arity, .layouts = try a.dupe(u32, f.layouts), .off = try a.dupe(u32, f.off), .supply = supply, .free = try a.dupe(bool, f.free), .called = f.called, .lost = f.lost, .ans_escapes = f.ans_escapes, .rewrites = f.rewrites, .once = f.once, .single = f.single, .defect = f.defect, .runs_on = f.runs_on, .forks = f.forks, .starts = f.starts, .kept_out = f.kept_out, .after_call = f.after_call, .ans_own = f.ans_own, .receiver = f.receiver, .before = f.before };
     return out;
 }
 
@@ -586,11 +721,27 @@ fn dupContract(a: Allocator, c: *const Contract) Allocator.Error!*Contract {
     for (res, c.res) |*r, x| r.* = try a.dupe(Src, x);
     const fns = try a.alloc(?*const Fn, c.fns.len);
     for (fns, c.fns) |*f, x| f.* = if (x) |g| try dupFn(a, g) else null;
+    const held = try a.alloc(?*const Fn, c.held.len);
+    for (held, c.held) |*h, x| h.* = if (x) |g| try dupFn(a, g) else null;
     const renew = try a.alloc(?[]const Src, c.renew.len);
     for (renew, c.renew) |*r, x| r.* = if (x) |xs| try a.dupe(Src, xs) else null;
+    var answers: ?[]const Made = null;
+    if (c.answers) |xs| {
+        const ys = try a.alloc(Made, xs.len);
+        for (ys, xs) |*o, x| o.* = .{ .contract = try dupContract(a, x.contract), .inst = x.inst, .decl = x.decl, .own_params = x.own_params, .caps = try a.dupe(u32, x.caps) };
+        answers = ys;
+    }
     const out = try a.create(Contract);
-    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .runs_on = c.runs_on, .hosts = c.hosts, .hosts_forked = c.hosts_forked, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths) };
+    out.* = .{ .arity = c.arity, .layouts = try a.dupe(u32, c.layouts), .off = try a.dupe(u32, c.off), .flags = try a.dupe(u8, c.flags), .res = res, .fns = fns, .held = held, .entry = c.entry, .taken = c.taken, .nonlinear = c.nonlinear, .old_result = c.old_result, .record_copy = c.record_copy, .casts = c.casts, .exact = c.exact, .switches = c.switches, .runs_on = c.runs_on, .hosts = c.hosts, .hosts_forked = c.hosts_forked, .cell_row = c.cell_row, .renew = renew, .renew_shared = c.renew_shared, .paths = try dupPaths(a, c.paths), .answers = answers, .fn_known = try a.dupe(bool, c.fn_known) };
     return out;
+}
+
+/// Every layout `c` names, those of the contracts it answers among them.
+fn exportLayouts(p: *Published, loc: *const Loc.Table, gpa: Allocator, c: *const Contract) Allocator.Error!void {
+    for (c.layouts) |l| try exportLayout(p, loc, gpa, l);
+    for (c.fns) |f| if (f) |g| for (g.layouts) |l| try exportLayout(p, loc, gpa, l);
+    for (c.held) |f| if (f) |g| for (g.layouts) |l| try exportLayout(p, loc, gpa, l);
+    if (c.answers) |xs| for (xs) |x| try exportLayouts(p, loc, gpa, x.contract);
 }
 
 /// What code that a walk does not follow can do with what it is handed: a
@@ -669,8 +820,7 @@ pub fn publish(gpa: Allocator, loc: *const Loc.Table, contracts: []const ?*const
             to.* = null;
             continue;
         };
-        for (c.layouts) |l| try exportLayout(p, loc, gpa, l);
-        for (c.fns) |f| if (f) |g| for (g.layouts) |l| try exportLayout(p, loc, gpa, l);
+        try exportLayouts(p, loc, gpa, c);
         to.* = try dupContract(a, c);
     }
     return p;
@@ -730,13 +880,23 @@ pub const Reader = struct {
         r.tried[decl] = true;
         const from = r.from.contracts[decl] orelse return null;
         const c = try dupContract(arena, from);
+        try r.importLayouts(gpa, loc, c);
+        r.contracts[decl] = c;
+        return c;
+    }
+
+    /// `c`'s layouts, and those of the contracts it answers, in this module's table.
+    fn importLayouts(r: *Reader, gpa: Allocator, loc: *Loc.Table, c: *const Contract) Allocator.Error!void {
         const ls = @constCast(c.layouts);
         for (ls) |*l| l.* = try r.layout(gpa, loc, l.*);
         for (c.fns) |f| if (f) |g| {
             const gl = @constCast(g.layouts);
             for (gl) |*l| l.* = try r.layout(gpa, loc, l.*);
         };
-        r.contracts[decl] = c;
-        return c;
+        for (c.held) |f| if (f) |g| {
+            const gl = @constCast(g.layouts);
+            for (gl) |*l| l.* = try r.layout(gpa, loc, l.*);
+        };
+        if (c.answers) |xs| for (xs) |x| try r.importLayouts(gpa, loc, x.contract);
     }
 };

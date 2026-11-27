@@ -1,0 +1,95 @@
+-- Statements in an arm of `<></>` (browser-inline.md §8.2, amended 2026-11-24,
+-- *An arm's statements*): the arm has no unit, and its statements still run in
+-- the choice — in a page region, a row whose top is the branch and a branch in
+-- a row — and a `Debug.todo` among them stops the page when the arm is chosen.
+-- The review of this slice found them dropped, the page kept running. Checked
+-- against `browser-tea` for the same source: the same lines, and the same DOM but
+-- for the empty comment `browser-tea` keeps for `<></>`.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Bool
+    k : Int
+    rows : List Int
+    stop : Bool
+
+
+type Msg
+    = A
+    | K
+    | Stop
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        A →
+            { model | a = not model.a }
+
+        K →
+            { model | k = model.k + 1 }
+
+        Stop →
+            { model | stop = True }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="a" onClick={A}>a</button>
+        <button id="k" onClick={K}>k</button>
+        <button id="stop" onClick={Stop}>stop</button>
+        <p>
+            {if model.stop then
+                boom : Int
+                boom = Debug.todo "stopped"
+                <></>
+             else
+                <i>go</i>
+            }
+        </p>
+        <section>
+            {if model.a then
+                <b>yes</b>
+             else
+                _ = Debug.log "page empty arm" model.k
+                <></>
+            }
+        </section>
+        <ul>
+            <For each={model.rows} keyed={λr → r}>
+                {λr →
+                    if model.a then
+                        <li>{r}</li>
+                    else
+                        _ = Debug.log "row empty arm" ( r, model.k )
+                        <></>
+                }
+            </For>
+        </ul>
+        <ol>
+            <For each={model.rows} keyed={λr → r}>
+                {λr →
+                    <li>
+                        {if model.a then
+                            <b>{r}</b>
+                         else
+                            _ = Debug.log "inner empty arm" ( r, model.k )
+                            <></>
+                        }
+                    </li>
+                }
+            </For>
+        </ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { a = True, k = 0, rows = [ 1 ], stop = False }
+        , update = update
+        , view = view
+        }

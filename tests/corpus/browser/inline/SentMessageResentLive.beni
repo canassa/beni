@@ -1,0 +1,37 @@
+-- update writes the list of a message and sends the same message again: the
+-- second update would see the write, so the write is refused
+-- (ownership-v3-kernel.md §6 rule 13, *A message a command builds*).
+import Cmd
+import Html exposing (Html)
+import Ref
+import Sub
+import Tea
+
+
+type Msg
+    = Start
+    | Items (List Int)
+
+
+update : Msg, Int → Int × Cmd.Cmd Msg
+update msg n =
+    case msg of
+        Start →
+            ( n, Cmd.perform λsend → send (Items [ 1, 2 ]) )
+
+        Items xs →
+            ( List.length (List.push xs 3), Cmd.perform λsend → send msg )
+
+
+view : Int → Html Msg
+view n = <main><button id="start" onClick={Start}>start</button><p>{n}</p></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

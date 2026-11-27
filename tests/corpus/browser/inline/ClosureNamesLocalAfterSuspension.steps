@@ -1,0 +1,10 @@
+click #stmt
+advance 10
+click #item
+advance 5
+click #join
+advance 10
+click #join
+advance 10
+click #local
+advance 10

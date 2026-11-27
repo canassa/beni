@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button id="again">"again"</button>
+    <p>"a c"</p>
+  </main>
+</body>
+-- click #again
+<body>
+  <main>
+    <button id="again">"again"</button>
+    <p>"a c a"</p>
+  </main>
+</body>

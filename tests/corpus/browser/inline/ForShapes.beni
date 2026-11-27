@@ -1,0 +1,106 @@
+-- The shapes of `For` the simple form compiles on `browser-inline`
+-- (browser-inline.md §9, amended 2026-11-23). A `For` beside other
+-- elements: its rows stand before the element after it, or at its parent's
+-- end. A row whose element mixes text holes and elements: each text its own
+-- node. A row attribute that is no DOM property (`id`, `title`)
+-- is written as an attribute. A row reads the model outside its item
+-- (`model.mark`), and a write of that alone repaints every row; an event's
+-- message reads it too, as the row last showed it. Rows by position
+-- (`keyed={False}`) keep their nodes by place; rows by reference over
+-- `String`s by value; a row function of two parameters shows its position.
+-- A `For` in a row, beside an element of that row. The focused row keeps its
+-- node, and the focus, when the rows turn round.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Mark
+    | Reverse
+    | Pick String Int
+    | Add
+
+
+type alias Row =
+    id : Int
+    tags : List String
+
+
+type alias Model =
+    rows : List Row
+    mark : String
+    log : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Mark →
+            { model | mark = "${model.mark}*" }
+
+        Reverse →
+            { model | rows = List.reverse model.rows }
+
+        Pick mark id →
+            { model | log = "${model.log} ${mark}${String.fromInt id}" }
+
+        Add →
+            { model
+                | rows =
+                    List.map model.rows λr →
+                        { r | tags = [ "t${String.fromInt (List.length r.tags)}", …r.tags ] }
+            }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="mark" onClick={Mark}>mark</button>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <button id="add" onClick={Add}>add</button>
+        <p id="log">{model.log}</p>
+        <ul id="keyed">
+            <li>first</li>
+            <For each={model.rows} keyed={.id}>
+                {λr →
+                    <li id="row${String.fromInt r.id}" title={String.fromInt r.id}>
+                        <input id="in${String.fromInt r.id}" />
+                        {model.mark} row {r.id}
+                        <button onClick={Pick model.mark r.id}>pick</button>
+                        <ol>
+                            <For each={r.tags}>{λt → <li>{t}</li>}</For>
+                            <li>end</li>
+                        </ol>
+                    </li>
+                }
+            </For>
+            <li>last</li>
+        </ul>
+        <ol id="position">
+            <For each={model.rows} keyed={False}>{λr i → <li><input />{i}: {r.id}</li>}</For>
+            <li>after</li>
+        </ol>
+        <ul id="values">
+            <li>before</li>
+            <For each={[ "x", "y" ]}>{λs → <li>{s}</li>}</For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { rows =
+                    [ { id = 1, tags = [ "a" ] }
+                    , { id = 2, tags = [] }
+                    , { id = 3, tags = [ "b", "c" ] }
+                    ]
+                , mark = "m"
+                , log = "-"
+                }
+        , update = update
+        , view = view
+        }

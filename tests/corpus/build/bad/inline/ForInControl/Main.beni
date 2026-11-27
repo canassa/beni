@@ -1,0 +1,28 @@
+-- A `For` inside an `optgroup` of a `select` whose `value` changes: the
+-- value could be written before the rows it chooses among
+-- (browser-inline.md §9, amended 2026-11-23), class 1 (§5). As the
+-- select's only child the `For` compiles.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    options : List String
+    choice : String
+
+
+view : Model → Html String
+view m =
+    <select value={m.choice} onInput={λs → s}>
+        <optgroup><For each={m.options}>{λo → <option value={o}>{o}</option>}</For></optgroup>
+    </select>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { options = [ "a" ], choice = "a" }
+        , update = λs m → { m | choice = s }
+        , view = view
+        }

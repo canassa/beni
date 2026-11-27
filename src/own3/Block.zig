@@ -6,28 +6,36 @@
 //!   lowering reads first (`Reads.Read`).
 //!
 //! A block holds no id of a session. A field is written as its name, not its
-//! text rank, and a type as its package, its module and its name, not its
-//! `TypeId` (`Names`); the reader gives each name the id of its own session
-//! (`Remap`). Every other number is local to the module: a layout number, a
-//! parameter, an entry of a layout, an allocation site, an instruction of
-//! the module's BIR.
+//! text rank, a type as its package, its module and its name, not its
+//! `TypeId`, and a module as its package and its name, not its index
+//! (`Names`); the reader gives each name the id of its own session
+//! (`Remap`). Every other number is local to a module: a layout number, a
+//! parameter, an entry of a layout, an allocation site, an instruction or a
+//! declaration of a module's BIR.
 //!
 //! ```
 //! header    magic "OWN3BLK\x00" (8)   version: u32
+//!           digest: [16]u8            over every byte after it
 //! strings   count: u32, then per string: len: u32, bytes
 //! walked    u8                        0: the module was not walked
 //! layouts   count: u32, then per layout: present: u8, and if present
-//!             entries: u32, then per entry: kind: u8, labels: u32, then
-//!             per label: kind | cyc << 7: u8, payload, head (`putLabel`)
+//!             entries: u32, then per entry: kind: u8, same: u32 (the
+//!             labels it shares with the entry before, from the root),
+//!             more: u32, then per label after those: kind | cyc << 7:
+//!             u8, payload, head (`putLabel`)
 //! contracts count: u32, then per declaration: present: u8, the contract
 //! derived   count: u32, then per fact: the type, kind: u8, the effect
 //! js        count: u32, then one byte each
+//! keeps     u8                        `Published.keeps_messages`
 //! channel   clean: u8, writes: u32, then per write: inst: u32, kind: u8,
 //!           callers: u8
 //! reads     count: u32, then seven u32 each
 //! ```
 //!
-//! Every integer is little-endian. A contract, a function contract, a
+//! Every integer is little-endian. A function that a contract answers
+//! (`Contract.Made`) is its contract, its instruction, its declaration (the
+//! module by name, the declaration's index in it), its own parameters and
+//! its captures (`putMade`). A contract, a function contract, a
 //! source, a path and an effect are written field by field in declaration
 //! order (`putStruct`): a bool and a `u8` as one byte, a `u16` as two, a
 //! `u32` as four, a slice as its length and its elements, an optional as
@@ -37,10 +45,24 @@
 //! block dropped would read as its default at the importer, and the default
 //! of a fact such as `switches`, `hosts` or `casts` is the optimistic side.
 //!
-//! The reader trusts no byte. Each length is checked against the bytes
+//! The reader trusts no byte. The digest is checked first: a block with a
+//! changed, a missing or an added byte is `error.BadBlock`, a miss, and the
+//! module is walked. A flag of a contract is one bit, so damage that only
+//! the structure checks below saw could decode as another contract (the
+//! review of #2549: one bit turned a refusal into an accepted write, and the
+//! importer's entry kept it). Then each length is checked against the bytes
 //! left, each enum against its tags, and the decoded contracts against the
-//! layouts they name (`valid`), so a damaged block is `error.BadBlock`: a
-//! miss, and the module is walked.
+//! layouts they name (`valid`).
+//!
+//! An entry of a layout is a path of labels, and the entries of one layout
+//! share their first labels (a location and the locations below it), so
+//! each entry is written as the count it shares with the entry before and
+//! the labels after: a chain of types nested `d` deep with a function for
+//! each level wrote about d³/6 labels, and a block of 80 MB for 40 kB of
+//! source. A block larger than `max_bytes` is not made (the module is not
+//! stored, and is walked in each build): the cache reads no entry above
+//! `cache/Dir.max_entry_bytes`, so a larger one would be written by each
+//! build and read by none.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -48,17 +70,29 @@ const Contract = @import("Contract.zig");
 const Loc = @import("Loc.zig");
 const Reads = @import("Reads.zig");
 const Hoists = @import("../own2/Hoists.zig");
+const iface_bytes = @import("../resolve/iface_bytes.zig");
 
 pub const magic = "OWN3BLK\x00";
 /// Bumped when the meaning of a byte changes. The compiler's build id is in
 /// every key, so a block is only ever read by the compiler that wrote it;
-/// the version is for a reader of the bytes.
-pub const version: u32 = 1;
+/// the version is for a reader of the bytes. 2: the digest, and an entry's
+/// labels after those it shares with the entry before.
+pub const version: u32 = 2;
+
+/// The most bytes of a block (half of `cache/Dir.max_entry_bytes`, the
+/// largest entry that the cache reads): a module whose block is larger has
+/// none.
+pub const max_bytes: usize = 32 * 1024 * 1024;
+
+const header_len = magic.len + 4 + 16;
 
 pub const Error = error{BadBlock} || Allocator.Error;
 
 /// A type by its name: the declaring module's package and name, and the type's name.
 pub const TypeName = struct { package: u8, module: []const u8, name: []const u8 };
+
+/// A module by its name: its package and its dotted name.
+pub const ModuleName = struct { package: u8, name: []const u8 };
 
 /// How the writer names what a session numbers. A null answer says that the
 /// session cannot name the id: the module has no block, and is not stored.
@@ -68,6 +102,8 @@ pub const Names = struct {
     field: *const fn (ctx: *anyopaque, rank: u32) ?[]const u8,
     /// The name of the type with `TypeId` `id`.
     type: *const fn (ctx: *anyopaque, id: u32) ?TypeName,
+    /// The name of the module with index `index`.
+    module: *const fn (ctx: *anyopaque, index: u32) ?ModuleName,
 };
 
 /// The reader's inverse of `Names`. A null answer is a miss.
@@ -77,6 +113,8 @@ pub const Remap = struct {
     field: *const fn (ctx: *anyopaque, name: []const u8) ?u32,
     /// The `TypeId` of the type named `name`.
     type: *const fn (ctx: *anyopaque, name: TypeName) ?u32,
+    /// The index of the module named `name`.
+    module: *const fn (ctx: *anyopaque, name: ModuleName) ?u32,
 };
 
 /// What a block holds of one module.
@@ -118,6 +156,8 @@ fn local(comptime T: type, comptime name: []const u8) bool {
         .{ Contract.Fn, "arity" },
         .{ Contract.Fn, "layouts" },
         .{ Contract.Fn, "off" },
+        // One bit for each parameter of the owner.
+        .{ Contract.Fn, "before" },
         // Instructions, declarations and locals of the module's BIR.
         .{ Hoists.Write, "inst" },
         .{ Reads.Read, "decl" },
@@ -127,6 +167,7 @@ fn local(comptime T: type, comptime name: []const u8) bool {
         .{ Reads.Read, "path_len" },
         .{ Reads.Read, "placement" },
         .{ Reads.Read, "phase" },
+        .{ Reads.Read, "capture" },
     };
     inline for (rows) |row| {
         if (row[0] == T and std.mem.eql(u8, row[1], name)) return true;
@@ -148,12 +189,17 @@ fn fieldwise(comptime T: type) bool {
     return T == Contract.Contract or T == Contract.Fn or T == Contract.Src or T == Contract.Path or T == Contract.Effect or T == Hoists.Write or T == Reads.Read;
 }
 
+/// The structs that a block writes by hand: each holds an id of a session.
+fn byHand(comptime T: type) bool {
+    return T == Contract.Made;
+}
+
 fn checkField(comptime T: type, comptime name: []const u8, comptime F: type) void {
     const B = Base(F);
     switch (@typeInfo(B)) {
         .bool, .@"enum" => {},
         .int => |i| if (i.bits > 16 and !local(T, name)) @compileError("own3/Block.zig: field `" ++ name ++ "` of " ++ @typeName(T) ++ " is wide enough to hold an id of a session. If it holds a number of the module alone, name it in `local`; if it holds an id of a session (a `TypeId`, a text rank, a symbol), write it by name (kernel §7.1)."),
-        .@"struct" => if (!fieldwise(B)) @compileError("own3/Block.zig: field `" ++ name ++ "` of " ++ @typeName(T) ++ " has a type that no block writes: " ++ @typeName(B)),
+        .@"struct" => if (!fieldwise(B) and !byHand(B)) @compileError("own3/Block.zig: field `" ++ name ++ "` of " ++ @typeName(T) ++ " has a type that no block writes: " ++ @typeName(B)),
         else => @compileError("own3/Block.zig: field `" ++ name ++ "` of " ++ @typeName(T) ++ " has a type that no block writes: " ++ @typeName(B)),
     }
 }
@@ -161,7 +207,8 @@ fn checkField(comptime T: type, comptime name: []const u8, comptime F: type) voi
 comptime {
     // The parts that this file writes by hand: a change of their fields is
     // a change of `putPublished`, `getPublished`, `same` and `valid`.
-    exactFields(Contract.Published, &.{ "arena", "layouts", "contracts", "derived", "js" });
+    exactFields(Contract.Published, &.{ "arena", "layouts", "contracts", "derived", "js", "keeps_messages" });
+    exactFields(Contract.Made, &.{ "contract", "inst", "decl", "own_params", "caps" });
     exactFields(Contract.ExEntry, &.{ "labels", "kind" });
     exactFields(Contract.DerivedFact, &.{ "type", "kind", "effect" });
     exactFields(Loc.Label, &.{ "payload", "cyc", "kind", "head" });
@@ -246,6 +293,24 @@ const Writer = struct {
         try w.string(n.name);
     }
 
+    /// A function that a contract answers (`Contract.Made`): a lambda or a
+    /// local function of the module (`inst`), or a named declaration
+    /// (`decl`: a module, by its name, and the declaration's index in it).
+    fn putMade(w: *Writer, m: Contract.Made) Allocator.Error!void {
+        try w.put(Contract.Contract, m.contract.*);
+        try w.int(u32, m.inst);
+        try w.byte(@intFromBool(m.decl[0] != Contract.none));
+        if (m.decl[0] != Contract.none) {
+            if (w.names.module(w.names.ctx, m.decl[0])) |n| {
+                try w.byte(n.package);
+                try w.string(n.name);
+            } else w.bad = true;
+        }
+        try w.int(u32, m.decl[1]);
+        try w.int(u32, m.own_params);
+        try w.put([]const u32, m.caps);
+    }
+
     fn put(w: *Writer, comptime T: type, v: T) Allocator.Error!void {
         switch (@typeInfo(T)) {
             .bool => try w.byte(@intFromBool(v)),
@@ -263,7 +328,7 @@ const Writer = struct {
                 .one => try w.put(p.child, v.*),
                 .many, .c => @compileError("own3/Block.zig: no block writes " ++ @typeName(T)),
             },
-            .@"struct" => try w.putStruct(T, v),
+            .@"struct" => if (T == Contract.Made) try w.putMade(v) else try w.putStruct(T, v),
             else => @compileError("own3/Block.zig: no block writes " ++ @typeName(T)),
         }
     }
@@ -292,22 +357,36 @@ const Writer = struct {
         }
     }
 
+    /// Whether the block passed `max_bytes`: it is not made.
+    fn over(w: *Writer) bool {
+        if (w.out.items.len + w.strings.items.len <= max_bytes) return false;
+        w.bad = true;
+        return true;
+    }
+
     fn putPublished(w: *Writer, p: *const Contract.Published) Allocator.Error!void {
         try w.int(u32, @intCast(p.layouts.len));
         for (p.layouts) |lo| {
             try w.byte(@intFromBool(lo != null));
             const es = lo orelse continue;
             try w.int(u32, @intCast(es.len));
+            var prev: []const u64 = &.{};
             for (es) |e| {
                 try w.put(Loc.Kind, e.kind);
-                try w.int(u32, @intCast(e.labels.len));
-                for (e.labels) |l| try w.putLabel(l);
+                var shared: usize = 0;
+                while (shared < prev.len and shared < e.labels.len and prev[shared] == e.labels[shared]) shared += 1;
+                try w.int(u32, @intCast(shared));
+                try w.int(u32, @intCast(e.labels.len - shared));
+                for (e.labels[shared..]) |l| try w.putLabel(l);
+                prev = e.labels;
             }
+            if (w.over()) return;
         }
         try w.int(u32, @intCast(p.contracts.len));
         for (p.contracts) |co| {
             try w.byte(@intFromBool(co != null));
             if (co) |c| try w.put(Contract.Contract, c.*);
+            if (w.over()) return;
         }
         try w.int(u32, @intCast(p.derived.len));
         for (p.derived) |f| {
@@ -316,6 +395,7 @@ const Writer = struct {
             try w.put(Contract.Effect, f.effect);
         }
         try w.put([]const bool, p.js);
+        try w.put(bool, p.keeps_messages);
     }
 };
 
@@ -329,19 +409,23 @@ pub fn write(gpa: Allocator, m: Module, names: Names) Allocator.Error!?[]u8 {
     try w.put(bool, m.channel.clean);
     try w.put([]const Hoists.Write, m.channel.writes);
     try w.put([]const Reads.Read, m.reads);
-    if (w.bad) return null;
+    if (w.bad or w.over()) return null;
 
     var bytes: std.ArrayList(u8) = .empty;
     errdefer bytes.deinit(gpa);
-    try bytes.ensureTotalCapacityPrecise(gpa, magic.len + 8 + w.strings.items.len + w.out.items.len);
+    try bytes.ensureTotalCapacityPrecise(gpa, header_len + 4 + w.strings.items.len + w.out.items.len);
     bytes.appendSliceAssumeCapacity(magic);
     var buf: [4]u8 = undefined;
     std.mem.writeInt(u32, &buf, version, .little);
     bytes.appendSliceAssumeCapacity(&buf);
+    bytes.appendNTimesAssumeCapacity(0, 16);
     std.mem.writeInt(u32, &buf, w.string_count, .little);
     bytes.appendSliceAssumeCapacity(&buf);
     bytes.appendSliceAssumeCapacity(w.strings.items);
     bytes.appendSliceAssumeCapacity(w.out.items);
+    // The digest of every byte after it: the compiler's one hash.
+    const digest = iface_bytes.hash(bytes.items[header_len..]);
+    @memcpy(bytes.items[magic.len + 4 ..][0..16], &digest);
     return try bytes.toOwnedSlice(gpa);
 }
 
@@ -392,6 +476,20 @@ const Reader = struct {
         return r.remap.type(r.remap.ctx, .{ .package = package, .module = module, .name = name }) orelse error.BadBlock;
     }
 
+    fn getMade(r: *Reader) Error!Contract.Made {
+        const contract = try r.get(*const Contract.Contract);
+        const inst = try r.int(u32);
+        var decl: [2]u32 = .{ Contract.none, Contract.none };
+        if (try r.get(bool)) {
+            const package = try r.byte();
+            const name = try r.string();
+            decl[0] = r.remap.module(r.remap.ctx, .{ .package = package, .name = name }) orelse return error.BadBlock;
+        }
+        decl[1] = try r.int(u32);
+        const own_params = try r.int(u32);
+        return .{ .contract = contract, .inst = inst, .decl = decl, .own_params = own_params, .caps = try r.get([]const u32) };
+    }
+
     fn get(r: *Reader, comptime T: type) Error!T {
         switch (@typeInfo(T)) {
             .bool => {
@@ -422,7 +520,7 @@ const Reader = struct {
                 },
                 .many, .c => @compileError("own3/Block.zig: no block reads " ++ @typeName(T)),
             },
-            .@"struct" => return r.getStruct(T),
+            .@"struct" => return if (T == Contract.Made) r.getMade() else r.getStruct(T),
             else => @compileError("own3/Block.zig: no block reads " ++ @typeName(T)),
         }
     }
@@ -456,11 +554,17 @@ const Reader = struct {
             lo.* = null;
             if (!try r.get(bool)) continue;
             const es = try r.a.alloc(Contract.ExEntry, try r.count());
+            var prev: []const u64 = &.{};
             for (es) |*e| {
                 const kind = try r.get(Loc.Kind);
-                const labels = try r.a.alloc(u64, try r.count());
-                for (labels) |*l| l.* = try r.getLabel();
+                const shared = try r.int(u32);
+                if (shared > prev.len) return error.BadBlock;
+                const more = try r.count();
+                const labels = try r.a.alloc(u64, shared + more);
+                @memcpy(labels[0..shared], prev[0..shared]);
+                for (labels[shared..]) |*l| l.* = try r.getLabel();
                 e.* = .{ .labels = labels, .kind = kind };
+                prev = labels;
             }
             lo.* = es;
         }
@@ -479,6 +583,7 @@ const Reader = struct {
             f.* = .{ .type = ty, .kind = kind, .effect = try r.get(Contract.Effect) };
         }
         p.js = try r.get([]const bool);
+        p.keeps_messages = try r.get(bool);
     }
 };
 
@@ -486,10 +591,12 @@ const Reader = struct {
 /// bytes are no block of this compiler, a name has no id in this session,
 /// or a contract does not agree with the layouts it names.
 pub fn read(gpa: Allocator, bytes: []const u8, remap: Remap) Error!Loaded {
-    if (bytes.len < magic.len + 8) return error.BadBlock;
+    if (bytes.len < header_len + 4 or bytes.len > max_bytes + header_len + 4) return error.BadBlock;
     if (!std.mem.eql(u8, bytes[0..magic.len], magic)) return error.BadBlock;
     if (std.mem.readInt(u32, bytes[magic.len..][0..4], .little) != version) return error.BadBlock;
-    var r: Reader = .{ .bytes = bytes, .at = magic.len + 4, .a = gpa, .remap = remap };
+    // Every byte after the digest is as it was written, or the block is a miss.
+    if (!std.mem.eql(u8, bytes[magic.len + 4 ..][0..16], &iface_bytes.hash(bytes[header_len..]))) return error.BadBlock;
+    var r: Reader = .{ .bytes = bytes, .at = header_len, .a = gpa, .remap = remap };
 
     // The table of strings: slices of `bytes`, which outlive the read.
     var table: std.ArrayList([]const u8) = .empty;
@@ -560,6 +667,11 @@ fn srcsValid(p: *const Contract.Published, c: *const Contract.Contract, srcs: []
                 if (s.a >= c.arity) return false;
                 if (c.fns[s.a]) |g| if (s.e >= entriesOf(p, g.layouts[g.arity]).?) return false;
             },
+            // The functions held at a parameter location: an index of `flags`.
+            .held => {
+                if (s.a >= c.flags.len) return false;
+                if (c.heldAt(s.a)) |g| if (s.e >= entriesOf(p, g.layouts[g.arity]).?) return false;
+            },
         }
     }
     return true;
@@ -571,34 +683,50 @@ fn renewValid(p: *const Contract.Published, c: *const Contract.Contract, renew: 
     return true;
 }
 
+/// Whether every index that a reader of contract `c` of `p` takes from it
+/// is inside what it names (`Contract.Reader`, `Frame.applyAt`,
+/// `Frame.madeVal`): its layouts are layouts of the block, its offsets are
+/// those of its layouts, each table by entry has an entry for each, and
+/// each source names a parameter and an entry of the contract. So are the
+/// contracts of the functions it answers, at any depth (`depth` bounds a
+/// block that nests them without end).
+fn contractValid(p: *const Contract.Published, c: *const Contract.Contract, depth: u32) bool {
+    if (depth > 64) return false;
+    const n = offsets(p, c.arity, c.layouts, c.off) orelse return false;
+    if (c.flags.len != n) return false;
+    if (c.res.len != entriesOf(p, c.layouts[c.arity]).?) return false;
+    if (c.fns.len != c.arity) return false;
+    if (c.held.len != 0 and c.held.len != c.flags.len) return false;
+    if (c.fn_known.len != 0 and c.fn_known.len != c.res.len) return false;
+    // The function contracts first: a source of the kind `answer` or `held` reads one.
+    for ([_][]const ?*const Contract.Fn{ c.fns, c.held }) |fs| for (fs) |fo| {
+        const g = fo orelse continue;
+        const gn = offsets(p, g.arity, g.layouts, g.off) orelse return false;
+        if (g.supply.len != gn or g.free.len != gn) return false;
+    };
+    for (c.res) |srcs| if (!srcsValid(p, c, srcs)) return false;
+    for ([_][]const ?*const Contract.Fn{ c.fns, c.held }) |fs| for (fs) |fo| {
+        const g = fo orelse continue;
+        for (g.supply) |srcs| if (!srcsValid(p, c, srcs)) return false;
+    };
+    if (!renewValid(p, c, c.renew)) return false;
+    for (c.paths) |path| {
+        if (path.writes.len != 0 and path.writes.len != c.flags.len) return false;
+        if (!renewValid(p, c, path.renew)) return false;
+    }
+    if (c.answers) |xs| for (xs) |x| {
+        if (!contractValid(p, x.contract, depth + 1)) return false;
+    };
+    return true;
+}
+
 /// Whether every index that a reader of `p` takes from it is inside what it
-/// names (`Contract.Reader`, `Frame.applyAt`): a contract's layouts are
-/// layouts of the block, its offsets are those of its layouts, each table
-/// by entry has an entry for each, and each source names a parameter and an
-/// entry of the contract.
+/// names (`contractValid`), and its derived facts are in the order that
+/// `Contract.derivedFact` searches.
 pub fn valid(p: *const Contract.Published) bool {
     for (p.contracts) |co| {
         const c = co orelse continue;
-        const n = offsets(p, c.arity, c.layouts, c.off) orelse return false;
-        if (c.flags.len != n) return false;
-        if (c.res.len != entriesOf(p, c.layouts[c.arity]).?) return false;
-        if (c.fns.len != c.arity) return false;
-        // The function contracts first: a source of the kind `answer` reads one.
-        for (c.fns) |fo| {
-            const g = fo orelse continue;
-            const gn = offsets(p, g.arity, g.layouts, g.off) orelse return false;
-            if (g.supply.len != gn or g.free.len != gn) return false;
-        }
-        for (c.res) |srcs| if (!srcsValid(p, c, srcs)) return false;
-        for (c.fns) |fo| {
-            const g = fo orelse continue;
-            for (g.supply) |srcs| if (!srcsValid(p, c, srcs)) return false;
-        }
-        if (!renewValid(p, c, c.renew)) return false;
-        for (c.paths) |path| {
-            if (path.writes.len != 0 and path.writes.len != c.flags.len) return false;
-            if (!renewValid(p, c, path.renew)) return false;
-        }
+        if (!contractValid(p, c, 0)) return false;
     }
     // Sorted by type and method, each once: `Contract.derivedFact` searches it.
     for (p.derived, 0..) |f, i| {
@@ -628,6 +756,10 @@ fn eq(comptime T: type, a: T, b: T) bool {
             .one => return eq(p.child, a.*, b.*),
             .many, .c => @compileError("own3/Block.zig: no block compares " ++ @typeName(T)),
         },
+        .array => |arr| {
+            for (a, b) |x, y| if (!eq(arr.child, x, y)) return false;
+            return true;
+        },
         .@"struct" => |info| {
             inline for (info.field_names, info.field_types) |name, F| {
                 if (!eq(F, @field(a, name), @field(b, name))) return false;
@@ -646,7 +778,8 @@ pub fn samePublished(a: ?*const Contract.Published, b: ?*const Contract.Publishe
     return eq([]const ?[]const Contract.ExEntry, x.layouts, y.layouts) and
         eq([]const ?*const Contract.Contract, x.contracts, y.contracts) and
         eq([]const Contract.DerivedFact, x.derived, y.derived) and
-        eq([]const bool, x.js, y.js);
+        eq([]const bool, x.js, y.js) and
+        x.keeps_messages == y.keeps_messages;
 }
 
 /// Whether a block read back is what was written (kernel §7.1): the check
@@ -697,11 +830,20 @@ const TestSession = struct {
         if (s.missing_type == id) return null;
         return id + s.shift;
     }
+    fn moduleOf(ctx: *anyopaque, index: u32) ?ModuleName {
+        const s: *TestSession = @ptrCast(@alignCast(ctx));
+        return .{ .package = 0, .name = s.text("Mod", index) };
+    }
+    fn moduleIndex(ctx: *anyopaque, n: ModuleName) ?u32 {
+        const s: *TestSession = @ptrCast(@alignCast(ctx));
+        if (n.package != 0 or n.name.len < 4 or !std.mem.startsWith(u8, n.name, "Mod")) return null;
+        return (std.fmt.parseInt(u32, n.name[3..], 10) catch return null) + s.shift;
+    }
     fn names(s: *TestSession) Names {
-        return .{ .ctx = s, .field = field, .type = typeOf };
+        return .{ .ctx = s, .field = field, .type = typeOf, .module = moduleOf };
     }
     fn remap(s: *TestSession) Remap {
-        return .{ .ctx = s, .field = rankOf, .type = typeId };
+        return .{ .ctx = s, .field = rankOf, .type = typeId, .module = moduleIndex };
     }
 };
 
@@ -733,17 +875,34 @@ fn testModule(arena: Allocator) Allocator.Error!Module {
         .called = true,
         .kept_out = true,
     };
+    // A function that the contract answers: a lambda of the module with two
+    // captures, and a declaration of module 4.
+    const inner = try arena.create(Contract.Contract);
+    inner.* = .{
+        .arity = 0,
+        .layouts = try arena.dupe(u32, &.{2}),
+        .off = try arena.dupe(u32, &.{0}),
+        .flags = &.{},
+        .res = try arena.dupe([]const Contract.Src, &.{try arena.dupe(Contract.Src, &.{Contract.Src.fresh(1, false)})}),
+        .fns = &.{},
+    };
     const c = try arena.create(Contract.Contract);
     c.* = .{
         .arity = 2,
         .layouts = try arena.dupe(u32, &.{ 0, 2, 2 }),
         .off = try arena.dupe(u32, &.{ 0, 2, 3 }),
         .flags = try arena.dupe(u8, &.{ Contract.flag_w | Contract.flag_r, 0, Contract.flag_e }),
-        .res = try arena.dupe([]const Contract.Src, &.{try arena.dupe(Contract.Src, &.{ .outside, Contract.Src.fresh(3, true), .{ .kind = .answer, .a = 1, .e = 0 }, .{ .kind = .param, .a = 0, .e = 1, .p = Contract.Src.posOf(1, 1) } })}),
+        .res = try arena.dupe([]const Contract.Src, &.{try arena.dupe(Contract.Src, &.{ .outside, Contract.Src.fresh(3, true), .{ .kind = .answer, .a = 1, .e = 0 }, .{ .kind = .param, .a = 0, .e = 1, .p = Contract.Src.posOf(1, 1), .same_place = true }, .{ .kind = .held, .a = 2, .e = 0 } })}),
         .fns = try arena.dupe(?*const Contract.Fn, &.{ null, g }),
         .nonlinear = true,
         .old_result = false,
         .hosts = true,
+        .held = try arena.dupe(?*const Contract.Fn, &.{ null, null, g }),
+        .fn_known = try arena.dupe(bool, &.{true}),
+        .answers = try arena.dupe(Contract.Made, &.{
+            .{ .contract = inner, .inst = 12, .decl = .{ Contract.none, Contract.none }, .own_params = 1, .caps = try arena.dupe(u32, &.{ 0, Contract.none }) },
+            .{ .contract = inner, .inst = Contract.none, .decl = .{ 4, 2 }, .own_params = 0, .caps = &.{} },
+        }),
         .renew = try arena.dupe(?[]const Contract.Src, &.{ null, try arena.dupe(Contract.Src, &.{.twice}), null }),
         .paths = try arena.dupe(Contract.Path, &.{
             .{ .writes = try arena.dupe(bool, &.{ true, false, false }) },
@@ -757,6 +916,7 @@ fn testModule(arena: Allocator) Allocator.Error!Module {
         .contracts = try arena.dupe(?*const Contract.Contract, &.{ null, c }),
         .derived = try arena.dupe(Contract.DerivedFact, &.{ .{ .type = 5, .kind = 0, .effect = .{ .writes = true } }, .{ .type = 5, .kind = 1, .effect = .{ .hosts = true } } }),
         .js = try arena.dupe(bool, &.{ true, false }),
+        .keeps_messages = false,
     };
     return .{
         .published = p,
@@ -801,8 +961,14 @@ test "a block read in another session has that session's ranks and type ids, and
     const variable: Loc.Label = @bitCast(p.layouts[2].?[0].labels[2]);
     try testing.expectEqual(@as(u32, 0), variable.head);
     try testing.expectEqual(@as(u32, 105), p.derived[0].type);
-    // The contracts hold no id of a session.
+    // A contract holds one id of a session: the module of a declaration it
+    // answers. The lambda it answers has none.
+    const answers = p.contracts[1].?.answers.?;
+    try testing.expectEqual([2]u32{ Contract.none, Contract.none }, answers[0].decl);
+    try testing.expectEqual([2]u32{ 104, 2 }, answers[1].decl);
+    @constCast(answers)[1].decl[0] = 4;
     try testing.expect(eq([]const ?*const Contract.Contract, m.published.?.contracts, p.contracts));
+    try testing.expect(!p.keeps_messages);
     try testing.expect(!same(m, &back));
 }
 
@@ -839,7 +1005,7 @@ test "a label whose head no rule reads: no block" {
     try testing.expect(try write(testing.allocator, .{ .published = &p }, s.names()) == null);
 }
 
-test "each damaged block is a miss: every cut, and every byte changed" {
+test "each damaged block is a miss: every cut, and every bit changed" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const m = try testModule(arena_state.allocator());
@@ -847,13 +1013,37 @@ test "each damaged block is a miss: every cut, and every byte changed" {
     const bytes = (try write(testing.allocator, m, s.names())).?;
     defer testing.allocator.free(bytes);
     for (0..bytes.len) |n| try testing.expectError(error.BadBlock, read(testing.allocator, bytes[0..n], s.remap()));
-    // A changed byte gives a miss or a block that a reader can index; it
-    // never gives a read outside the bytes or a leak (the test allocator).
+    // One changed bit, anywhere: the digest says so. Before the digest a
+    // changed flag of a contract decoded as another contract.
     const copy = try testing.allocator.dupe(u8, bytes);
     defer testing.allocator.free(copy);
-    for (0..copy.len) |i| for ([_]u8{ 1, 0x80, 0xff }) |x| {
+    for (0..copy.len) |i| for (0..8) |bit| {
+        copy[i] = bytes[i] ^ (@as(u8, 1) << @intCast(bit));
+        defer copy[i] = bytes[i];
+        try testing.expectError(error.BadBlock, read(testing.allocator, copy, s.remap()));
+    };
+    // And bytes after the block's end.
+    const longer = try std.mem.concat(testing.allocator, u8, &.{ bytes, &.{0} });
+    defer testing.allocator.free(longer);
+    try testing.expectError(error.BadBlock, read(testing.allocator, longer, s.remap()));
+}
+
+test "the structure checks hold with no digest: a changed byte decodes to a block that a reader can index, or is a miss" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const m = try testModule(arena_state.allocator());
+    var s: TestSession = .{};
+    const bytes = (try write(testing.allocator, m, s.names())).?;
+    defer testing.allocator.free(bytes);
+    // The digest made right again after each change: what the checks below
+    // it do alone. No read outside the bytes and no leak (the test allocator).
+    const copy = try testing.allocator.dupe(u8, bytes);
+    defer testing.allocator.free(copy);
+    for (header_len..copy.len) |i| for ([_]u8{ 1, 0x80, 0xff }) |x| {
         copy[i] = bytes[i] ^ x;
         defer copy[i] = bytes[i];
+        const digest = iface_bytes.hash(copy[header_len..]);
+        @memcpy(copy[magic.len + 4 ..][0..16], &digest);
         var back = read(testing.allocator, copy, s.remap()) catch |err| switch (err) {
             error.BadBlock => continue,
             error.OutOfMemory => return err,
@@ -861,6 +1051,32 @@ test "each damaged block is a miss: every cut, and every byte changed" {
         defer back.deinit(testing.allocator);
         if (back.published) |p| try testing.expect(valid(p));
     };
+}
+
+test "the entries of a layout share their first labels: a chain of locations is written once" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    // One layout of `depth` entries, entry `i` the path of the first `i + 1`
+    // labels: with each path whole the labels are depth²/2.
+    const depth = 200;
+    const path = try arena.alloc(u64, depth);
+    for (path, 0..) |*l, i| l.* = (Loc.Label{ .kind = .index, .payload = @intCast(i % 7), .cyc = false, .head = 0 }).word();
+    const es = try arena.alloc(Contract.ExEntry, depth);
+    for (es, 0..) |*e, i| e.* = .{ .labels = path[0 .. i + 1], .kind = .list };
+    const layouts = try arena.alloc(?[]const Contract.ExEntry, 1);
+    layouts[0] = es;
+    var p: Contract.Published = .{ .arena = undefined, .layouts = layouts };
+    var s: TestSession = .{};
+    const m: Module = .{ .published = &p };
+    const bytes = (try write(testing.allocator, m, s.names())).?;
+    defer testing.allocator.free(bytes);
+    // 14 bytes for each entry (its kind, two counts, one label), not 5 for
+    // each of its labels.
+    try testing.expect(bytes.len < depth * 16 + 256);
+    var back = try read(testing.allocator, bytes, s.remap());
+    defer back.deinit(testing.allocator);
+    try testing.expect(same(m, &back));
 }
 
 test "a contract that names a layout or an entry that the block does not have is not valid" {
@@ -881,5 +1097,14 @@ test "a contract that names a layout or an entry that the block does not have is
     res[2].e = 1; // the function at parameter 1 answers one entry
     try testing.expect(!valid(p));
     res[2].e = 0;
+    try testing.expect(valid(p));
+    res[4].a = 3; // the contract has three parameter locations
+    try testing.expect(!valid(p));
+    res[4].a = 2;
+    // A contract that it answers is checked as it is.
+    const inner_layouts = @constCast(c.answers.?[0].contract.layouts);
+    inner_layouts[0] = 1;
+    try testing.expect(!valid(p));
+    inner_layouts[0] = 2;
     try testing.expect(valid(p));
 }

@@ -1,0 +1,70 @@
+-- List.map makes a new outer list while keeping its record items.
+-- A record item no longer authorizes an item-only identity skip
+-- (backend.md §15.5, O3). Every visited row recomputes its label and scalar
+-- handler message, including on a selection. Scalar DOM writes still
+-- compare their values. Each handler sends its own row's message after
+-- the patch; relabelling changes only the intended row's visible text.
+
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick Int
+    | Relabel
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    selected : Maybe Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick id →
+            { model | selected = Just id }
+
+        Relabel →
+            { model
+                | rows =
+                    List.map model.rows λrow →
+                        if row.id == 2 then { row | label = "${row.label}!" } else row
+            }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="relabel" onClick={Relabel}>relabel</button>
+        <ul>
+            <For each={model.rows} keyed={.id}>
+                {λrow →
+                    <li class={if model.selected == Just row.id then "on" else ""}>
+                        <a id="pick${String.fromInt row.id}" onClick={Pick row.id}>
+                            {Debug.log "label" row.label}
+                        </a>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { rows = [ { id = 1, label = "one" }, { id = 2, label = "two" } ]
+                , selected = Nothing
+                }
+        , update = update
+        , view = view
+        }

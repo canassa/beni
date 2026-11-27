@@ -1,0 +1,364 @@
+--! The rendered page's nodes, by id (`docs/design/boundary.md` §9.8.6):
+--! focus, measure, scroll. Each is `impure` and answers at once; a node
+--! that is not in the page is `Err (NotFound id)`, never a crash.
+--!
+--! Where the node was rendered by the message being handled, ask for the
+--! work after the render: `Cmd.afterRender` runs it once the page is
+--! patched, and a fiber waits for that moment with `rendered`.
+--!
+--!     Edit id →
+--!         ( { model | editing = Just id }, Cmd.afterRender (focusEditor id _) )
+--!
+--!     focusEditor id send =
+--!         case Dom.focus "edit-${id}" of
+--!             Ok ⊤ → ⊤
+--!             Err why → send (FocusFailed why)
+--!
+--! Full screen (§9.8.6, *amended 2026-10-23*): `requestFullscreen` shows a
+--! node in full screen and `exitFullscreen` leaves it; both wait for the
+--! browser's answer. `onFullscreenChange` reports every change, also the
+--! ones the user makes with Escape or a browser control. A request needs
+--! the user activation of the click that asks for it, so ask from that
+--! click's message: a command's body runs well inside the few seconds the
+--! activation lasts.
+--!
+--!     GoFullscreen →
+--!         ( model, Cmd.perform λsend → send (Entered (Dom.requestFullscreen "arena")) )
+
+import Html
+import Js
+import Listen
+import Phase
+import Sub exposing (Sub)
+import Task
+
+
+--| Why a node could not be used.
+pub type Error
+    = NotFound String
+
+
+--| Why the browser did not show a node in full screen.
+--|
+--|   - `NoElement id`: no node in the page has this id.
+--|   - `Unsupported`: the browser cannot show a node in full screen, as
+--|     Safari on an iPhone cannot, or the page may not (an `iframe`
+--|     without `allowfullscreen`).
+--|   - `NotActivated`: no user activation is active; ask from the message
+--|     of a click or a key.
+--|   - `Refused reason`: the browser refused the request, with its reason.
+pub type FullscreenError
+    = NoElement String
+    | Unsupported
+    | NotActivated
+    | Refused String
+
+
+--| A node's box in the viewport, in CSS pixels.
+pub type alias Box =
+    x : Float
+    y : Float
+    width : Float
+    height : Float
+
+
+--| The viewport: its size, and how far the page is scrolled.
+pub type alias Viewport =
+    x : Float
+    y : Float
+    width : Float
+    height : Float
+
+
+-- Written over `Js` since 2026-10-29 (`plans/runtime-in-beni.md` step 8):
+-- the node is found by id when the call is made, and one that is not in
+-- the page is `NotFound`. No call here documents a failure, so none is
+-- caught.
+
+--| Focus the element with this id.
+pub focus : String → Result Error ⊤
+focus id = found id λn →
+    _ = Js.call n "focus" []
+    ⊤
+
+
+--| Take the focus away from the element with this id.
+pub blur : String → Result Error ⊤
+blur id = found id λn →
+    _ = Js.call n "blur" []
+    ⊤
+
+
+--| The box of the element with this id (`getBoundingClientRect`).
+pub box : String → Result Error Box
+box id = found id λn →
+    r = Js.call n "getBoundingClientRect" []
+    { x = Js.to (Js.get r "x")
+    , y = Js.to (Js.get r "y")
+    , width = Js.to (Js.get r "width")
+    , height = Js.to (Js.get r "height")
+    }
+
+
+--| Scroll the element with this id to `x` and `y`.
+pub scrollTo : String, Float, Float → Result Error ⊤
+scrollTo id x y = found id λn →
+    _ = Js.call n "scrollTo" [ Js.from x, Js.from y ]
+    ⊤
+
+
+--| Why a text field's selection could not be set: no node in the page has
+--| this id, or the node is not a text field (`Html.targetSelection` names
+--| the ones that are).
+pub type SelectError
+    = NoField String
+    | NotText String
+
+
+--| Select from `start` to `end` in the text field with this id, in code
+--| points as `String` counts them (`Html.Selection`), backward when
+--| `backward` says so. A position past the text is the text's end. It does
+--| not focus the field; `focus` does.
+--|
+--|     Dom.select "editor" { start = 4, end = 9, backward = False }
+pub select : String, Html.Selection → Result SelectError ⊤
+select id selection =
+    node = Js.call (Js.global "document") "getElementById" [ Js.from id ]
+    if Js.isNull node then
+        Err (NoField id)
+    else if not (Js.typeIs (Js.get node "selectionStart") "number") then
+        -- `setSelectionRange` throws on an input of a type with no
+        -- selection, and an element that is no field has none: neither is
+        -- called.
+        Err (NotText id)
+    else
+        value = Js.get node "value"
+        from = unitsBefore value selection.start
+        to = unitsBefore value (max selection.start selection.end)
+        direction = if selection.backward then "backward" else "forward"
+        _ = Js.call node "setSelectionRange" [ Js.from from, Js.from to, Js.from direction ]
+        Ok ⊤
+
+
+-- How many UTF-16 units the first `count` code points of the string
+-- `value` take: all of them when it has fewer.
+unitsBefore : Js.Value, Int → Int
+unitsBefore value count =
+    points = Js.call (Js.global "Array") "from" [ value ]
+    first = Js.call points "slice" [ Js.from 0, Js.from (max 0 count) ]
+    Js.to (Js.get (Js.call first "join" [ Js.from "" ]) "length")
+
+
+--| Scroll the page until the element with this id is in view.
+pub scrollIntoView : String → Result Error ⊤
+scrollIntoView id = found id λn →
+    _ = Js.call n "scrollIntoView" []
+    ⊤
+
+
+--| Where `scrollIntoViewWith` puts a node in one direction of each box
+--| that scrolls it: its start edge at the box's start edge, its centre at
+--| the box's centre, its end edge at the box's end edge, or `Nearest`:
+--| only as far as it takes to show the node, and not at all when it is in
+--| view.
+pub type Align
+    = Start
+    | Center
+    | End
+    | Nearest
+
+
+--| Where `scrollIntoViewWith` puts a node: `block` across the lines of
+--| text (up and down, in a page of horizontal text), `inline` along them.
+pub type alias Alignment =
+    block : Align
+    inline : Align
+
+
+--| Scroll the page, and each box that scrolls the element with this id,
+--| until the element is where `alignment` says. `scrollIntoView id` is
+--| `scrollIntoViewWith id { block = Start, inline = Nearest }`. `Nearest`
+--| in both directions shows a tab in a row of tabs that scrolls sideways,
+--| and moves the page up or down only when the tab is not in view:
+--|
+--|     Dom.scrollIntoViewWith "tab-3" { block = Dom.Nearest, inline = Dom.Nearest }
+pub scrollIntoViewWith : String, Alignment → Result Error ⊤
+scrollIntoViewWith id alignment = found id λn →
+    options =
+        Js.object
+            [ ( "block", alignName alignment.block ), ( "inline", alignName alignment.inline ) ]
+    _ = Js.call n "scrollIntoView" [ options ]
+    ⊤
+
+
+-- The name `ScrollIntoViewOptions` gives an alignment (CSSOM View).
+alignName : Align → String
+alignName align =
+    case align of
+        Start →
+            "start"
+
+        Center →
+            "center"
+
+        End →
+            "end"
+
+        Nearest →
+            "nearest"
+
+
+--| The viewport now.
+pub viewport : ⊤ → Viewport
+viewport ⊤ =
+    { x = Js.to (Js.global "scrollX")
+    , y = Js.to (Js.global "scrollY")
+    , width = Js.to (Js.global "innerWidth")
+    , height = Js.to (Js.global "innerHeight")
+    }
+
+
+-- `use` of the element with this id, when the page has one: the sibling's
+-- shape, one lookup and one call, so a page that only focuses ships no
+-- `Result.map`.
+found : String, (Js.Value → a) → Result Error a
+found id use =
+    n = Js.call (Js.global "document") "getElementById" [ Js.from id ]
+    if Js.isNull n then
+        Err (NotFound id)
+    else
+        Ok (use n)
+
+
+--| Show the element with this id in full screen, and wait until the
+--| browser has done it or refused. Call it inside the user activation of
+--| the click or the key that asks for it.
+--|
+--|     case Dom.requestFullscreen "arena" of
+--|         Ok ⊤ → send Entered
+--|         Err why → send (FullscreenFailed why)
+pub requestFullscreen : String → Result FullscreenError ⊤
+requestFullscreen id =
+    document = Js.global "document"
+    node = Js.call document "getElementById" [ Js.from id ]
+    if Js.isNull node then
+        Err (NoElement id)
+    else if not (Js.typeIs (Js.get node "requestFullscreen") "function") then
+        Err Unsupported
+    else if not (Js.same (Js.get document "fullscreenEnabled") (Js.from True)) then
+        Err Unsupported
+    else if not (activated ⊤) then
+        Err NotActivated
+    else
+        case settle λ⊤ → Js.call node "requestFullscreen" [] of
+            Done →
+                Ok ⊤
+
+            Denied reason →
+                Err (Refused reason)
+
+            Defect error →
+                Js.throw error
+
+
+--| Leave full screen, and wait until the browser has done it. When no
+--| element is in full screen, return at once.
+pub exitFullscreen : ⊤ → ⊤
+exitFullscreen ⊤ =
+    document = Js.global "document"
+    if Js.isNullish (Js.get document "fullscreenElement") then
+        ⊤
+    else
+        -- A refusal is the browser's `TypeError`: the document left full
+        -- screen while this call waited, so there is nothing to leave.
+        case settle λ⊤ → Js.call document "exitFullscreen" [] of
+            Defect error →
+                Js.throw error
+
+            _ →
+                ⊤
+
+
+--| The id of the element in full screen now, `Just ""` for one with no
+--| id, or `Nothing` when no element is in full screen.
+pub fullscreenElement : ⊤ → Maybe String
+fullscreenElement ⊤ =
+    node = Js.get (Js.global "document") "fullscreenElement"
+    if Js.isNullish node then
+        Nothing
+    else
+        Just (Js.to (Js.get node "id"))
+
+
+--| The element in full screen, as `fullscreenElement` gives it, each time
+--| that changes: by a request, by `exitFullscreen`, by Escape or by a
+--| control of the browser.
+--|
+--|     subscriptions model = Dom.onFullscreenChange FullscreenChanged
+pub onFullscreenChange : (Maybe String → msg) → Sub msg
+onFullscreenChange tag = Sub.on FullscreenChange fullscreenChanges tag
+
+
+--| Call `f` with the element in full screen each time that changes, for
+--| as long as the calling fiber runs.
+pub eachFullscreenChange : (Maybe String → ⊤) → ⊤
+eachFullscreenChange f = Listen.each fullscreenChanges f
+
+
+type Key
+    = FullscreenChange
+
+
+fullscreenChanges : sync (Maybe String → ⊤) → (⊤ → ⊤)
+fullscreenChanges send = Listen.on "document" "fullscreenchange" (λ_ → fullscreenElement ⊤) send
+
+
+-- Whether the page has the user activation a request needs. A browser
+-- with no `navigator.userActivation` says nothing here; it refuses the
+-- request itself.
+activated : ⊤ → Bool
+activated ⊤ =
+    state = Js.get (Js.global "navigator") "userActivation"
+    if Js.isNullish state then
+        True
+    else
+        Js.same (Js.get state "isActive") (Js.from True)
+
+
+-- How one promise of the Fullscreen API settled.
+type Settled
+    = Done
+    | Denied String
+    | Defect Js.Value
+
+
+-- Wait for the promise `start` returns. The Fullscreen standard rejects
+-- every refusal with a `TypeError`; any other reason is a defect, thrown in
+-- the waiting fiber (`CLAUDE.md` rule 9). The request cannot be cancelled,
+-- so a cancelled fiber only stops waiting.
+settle : sync (⊤ → Js.Value) → Settled
+settle start = Task.callback λresume →
+    _ =
+        Js.call (start ⊤) "then"
+            [ Js.from λ_ → Task.resume resume Done
+            , Js.from λerror → Task.resume resume (rejected error)
+            ]
+    λ⊤ → ⊤
+
+
+rejected : Js.Value → Settled
+rejected error =
+    if Js.instanceOf error (Js.global "TypeError") then
+        Denied (Js.to (Js.get error "message"))
+    else
+        Defect error
+
+
+--| Wait until what has been sent is on the page: at once when no render is
+--| queued, otherwise until the after-render phase of the flush that is.
+--|
+--|     _ = send (Opened id)
+--|     Dom.rendered ⊤
+--|     Dom.focus "edit-${id}"
+pub rendered : ⊤ → ⊤
+rendered ⊤ = Phase.rendered ⊤

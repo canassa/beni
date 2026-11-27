@@ -1,0 +1,66 @@
+-- load
+<body>
+  <main>
+    <button id="lam">"lam"</button>
+    <button id="twice">"twice"</button>
+    <button id="local">"local"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"0"</p>
+    <p id="log"></p>
+  </main>
+</body>
+-- click #lam
+<body>
+  <main>
+    <button id="lam">"lam"</button>
+    <button id="twice">"twice"</button>
+    <button id="local">"local"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"2"</p>
+    <p id="log">" | lam 1"</p>
+  </main>
+</body>
+-- click #twice
+<body>
+  <main>
+    <button id="lam">"lam"</button>
+    <button id="twice">"twice"</button>
+    <button id="local">"local"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"22"</p>
+    <p id="log">" | lam 1 | before 12 | after 12 | m 12"</p>
+  </main>
+</body>
+-- click #local
+<body>
+  <main>
+    <button id="lam">"lam"</button>
+    <button id="twice">"twice"</button>
+    <button id="local">"local"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"222"</p>
+    <p id="log">" | lam 1 | before 12 | after 12 | m 12 | local 122"</p>
+  </main>
+</body>
+-- click #slept
+<body>
+  <main>
+    <button id="lam">"lam"</button>
+    <button id="twice">"twice"</button>
+    <button id="local">"local"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"2222"</p>
+    <p id="log">" | lam 1 | before 12 | after 12 | m 12 | local 122"</p>
+  </main>
+</body>
+-- advance 10
+<body>
+  <main>
+    <button id="lam">"lam"</button>
+    <button id="twice">"twice"</button>
+    <button id="local">"local"</button>
+    <button id="slept">"slept"</button>
+    <p id="count">"2222"</p>
+    <p id="log">" | lam 1 | before 12 | after 12 | m 12 | local 122 | slept 1222"</p>
+  </main>
+</body>

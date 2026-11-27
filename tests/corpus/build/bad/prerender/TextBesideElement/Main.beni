@@ -1,0 +1,22 @@
+-- A text hole beside an element on a page that prerenders: the string form
+-- and the takeover have no node for each text of such an element yet, so it
+-- is refused at the element (docs/design/browser-inline.md §8.2, amended
+-- 2026-11-24; §5, class 1). Without the prerender, it compiles
+-- (`browser/inline/TextBesideElement`).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : { count : Int } → Html {}
+view model =
+    <p>
+        Count: {model.count}
+        <strong>now</strong>
+    </p>
+
+
+main : Tea.Program
+main =
+    Browser.prerender (Tea.sandbox { init = λ⊤ → { count = 1 }, update = λ_ m → m, view = view })
+        [ "/" ]

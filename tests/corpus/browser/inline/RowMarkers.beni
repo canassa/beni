@@ -1,0 +1,110 @@
+-- A branch region or a `For` in a `For`'s row or in a region's arm, followed
+-- by text, a text hole or another `For` (browser-inline.md §9, amended
+-- 2026-11-24): each stands before an empty comment of its own in the row's
+-- template, which `make` finds before it makes any text, so text before it
+-- stays before it and text after it stays after it, whichever arm shows
+-- and however many rows the inner `For` has. Its transcript is
+-- `browser-tea`'s for the same source but for the comments.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Flip Int
+    | Grow Int
+    | Open
+
+
+type alias Row =
+    id : Int
+    on : Bool
+    parts : List String
+
+
+type alias Model =
+    rows : List Row
+    open : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip id →
+            { model
+                | rows = List.map model.rows λr → if r.id == id then { r | on = not r.on } else r
+            }
+
+        Grow id →
+            { model
+                | rows =
+                    List.map model.rows λr →
+                        if r.id == id then { r | parts = List.push (List.copy r.parts) "p" } else r
+            }
+
+        Open →
+            { model | open = not model.open }
+
+
+panel : Model → Html Msg
+panel model =
+    <section>
+        {case List.head model.rows of
+            Just r →
+                <b>{r.id}</b>
+
+            Nothing →
+                <i>none</i>
+        }
+        tail
+    </section>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="open" onClick={Open}>open</button>
+        <ul>
+            <For each={model.rows} keyed={.id}>
+                {λr →
+                    <li>
+                        <button id="flip${String.fromInt r.id}" onClick={Flip r.id}>flip</button>
+                        <button id="grow${String.fromInt r.id}" onClick={Grow r.id}>grow</button>
+                        <p>
+                            before
+                            {if r.on then <b>on</b> else <i>off</i>}
+                            after
+                        </p>
+                        <p>
+                            <em>{r.id}</em>
+                            {r.id}
+                            {if r.on then <b>yes</b> else <></>}
+                            {"${String.fromInt (List.length r.parts)} parts"}
+                        </p>
+                        <p>
+                            <For each={r.parts} keyed={False}>{λs → <s>{s}</s>}</For>
+                            end
+                            <For each={r.parts} keyed={False} fallback={<u>empty</u>}>
+                                {λs → <q>{s}</q>}
+                            </For>
+                            last
+                        </p>
+                    </li>
+                }
+            </For>
+        </ul>
+        <div>{if model.open then panel model else <p>shut</p>}</div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { rows =
+                    [ { id = 1, on = False, parts = [] }, { id = 2, on = True, parts = [ "a" ] } ]
+                , open = False
+                }
+        , update = update
+        , view = view
+        }

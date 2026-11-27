@@ -1,0 +1,8 @@
+# Shown: each fallback logs at a write of what it reads.
+click #bump
+# Hidden: no fallback logs, however often its reads are written.
+click #toggle
+click #bump
+click #bump
+# Shown again, with the current values.
+click #toggle

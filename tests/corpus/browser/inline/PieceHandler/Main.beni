@@ -1,0 +1,54 @@
+-- Events of another module's markup whose handler value is not one
+-- constructor that takes the payload or nothing (browser-inline.md §8.4,
+-- amended 2026-11-24, #2063): each goes through the program's dispatcher,
+-- with the message the widget's own code makes of the event, under the
+-- `Html.map`'s constructor. A link whose handler prevents the default is no
+-- request (boundary.md §9.8.13 (c), step 1): `onUrlRequest` hears the plain
+-- link alone. The transcript is `browser-tea`'s of the same source, but
+-- for two placeholders: the hidden arm's anchor is an empty text here and
+-- a comment there, and an empty text hole has no text node here.
+import Browser
+import Browser.Navigation as Navigation
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Nav
+import Sub
+import Tea
+
+
+type alias Model =
+    nav : Nav.Model
+    request : String
+
+
+type Msg
+    = NavMsg Nav.Msg
+    | Requested Browser.UrlRequest
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        NavMsg sub →
+            ( { model | nav = Nav.update sub model.nav }, Cmd.none )
+
+        Requested (Browser.Internal url) →
+            ( { model | request = "Internal ${url.path}" }, Cmd.none )
+
+        Requested (Browser.External href) →
+            ( { model | request = "External ${href}" }, Cmd.none )
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { nav = Nav.init ⊤, request = "" }, Cmd.none )
+        , update = update
+        , view =
+            λmodel →
+                <main>
+                    {Html.map (Nav.view model.nav) NavMsg}
+                    <p id="request">{model.request}</p>
+                </main>
+        , subscriptions = λ_ → Navigation.onUrlRequest Requested
+        }

@@ -1,0 +1,16 @@
+-- A `For` whose row function is a local, not a lambda written in place or
+-- a function of the program's own module: the lowering cannot see which
+-- markup a row is (browser-inline.md §9, amended 2026-11-24), class 1 (§5).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : List String → Html ⊤
+view items =
+    row = λs → <li>{String.toUpper s}</li>
+    <ul><For each={items}>{row}</For></ul>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ "a" ], update = λ_ m → m, view = view }

@@ -6,10 +6,10 @@ Name the platform in `beni.json` (`"build": { "platform": "…" }`) or with `--p
 | Platform | `main` | Runs where | Adds |
 |---|---|---|---|
 | `node` | `Node.Program` | Node | `Node`, `Io`, `ChildProcess`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
-| `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, the `Gpu` modules, and `Html` |
+| `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, the `Gpu` modules, `Browser.Canvas`, `Browser.Image`, `Browser.Video`, `Browser.Source`, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
-| `browser-base` | none | a dependency or library | shared commands, subscriptions, timers and window events; no runnable entry |
-| `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Time`, `Browser.Events`, `Html`; compiled views |
+| `browser-base` | none | a dependency or library | shared commands, subscriptions, timers, window events, `Dom`, `Http`, `Storage`, `WebSocket`, `Random`, the `Gpu` modules and the media modules; no runnable entry |
+| `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Browser.Navigation`, `Cmd`, `Sub`, `Time`, `Browser.Events`, `Dom`, `Http`, `Storage`, `WebSocket`, `Random`, the `Gpu` modules, `Browser.Canvas`, `Browser.Image`, `Browser.Video`, `Browser.Source`, `Html`; compiled views |
 | `html` | none | — | the markup vocabulary the four above share |
 | `cloudflare` | `Worker.Program` | a Cloudflare Worker | `Worker`: the request, the response, the bindings, Durable Object references |
 
@@ -75,7 +75,8 @@ handle request =
   receives. `restore ctx` builds the state at each start, from `Worker.Storage`. Each handler of
   `Handlers` takes the state and returns the next one; `Object.none` has a handler for each kind
   that keeps the state. Events run one at a time: `request` (a `Worker.forward` from the Worker),
-  `received` (a message), `alarm` (only at the time `Object.alarmAt` or `alarmIn` set),
+  `received` (a message), `alarm` (only at the time `Object.alarmAt` or `alarmIn` set; `alarmIn`
+  gives `Err Object.TooFar`, and sets nothing, for a time more than 9007199254740991),
   `tick`/`ticked` (a timer the state names; `tick` must not wait), and the WebSocket handlers.
 - Reach an object with `Worker.objects (Worker.env ctx) "NAME" schema`, then `Worker.byName`,
   `Worker.unique` or `Worker.byId`. `Worker.forward ref request` sends a request. `Object.post
@@ -285,8 +286,8 @@ builds on both. The program is compiled, not run: each constructor is recognised
 and the page ships only what it reaches. Lists are edited in place here, so the ownership checker's
 errors apply (`lists.md`, *Ownership*). View helpers: `markup.md`. Routing: `routing.md`. Pages: `prerender.md`.
 
-`Time` and `Browser.Events` use the shared base. Stop cancels waiting work. `Cmd.perform` in a log scope is supported: bodies keep creation log context; updates use program context.
-Zero-field taggers (`λ_ → Tick`) are supported. Compiler limits: static, model-independent sets and unkeyed commands; full keyed policies remain unavailable.
+`Time`, `Browser.Events`, `Dom`, `Http`, `Storage`, `WebSocket`, `Random`, `Gpu` and the media modules use the shared base. `Cmd.afterRender` runs after the page is written; `Dom.rendered` waits for it. Stop cancels waiting work. `Cmd.perform` in a log scope is supported: bodies keep creation log context; updates use program context.
+Zero-field taggers (`λ_ → Tick`) are supported. Keyed commands (`Cmd.keyed`, `Cmd.cancel`, `Cmd.cancelAll`, `Cmd.map`) have the same policies as on `browser-tea`. A body that never waits runs in the dispatch that asked for it, so it has ended when the next message arrives. A subscription set may depend on the model: it is made again after each message whose `update` writes what `subscriptions` reads, and a listener is added in that message. An application's set must not depend on the model yet. Compiler limits: a command must be built from `Cmd`'s functions where `update` returns it (not by `List.map` or a fold).
 
 ## `html`
 

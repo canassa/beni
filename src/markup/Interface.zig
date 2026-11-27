@@ -80,10 +80,65 @@ const std = @import("std");
 /// Version 1.27 distinguishes scoped subscription bodies from native
 /// listener installation (`Program.Subscription.waits`).
 /// Version 1.28 adds the update-context writer dependencies and absence fact.
-/// Version 1.29 adds `Lowering.keeps_let`: which `let`s of a grouped root
+/// Version 1.29 lets the write-set pass read `afterRender` commands
+/// (`Lowering.Effects.after_render`).
+/// Version 1.30 adds `Context.programViewStatementGroups`: the read sets of a
+/// `view`'s statements (`browser-inline.md` §8.2, amended 2026-11-23).
+/// Version 1.31 adds `Program.Branch.selector_effect`: whether choosing a
+/// branch's arm may have an effect (`browser-inline.md` §8.2, amended
+/// 2026-11-23, a branch region), and `Program.Arm.never`, an arm that
+/// never returns.
+/// Version 1.32 adds `Context.programRetitles`, whether a key's writes
+/// conflict with what a document's title reads (`browser-inline.md` §10.2,
+/// amended 2026-11-10, #1168).
+/// Version 1.33 lets the write-set pass read keyed commands
+/// (`Lowering.Effects.keyed`: `Cmd.keyed`, `cancel`, `cancelAll` and
+/// `map`; `browser-inline.md` §4, amended 2026-11-23).
+/// Version 1.34 says of a hole's callee that its body is a branch
+/// (`Program.Callee.Refusal.branch`), which `programBranch` on the hole then
+/// reads (`browser-inline.md` §8.4, amended 2026-11-23, #2498).
+/// Version 1.35 adds `Program.Key.message`, a key whose handler takes the
+/// message from its root because its path passes a constructor of other
+/// than one field, a record or a tuple (`browser-inline.md` §8.4, amended
+/// 2026-11-23).
+/// Version 1.36 adds `Context.programShowEffect`, `programShowFallbackIsText` and
+/// `programShowFallbackText`: a `Show`'s fallback written as `Html.text e`
+/// (`browser-inline.md` §8.2, amended 2026-11-23, *A `Show`*).
+/// Version 1.37 asks `programShowFallback`, `programShowFallbackIsText` and
+/// `programShowFallbackText` of a `For`'s fallback as of a `Show`'s
+/// (`browser-inline.md` §9, amended 2026-11-24).
+/// Version 1.38 asks `programBranch` and the `programBranch*` calls of a
+/// `For` whose row is a lambda whose body is an `if` or a `case`: the row's
+/// top is that branch (`browser-inline.md` §9, amended 2026-11-24).
+/// Version 1.39 asks `programCallee`, `programInlineEnter` and
+/// `programInlineLeave` of a `For` or a `Show` whose row function is a
+/// named function of the program's module — the call of it with the item,
+/// which adds no step to the call path — and `programBranch` and the
+/// `programBranch*` calls of a `Show` whose body is a lambda whose body is
+/// an `if` or a `case` (`browser-inline.md` §9 and §8.2, amended
+/// 2026-11-24).
+/// Version 1.40 adds `Context.programBranchChooseAll`: `programBranchChoose`
+/// with the taken arm's statements run in it, in the order they are
+/// written, sharing its `let`s (`browser-inline.md` §8.2, amended
+/// 2026-11-24, *An arm's statements*), and
+/// `Context.programBranchStatementGroups`, the read sets of an arm's
+/// statements.
+/// Version 1.41 adds `Context.programPieceWrap`: a message of a root another
+/// module writes as pieces, under the constructors of the `Html.map`s around
+/// the root's call, for an event of that root whose message goes through the
+/// program's dispatcher (`browser-inline.md` §8.4, amended 2026-11-24).
+/// Version 1.42 adds `Lowering.keeps_let`: which `let`s of a grouped root
 /// the lowering keeps beyond the call of the function that made them
 /// (`boundary.md` §9.4.8, *What a lowering keeps*).
-pub const version: Version = .{ .major = 1, .minor = 29 };
+/// Version 1.43 adds `Lowering.reads_handler_at_event`: which events of a
+/// root the lowering reads the handler of where the event fires, from the
+/// values the root's function holds then (`boundary.md` §9.4.8, *A handler
+/// read at the event*).
+/// Version 1.44 adds `Lowering.evaluates_hole_once`: which holes of a root
+/// the lowering evaluates at most once in each evaluation of the function
+/// the root is the body of, and never again from what an earlier
+/// evaluation read (`boundary.md` §9.4.8, *A hole evaluated once*).
+pub const version: Version = .{ .major = 1, .minor = 44 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -190,7 +245,7 @@ pub const Lowering = struct {
     /// chain that names it may prerender. False: a prerendering build is
     /// refused.
     prerenders: bool = false,
-    /// 1.29 (`boundary.md` §9.4.8, *What a lowering keeps*): whether the
+    /// 1.42 (`boundary.md` §9.4.8, *What a lowering keeps*): whether the
     /// lowering keeps the value of root `root`'s `k`-th `let` (`Root.lets`,
     /// which it evaluates itself because it `groups`) beyond the call of
     /// the function that made it, and reads it at a later call: a `let`
@@ -207,6 +262,33 @@ pub const Lowering = struct {
     /// immutable, so it holds no cell that can be written in place), and
     /// what the platform rule of §9.4.8 lets a runtime keep.
     keeps_let: *const fn (tree: *const Tree, root: Root.Index, k: u32) bool = keepsEveryLet,
+    /// 1.43 (`boundary.md` §9.4.8, *A handler read at the event*): whether,
+    /// for root `root`, when it is the whole body of a function that its
+    /// module names only as the `view` of a program's record, the lowering
+    /// reads the handler of event `item` (an index into `Tree.items`)
+    /// where the event fires, wherever it writes the root: it evaluates
+    /// the handler's value then, from the function's parameters as they
+    /// are then, and keeps no value of a render for it — no closure made at
+    /// a render, no argument of a helper's call, no `let` kept in a slot.
+    /// The ownership checker then reads the handler as a call made where
+    /// the event fires, whose message escapes, and not as a closure that
+    /// the runtime keeps. **The default is that the lowering keeps every
+    /// handler**: a lowering that says nothing is read on the side that
+    /// refuses.
+    reads_handler_at_event: *const fn (tree: *const Tree, root: Root.Index, item: u32) bool = keepsEveryHandler,
+    /// 1.44 (`boundary.md` §9.4.8, *A hole evaluated once*): whether, for
+    /// root `root`, when it is the whole body of a function or the markup of
+    /// an arm of an `if` or a `case` that is a hole's value of such a root,
+    /// the lowering evaluates the value of hole `node` at most once in each
+    /// evaluation of the function, wherever it writes the root: from the
+    /// values that evaluation made or was handed, never again from a value
+    /// it read at an earlier evaluation, and a helper's call in the hole is
+    /// made there, at most once, with its arguments evaluated there. The
+    /// ownership checker then reads the old value of a cell that the hole's
+    /// own evaluation wrote as read by nothing the markup keeps. **The
+    /// default is false**: the lowering may evaluate a hole again, or later,
+    /// from the values it read (the `dom` lowering's block of inputs).
+    evaluates_hole_once: *const fn (tree: *const Tree, root: Root.Index, node: Node.Index) bool = evaluatesNoHoleOnce,
 
     pub const Effects = struct {
         sub: []const u8,
@@ -216,6 +298,15 @@ pub const Lowering = struct {
         entry_capture: ?Dependency = null,
         /// 1.27: command construction preserves its creator's log context.
         command_context: bool = false,
+        /// 1.29: the runtime runs `cmd`'s `afterRender` work after the
+        /// write pass that shows its model, so the pass reads it as a body
+        /// that cannot suspend. False: an `afterRender` is unread.
+        after_render: bool = false,
+        /// 1.33: the runtime keeps a table of the bodies running under
+        /// each key path, so the pass reads `cmd`'s `keyed`, `cancel`,
+        /// `cancelAll` and `map`: a keyed body as the body it runs, a
+        /// cancellation as work with no body. False: each is unread.
+        keyed: bool = false,
         /// 1.28: every function that can write context/finalizer state.
         /// No reachable writer proves updates need no context wrapper.
         /// Null or an unresolved declaration keeps the wrapper.
@@ -229,7 +320,7 @@ pub const Lowering = struct {
     };
 };
 
-/// 1.29: `Lowering.keeps_let`'s default: every `let` is kept.
+/// 1.42: `Lowering.keeps_let`'s default: every `let` is kept.
 pub fn keepsEveryLet(tree: *const Tree, root: Root.Index, k: u32) bool {
     _ = tree;
     _ = root;
@@ -237,7 +328,25 @@ pub fn keepsEveryLet(tree: *const Tree, root: Root.Index, k: u32) bool {
     return true;
 }
 
-/// 1.29: `Lowering.keeps_let` of a lowering that evaluates a `let` again in
+/// 1.43: `Lowering.reads_handler_at_event`'s default: every handler is kept
+/// from the render that made it.
+pub fn keepsEveryHandler(tree: *const Tree, root: Root.Index, item: u32) bool {
+    _ = tree;
+    _ = root;
+    _ = item;
+    return false;
+}
+
+/// 1.44: `Lowering.evaluates_hole_once`'s default: no hole is known to be
+/// evaluated once.
+pub fn evaluatesNoHoleOnce(tree: *const Tree, root: Root.Index, node: Node.Index) bool {
+    _ = tree;
+    _ = root;
+    _ = node;
+    return false;
+}
+
+/// 1.42: `Lowering.keeps_let` of a lowering that evaluates a `let` again in
 /// each piece of code that reads it, as a local of that code, and keeps none.
 pub fn keepsNoLet(tree: *const Tree, root: Root.Index, k: u32) bool {
     _ = tree;
@@ -433,6 +542,13 @@ pub const Program = struct {
         /// one, however deep, else one (the message part itself): what a
         /// handler written from its fields takes (`programArmFields`).
         fields: u32 = 1,
+        /// 1.35: the handler takes the message itself, from its root, and
+        /// `fields` is one: the key's path passes a constructor of other
+        /// than one field, a record or a tuple, so the leaf constructor's
+        /// fields alone would lose the rest of the message, which `update`
+        /// may read (`browser-inline.md` §8.4, amended 2026-11-23). Every
+        /// sender hands it the message; `programArmFields` reads the parts.
+        message: bool = false,
         star_kind: StarKind = .none,
         /// 1.15: for a `*` key of lost precision, where the pass lost it: the
         /// first approximation in source order, and how many more.
@@ -591,6 +707,15 @@ pub const Program = struct {
             other_module,
             /// A function whose body computes its markup, or a value.
             not_markup,
+            /// 1.34: a function of this module whose body, past its `let`s,
+            /// is an `if` or a `case`. `programInlineEnter` enters the call
+            /// and binds its parameters with no root; under that call's
+            /// frame `programBranch` on the hole gives the callee's branch,
+            /// and its arms are entered as a branch's at the hole are, with
+            /// no step of their own on the call path (`browser-inline.md`
+            /// §8.4, amended 2026-11-23). A lowering that does not read it
+            /// refuses the call.
+            branch,
             _,
         };
     };
@@ -607,6 +732,11 @@ pub const Program = struct {
         /// `reachesDebug` and `Tree.everyRender`.
         debug: bool = true,
         effect: bool = true,
+        /// 1.31: choosing the arm may have an effect: a `case`'s scrutinee,
+        /// or an `else if`'s, may, or the arguments of a call that is the
+        /// branch's one arm (`browser-inline.md` §8.2, amended 2026-11-23,
+        /// a branch region).
+        selector_effect: bool = true,
     };
 
     /// 1.10: one arm of a branch: what its result is, past the arm's
@@ -626,6 +756,11 @@ pub const Program = struct {
         /// failures execute only in the selected arm
         /// (`programBranchEager`).
         eager: bool = false,
+        /// 1.31: `what` is `value`, a call of core's `Debug.todo`, which never
+        /// returns: `programBranchChoose` throws when the value takes the arm,
+        /// so the arm shows nothing (`browser-inline.md` §8.2, amended
+        /// 2026-11-23, a branch region).
+        never: bool = false,
 
         pub const What = union(enum) {
             /// Markup written in place: this root, whose values are
@@ -1397,6 +1532,13 @@ pub const Context = struct {
         return cx.vtable.program_settles(cx.impl, key);
     }
 
+    /// 1.26: whether key `key`'s writes conflict with what the document's
+    /// `title` reads, so that its handler must write the title again. True
+    /// when the reads are not known.
+    pub fn programRetitles(cx: *Context, key: u32) bool {
+        return cx.vtable.program_retitles(cx.impl, key);
+    }
+
     /// 1.6, inside `Lowering.program` only: report `code` at a part of the
     /// program's call; the lowering then returns the error.
     pub fn programReport(cx: *Context, part: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
@@ -1699,6 +1841,16 @@ pub const Context = struct {
         return cx.vtable.program_piece_message(cx.impl, node, ctor, key, fields);
     }
 
+    /// 1.41, inside `Lowering.program` only: `msg`, a message of the root
+    /// another module writes as pieces at hole `node`, as the program's
+    /// message: under the constructor of each map around the hole, the
+    /// innermost applied first. It is `msg` itself when no map is around the
+    /// hole, and null when a map is not a constructor of one field
+    /// (`browser-inline.md` §8.4, amended 2026-11-24).
+    pub fn programPieceWrap(cx: *Context, node: Node.Index, msg: Expr) Error!?Expr {
+        return cx.vtable.program_piece_wrap(cx.impl, node, msg);
+    }
+
     /// Version 1.15: `programMessage`, but a key is handed its leaf
     /// constructor's fields (`Program.Key.fields` of them) where a
     /// message of nested constructors reaches it — `CounterMsg Counter.Inc`
@@ -1763,7 +1915,9 @@ pub const Context = struct {
     /// 1.9, inside `Lowering.program` only: what an `html` hole or a
     /// component node of markup the program writes calls, when the
     /// lowering may write it in place (`Program.Callee`); null when the
-    /// node is not a call.
+    /// node is not a call. 1.39: also of a `For` or a `Show` whose row
+    /// function is a named function: the call of it with the item, which
+    /// `programInlineEnter` enters adding no step to the call path.
     pub fn programCallee(cx: *Context, node: Node.Index) ?Program.Callee {
         return cx.vtable.program_callee(cx.impl, node);
     }
@@ -1796,7 +1950,8 @@ pub const Context = struct {
     /// 1.10: when an `html` hole's value is an `if` or a `case` — its
     /// `let`s peeled — which `browser-direct.md`'s S4 amendment compiles as
     /// a branch (item 3) rather than as markup on the value path (item 1),
-    /// its arms; null otherwise.
+    /// its arms; null otherwise. 1.38: also of a `For` whose row lambda's
+    /// body is one, chosen where the row's parameters are bound.
     pub fn programBranch(cx: *Context, node: Node.Index) ?Program.Branch {
         return cx.vtable.program_branch(cx.impl, node);
     }
@@ -1844,6 +1999,14 @@ pub const Context = struct {
         return cx.vtable.program_branch_choose(cx.impl, block, node);
     }
 
+    /// 1.40: `programBranchChoose`, and the taken arm's `let`s that are
+    /// statements run where they are written among its other `let`s, so a
+    /// `let` both read is evaluated once (`browser-inline.md` §8.2, amended
+    /// 2026-11-24, *An arm's statements*).
+    pub fn programBranchChooseAll(cx: *Context, block: Block, node: Node.Index) Error!Expr {
+        return cx.vtable.program_branch_choose_all(cx.impl, block, node);
+    }
+
     /// 1.10 (S4's review): arm `k` of branch `node` entered as
     /// `programBranchEnter` enters it, its values' locals bound from `from`
     /// — what `programBranchChoose` returned when it took arm `k` — with
@@ -1861,10 +2024,35 @@ pub const Context = struct {
         return cx.vtable.program_branch_statements(cx.impl, block, node, k);
     }
 
-    /// 1.10: the markup root a `Show`'s fallback is, when it is markup
+    /// 1.10: the markup root a `Show`'s fallback is — since 1.37 a `For`'s
+    /// too (`browser-inline.md` §9, amended 2026-11-24) — when it is markup
     /// written there whose values can be evaluated apart; null otherwise.
     pub fn programShowFallback(cx: *Context, node: Node.Index) ?Root.Index {
         return cx.vtable.program_show_fallback(cx.impl, node);
+    }
+
+    /// 1.36: whether a `Show`'s fallback (1.37: or a `For`'s) is a call of
+    /// the markup primitive
+    /// `text` (`Html.text e`, `language.md` §11.13), whose argument
+    /// `programShowFallbackText` evaluates.
+    pub fn programShowFallbackIsText(cx: *Context, node: Node.Index) bool {
+        return cx.vtable.program_show_fallback_is_text(cx.impl, node);
+    }
+
+    /// 1.36: whether evaluating a `Show`'s `when`, or its key function, may
+    /// have an effect: what `Program.Branch.selector_effect` says of a
+    /// branch's choice of arm.
+    pub fn programShowEffect(cx: *Context, node: Node.Index) bool {
+        return cx.vtable.program_show_effect(cx.impl, node);
+    }
+
+    /// 1.36: the argument `e` of a `Show`'s fallback (1.37: or a `For`'s)
+    /// `Html.text e`
+    /// (`programShowFallbackIsText`), evaluated into `block` where the
+    /// `Show`'s root's values may be: the text the fallback shows. The
+    /// fallback's own value is never evaluated, so no markup value is made.
+    pub fn programShowFallbackText(cx: *Context, block: Block, node: Node.Index) Error!Expr {
+        return cx.vtable.program_show_fallback_text(cx.impl, block, node);
     }
 
     /// 1.10: the inputs of root `r`, markup nested in a value of the root
@@ -1897,6 +2085,24 @@ pub const Context = struct {
     /// computed again for (`browser-direct.md` §5.4).
     pub fn programLet(cx: *Context, r: Root.Index, k: u32) Program.HoleFacts {
         return cx.vtable.program_let(cx.impl, r, k);
+    }
+
+    /// 1.30, inside `Lowering.program` only, for a `view` with `view_lets`:
+    /// the read set of each of its body's statements (`_ = e`, a `⊤` line),
+    /// as a group (`programHole`'s), in source order; null when the
+    /// write-set pass did not record one of them (`browser-inline.md` §8.2,
+    /// amended 2026-11-23).
+    pub fn programViewStatementGroups(cx: *Context) ?[]const u32 {
+        return cx.vtable.program_view_statement_groups(cx.impl);
+    }
+
+    /// 1.40: the read set of each statement of every arm of branch `node`
+    /// (an arm's `let`s no hole reads), as a group, on the current call
+    /// path; null when the write-set pass did not record one of them
+    /// (`browser-inline.md` §8.2, amended 2026-11-24, *An arm's
+    /// statements*).
+    pub fn programBranchStatementGroups(cx: *Context, node: Node.Index) ?[]const u32 {
+        return cx.vtable.program_branch_statement_groups(cx.impl, node);
     }
 
     /// 1.14 (`Lowering.effects`): what the program's subscription set is
@@ -2114,6 +2320,7 @@ pub const VTable = struct {
     program_start: *const fn (impl: *anyopaque, block: Block, args: []const Expr) Error!Expr,
     program_field: *const fn (impl: *anyopaque, block: Block, field: Context.ProgramField, model: Expr) Error!Expr,
     program_settles: *const fn (impl: *anyopaque, key: u32) bool,
+    program_retitles: *const fn (impl: *anyopaque, key: u32) bool,
     program_init: *const fn (impl: *anyopaque, block: Block) Error!Expr,
     program_report: *const fn (impl: *anyopaque, at: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
     program_report_at: *const fn (impl: *anyopaque, site: u32, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
@@ -2141,6 +2348,7 @@ pub const VTable = struct {
     piece_view_enter: *const fn (impl: *anyopaque, block: Block, args: []const Expr) Error!void,
     program_piece_key: *const fn (impl: *anyopaque, node: Node.Index, ctor: Ctor) ?Context.PieceKey,
     program_piece_message: *const fn (impl: *anyopaque, node: Node.Index, ctor: Ctor, key: u32, fields: []const Expr) Error!Expr,
+    program_piece_wrap: *const fn (impl: *anyopaque, node: Node.Index, msg: Expr) Error!?Expr,
     program_dispatch: *const fn (impl: *anyopaque, block: Block, msg: Expr, handlers: []const Name) Error!void,
     reaches_debug: *const fn (impl: *anyopaque, v: Value.Index) bool,
     program_list: *const fn (impl: *anyopaque, node: Node.Index) Program.ListFacts,
@@ -2157,13 +2365,19 @@ pub const VTable = struct {
     program_branch_enter: *const fn (impl: *anyopaque, block: ?Block, node: Node.Index, k: u32, made: bool, held: ?Expr) Error!?Expr,
     program_branch_value: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!Expr,
     program_branch_choose: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
+    program_branch_choose_all: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
     program_branch_bind: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32, from: Expr, made: bool) Error!void,
     program_branch_statements: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!void,
     program_show_fallback: *const fn (impl: *anyopaque, node: Node.Index) ?Root.Index,
+    program_show_fallback_is_text: *const fn (impl: *anyopaque, node: Node.Index) bool,
+    program_show_effect: *const fn (impl: *anyopaque, node: Node.Index) bool,
+    program_show_fallback_text: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error!Expr,
     program_nested_enter: *const fn (impl: *anyopaque, r: Root.Index) Error!void,
     program_branch_eager: *const fn (impl: *anyopaque, node: Node.Index, k: u32) Error!void,
     program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,
     program_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32) Program.HoleFacts,
+    program_view_statement_groups: *const fn (impl: *anyopaque) ?[]const u32,
+    program_branch_statement_groups: *const fn (impl: *anyopaque, node: Node.Index) ?[]const u32,
     program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,
     program_subscription_start: *const fn (impl: *anyopaque, block: Block, i: u32, send: Expr) Error!Expr,
     program_subscription_message: *const fn (impl: *anyopaque, i: u32, payload: Expr) Error!Expr,

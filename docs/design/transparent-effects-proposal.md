@@ -1995,6 +1995,21 @@ const Main$fetchSum = (a$1, b$2) =>
 - **A `let` function** a continuation's statements declare is hoisted in front of the suspension
   point when something before the point calls it, so `language.md` §7's "a function may be read
   anywhere" still holds.
+  *Amended 2026-11-24 (#2663): a local a closure in front of the point names.* A lambda, a `let`
+  function or a closure inside either may name a value written below it in its block (§7 refuses
+  only a read that runs before the value: `let_forward_reference`), and a suspension point between
+  the two used to put the value's `const` inside the continuation, where the closure cannot see it:
+  a `ReferenceError` in development and, under `--release` renaming, a read of whatever else held
+  the short name. The rule is the function rule's, for every split — a statement, a call in an item,
+  a join, a loop's fast path and slow copy, at any depth: a declaration of the rest that the
+  statements in front of the point, the call or the joined tree name (inside any function they
+  make, and through any `let` function hoisted for them) is written as `let name;` in front of the
+  point and `name = value;` where its `const` stood. The value is evaluated in the same place and
+  turn, so evaluation order (`language.md` §6) is unchanged, and a closure reads the binding the
+  assignment fills; it can only run after it (§7). A rest whose declarations nothing in front names
+  is emitted byte for byte as before. A `--release` safety build also checks that every local the
+  renamer spells is declared in its scope or one around it, so this class is a stopped build there
+  rather than a silent wrong answer (`backend.md` §9 item 2).
 - **Anything else that would hold a suspension point in a statement list that falls through** — a
   markup hole whose lowering nests statements, today — is refused at build with `not_implemented`,
   naming the call, rather than emitted wrongly.
@@ -2694,7 +2709,14 @@ pub onSchedulerCount : Scheduler, sync (Int → ⊤) → ⊤           -- `f` wi
   (*P699-3*) — and when the last has ended `s` is *stopped* for good. The program's scheduler and
   every other scheduler are not touched: their fibers run on and their queues drain as before. A
   throw that leaves the program's drain is what it was: the program stops, and every scheduler
-  with it (below).
+  with it (below). *Amended 2026-11-05 by the owner's decision (#1994), built 2026-11-15:* **a
+  scheduler a program makes contains nothing.** A defect under `scheduler hook` stops that
+  scheduler, as above, and then the program, as a throw out of the program's drain does: its
+  hook runs first, then the program enters *stopping* and the hook `onDefect` was given runs,
+  which on a page stops every program of it. Only `schedulerWith`, a platform's per-request or
+  per-object scheduler, contains a defect, because the platform defines its unit of failure
+  (`boundary.md` §9.12). The scheduler record says which (`contains`), and `failedS` reads it.
+  Page: `browser/tea/DefectUnderScheduler`.
 - **A scheduler that has stopped for good is a dead end** (*P699-1*). A fiber resumed through it
   afterwards — one that names it in its slot, or one lent to it — is cancelled, and its cleanup
   runs on the program's queue; a fiber started under it is cancelled before it runs, as `fork`
@@ -2736,6 +2758,18 @@ pub onSchedulerCount : Scheduler, sync (Int → ⊤) → ⊤           -- `f` wi
   function runs; one `f` watches, the last given. An object's scheduler always holds its consumer
   fiber, so a count above one says a fiber a handler started still runs, and the count's drop to
   one is when an unanswered `ask` can be told `NoReply`.
+  *Amended 2026-11-10 (#2093; Cesar's decision, 2026-11-10, dashboard `scheduler-stop-lent-q1`: "both deadlines cut", the first that passes):* **a fiber lent to
+  another scheduler stays under its own scheduler's deadline.** A fiber of `s` whose finaliser
+  enters `withScheduler s2` and waits there is under two deadlines: the deadline of `s`, the
+  scheduler it belongs to, and the deadline of `s2`, the scheduler it is lent to. Each one cuts the
+  finaliser when it passes, so the first that passes cuts it, as `boundary.md` §9.8.14 (f) cuts a
+  finaliser of the scheduler's own. The cut counts in the `done` of `s` once the deadline of `s` has
+  passed, and otherwise in the `done` of `s2`. Before, only the scheduler the slot named could cut:
+  the release waited inside `s2`, so the stop of `s` never ended, `schedulerBusy s` stayed `True` and
+  `done` was never called. A stop of `s2` itself cancels the lent wait in its sweep (§9.8.14 (d) step
+  1), before any deadline. Fixtures: `run/SchedulerStopLent` (only `s` stops: its deadline cuts the
+  release, `done` is told 1), `run/SchedulerStopLentBoth` (both stop: the sweep of `s2` ends the
+  release, each `done` is told 0).
 - **`soon` work** queued from under a scheduler goes on that scheduler's queue and is dropped once
   the scheduler has stopped, as the program's is. `fromHost` and `onTurn` are the program
   scheduler's: a wake under a scheduler always goes through its `run`.
@@ -2946,6 +2980,57 @@ pub elapsed : ⊤ → Float                  -- impure: milliseconds since a sta
   two real readings in a row do not go back. `run/ClockElapsedNeverBack`: a test platform makes
   the host's `performance.now()` answer 5.5, 10.25, 7 and 12, and `elapsed` answers 5.5, 10.25,
   10.25 and 12.
+
+*Amended 2026-11-24 (#2022; the owner's decision of 2026-11-05 on #1988: "specify per public API. A
+typed failure for an unrepresentable deadline supplied from outside, and saturation only where it is
+already promised").* **No arithmetic of a clock leaves the `Int` range.** `L` is 9007199254740991,
+2⁵³ − 1: the last millisecond that an `Int` holds, and the longest `Duration`. Before this
+amendment a virtual clock added with no bound: `Clock.virtual L`, then an `adjust` of 2 ms, read
+9007199254740992, a number that is not an `Int`.
+
+```elm
+-- core/Clock.beni
+pub type AdjustError
+    = TooFar Duration                    -- how far the clock can still move
+pub adjust : Virtual, Duration → Result AdjustError ⊤
+```
+
+- **`Duration` saturates, and this section now says so.** A count, a sum or a product past the
+  longest duration is the longest duration, `L` ms. `core/Duration.beni` promises it and
+  `run/DurationSaturates` pins it (#1992). This is the saturation that the decision calls
+  "already promised". No other function here gets saturation.
+- **The range of a reading.** `Clock.virtual t` takes each `Int`, a negative one included: a time
+  before 1970 is a time. A virtual clock reads only whole numbers from −`L` to `L`, because
+  `adjust` is the only operation that moves one.
+- **`Clock.adjust v d` answers a `Result`.** The new reading is a deadline that the caller
+  supplies. When the reading plus `d` is at most `L`, `adjust` moves the clock as this section
+  says and answers `Ok ⊤`. When the sum is more than `L`, no `Int` holds the new reading. The
+  answer is then `Err (TooFar left)`. `left` is `L` minus the reading: how far the clock can
+  still move.
+- **A failed `adjust` does not move the clock.** The reading and the sleepers stay as they were,
+  and no sleeper wakes. The call settles first, as each `adjust` but `zero` does. It tests the
+  reading after that settle, because a fiber that ran in the settle can move the clock.
+  `adjust v left` then moves the clock to `L`, its last reading. An `adjust` of `zero` answers
+  `Ok ⊤` on each clock, a clock that reads `L` included.
+- **The test comes before the sum**, and the test stays in the range also. A reading at or below 0
+  has room for each duration, because a duration is at most `L`. Above 0, the test is
+  `d > L − reading`. For a negative reading, `L − reading` is itself past `L`, so the sign is
+  tested first.
+- **A call of `adjust` as a statement is refused** (`statement_not_unit`), because its value is a
+  `Result`. A test whose times are far from `L` writes `_ = Clock.adjust v d`, as the example of
+  this section does.
+- **`Metadata.elapsed` and a log span's time** are differences of two readings. A difference can
+  be more than `L`: a clock that began at −`L` can read 10. §17.8 and §17.11 give each its answer.
+- **Open: a sleeper's wake time.** `Task.sleep` on a virtual clock still computes the wake time
+  as the reading plus the duration, with no bound (`virtualSleep` in `core/Task.beni`). That time
+  is internal, so the decision above does not settle it, and the answer is the owner's (dashboard
+  question `clock-int-range-q1`, 2026-11-24). Until this section states that answer, the headline
+  of this amendment does not cover that sum. Since this amendment a clock never reads past `L`,
+  so today a sleeper with a later wake time is never due.
+- **Fixtures.** `run/VirtualClockAdjustTooFar`: a clock at `L` − 5 refuses 6 ms with
+  `TooFar (5 ms)` and still reads `L` − 5, a sleeper due at `L` − 3 did not wake, 5 ms then moves
+  the clock to `L` and wakes it, each later `adjust` but `zero` is `TooFar zero`, and a clock at
+  −`L` moves by `L` twice.
 
 ### 17.7 Structured combinators (P3)
 
@@ -3259,6 +3344,40 @@ virtual clock: attempts at 0, 100, 300, 700 ms, then `Ok`); `run/RetryRecursCoun
 three runs, then the last `Err`); `run/RetryNotOnCancel` (row 35: a cancelled attempt is not
 retried, and the caller is cancelled); `run/RepeatWhile`; page `browser/tea/RetryRequest` (a faked
 service failing twice; `advance` through the backoff).
+
+*Amended 2026-11-24 (#2022; the owner's decision of 2026-11-05 on #1988: saturation only where it
+is already promised).* **A schedule's times are `Duration`s, and `Duration` promises saturation**
+(§17.6, amended the same day). So a schedule and its runner compute each time with `Duration`'s
+own operations, and no step leaves the `Int` range. `L` is 9007199254740991, the longest duration
+in milliseconds.
+
+- **`fixed`.** Its state is three durations: the interval, the `elapsed` of its first step
+  (`start`), and the time when the run it last asked for was due (`lastRun`). `lastRun` is a
+  `Duration.sum`, so it is at most `L`.
+- **`fixed`'s test "more than one interval behind"** is `elapsed − lastRun > interval`. That is a
+  difference of two durations, which is in range. It was `elapsed > lastRun + interval`, a sum
+  with no bound. For each `lastRun` that fits, the two tests agree. A `lastRun` that saturated is
+  a time that no `elapsed` passes, and both tests say no.
+- **`fixed`'s delay** is the time to the next multiple of the interval from `start`. When
+  `elapsed` is before `start`, that delay is the interval plus the remainder, which is more than
+  one interval. A step can see an earlier `elapsed`: `Schedule.step` takes metadata that a program
+  writes, and the real clock can go back. That sum is a `Duration.sum` also, so a delay past `L`
+  is `L`. Before this amendment, `fixed (millis L)` stepped at 5 ms and then at 0 ms answered a
+  delay of 9007199254740996 ms, a `Duration` longer than the longest.
+- **`Metadata.elapsed`**, which `retry` and `repeat` make, is the time from the reading at the
+  start of the first run to the reading now, on the running fiber's clock. It is `zero` when the
+  reading now is not later, as before (`Duration.millis` of a negative count). It is the longest
+  duration when the difference is more than `L`. A virtual clock that began at −`L` and reads 10
+  ran for more than `L` milliseconds. The runner tests before it subtracts. A start at or above 0
+  leaves a difference that fits. For a start below 0 the test is `now > L + start`.
+- **Nothing else in `Schedule` adds times with no bound.** `delays` sums with `Duration.sum`,
+  `fibonacci` also, `exponential` and `jittered` go through `Duration.times`, and `concat`'s
+  shift subtracts one duration from another.
+- **Fixtures.** `run/ScheduleFixedLongest` (pure, through `step`: the delay above is `L`; an
+  interval of 100 ms with `start` 50 and `elapsed` 20 still waits 130 ms; a schedule whose
+  `lastRun` saturated is not behind). `run/RepeatElapsedLongest` (on a virtual clock that begins
+  at −`L`: a schedule that prints `elapsed` sees `L` at the reading 0 and `L` again at 10, where
+  it saw 9007199254741000).
 
 ### 17.9 `Semaphore`, `Queue`, `Latch` (P5)
 
@@ -3724,6 +3843,27 @@ rules, and the open question of the context of a message that a body sends.
 *Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`):* that question is decided.
 A message's `update` has the program's log context, whoever sends the message. So the lines that
 it writes, and the commands that it makes, have only what its own arm sets.
+
+*Amended 2026-11-24 (#2022): a span's time is a length of time.* `L` is 9007199254740991, the
+longest duration in milliseconds. The milliseconds of a log span in `Entry.spans` are the time
+from the reading when the span began to the reading when the line is written. They follow
+`Duration`'s rule (§17.6): never negative, and at most `L`. Before this amendment they were
+`now − began` with no bound, and that difference can leave the `Int` range in each direction. A
+virtual clock reads each `Int` from −`L` to `L`. A program can also write a line on a different
+clock from the one its span began on (`Log.span` around `Clock.run`). So a span that began at the
+reading −`L` printed 9007199254741000 ms at the reading 10. The two changes:
+
+- **A difference past `L` is `L`.** `Log` tests before it subtracts, as `retry`'s `elapsed` does
+  (§17.8).
+- **A reading now that is before the span's start gives 0**, where it gave a negative number. A
+  host clock that goes back, or a change of clock inside the span, makes such a reading. A negative
+  time since a start has no meaning, and `Clock.elapsed` already holds the same rule (§17.6: "a
+  duration is never negative").
+
+`Entry.time` is a reading, not a difference, and does not change. Fixture:
+`run/LogSpanLongest` (a span that begins at −`L` on a virtual clock: `L` ms at the reading 0 and
+at the reading 10; a span that begins at 500 and writes a line on a clock that reads 200: 0 ms; a
+span from a clock at −`L` to a clock at `L`: `L` ms, and the other way round: 0 ms).
 
 ### 17.12 Choices this section made, for the owner to see
 

@@ -1,0 +1,58 @@
+-- A `view` with `let`s that calls view helpers (docs/design/browser-inline.md §8.2, amended
+-- 2026-11-23). A helper's parameters are numbered as the helper's own locals, so the
+-- `view`'s `let`s are bound as the `view` is entered, before a helper's arguments are
+-- evaluated: `pair s model.c` shows `s` and `c`, `pair model.a model.c` beside a hole of `s`
+-- shows `a`, and `send s` sends the memo `s` the last pass computed.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+    c : Int
+    got : Int
+
+
+type Msg
+    = IncA
+    | IncC
+    | Got Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        IncA →
+            { model | a = model.a + 1 }
+
+        IncC →
+            { model | c = model.c + 1 }
+
+        Got k →
+            { model | got = k }
+
+
+pair : Int, Int → Html Msg
+pair x y = <span>{x}/{y}</span>
+
+
+send : Int → Html Msg
+send x = <button id="g" onClick={Got x}>g</button>
+
+
+view : Model → Html Msg
+view model =
+    s = Debug.log "s" (model.a * 10)
+    <main>
+        <button id="a" onClick={IncA}>a</button>
+        <button id="c" onClick={IncC}>c</button>
+        <p id="p0">{s}</p>
+        <p id="p1">{pair s model.c}</p>
+        <p id="p2">{pair model.a model.c}</p>
+        {send s}
+        <p id="got">{model.got}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { a = 0, c = 0, got = 0 }, update = update, view = view }
