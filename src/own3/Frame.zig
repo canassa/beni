@@ -3615,6 +3615,56 @@ fn otherLeaves(f: *Frame, v: Val, k: u32) Error!bool {
     return dup;
 }
 
+/// Whether `kept` and `again` hold the same atoms, as sets, contexts apart:
+/// what a check that counts no work compares a kept run with (kernel §9).
+/// Runs of at most 16 atoms are compared in pairs, larger runs in one pass
+/// over each with a table of the kept atoms.
+fn sameButCtx(f: *Frame, kept: []const Atom, again: []const Atom) Error!bool {
+    var same = true;
+    if (kept.len <= 16 and again.len <= 16) {
+        const sameBut = struct {
+            fn ctx(x: Atom, y: Atom) bool {
+                var a = x;
+                var b = y;
+                a.ctx = none;
+                b.ctx = none;
+                return atomEql(a, b);
+            }
+        }.ctx;
+        for (kept) |x| {
+            const found = for (again) |y| {
+                if (sameBut(x, y)) break true;
+            } else false;
+            if (!found) same = false;
+        }
+        for (again) |y| {
+            const found = for (kept) |x| {
+                if (sameBut(x, y)) break true;
+            } else false;
+            if (!found) same = false;
+        }
+        return same;
+    }
+    var seen: std.AutoHashMapUnmanaged(Atom, bool) = .empty;
+    defer seen.deinit(f.gpa);
+    try seen.ensureTotalCapacity(f.gpa, @intCast(kept.len + again.len));
+    for (kept) |x| {
+        var a = x;
+        a.ctx = none;
+        seen.putAssumeCapacity(a, false);
+    }
+    for (again) |y| {
+        var b = y;
+        b.ctx = none;
+        if (seen.getPtr(b)) |met| met.* = true else same = false;
+    }
+    var it = seen.valueIterator();
+    while (it.next()) |met| {
+        if (!met.*) same = false;
+    }
+    return same;
+}
+
 /// The copies of one call that a safe build reads again (`checkOtherLeaves`).
 const other_checks_max = 256;
 
@@ -3641,49 +3691,8 @@ fn checkOtherLeaves(f: *Frame, v: Val, k: u32, hit: OtherHit) Error!void {
     const dup = try f.leaves(v, k, &again);
     // A check that passed the budget read nothing to compare.
     if (f.m.steps_over) return;
-    const kept = f.scratch.items;
     var same = dup == hit.dup;
-    if (kept.len <= 16 and again.items.len <= 16) {
-        const sameBut = struct {
-            fn ctx(x: Atom, y: Atom) bool {
-                var a = x;
-                var b = y;
-                a.ctx = none;
-                b.ctx = none;
-                return atomEql(a, b);
-            }
-        }.ctx;
-        for (kept) |x| {
-            const found = for (again.items) |y| {
-                if (sameBut(x, y)) break true;
-            } else false;
-            if (!found) same = false;
-        }
-        for (again.items) |y| {
-            const found = for (kept) |x| {
-                if (sameBut(x, y)) break true;
-            } else false;
-            if (!found) same = false;
-        }
-    } else {
-        var seen: std.AutoHashMapUnmanaged(Atom, bool) = .empty;
-        defer seen.deinit(f.gpa);
-        try seen.ensureTotalCapacity(f.gpa, @intCast(kept.len + again.items.len));
-        for (kept) |x| {
-            var a = x;
-            a.ctx = none;
-            seen.putAssumeCapacity(a, false);
-        }
-        for (again.items) |y| {
-            var b = y;
-            b.ctx = none;
-            if (seen.getPtr(b)) |met| met.* = true else same = false;
-        }
-        var it = seen.valueIterator();
-        while (it.next()) |met| {
-            if (!met.*) same = false;
-        }
-    }
+    if (same) same = try f.sameButCtx(f.scratch.items, again.items);
     if (!same) std.debug.panic("own3: the atoms that a call kept for an operand's location are not what a new read finds (kernel §8)", .{});
 }
 
@@ -11590,7 +11599,7 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         // An entry that can hold such a cell is tested by its atoms, as an
         // answer's is: the callee's claim does not cover it.
         has_answer[e] = answers or tainted;
-        shared = if (!st.entry_read and kind == .alias and !m.steps_over)
+        shared = if (!st.entry_read and !st.held_walk and kind == .alias and !m.steps_over)
             .{ .cr = cr, .start = start, .len = @intCast(f.atoms.items.len - start), .twice = st.twice, .handed = st.handed, .tainted = tainted, .sources = sources, .answers = answers }
         else
             null;
@@ -11650,11 +11659,12 @@ const shared_checks_max = 16;
 
 /// In safe builds: the run `sr` that location `e` of a call's result took
 /// from an earlier location of entry `cr` of the callee's result is the run
-/// that the expansion at `e` makes, atom for atom, with the same `twice`
+/// that the expansion at `e` makes, with the same `twice`
 /// and `handed`, and that expansion reads nothing of `e` (kernel §9). It
 /// counts no work, and a check that passed the budget read nothing to
 /// compare. The caller runs it for the first `shared_checks_max` locations
-/// that take a run.
+/// that take a run. The two runs are compared as sets of atoms without
+/// contexts (`sameButCtx`).
 fn checkSharedRun(f: *Frame, base: *const Use, cr: u32, layout: u32, e: u32, typed: bool, inst: u32, sr: SharedRun) Error!void {
     if (!safety or f.m.steps_over) return;
     const q = f.quiet();
@@ -11662,14 +11672,6 @@ fn checkSharedRun(f: *Frame, base: *const Use, cr: u32, layout: u32, e: u32, typ
     const c = base.c;
     const start = f.atoms.items.len;
     defer f.atoms.shrinkRetainingCapacity(start);
-    // An expansion makes a value for each part that it walks to (`project`,
-    // on the way to a function held in an argument, `heldVal`): the second
-    // expansion makes them again. They are dropped here, before `loud`
-    // compares the frame's parts: no step of the walk keeps one, and a part
-    // that kept one (a memo, a list of parts) is a part that `loud` finds
-    // grown.
-    const nodes = f.nodes.items.len;
-    defer f.nodes.shrinkRetainingCapacity(nodes);
     var st: SrcState = .{ .inst = inst, .typed = typed };
     if (cr == Loc.all) {
         for (c.res, 0..) |srcs, ri| try f.expandSrcs(base, srcs, c.layouts[c.arity], @intCast(ri), layout, e, &st);
@@ -11678,10 +11680,11 @@ fn checkSharedRun(f: *Frame, base: *const Use, cr: u32, layout: u32, e: u32, typ
     if (f.m.steps_over) return;
     const again = f.atoms.items[start..];
     const kept = f.atoms.items[sr.start..][0..sr.len];
-    var same = !st.entry_read and !st.written and st.twice == sr.twice and st.handed == sr.handed and again.len == kept.len;
-    if (same) for (kept, again) |x, y| {
-        if (!atomEql(x, y)) same = false;
-    };
+    // As sets of atoms without contexts: a walk that counts no work meets
+    // no context of an arm (`leaves`, `quiet_n`), so of two atoms that
+    // differ in their contexts alone it keeps one (`checkOtherLeaves`).
+    var same = !st.entry_read and !st.held_walk and !st.written and st.twice == sr.twice and st.handed == sr.handed;
+    if (same) same = try f.sameButCtx(kept, again);
     if (!same) std.debug.panic("own3: the run that a location of a call's result took from another location is not what its own expansion makes (kernel §8)", .{});
 }
 
@@ -12537,6 +12540,12 @@ const SrcState = struct {
     /// *An expansion that reads nothing of its location*). A new reader of
     /// either sets it; `checkSharedRun` finds one that does not.
     entry_read: bool = false,
+    /// The expansion walked to a function held in a value (`answerOfHeld`,
+    /// `heldLost`). The walk makes a value at each step and an index of a
+    /// construction's parts at its second step (`heldVal`, `project`,
+    /// `builtPart`), so a check that counts no work cannot repeat it: such
+    /// an expansion is not kept for the next location either.
+    held_walk: bool = false,
     fn visit(st: *SrcState, use: *const Use, k: u32, code: Code) enum { new, old, full } {
         // The code and its captures: two closures of one lambda are two functions.
         const id = std.hash.Wyhash.hash(code.id(), std.mem.asBytes(&[2]u32{ code.caps, code.ncaps }));
@@ -16244,6 +16253,7 @@ fn handsCells(use: *const Use) bool {
 /// captured and what `use` hands it, as unknown code's can; no other
 /// argument of the call.
 fn heldLost(f: *Frame, v: Val, use: *const Use, st: *SrcState, depth: u32) Error!void {
+    st.held_walk = true;
     st.handed = true;
     st.twice = true;
     try f.atoms.append(f.gpa, outside_atom);
@@ -16258,6 +16268,7 @@ fn heldLost(f: *Frame, v: Val, use: *const Use, st: *SrcState, depth: u32) Error
 /// there, what its contract answers handed what the contract's `held` use
 /// says; of a value the walk cannot name there, the lost answer.
 fn answerOfHeld(f: *Frame, level: *const Use, src: Src, st: *SrcState, depth: u32) Error!void {
+    st.held_walk = true;
     const c = level.c;
     const fnc = c.heldAt(src.a) orelse return f.lostAnswer(level, st);
     const j = paramOfLoc(c, src.a) orelse return f.lostAnswer(level, st);

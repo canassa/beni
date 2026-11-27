@@ -2609,6 +2609,102 @@ test "ownership v3: the answer of a function parameter, read at each of 512 loca
     }
 }
 
+test "ownership v3: the check of a shared run stops on no correct program" {
+    // Two programs that the first check of a shared run stopped the safe
+    // compiler on (the review of #2539). In the first, the answer of an
+    // unknown function is lost, and the argument is a join of two lists of
+    // the frame: the atoms of the kept run have the context of an arm, and
+    // a walk that counts no work gives them none, so the two runs are
+    // compared without contexts. In the second, the callee calls a function
+    // held in a record of 19 fields: the walk to it makes an index of the
+    // record's parts at its second step, which a check may not build, so
+    // such an expansion is not kept for the next location.
+    const programs = [_][]const u8{
+        \\import Node
+        \\
+        \\
+        \\through : (x → a), x → a
+        \\through f x = f x
+        \\
+        \\
+        \\swap : List Int → List Int × List Int
+        \\swap xs = ( [ 1 ], xs )
+        \\
+        \\
+        \\run : Bool, List Int, List Int → Int
+        \\run b xs ys =
+        \\    fs = [ swap, λvs → ( vs, [ 2 ] ) ]
+        \\    g = Maybe.withDefault (List.head fs) swap
+        \\    case through g (if b then xs else ys) of
+        \\        ( p, q ) →
+        \\            List.length p + List.length q
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (run True [ 1, 2 ] [ 3 ]))
+        \\
+        ,
+        \\import Node
+        \\
+        \\
+        \\type alias Big x a =
+        \\    { f : x → a
+        \\    , a1 : Int
+        \\    , a2 : Int
+        \\    , a3 : Int
+        \\    , a4 : Int
+        \\    , a5 : Int
+        \\    , a6 : Int
+        \\    , a7 : Int
+        \\    , a8 : Int
+        \\    , a9 : Int
+        \\    , a10 : Int
+        \\    , a11 : Int
+        \\    , a12 : Int
+        \\    , a13 : Int
+        \\    , a14 : Int
+        \\    , a15 : Int
+        \\    , a16 : Int
+        \\    , a17 : Int
+        \\    , a18 : Int
+        \\    }
+        \\
+        \\
+        \\runBox : Big x a, x → a
+        \\runBox box x =
+        \\    g = box.f
+        \\    g x
+        \\
+        \\
+        \\probe : (List Int → List Int × List Int), List Int → List Int × List Int
+        \\probe mk xs =
+        \\    runBox { f = mk, a1 = 1, a2 = 2, a3 = 3, a4 = 4, a5 = 5, a6 = 6, a7 = 7, a8 = 8, a9 = 9, a10 = 10, a11 = 11, a12 = 12, a13 = 13, a14 = 14, a15 = 15, a16 = 16, a17 = 17, a18 = 18 } xs
+        \\
+        \\
+        \\swap : List Int → List Int × List Int
+        \\swap xs = ( [ 1 ], xs )
+        \\
+        \\
+        \\main : Node.Program
+        \\main =
+        \\    case probe swap [ 1, 2 ] of
+        \\        ( p, q ) →
+        \\            Node.print (String.fromInt (List.length p + List.length q))
+        \\
+        ,
+    };
+    for (programs) |source| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("Main.beni", source);
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total ") == null) {
+            std.debug.print("wanted a dump and exit 0; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr[0..@min(r.stderr.len, 2000)] });
+            return error.TestUnexpectedVerdict;
+        }
+    }
+}
+
 // The first full run of the sanitiser corpus under the prototype accepted 19
 // programs that it must refuse (research report 111 §4.2). Each has a write
 // that changes a list in place while another holder reads it: a plain build
