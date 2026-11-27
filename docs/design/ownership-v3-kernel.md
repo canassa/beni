@@ -8,7 +8,7 @@ report 120); §6.12 and §6.13 revised again the same day (research report 123);
 report 131); §5, §5.3, §6.12, §6.14, §8 and §9 revised again the same day (research report 134); §6 rule 9 and §8
 revised 2026-11-15 (research report 141). §0 revised and §11 added the same day (research report 142); §5, §6 rule 2 and
 §11 revised again the same day (research report 144); §4.4, §6 rule 13 and §8 revised again the same day
-(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value); §11 item 11 added the same day (*A closure writes a field of a record it captured*, *The order of a callee's runs*, #2657); §6 rule 12, §8, §9 and §13 item 12 revised the same day (#2712: each latent gap code readers CR14 and CR15 found closed by its own rule). The owner
+(research report 143). §3.4 added, §6 rule 10, §8 and §9 revised 2026-11-16 (research report 146); §3.4, §6 rules 4 to 6, §9 and §11 revised again the same day (research report 147); §3.4, §4.1, §5, §6 rules 10 and 12, §9 and §11 revised again the same day (research report 148); §3.4, §6 rule 10 and §9 revised again the same day (research report 150); §3.4, §6 rules 10 and 11 and §9 revised 2026-11-17 (research report 151); §6 rules 3 and 10 and §11 revised again the same day (research report 153); §4.4, §5, §6 rules 1 and 10 revised again the same day (research report 154); §4.4, §6 rule 10 and §9 revised 2026-11-18 (research report 156); §4.4, §6 rule 10 and §9 revised again the same day (research report 157); §3.1, §3.4, §4.1 and §4.4 revised again the same day (research report 158); §4.4, §6 rules 10 and 13 and §8 revised again the same day (research report 159). §12 added 2026-11-19 (research report 160), and revised the same day (research reports 161 and 163). §6 rule 10, §7 and §9 revised again the same day (research report 162). §6 rule 10, §7, §9 and §12 revised again the same day (research report 164). §13 added 2026-11-20, and §0, §4.2 and §6 rules 8 and 11 revised (research report 165, slices 1 to 3); §13 items 4, 8 and 10 revised and item 11 added the same day (research report 165, slice 4); §13 item 11 revised again the same day (#2586); §0 and §13 items 10 and 12 the same day (#2581); §4.1, §6 rule 2, §11 item 5 and §13 the same day (#2583, #2588); §6 rule 11 and §9 revised 2026-11-22 (#2601); §13 items 3 and 5 the same day (blind round BN); §13 item 5 again and item 13 added the same day (blind round BN's undo app); §13 item 12 revised 2026-11-23 (#2613); §12 item 8 added 2026-11-24 (#2657), and §6 rules 3 and 10 revised the same day (#2652); §6 rule 13 revised 2026-11-27 (*A message a command builds*, the owner's decision, #2657); §6 rule 12 and its row of §6.14 revised the same day (*A handler read at the event*, #2657); §4.4 revised the same day (*The claims of a call whose arguments are not apart*, #2657), and §3.4 the same day (*a walked body's own type variables*, #2657); §6 rule 3 and §11 items 3 and 10 revised the same day (#2657, closures and records read after a write); §6 rule 2 revised again the same day (#2657, functions held in a value); §11 item 11 added the same day (*A closure writes a field of a record it captured*, *The order of a callee's runs*, #2657); §6 rule 12, §8, §9 and §13 item 12 revised the same day (#2712: each latent gap code readers CR14 and CR15 found closed by its own rule); §7.1 added 2026-11-27 (#2549). The owner
 ordered it after research report 116: "Write the rules
 and do a principled fix on the core. The core must have soundness." Report 110 §6 is the design this
 kernel keeps; reports 111 to 115 are its history; report 117 measures this text's implementation. The
@@ -1992,6 +1992,85 @@ can read the value: the module's other instructions do not name it, another modu
 is off there, as in a module with a name that a `via` keeps unresolved, `schema_value_ref` or
 `schema_expr_ref`). *Before, `extended = seed ++ [ 3 ]` with `seed = List.range 1 2` read nowhere
 else was refused, `unknown` (`browser/inline/InitializationTransfer`).*
+
+### 7.1 What a build keeps between runs
+
+*Added 2026-11-27 (#2549). Before, a run under `--ownership=v3` read and wrote no cache, so each build
+checked every module again.*
+
+A run under `--ownership=v3` reads and writes the module cache (`fast-compiler.md` §8, *The persistent
+cache, and its key*). **A module that the cache gives is not walked: what its walk made is read back, and
+it is the same as a new walk makes.** Four rules keep that true.
+
+1. **The key is the transitive one.** Under v3 an import gives its **key** to the key of its importer,
+   not its interface hash and dependency digest (`Key.finishTransitive`; `Incremental.claim`). A walk
+   reads more of another module than its interface: its contracts, the words of its declarations, the
+   shape of its bodies and the constructors of its private types (`Mod.in.birs`, `Shared.published`).
+   The transitive key holds each source byte that can reach the module's check, so an equal key is an
+   equal walk. The cost is the one that `fast-compiler.md` states: an edit of a module checks each
+   module that imports it, directly or not, again. And the key's term for `core/` is over the key of
+   each module of core in the build (`core_epoch`), so the first import of a module of core that no
+   module of the build imported before moves the key of each module outside core. *Not built: a cutoff for contracts, where an importer
+   is checked again only when a contract that it can read changed. It needs a closed list of what a walk
+   reads of another module.*
+2. **The key names the run.** The option string of each module has a v3 term, only under v3: the checker,
+   whether the run enforces, `--library` for a module of the root package, and the chain's markup
+   settings (its vocabulary module, its markup type and its lowering; `Key.Options.ownership3`). These
+   are what a walk reads of the run and of no source (`Enforce.checkModule`, `Enforce.keptLets`). So no
+   entry of a run under v1 is read under v3, and the reverse; and a run that enforces reads no entry of
+   a run that does not.
+3. **The entry holds v3's block** (`own3/Block.zig`), in the `ownership` section of the cache entry:
+   - the module's contracts as its importers read them (`Contract.Published`): each layout, each
+     contract with the functions that it answers and their contracts (`Contract.Made`), each fact of
+     a derived method, which bodies reach JavaScript, whether the module can keep a message, and
+     which declarations an importer may name only as a piece of a view (`Published.views`);
+   - the lowering channel (`own2/Hoists.Table`), the reads that the lowering reads first
+     (`Reads.Read`, §11 item 10), and the calls that write a record argument in place
+     (`Driver.record_calls`). Whether each record update of the module is accepted
+     (`Driver.records_in_place`) is read off the channel again, as the walk reads it.
+
+   Each thing that a walk leaves for a later phase is in the block or is made again from it. A walk
+   that leaves a new one without that gives a build with the cache another output than a build with
+   none; the build sweeps of `bench/ownership-v3-cache.mjs` compare the two, with and with no
+   ownership flag.
+
+   A block holds no id of a session. A field is written as its name, not its text rank, a type as
+   its package, its module and its name, not its `TypeId`, and the module of a declaration that a
+   contract answers as its package and its name, not its index. A label's `head` is a `TypeId` where the label
+   is a constructor's argument, an opaque type's slot, or a member that is a list, an opaque value or a
+   cell; it is 0 for each other label. The reader gives each name the id of its own session. A name that
+   the reader's session does not have, or a block that does not decode, is a miss: the module is checked
+   and walked.
+
+   **A block has a digest of its bytes, and the reader checks it first.** A flag of a contract is one
+   bit: a block with one changed bit can decode as another contract, and the structure checks cannot see
+   that. *The review of #2549: one bit of a file turned a refusal into an accepted write, and the
+   importer was then stored with that verdict under its own key, so the wrong verdict stayed after the
+   file was repaired.* With the digest a changed, a missing or an added byte is a miss.
+
+   **A block is at most 32 MiB** (`Block.max_bytes`), and a module with a larger one has none: it is
+   walked in each build. The cache reads no entry above 64 MiB (`cache/Dir.max_entry_bytes`) and now
+   writes none. The entries of a layout share their first labels, and each is written as the count it
+   shares with the entry before and the labels after it. *Before, a chain of types nested 240 deep, with
+   a function for each level, had a block of 83 MB for 38 kB of source, which each build wrote and none
+   read.*
+
+   **A new field of `Contract`, `Fn`, `Path`, `Src`, `Effect`, `Made`, `DerivedFact` or `Published` that
+   can hold an id of a session is a compile error in `Block.zig`** until the block writes it by name (a
+   field of at most 16 bits, or of a type that is written field by field, needs no change): a field that a block drops reads as its default at
+   the importer, and the default of a fact such as `switches`, `hosts` or `casts` is the optimistic side.
+   A safe build decodes each block that it writes and compares the result with what the walk made
+   (`Block.same`).
+4. **A module with a line that stops a build is never stored.** That is each module for which
+   `Enforce.checkModule` made a diagnostic (a refused write, a false word, a limit), also when the
+   check drops the diagnostic later because another module has a type error (`Check.run`). A module
+   that was not walked at all (an error reached it or one of its imports) is not stored either. A
+   module with no kept types has a block that says "not walked": the reader publishes no contract of
+   it, as the walk does.
+
+The checked core in the binary is not read (`Session.Options.no_pack`): it has no block of v3. A run
+checks `core/` from its sources one time, and the cache gives it after that. `dump --stage=ownership`
+reads and writes no cache: its report is of the walk.
 
 ## 8. Resource limits
 
