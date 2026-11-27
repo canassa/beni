@@ -2108,10 +2108,54 @@ paths:
   call that writes one location keeps nothing: it reads each other location once. A read that walks a function value or a value of
   no claim is not kept (what it holds can grow while the walk runs), and neither is a read under a set
   of the callee's paths (§13 item 13). A safe build reads the location again at the first 256 copies
-  of a call, and the two agree (§9). What stays: the pairs of a written location and another location, and the rounds. A
+  of a call, and the two agree (§9). What stays: the rounds (a write no longer passes each other
+  location: the next rule). A
   group of `n` constructors takes `n` rounds where `n` is even and `2n` where it is odd, so the loop
   above is judged at 11, 12, 14 and 16 constructors, and passes its budget at 13, 15 and from 17 on
-  (before: judged up to 10 and at 12).
+  (before: judged up to 10 and at 12). With the three rules below (#2535) it is judged at 18 and 20
+  too, and passes its budget at each odd size from 13 on and from 22 on.
+- **A write passes only the kept reads that have an atom at a root and entry of it**
+  (`Frame.ApartIndex`; #2535). Two atoms are one cell only at one root and one entry (`overlap`), so a
+  kept read of another location that has no atom there reaches no written cell, whatever its old
+  names, its contexts and its paths. A call that writes 4 locations or more keeps an index of its kept
+  reads: for each root and entry, the kept reads that have an atom there, old names too. A write marks
+  the kept reads at the root and entry of each of its atoms (`markWrite`). From the second write of an
+  operand on, `otherReaches` passes only the kept reads that the write marked and the locations of
+  the operand that have no kept read yet (`apartFew`): 2 units for each one passed, as in the scan of
+  every location, and 1 for a location that has a kept read now and leaves that list. A kept read
+  that the write did not mark is not read, not copied and not compared, and costs nothing. The work
+  of the index (4 units for a lookup, 1 for each kept read that a write passes in it) is a debt, and
+  each such write pays of it up to what the scan of every location of the operand cost before. So
+  no write costs more than before, and each unit is work that the walk did. Three things are
+  tested as before: a location whose read has the answer of a function parameter, which holds the
+  cells of its base too and has no place in the index; every location, for a write that passes more
+  than four kept reads in the index for each one that the call has; and a location whose read the
+  call does not keep. Before, a call tested each written location against each other location of its
+  operands: a copy of the kept read, a unit for each atom, and a lookup for each atom that is not an
+  old name; and the atoms of a location grow with each call that gave the value a new name. A record
+  of 250 fields passed through 10 calls of a function that writes each field made 622 500 pairs at
+  about 45 units: 28 of the 38.0 million units that the walk of the caller needed, and 1.3 million
+  more for the scans of every location. A function that pushes onto each of the `n` list fields of a
+  new record is judged up to 500 fields (before: up to 229).
+- **The runs of a root that are all old names are tested in one step** (`Frame.runsReach`; #2535). A
+  later read of a root that the frame made tests each run of the root against the write (§5, test 4).
+  A run whose atoms are all old names for the write in judgement reaches nothing, and that is known
+  from the run's lowest `dead`: a step (`runReaches`). The list of a root's runs keeps the lowest of
+  those over all its runs (`RunEntries.low`), once each run has its fact. While the write in judgement
+  is not later than it, no run of the root reaches, and the test of them all costs one unit. Before,
+  it cost one unit for each run and one more for each entry of the list: the record of 250 fields
+  through 10 calls made 13 490 such tests of 250 runs, 6.7 million units.
+- **A later read that its root's facts settle is no step** (`Frame.useSettled`; #2535). Each pair of
+  a write and a later read is a step, and the test of a read of a part of one root is one more
+  (`reach`). Where the read is of the whole of a part of one root, the write has no atom of that
+  root, and the root has no run to test (it is not a root that the frame made, or its list of runs
+  is made and each of them is an old name for the write, as in the rule above), the read reaches no
+  cell of the write, and that is known with no walk. Such a pair costs the scan of the write for an
+  atom of the root, which `rootReach` counts too, and one unit. Before, it cost two steps more (64
+  units): the record of 250 fields through 10 calls made 13 500 such pairs, 0.86 million units. With
+  this rule and the two above, the walk of its caller needs 1.4 million units and earns 2.19 million:
+  the record is judged, and so is one of 400 fields through 10 calls. One of 500 fields through 10
+  calls, and one of 250 fields through 20, still pass their budget.
 - **A limit in the dump.** `dump --stage=ownership` counts each `limit` line of a module as one pending
   demand, in the module's `demands` line and in the `total` line, and keeps the `limits` line
   (`Enforce.writeReport`; #2567). The walk that passed the limit judged no write, and a build of the
@@ -2148,7 +2192,8 @@ paths:
     the budget the walk goes no deeper, and a write it did not reach has no line, so it is not
     authorised); each call of `flow`, `resolve`, `answerOf`, `answerOfCode`, `leaves`, `leavesOwn`,
     `reach`, `partsOf`, `ownSupply`, `answerOwn` and `expandSrcs`; each pair of a write and an escape
-    (`demand`) and of a write and a later read (`finishDemands`); in the entry (`entryCall`, rule 13),
+    (`demand`) and of a write and a later read (`finishDemands`; but a later read that its root's
+    facts settle is no step, below); in the entry (`entryCall`, rule 13),
     each entry of the contract's answer that a model location meets and each model location that a
     parameter entry meets (`meetsOf`), and each step of the taking away;
   - **an element visited, 1 unit** (`Frame.charge`): each atom compared in a test of two runs of atoms
@@ -2491,7 +2536,9 @@ paths:
   writes and are counted, so the budget stops them: `n` writes each read by later reads (a record of
   `n` lists, each pushed; a record of `n` records, each written by a helper) are `n²` pairs of a
   write and a later read, and a record of 500 lists each pushed reaches its declaration's budget, in
-  0.05 s of ReleaseFast. Every dump of the 2 751 ownership roots is the same.
+  0.05 s of ReleaseFast. Every dump of the 2 751 ownership roots is the same. (Since #2535 a write
+  passes only the kept reads that it marked, above: the record of lists, each pushed in one update,
+  is judged up to 500 fields and reaches the budget at 520.)
 
 
   Past either budget every walk returns at once, the rounds of local functions stop (`solveCodes`), each test of
@@ -2664,6 +2711,9 @@ Gated on `std.debug.runtime_safety`, so a drift between this text and the code f
 | `slotHeld`'s index of a layout's record slots answers what a scan of the layout answers, for layouts of at most 256 entries | `Frame.slotHeld` | §3.4, §8 |
 | the atoms of an operand's location that a call kept for its later writes are the atoms that a new read of the location finds, for the first 256 copies of a call; the check counts no work | `Frame.otherLeaves` | §5, §8 |
 | the run that a location of a call's result took from an earlier location of the same entry of the callee is the run that the expansion at its own location makes, as sets of atoms without contexts, with the same `twice` and `handed`, and that expansion reads nothing of the location and walks to no held function, for the first 16 locations that take each run; the check counts no work | `Frame.checkSharedRun`, in `applyAt` | §8 |
+| each kept read of an operand that a write did not mark (no atom at a root and entry of the written atoms) reaches none of them by the test that the write is spared (`atomsReach`, or each pair by `overlap` for a part of the written root), for the first 4 writes of a call that pass few locations and each 64th after them, up to 64 for a call; the check counts no work | `Frame.checkApartWrite` | §5, §8 |
+| each run of a root whose runs `runsReach` took in one step is an old name for the write in judgement by the test of one run (`runReaches`), for the first 64 such steps of a frame; the check reads the facts of the runs and counts no work | `Frame.checkRunsOld` | §5, §8 |
+| a later read that `useSettled` settled reaches no cell of the write by the walk that the pair is spared (`useReaches`), for the first 64 such pairs of a frame; the check counts no work | `Frame.checkUseSettled` | §5, §8 |
 | two contracts of one arity that a round joins have one set of layouts, or the first has no fact: a join of two others would drop facts the rounds need. A contract of another arity (a local function whose walk found a capture an earlier walk did not) is replaced, and the rounds walk again at the new one | `Contract.join` | §6.9 |
 | each check of this table that counts no work restores every count it could change (the declaration's steps, the module's units, `Loc.Table.units`, the walk's give-up), and builds nothing that a later step reads by key or by index: no entry of the location table (a location, a layout, a projection, a path, a map, a memo's answer; `Loc.Table.no_fill`), no place, and no node, root or memo entry of the frame: each list and map of `Frame.quiet_parts` keeps its length (an answer a check could write into a slot made before it is not compared; no check reaches one today). A walk of leaves inside such a check tags no atom with the context of a join's arm, so it builds no meeting of two arms (`meet`, an entry of `Frame.ctxs`); no check reads an atom's context. Nor does it keep a closure's atoms for the reads after `finish` (`Frame.whole_at`). A check that reads again what a step read walks it by that step's route: `Frame.checkMadeEscaped` reads a join arm by arm, each at its own place, as the escape it checks did (`Frame.madeLeaves`). Before, it read the join whole, at the join's place: where a `Js.Value` was made in two `if`s in a row it built the meeting of their arms, and where an arm was a list (`if c then Js.from [ x ] else Js.null`) a map of the two layouts, and safe builds panicked (`run/JsJoinAtVar`, `run/JsJoinOfList`; master's `browser-inline` code reaches the first in every build). A later lookup of an entry a check built would be free in the safe build and counted in a release build, so the two would read the budget differently. So a safe build reaches a release build's verdicts, limits included; a check that would build such an entry panics | `Check.Mod.quiet`, `Frame.quiet`, `Loc.Table.building` | §8 |
 
