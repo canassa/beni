@@ -473,6 +473,10 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     // program's keys; kernel §6 rules 10 and 11).
     const app = session.graph.modulePackage(m) == .app;
     const dest = &d.per_module[mi_u];
+    // A chain that names v3 (`"ownership": "v3"`, `boundary.md` §5.2) is
+    // judged by it with no flag: its text names neither the prototype nor
+    // the flag.
+    const checker: []const u8 = if (session.ownership_v3_platform) "The ownership checker" else "The step 0 prototype of the ownership checker (`--ownership=v3`)";
     for (lines, r.lines) |l, rl| {
         if (!l.refused) continue;
         // A line refused because its walk gave up is no write of a list or
@@ -493,12 +497,13 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         // the fix is to call it where it writes, or to hand it straight to
         // the call that runs it (kernel §12 item 5).
         const fix: []const u8 = if (std.mem.eql(u8, l.op, "value")) "Call the function directly where it writes, or hand it straight to the call that runs it, or change a copy" else "Change a copy";
-        const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\nThe step 0 prototype of the ownership checker (`--ownership=v3`) refuses a write that it cannot show to be safe. {s} (`{s}`).", .{
+        const message = try std.fmt.allocPrint(gpa, "{s} {s} is refused: {s}{s}{s}\n\n{s} refuses a write that it cannot show to be safe. {s} (`{s}`).", .{
             l.op,
             l.base,
             Facts.causeText(l.cause),
             if (l.detail.len != 0) ": " else "",
             l.detail,
+            checker,
             fix,
             copyFix(rl.record, l.op, l.base),
         });
@@ -508,7 +513,7 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
     // (kernel §6 rule 10, *A worded body is checked against its walk*): a
     // fact of the words, so every package's build stops on it.
     for (r.false_words) |x| {
-        const message = try std.fmt.allocPrint(gpa, "{s}\n\nA worded declaration whose body reaches no JavaScript is checked against what the ownership checker (`--ownership=v3`) finds in its body: a word may say more than the body does, never less. Correct the words.", .{x.text});
+        const message = try std.fmt.allocPrint(gpa, "{s}\n\nA worded declaration whose body reaches no JavaScript is checked against what the ownership checker{s} finds in its body: a word may say more than the body does, never less. Correct the words.", .{ x.text, if (session.ownership_v3_platform) "" else " (`--ownership=v3`)" });
         try dest.append(gpa, .{ .ownership = true, .code = .false_ownership_word, .module = m, .region = @fromBackingInt(0), .token = x.token orelse 0, .message = message });
     }
     if (!app) return;
