@@ -1,0 +1,129 @@
+-- run: an `if` whose arms print nothing under `--release` is not the body
+-- of the `if` around it (`backend.md` §9, *Compact statements*). Each
+-- function below has a `case` whose arms hold only a `Ref.make` nothing
+-- reads: specialisation keeps the inner test, the release optimiser drops
+-- the bindings, and the inner `if` is left with nothing to print. The
+-- outer arm is written unbraced, and the statement after the `case` must
+-- stay after it, not become that arm: else the function answers nothing
+-- for `Nothing` and the program crashes. Each case runs after a
+-- suspension (the shape the defect needed), with `Just` and `Nothing`.
+import Dict
+import Io
+import List
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+-- A lookup specialisation cannot see through.
+find : Int → Maybe (List Int)
+find k = Dict.get (Dict.fromList [ ( 1, [ 26, 27 ] ), ( 2, [ 28, 29, 30 ] ) ]) k
+
+
+-- The then arm is one dead inner `case`.
+thenArm : Int → List Int
+thenArm k =
+    m = find k
+    Task.yieldNow ⊤
+    case m of
+        Just a →
+            case m of
+                Just b →
+                    v = Ref.make [ 7 ]
+                    ⊤
+
+                Nothing →
+                    ⊤
+
+        Nothing →
+            ⊤
+    Maybe.withDefault m [ 1 ]
+
+
+-- The else arm is one dead inner `case`, beside a live then arm.
+elseArm : Int → List Int
+elseArm k =
+    m = find k
+    Task.yieldNow ⊤
+    case m of
+        Just a →
+            f = Task.spawn λ⊤ → ⊤
+            ⊤
+
+        Nothing →
+            case m of
+                Just b →
+                    v = Ref.make [ 6 ]
+                    ⊤
+
+                Nothing →
+                    ⊤
+    Maybe.withDefault m [ 2, 2 ]
+
+
+-- Two dead levels inside the arm.
+deep : Int → List Int
+deep k =
+    m = find k
+    Task.yieldNow ⊤
+    case m of
+        Just a →
+            case m of
+                Just b →
+                    case m of
+                        Just c →
+                            v = Ref.make [ 6 ]
+                            ⊤
+
+                        Nothing →
+                            ⊤
+
+                Nothing →
+                    ⊤
+
+        Nothing →
+            ⊤
+    Maybe.withDefault m [ 3, 3, 3 ]
+
+
+-- The dead `case` is an arm of an `if` with a live test.
+inIf : Int → List Int
+inIf k =
+    m = find k
+    Task.yieldNow ⊤
+    if k > 1 then
+        case m of
+            Just b →
+                v = Ref.make [ 6 ]
+                ⊤
+
+            Nothing →
+                ⊤
+    else
+        ⊤
+    Maybe.withDefault m [ 4, 4, 4, 4 ]
+
+
+show : String, (Int → List Int) → List String
+show name f =
+    [ name
+        ++ ": "
+        ++ String.fromInt (List.length (f 1))
+        ++ ","
+        ++ String.fromInt (List.length (f 2))
+        ++ ","
+        ++ String.fromInt (List.length (f 3))
+    ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        (List.concat
+            [ show "then arm" thenArm
+            , show "else arm" elseArm
+            , show "deep" deep
+            , show "in an if" inIf
+            ]
+        )

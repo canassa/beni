@@ -1,0 +1,8 @@
+modify, two calls: 27,54
+set, two calls: 5,6, answer 42
+update, two calls: 1,2,9
+log, two calls: answer 21
+set, one call: 8
+log, one call: answer 5
+== on a constructor: 3
+log lines: through ?; direct; once through ?
