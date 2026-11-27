@@ -1,0 +1,1 @@
+A recursive call whose callee writes 28 locations of its argument, in a group that takes 14 rounds: each push is accepted and written in place (ownership-v3-kernel.md §8, *A call reads each location of an operand once*; #2567). Before, the walk of `loop` passed its budget and the build stopped on the limit.

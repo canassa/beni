@@ -1,0 +1,129 @@
+-- A loop over a `case` of 14 constructors with two lists each: `step` moves the
+-- lists to the next constructor and swaps them, and `loop` applies it `k` times.
+-- The contract of `loop` takes 14 rounds, and each round's call writes 28
+-- locations of its argument. Before #2567 each of these writes read every
+-- other location again, 28 x 28 reads a round, and the walk of `loop` passed its
+-- budget (ownership-v3-kernel.md §8, *A call reads each location of an operand
+-- once*). With one read for each location the walks take about half of it.
+import Node
+
+
+type T
+    = C0 (List Int) (List Int)
+    | C1 (List Int) (List Int)
+    | C2 (List Int) (List Int)
+    | C3 (List Int) (List Int)
+    | C4 (List Int) (List Int)
+    | C5 (List Int) (List Int)
+    | C6 (List Int) (List Int)
+    | C7 (List Int) (List Int)
+    | C8 (List Int) (List Int)
+    | C9 (List Int) (List Int)
+    | C10 (List Int) (List Int)
+    | C11 (List Int) (List Int)
+    | C12 (List Int) (List Int)
+    | C13 (List Int) (List Int)
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+step : T → T
+step t =
+    case t of
+        C0 a b →
+            C1 (List.push b 0) (List.push a 0)
+
+        C1 a b →
+            C2 (List.push b 1) (List.push a 1)
+
+        C2 a b →
+            C3 (List.push b 2) (List.push a 2)
+
+        C3 a b →
+            C4 (List.push b 3) (List.push a 3)
+
+        C4 a b →
+            C5 (List.push b 4) (List.push a 4)
+
+        C5 a b →
+            C6 (List.push b 5) (List.push a 5)
+
+        C6 a b →
+            C7 (List.push b 6) (List.push a 6)
+
+        C7 a b →
+            C8 (List.push b 7) (List.push a 7)
+
+        C8 a b →
+            C9 (List.push b 8) (List.push a 8)
+
+        C9 a b →
+            C10 (List.push b 9) (List.push a 9)
+
+        C10 a b →
+            C11 (List.push b 10) (List.push a 10)
+
+        C11 a b →
+            C12 (List.push b 11) (List.push a 11)
+
+        C12 a b →
+            C13 (List.push b 12) (List.push a 12)
+
+        C13 a b →
+            C0 (List.push b 13) (List.push a 13)
+
+
+loop : T, Int → T
+loop t k = if k ≤ 0 then t else loop (step t) (k - 1)
+
+
+show : T → String
+show t =
+    case t of
+        C0 a b →
+            "C0 " ++ ints a ++ " ; " ++ ints b
+
+        C1 a b →
+            "C1 " ++ ints a ++ " ; " ++ ints b
+
+        C2 a b →
+            "C2 " ++ ints a ++ " ; " ++ ints b
+
+        C3 a b →
+            "C3 " ++ ints a ++ " ; " ++ ints b
+
+        C4 a b →
+            "C4 " ++ ints a ++ " ; " ++ ints b
+
+        C5 a b →
+            "C5 " ++ ints a ++ " ; " ++ ints b
+
+        C6 a b →
+            "C6 " ++ ints a ++ " ; " ++ ints b
+
+        C7 a b →
+            "C7 " ++ ints a ++ " ; " ++ ints b
+
+        C8 a b →
+            "C8 " ++ ints a ++ " ; " ++ ints b
+
+        C9 a b →
+            "C9 " ++ ints a ++ " ; " ++ ints b
+
+        C10 a b →
+            "C10 " ++ ints a ++ " ; " ++ ints b
+
+        C11 a b →
+            "C11 " ++ ints a ++ " ; " ++ ints b
+
+        C12 a b →
+            "C12 " ++ ints a ++ " ; " ++ ints b
+
+        C13 a b →
+            "C13 " ++ ints a ++ " ; " ++ ints b
+
+
+main : Node.Program
+main = Node.print (show (loop (C0 [] []) 5) ++ "\n" ++ show (loop (C12 [ 7 ] [ 8, 9 ]) 17))
