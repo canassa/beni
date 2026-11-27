@@ -16,6 +16,9 @@ module ChildProcess
     Inherit
     Extend
     Only
+  type Input
+    NoInput
+    Text
   alias Output
     Output
   type RunError

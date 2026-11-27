@@ -4,13 +4,17 @@
 -- the test platform's, in place of `child_process.spawn`'s, and notes what
 -- somebody did to its standard input.
 --
---   - no `input`, and an `input` of `""`: no pipe (`ignore`, which is
---     `/dev/null`). A real child reads an end of file at once from that
---     and from an empty pipe, so only this case tells them apart;
+--   - `NoInput`, which `command` gives: no pipe (`ignore`, which is
+--     `/dev/null`);
+--   - `Text ""`: a pipe, as for any text, and the platform ends it. The
+--     child goes on only when its input pipe is closed, so a platform that
+--     writes nothing for an empty text leaves this program with nothing to
+--     wake it;
 --   - a text: a pipe. Its `error` event with the code `EPIPE`, by Node's
 --     route for a write that failed, is a child that stopped reading, and
 --     not an error: `run` goes on waiting, and answers with what the child
---     did after that;
+--     did after that. The write of an empty text fails the same way
+--     (measured: Node gives `EPIPE` for it when the child stopped first);
 --   - a start that failed: nothing writes to the child's standard input,
 --     which Node makes all the same;
 --   - output over `maxOutput` from a child that never reads: the platform
@@ -59,15 +63,19 @@ main : Program
 main = Io.run λ⊤ →
     Fault.failInput "EPIPE"
     none = describe "no input" (ChildProcess.run child)
-    empty = describe "empty input" (ChildProcess.run { child | input = "" })
-    broken = describe "a text, EPIPE" (ChildProcess.run { child | input = "text" })
+    empty =
+        describe "an empty text, EPIPE" (ChildProcess.run { child | stdin = ChildProcess.Text "" })
+    broken =
+        describe "a text, EPIPE" (ChildProcess.run { child | stdin = ChildProcess.Text "text" })
     Fault.failStart ⊤
-    failed = describe "a start that failed" (ChildProcess.run { child | input = "text" })
+    failed =
+        describe "a start that failed"
+            (ChildProcess.run { child | stdin = ChildProcess.Text "text" })
     failedNotes = Fault.notes ⊤
     Fault.neverRead ⊤
     tooLarge =
         describe "too large, input not read"
-            (ChildProcess.run { child | input = "text", maxOutput = 10 })
+            (ChildProcess.run { child | stdin = ChildProcess.Text "text", maxOutput = 10 })
     tooLargeNotes = Fault.notes ⊤
     Node.printLines
         [ none

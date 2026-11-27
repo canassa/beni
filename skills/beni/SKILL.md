@@ -117,7 +117,7 @@ Open the file your task needs.
   `listenWith`, `accept` and `refuse`, and a page on `browser-tea` with `listen` and `send`.
 - `references/webgpu.md`, `references/webgpu-render.md` — WebGPU in a page.
 - `references/child-process.md` — `ChildProcess.run` on `node`: no shell; output, status, `cwd`,
-  `env`, `input`, errors, cancellation.
+  `env`, `stdin`, errors, cancellation.
 - `references/project.md` — `beni.json`, `beni new`, the output tree, `beni serve`.
 - `references/ownership-words.md` — the ownership words core and platform packages write,
   `misplaced_ownership_word`, and `@ownership_summary_size`.

@@ -22,9 +22,12 @@ export const notes = (unit) => {
 // Asked for a pipe, the child has a standard input that fails its first
 // write with `code`, by the route Node takes for it: the stream's `error`
 // event and then its `close`, as a `net.Socket` that destroys itself with
-// the error. The child goes on after that `close`, as one that closed its
-// standard input does. Asked for anything else, it has no `stdin`, as a
-// child of Node's with `"ignore"`, and goes on at once.
+// the error. A write of no bytes fails too: Node writes the empty text of
+// an `end("")` and gives `EPIPE` for it when the child stopped reading
+// first (measured). The child goes on after that `close`, as one that
+// closed its standard input does, and never without it. Asked for
+// anything else, it has no `stdin`, as a child of Node's with `"ignore"`,
+// and goes on at once.
 export const failInput = (code) => {
   childProcess.spawn = (file, args, options) => {
     const child = new EventEmitter();
