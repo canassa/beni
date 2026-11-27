@@ -2705,6 +2705,137 @@ test "ownership v3: the check of a shared run stops on no correct program" {
     }
 }
 
+/// `fns` functions in a ring; each hands its tuple of `n` lists on one place
+/// round to the next, and answers one of them where the count is 0 (`r0`
+/// pushes onto it first when `inner`). `go` calls `r0` with `n` new lists,
+/// pushes onto the answer when not `inner`, and reads one of the lists after
+/// when `live` (#2513).
+fn rotation(a: std.mem.Allocator, n: u32, fns: u32, inner: bool, live: bool) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\nints : List Int → String\nints xs = String.join (List.map xs String.fromInt) \",\"\n");
+    for (0..fns) |i| {
+        try out.print(a, "\n\nr{d} : ", .{i});
+        for (0..n) |k| try out.appendSlice(a, if (k == 0) "List Int" else " × List Int");
+        try out.print(a, ", Int → List Int\nr{d} ( ", .{i});
+        for (0..n) |k| try out.print(a, "{s}a{d}", .{ if (k == 0) "" else ", ", k });
+        if (i == 0 and inner) try out.appendSlice(a, " ) k = if k == 0 then List.push a0 9 else ") else try out.print(a, " ) k = if k == 0 then a{d} else ", .{i});
+        try out.print(a, "r{d} ( a{d}", .{ (i + 1) % fns, n - 1 });
+        for (0..n - 1) |k| try out.print(a, ", a{d}", .{k});
+        try out.appendSlice(a, " ) (k - 1)\n");
+    }
+    try out.appendSlice(a, "\n\ngo : Int → String\ngo k =\n");
+    for (0..n) |k| try out.print(a, "    a{d} = [ {d} ]\n", .{ k, k });
+    try out.appendSlice(a, if (inner) "    l = r0 ( " else "    l = List.push (r0 ( ");
+    for (0..n) |k| try out.print(a, "{s}a{d}", .{ if (k == 0) "" else ", ", k });
+    try out.appendSlice(a, if (inner) " ) k\n" else " ) k) 9\n");
+    if (live) try out.print(a, "    ints l ++ \" / \" ++ ints a{d}\n", .{n - 2}) else try out.appendSlice(a, "    ints l\n");
+    try out.appendSlice(a, "\n\nmain : Node.Program\nmain = Node.print (go 3 ++ \" ; \" ++ go 0)\n");
+    return out.items;
+}
+
+test "ownership v3: a group that takes more than 64 rounds settles" {
+    // `r0` hands its 70 lists on one place round each time it calls itself,
+    // so its contract finds one more list that it can answer in each round:
+    // 70 rounds. The rounds of a group have no bound of their own (kernel
+    // §3.3 item 9; before #2513 a group past 64 rounds was a limit, and the
+    // caller's write had no claim). The contract says that the answer can
+    // be each of the lists: the caller's push onto it is accepted where no
+    // list is read after, and refused where one is.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const cases = [_]struct { live: bool, want: []const u8 }{
+        .{ .live = false, .want = "List.push <call Main.r0>: accepted call" },
+        .{ .live = true, .want = "List.push <call Main.r0>: rejected later-use: it is read again at" },
+    };
+    for (cases) |c| {
+        try w.write("Main.beni", try rotation(w.arena.allocator(), 70, 1, false, c.live));
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, c.want) == null or std.mem.indexOf(u8, r.stdout, "summary r0:") == null or std.mem.indexOf(u8, r.stdout, "limit") != null) {
+            std.debug.print("live {}: wanted `{s}`, a contract of `r0` and no limit; exit {d}:\n{s}{s}\n", .{ c.live, c.want, r.exit_code, r.stdout[0..@min(r.stdout.len, 3000)], r.stderr });
+            return error.TestUnexpectedVerdict;
+        }
+    }
+}
+
+test "ownership v3: a group past the budget of a member is a limit, and no member has a contract" {
+    // The bound of a group's rounds is the budget (kernel §3.3 item 9, §8):
+    // each walk of a member, in each round, counts against that member's
+    // one budget. A group that has not settled when a member passes its
+    // budget ends in that member's limit line. No member publishes the
+    // contract of a round before the fixed point, and nothing is accepted:
+    // not the write inside the group, and not a write of its caller.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const cases = [_]struct { n: u32, fns: u32, inner: bool, limit: []const u8, none: []const []const u8 }{
+        // One function, 150 lists, and a push inside it.
+        .{ .n = 150, .fns = 1, .inner = true, .limit = "limit r0: the walk took more than", .none = &.{"summary r0:"} },
+        // Two functions that call each other, 600 lists, and a push of the caller.
+        .{ .n = 600, .fns = 2, .inner = false, .limit = "limit r", .none = &.{ "summary r0:", "summary r1:" } },
+    };
+    for (cases) |c| {
+        try w.write("Main.beni", try rotation(w.arena.allocator(), c.n, c.fns, c.inner, false));
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+        var bad = std.mem.indexOf(u8, r.stdout, c.limit) == null or std.mem.indexOf(u8, r.stdout, ": accepted 0 (") == null or std.mem.indexOf(u8, r.stdout, "limits 1") == null;
+        for (c.none) |text| {
+            if (std.mem.indexOf(u8, r.stdout, text) != null) bad = true;
+        }
+        if (bad) {
+            std.debug.print("{d} lists, {d} functions: wanted `{s}`, nothing accepted and no contract of a member; exit {d}:\n{s}{s}\n", .{ c.n, c.fns, c.limit, r.exit_code, r.stdout[0..@min(r.stdout.len, 3000)], r.stderr });
+            return error.TestUnexpectedVerdict;
+        }
+    }
+}
+
+test "ownership v3: an importer reads the members of a group past its budget as unknown code" {
+    // `Lib` has two functions that call each other and hand their lists on:
+    // the group passes the budget of a member before it settles. A limit
+    // line of a module that is not the app's is no error, so the app is
+    // checked, and it calls a member. The contract that a member had in the
+    // last round says less than the group does (it names only the lists
+    // that the rounds found), so no member publishes one (kernel §3.3 item
+    // 9): not the member that passed its budget, and not the member that
+    // was walked before it in that round. The app's push onto the answer
+    // has no claim, though it reads a list after that a later round finds.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const cases = [_]struct { n: u32, callee: u32 }{
+        .{ .n = 600, .callee = 0 },
+        .{ .n = 600, .callee = 1 },
+    };
+    for (cases) |c| {
+        const n = c.n;
+        var lib: std.ArrayList(u8) = .empty;
+        for (0..2) |i| {
+            try lib.print(a, "{s}pub r{d} : ", .{ if (i == 0) "" else "\n\n", i });
+            for (0..n) |k| try lib.appendSlice(a, if (k == 0) "List Int" else " × List Int");
+            try lib.print(a, ", Int → List Int\nr{d} ( ", .{i});
+            for (0..n) |k| try lib.print(a, "{s}a{d}", .{ if (k == 0) "" else ", ", k });
+            try lib.print(a, " ) k = if k == 0 then a{d} else r{d} ( a{d}", .{ i, (i + 1) % 2, n - 1 });
+            for (0..n - 1) |k| try lib.print(a, ", a{d}", .{k});
+            try lib.appendSlice(a, " ) (k - 1)\n");
+        }
+        var main: std.ArrayList(u8) = .empty;
+        try main.appendSlice(a, "import Lib\nimport Node\n\n\nints : List Int → String\nints xs = String.join (List.map xs String.fromInt) \",\"\n\n\ngo : Int → String\ngo k =\n");
+        for (0..n) |k| try main.print(a, "    a{d} = [ {d} ]\n", .{ k, k });
+        try main.print(a, "    l = List.push (Lib.r{d} ( ", .{c.callee});
+        for (0..n) |k| try main.print(a, "{s}a{d}", .{ if (k == 0) "" else ", ", k });
+        try main.print(a, " ) k) 9\n    ints l ++ \" / \" ++ ints a{d} ++ \" / \" ++ ints a{d}\n\n\nmain : Node.Program\nmain = Node.print (go 3 ++ \" ; \" ++ go 0)\n", .{ n - 2, n - 3 });
+        try w.write("Lib.beni", lib.items);
+        try w.write("Main.beni", main.items);
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "--root=.", "." }, .{ .raw_diagnostics = true });
+        const want = [_][]const u8{
+            "limit r",
+            try std.fmt.allocPrint(a, "List.push <call Lib.r{d}>: rejected unknown: the checker has no claim on this value", .{c.callee}),
+            ": accepted 0 (",
+        };
+        for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("{d} lists, the app calls r{d}: wanted `{s}`; exit {d}:\n{s}{s}\n", .{ n, c.callee, line, r.exit_code, r.stdout[0..@min(r.stdout.len, 3000)], r.stderr });
+            return error.TestUnexpectedVerdict;
+        };
+    }
+}
+
 // The first full run of the sanitiser corpus under the prototype accepted 19
 // programs that it must refuse (research report 111 §4.2). Each has a write
 // that changes a list in place while another holder reads it: a plain build
