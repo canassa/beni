@@ -2903,8 +2903,8 @@ virtualSleep clock ms = callback λwake →
     now = Js.to (Js.get clock "now")
     sleepers = Js.get clock "sleepers"
 
-    -- `null` for a wait that never wakes: nothing to take out when it is
-    -- cancelled.
+    -- `null` for a wait that never wakes, on purpose: the list holds only
+    -- entries, so the canceller below finds nothing and takes nothing out.
     entry =
         if pastLast now ms then
             Js.null
