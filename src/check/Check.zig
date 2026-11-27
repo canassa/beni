@@ -144,6 +144,16 @@ channels: []Channel.Table = &.{},
 /// Owned: the v3 oracle's reads read first, per module (`own3/Reads.zig`);
 /// every slot empty unless the check ran `--ownership=v3`.
 hoist_reads: [][]const Reads.Read = &.{},
+/// Owned: per module, whether the checker v3 accepted every record update
+/// it holds (`own3/Enforce.zig`, kernel §11): v3's counterpart of v1's
+/// clean table (`ownership-checker.md` §31.10). Every slot false unless
+/// the check ran `--ownership=v3`.
+records_in_place: []bool = &.{},
+/// Owned: per module, ascending, the calls at which the checker v3 accepted
+/// a write of a record argument in place (`own3/Enforce.zig`): what v1's
+/// table says of a call (`Hoists.Table.writesAt`). Every slot empty unless
+/// the check ran `--ownership=v3`.
+record_calls: [][]const u32 = &.{},
 counters: Counters,
 
 pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .type_keys = &.{}, .plans = &.{}, .counters = .{} };
@@ -155,6 +165,9 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
     gpa.free(check.channels);
     for (check.hoist_reads) |r| gpa.free(r);
     gpa.free(check.hoist_reads);
+    gpa.free(check.records_in_place);
+    for (check.record_calls) |c| gpa.free(c);
+    gpa.free(check.record_calls);
     check.types.deinit(gpa);
     for (check.diagnostics) |d| gpa.free(d.message);
     gpa.free(check.diagnostics);
@@ -379,6 +392,10 @@ pub fn run(
     @memset(check.channels, .empty);
     check.hoist_reads = try gpa.alloc([]const Reads.Read, modules);
     @memset(check.hoist_reads, &.{});
+    check.records_in_place = try gpa.alloc(bool, modules);
+    @memset(check.records_in_place, false);
+    check.record_calls = try gpa.alloc([]const u32, modules);
+    @memset(check.record_calls, &.{});
     const type_keys = try gpa.alloc(TypeKeys.Artifact, modules);
     @memset(type_keys, .empty);
     check.type_keys = type_keys;
@@ -433,6 +450,8 @@ pub fn run(
         .hoists = check.hoists,
         .channels = check.channels,
         .hoist_reads = check.hoist_reads,
+        .records_in_place = check.records_in_place,
+        .record_calls = check.record_calls,
         .dispatch = dispatch,
         .type_keys = type_keys,
         .plans = plans,

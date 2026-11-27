@@ -2727,6 +2727,18 @@ value first. The oracle (research report 142) writes each update that v3 accepte
 `--lists-in-place`, and under `--sanitize-lists` copies it and poisons, on every older name of the
 object, each field whose value an in-place store would change; `Js.same` traps two names of one object.
 
+A build that v3 judges with no oracle (`boundary.md` §5.2, `"ownership": "v3"`) also gets two facts per
+module from v3's lines, which v1's clean table gives a build that v1 judges (`ownership-checker.md`
+§31.10) (*added 2026-11-27, #2724*). The first: every `record_update` of the module is an update
+that v3 accepted, so the lowering writes each in place (`Check.records_in_place`). Only then does
+the lowering trust that an update keeps its base's object: a nested update skips the store of its
+field's own object, a callee answers its argument's object, and the write-set pass keeps a model
+key's object (`Writes.Input.in_place`). A module with a refused line or a limit, core and the
+platforms publish no write, so this fact is false for each of them that holds an update. The second:
+the calls at which v3 accepted a write of a record argument in place, which the lowering marks as
+stores (`Check.record_calls`, `JsIr.Node.stores`), so that the release optimiser never drops one
+whose answer is not read. Neither fact changes a verdict.
+
 ## 12. Dictionaries written in place
 
 *Added 2026-11-19 (research report 160). The owner's decisions of 2026-10-17 and 2026-10-25 (#294,

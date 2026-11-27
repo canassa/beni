@@ -271,6 +271,17 @@ fn depsOf(arena: Allocator, session: anytype, m: Graph.Index) Allocator.Error![]
     return out;
 }
 
+/// Whether every `record_update` of `bir` is an update `table` lists as
+/// accepted. A module with none: true, and nothing reads it there.
+fn everyUpdateAccepted(bir: *const Bir, table: Hoists.Table) bool {
+    for (bir.insts.items(.tag), 0..) |tag, i| {
+        if (tag != .record_update) continue;
+        const w = table.find(@intCast(i)) orelse return false;
+        if (w.kind != .update) return false;
+    }
+    return true;
+}
+
 /// Per module of the build, whether a platform package holds it.
 fn platformModules(arena: Allocator, session: anytype) Allocator.Error![]const bool {
     const n = session.graph.count();
@@ -415,6 +426,35 @@ pub fn checkModule(ctx: *const Context, d: *Driver, m: Graph.Index, tid: u32) Al
         if (table.writes.len != 0) for (r.lines) |l| if (!l.refused) try reads.appendSlice(arena, l.hoists);
         if (session.graph.modulePackage(m) == .app) try reads.appendSlice(arena, r.eager);
         d.hoist_reads[mi_u] = try gpa.dupe(Reads.Read, reads.items);
+    }
+    // Whether every record update of the module is one v3 accepted, so the
+    // lowering writes each in place (`Lower.recordWrittenV3`): what v1's
+    // clean table says of a module (`ownership-checker.md` §31.10), from
+    // v3's own lines. A refused or limited module, core and the platforms
+    // publish no write, so none of theirs is (`Lower.Input.records_clean_v3`).
+    if (mi_u < d.records_in_place.len) d.records_in_place[mi_u] = everyUpdateAccepted(bir, table);
+    // The calls whose callee writes a record argument in place, each accepted:
+    // the lowering marks each as a store (`JsIr.Node.stores`), which the
+    // release optimiser never drops (§31.10, *The optimiser barrier*). Of a
+    // module whose channel publishes its writes.
+    if (mi_u < d.record_calls.len) {
+        gpa.free(d.record_calls[mi_u]);
+        d.record_calls[mi_u] = &.{};
+        const published = session.graph.modulePackage(m) == .app and r.limits.len == 0 and for (r.lines) |l| {
+            if (l.refused) break false;
+        } else true;
+        if (published) {
+            var calls: std.ArrayList(u32) = .empty;
+            for (r.lines) |l| if (l.kind == .callsite and l.record) try calls.append(arena, l.inst);
+            std.mem.sort(u32, calls.items, {}, std.sort.asc(u32));
+            var n: usize = 0;
+            for (calls.items) |c| {
+                if (n != 0 and calls.items[n - 1] == c) continue;
+                calls.items[n] = c;
+                n += 1;
+            }
+            d.record_calls[mi_u] = try gpa.dupe(u32, calls.items[0..n]);
+        }
     }
     if (mi_u < d.channels.len) d.channels[mi_u] = table else table.deinit(gpa);
 
