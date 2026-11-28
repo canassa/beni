@@ -2122,7 +2122,10 @@ paths:
   the kept reads at the root and entry of each of its atoms (`markWrite`). From the second write of an
   operand on, `otherReaches` passes only the kept reads that the write marked and the locations of
   the operand that have no kept read yet (`apartFew`): 2 units for each one passed, as in the scan of
-  every location, and 1 for a location that has a kept read now and leaves that list. A kept read
+  every location, and 1 for a location that has a kept read now and leaves that list. It passes them in
+  the order of the operand's map, as the scan does, so the first location that reaches is the one
+  that the scan finds, with no more work before it. The units that a write counts for them are at
+  most what the scan of every location cost (`chargeIn`). A kept read
   that the write did not mark is not read, not copied and not compared, and costs nothing. The work
   of the index (4 units for a lookup, 1 for each kept read that a write passes in it) is a debt, and
   each such write pays of it up to what the scan of every location of the operand cost before. So
