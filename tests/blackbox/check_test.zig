@@ -7567,6 +7567,90 @@ test "ownership v3: a group whose local function calls itself settles" {
     }
 }
 
+// A group that has not settled after 64 rounds is a limit of that group
+// only (kernel §3.3 item 9): no member has a contract, and the module goes
+// on. A declaration past its budget is another limit: it stops its module,
+// which walks no other declaration and publishes no contract (kernel §8).
+// So the bound of 64 keeps the limit of a slow group small. PR #2739 took
+// the bound away; a function that hands 300 lists on, one place round, then
+// worked until its budget ended, and every other verdict and contract of its
+// module went with it (the review of that PR, #2513). The two programs
+// hold that the rest of the module is judged: a write of another
+// declaration of the module, and the writes of an app through two other
+// functions of a module that it imports.
+test "ownership v3: a group that does not settle is a limit of the group, not of its module" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const n = 300;
+    var r: std.ArrayList(u8) = .empty;
+    try r.appendSlice(a, "r : ");
+    for (0..n) |k| try r.appendSlice(a, if (k == 0) "List Int" else " × List Int");
+    try r.appendSlice(a, ", Int → List Int\nr ( ");
+    for (0..n) |k| try r.print(a, "{s}a{d}", .{ if (k == 0) "" else ", ", k });
+    try r.print(a, " ) k = if k == 0 then a0 else r ( a{d}", .{n - 1});
+    for (0..n - 1) |k| try r.print(a, ", a{d}", .{k});
+    try r.appendSlice(a, " ) (k - 1)\n");
+
+    // One module: `other` is no member of the group.
+    try w.write("Main.beni", try std.fmt.allocPrint(a,
+        \\import Node
+        \\
+        \\
+        \\{s}
+        \\
+        \\other : Int → Int
+        \\other k =
+        \\    xs = [ 1, 2 ]
+        \\    ys = List.push xs k
+        \\    List.length ys
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (other 5))
+        \\
+    , .{r.items}));
+    const one = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    for ([_][]const u8{ "limit r: the group did not settle", "List.push xs: accepted fresh" }) |line| if (std.mem.indexOf(u8, one.stdout, line) == null) {
+        std.debug.print("one module: wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, one.exit_code, one.stdout[0..@min(one.stdout.len, 3000)], one.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+
+    // Two modules: the app calls `mk` and `add` of `Lib`, and never `r`.
+    try w.write("Lib.beni", try std.fmt.allocPrint(a,
+        \\pub {s}
+        \\
+        \\pub mk : Int → List Int
+        \\mk k = [ k, k + 1 ]
+        \\
+        \\
+        \\pub add : List Int, Int → List Int
+        \\add xs k = List.push xs k
+        \\
+    , .{r.items}));
+    try w.write("Main.beni",
+        \\import Lib
+        \\import Node
+        \\
+        \\
+        \\go : Int → Int
+        \\go k =
+        \\    l = List.push (Lib.mk k) 9
+        \\    m = Lib.add [ 1, 2 ] k
+        \\    List.length l + List.length m
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (go 3))
+        \\
+    );
+    const two = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "--root=.", "." }, .{ .raw_diagnostics = true });
+    for ([_][]const u8{ "limit r: the group did not settle", "List.push xs: accepted param", "List.push <call Lib.mk>: accepted call", "call Lib.add <literal>: accepted fresh" }) |line| if (std.mem.indexOf(u8, two.stdout, line) == null) {
+        std.debug.print("two modules: wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, two.exit_code, two.stdout[0..@min(two.stdout.len, 3000)], two.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
 // Research reports 136 and 138: a module's budget was pooled, so what one
 // declaration earned another could spend. Each declaration spends only what
 // its own instructions earn now (kernel §8), and a function that holds a
