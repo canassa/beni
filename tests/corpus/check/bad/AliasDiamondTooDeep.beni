@@ -1,0 +1,1250 @@
+-- A diamond of aliases 300 deep: `A{i} a` is `A{i-1} (A{i-1} a)`. The inner
+-- application of each level costs two levels of the type reader, so a read
+-- of `A300 Int` passes the reader's bound, 512, near `A44`. An expansion
+-- that ran out of depth is not shared, and each level above the bound was
+-- expanded again, so this file did not end (#2124). A read that ran out of
+-- depth now expands no more aliases (checker-v2.md §7.4, amended
+-- 2026-11-27).
+--
+-- The messages are the ones that a diamond 260 deep gave before, except
+-- for `g`. The depth is reported at the public constructor (`Shown`), at
+-- the annotations (`f`, `g`) and at the used constructor (`Used 1 2`). The
+-- part of each type that the reader did read stays in use: `"s"` is not
+-- `Int`, and `2` is not `String`. `g`'s result is the alias `Name`, after
+-- the too-deep part. The reader does not expand it now, so `g`'s body lost
+-- its mismatch against `Name`. `Unused`, a private constructor that nothing
+-- calls, gets no message (`check/good/AliasDiamondTooDeepUnused`).
+type alias A0 a =
+    a
+
+
+type alias A1 a =
+    A0 (A0 a)
+
+
+type alias A2 a =
+    A1 (A1 a)
+
+
+type alias A3 a =
+    A2 (A2 a)
+
+
+type alias A4 a =
+    A3 (A3 a)
+
+
+type alias A5 a =
+    A4 (A4 a)
+
+
+type alias A6 a =
+    A5 (A5 a)
+
+
+type alias A7 a =
+    A6 (A6 a)
+
+
+type alias A8 a =
+    A7 (A7 a)
+
+
+type alias A9 a =
+    A8 (A8 a)
+
+
+type alias A10 a =
+    A9 (A9 a)
+
+
+type alias A11 a =
+    A10 (A10 a)
+
+
+type alias A12 a =
+    A11 (A11 a)
+
+
+type alias A13 a =
+    A12 (A12 a)
+
+
+type alias A14 a =
+    A13 (A13 a)
+
+
+type alias A15 a =
+    A14 (A14 a)
+
+
+type alias A16 a =
+    A15 (A15 a)
+
+
+type alias A17 a =
+    A16 (A16 a)
+
+
+type alias A18 a =
+    A17 (A17 a)
+
+
+type alias A19 a =
+    A18 (A18 a)
+
+
+type alias A20 a =
+    A19 (A19 a)
+
+
+type alias A21 a =
+    A20 (A20 a)
+
+
+type alias A22 a =
+    A21 (A21 a)
+
+
+type alias A23 a =
+    A22 (A22 a)
+
+
+type alias A24 a =
+    A23 (A23 a)
+
+
+type alias A25 a =
+    A24 (A24 a)
+
+
+type alias A26 a =
+    A25 (A25 a)
+
+
+type alias A27 a =
+    A26 (A26 a)
+
+
+type alias A28 a =
+    A27 (A27 a)
+
+
+type alias A29 a =
+    A28 (A28 a)
+
+
+type alias A30 a =
+    A29 (A29 a)
+
+
+type alias A31 a =
+    A30 (A30 a)
+
+
+type alias A32 a =
+    A31 (A31 a)
+
+
+type alias A33 a =
+    A32 (A32 a)
+
+
+type alias A34 a =
+    A33 (A33 a)
+
+
+type alias A35 a =
+    A34 (A34 a)
+
+
+type alias A36 a =
+    A35 (A35 a)
+
+
+type alias A37 a =
+    A36 (A36 a)
+
+
+type alias A38 a =
+    A37 (A37 a)
+
+
+type alias A39 a =
+    A38 (A38 a)
+
+
+type alias A40 a =
+    A39 (A39 a)
+
+
+type alias A41 a =
+    A40 (A40 a)
+
+
+type alias A42 a =
+    A41 (A41 a)
+
+
+type alias A43 a =
+    A42 (A42 a)
+
+
+type alias A44 a =
+    A43 (A43 a)
+
+
+type alias A45 a =
+    A44 (A44 a)
+
+
+type alias A46 a =
+    A45 (A45 a)
+
+
+type alias A47 a =
+    A46 (A46 a)
+
+
+type alias A48 a =
+    A47 (A47 a)
+
+
+type alias A49 a =
+    A48 (A48 a)
+
+
+type alias A50 a =
+    A49 (A49 a)
+
+
+type alias A51 a =
+    A50 (A50 a)
+
+
+type alias A52 a =
+    A51 (A51 a)
+
+
+type alias A53 a =
+    A52 (A52 a)
+
+
+type alias A54 a =
+    A53 (A53 a)
+
+
+type alias A55 a =
+    A54 (A54 a)
+
+
+type alias A56 a =
+    A55 (A55 a)
+
+
+type alias A57 a =
+    A56 (A56 a)
+
+
+type alias A58 a =
+    A57 (A57 a)
+
+
+type alias A59 a =
+    A58 (A58 a)
+
+
+type alias A60 a =
+    A59 (A59 a)
+
+
+type alias A61 a =
+    A60 (A60 a)
+
+
+type alias A62 a =
+    A61 (A61 a)
+
+
+type alias A63 a =
+    A62 (A62 a)
+
+
+type alias A64 a =
+    A63 (A63 a)
+
+
+type alias A65 a =
+    A64 (A64 a)
+
+
+type alias A66 a =
+    A65 (A65 a)
+
+
+type alias A67 a =
+    A66 (A66 a)
+
+
+type alias A68 a =
+    A67 (A67 a)
+
+
+type alias A69 a =
+    A68 (A68 a)
+
+
+type alias A70 a =
+    A69 (A69 a)
+
+
+type alias A71 a =
+    A70 (A70 a)
+
+
+type alias A72 a =
+    A71 (A71 a)
+
+
+type alias A73 a =
+    A72 (A72 a)
+
+
+type alias A74 a =
+    A73 (A73 a)
+
+
+type alias A75 a =
+    A74 (A74 a)
+
+
+type alias A76 a =
+    A75 (A75 a)
+
+
+type alias A77 a =
+    A76 (A76 a)
+
+
+type alias A78 a =
+    A77 (A77 a)
+
+
+type alias A79 a =
+    A78 (A78 a)
+
+
+type alias A80 a =
+    A79 (A79 a)
+
+
+type alias A81 a =
+    A80 (A80 a)
+
+
+type alias A82 a =
+    A81 (A81 a)
+
+
+type alias A83 a =
+    A82 (A82 a)
+
+
+type alias A84 a =
+    A83 (A83 a)
+
+
+type alias A85 a =
+    A84 (A84 a)
+
+
+type alias A86 a =
+    A85 (A85 a)
+
+
+type alias A87 a =
+    A86 (A86 a)
+
+
+type alias A88 a =
+    A87 (A87 a)
+
+
+type alias A89 a =
+    A88 (A88 a)
+
+
+type alias A90 a =
+    A89 (A89 a)
+
+
+type alias A91 a =
+    A90 (A90 a)
+
+
+type alias A92 a =
+    A91 (A91 a)
+
+
+type alias A93 a =
+    A92 (A92 a)
+
+
+type alias A94 a =
+    A93 (A93 a)
+
+
+type alias A95 a =
+    A94 (A94 a)
+
+
+type alias A96 a =
+    A95 (A95 a)
+
+
+type alias A97 a =
+    A96 (A96 a)
+
+
+type alias A98 a =
+    A97 (A97 a)
+
+
+type alias A99 a =
+    A98 (A98 a)
+
+
+type alias A100 a =
+    A99 (A99 a)
+
+
+type alias A101 a =
+    A100 (A100 a)
+
+
+type alias A102 a =
+    A101 (A101 a)
+
+
+type alias A103 a =
+    A102 (A102 a)
+
+
+type alias A104 a =
+    A103 (A103 a)
+
+
+type alias A105 a =
+    A104 (A104 a)
+
+
+type alias A106 a =
+    A105 (A105 a)
+
+
+type alias A107 a =
+    A106 (A106 a)
+
+
+type alias A108 a =
+    A107 (A107 a)
+
+
+type alias A109 a =
+    A108 (A108 a)
+
+
+type alias A110 a =
+    A109 (A109 a)
+
+
+type alias A111 a =
+    A110 (A110 a)
+
+
+type alias A112 a =
+    A111 (A111 a)
+
+
+type alias A113 a =
+    A112 (A112 a)
+
+
+type alias A114 a =
+    A113 (A113 a)
+
+
+type alias A115 a =
+    A114 (A114 a)
+
+
+type alias A116 a =
+    A115 (A115 a)
+
+
+type alias A117 a =
+    A116 (A116 a)
+
+
+type alias A118 a =
+    A117 (A117 a)
+
+
+type alias A119 a =
+    A118 (A118 a)
+
+
+type alias A120 a =
+    A119 (A119 a)
+
+
+type alias A121 a =
+    A120 (A120 a)
+
+
+type alias A122 a =
+    A121 (A121 a)
+
+
+type alias A123 a =
+    A122 (A122 a)
+
+
+type alias A124 a =
+    A123 (A123 a)
+
+
+type alias A125 a =
+    A124 (A124 a)
+
+
+type alias A126 a =
+    A125 (A125 a)
+
+
+type alias A127 a =
+    A126 (A126 a)
+
+
+type alias A128 a =
+    A127 (A127 a)
+
+
+type alias A129 a =
+    A128 (A128 a)
+
+
+type alias A130 a =
+    A129 (A129 a)
+
+
+type alias A131 a =
+    A130 (A130 a)
+
+
+type alias A132 a =
+    A131 (A131 a)
+
+
+type alias A133 a =
+    A132 (A132 a)
+
+
+type alias A134 a =
+    A133 (A133 a)
+
+
+type alias A135 a =
+    A134 (A134 a)
+
+
+type alias A136 a =
+    A135 (A135 a)
+
+
+type alias A137 a =
+    A136 (A136 a)
+
+
+type alias A138 a =
+    A137 (A137 a)
+
+
+type alias A139 a =
+    A138 (A138 a)
+
+
+type alias A140 a =
+    A139 (A139 a)
+
+
+type alias A141 a =
+    A140 (A140 a)
+
+
+type alias A142 a =
+    A141 (A141 a)
+
+
+type alias A143 a =
+    A142 (A142 a)
+
+
+type alias A144 a =
+    A143 (A143 a)
+
+
+type alias A145 a =
+    A144 (A144 a)
+
+
+type alias A146 a =
+    A145 (A145 a)
+
+
+type alias A147 a =
+    A146 (A146 a)
+
+
+type alias A148 a =
+    A147 (A147 a)
+
+
+type alias A149 a =
+    A148 (A148 a)
+
+
+type alias A150 a =
+    A149 (A149 a)
+
+
+type alias A151 a =
+    A150 (A150 a)
+
+
+type alias A152 a =
+    A151 (A151 a)
+
+
+type alias A153 a =
+    A152 (A152 a)
+
+
+type alias A154 a =
+    A153 (A153 a)
+
+
+type alias A155 a =
+    A154 (A154 a)
+
+
+type alias A156 a =
+    A155 (A155 a)
+
+
+type alias A157 a =
+    A156 (A156 a)
+
+
+type alias A158 a =
+    A157 (A157 a)
+
+
+type alias A159 a =
+    A158 (A158 a)
+
+
+type alias A160 a =
+    A159 (A159 a)
+
+
+type alias A161 a =
+    A160 (A160 a)
+
+
+type alias A162 a =
+    A161 (A161 a)
+
+
+type alias A163 a =
+    A162 (A162 a)
+
+
+type alias A164 a =
+    A163 (A163 a)
+
+
+type alias A165 a =
+    A164 (A164 a)
+
+
+type alias A166 a =
+    A165 (A165 a)
+
+
+type alias A167 a =
+    A166 (A166 a)
+
+
+type alias A168 a =
+    A167 (A167 a)
+
+
+type alias A169 a =
+    A168 (A168 a)
+
+
+type alias A170 a =
+    A169 (A169 a)
+
+
+type alias A171 a =
+    A170 (A170 a)
+
+
+type alias A172 a =
+    A171 (A171 a)
+
+
+type alias A173 a =
+    A172 (A172 a)
+
+
+type alias A174 a =
+    A173 (A173 a)
+
+
+type alias A175 a =
+    A174 (A174 a)
+
+
+type alias A176 a =
+    A175 (A175 a)
+
+
+type alias A177 a =
+    A176 (A176 a)
+
+
+type alias A178 a =
+    A177 (A177 a)
+
+
+type alias A179 a =
+    A178 (A178 a)
+
+
+type alias A180 a =
+    A179 (A179 a)
+
+
+type alias A181 a =
+    A180 (A180 a)
+
+
+type alias A182 a =
+    A181 (A181 a)
+
+
+type alias A183 a =
+    A182 (A182 a)
+
+
+type alias A184 a =
+    A183 (A183 a)
+
+
+type alias A185 a =
+    A184 (A184 a)
+
+
+type alias A186 a =
+    A185 (A185 a)
+
+
+type alias A187 a =
+    A186 (A186 a)
+
+
+type alias A188 a =
+    A187 (A187 a)
+
+
+type alias A189 a =
+    A188 (A188 a)
+
+
+type alias A190 a =
+    A189 (A189 a)
+
+
+type alias A191 a =
+    A190 (A190 a)
+
+
+type alias A192 a =
+    A191 (A191 a)
+
+
+type alias A193 a =
+    A192 (A192 a)
+
+
+type alias A194 a =
+    A193 (A193 a)
+
+
+type alias A195 a =
+    A194 (A194 a)
+
+
+type alias A196 a =
+    A195 (A195 a)
+
+
+type alias A197 a =
+    A196 (A196 a)
+
+
+type alias A198 a =
+    A197 (A197 a)
+
+
+type alias A199 a =
+    A198 (A198 a)
+
+
+type alias A200 a =
+    A199 (A199 a)
+
+
+type alias A201 a =
+    A200 (A200 a)
+
+
+type alias A202 a =
+    A201 (A201 a)
+
+
+type alias A203 a =
+    A202 (A202 a)
+
+
+type alias A204 a =
+    A203 (A203 a)
+
+
+type alias A205 a =
+    A204 (A204 a)
+
+
+type alias A206 a =
+    A205 (A205 a)
+
+
+type alias A207 a =
+    A206 (A206 a)
+
+
+type alias A208 a =
+    A207 (A207 a)
+
+
+type alias A209 a =
+    A208 (A208 a)
+
+
+type alias A210 a =
+    A209 (A209 a)
+
+
+type alias A211 a =
+    A210 (A210 a)
+
+
+type alias A212 a =
+    A211 (A211 a)
+
+
+type alias A213 a =
+    A212 (A212 a)
+
+
+type alias A214 a =
+    A213 (A213 a)
+
+
+type alias A215 a =
+    A214 (A214 a)
+
+
+type alias A216 a =
+    A215 (A215 a)
+
+
+type alias A217 a =
+    A216 (A216 a)
+
+
+type alias A218 a =
+    A217 (A217 a)
+
+
+type alias A219 a =
+    A218 (A218 a)
+
+
+type alias A220 a =
+    A219 (A219 a)
+
+
+type alias A221 a =
+    A220 (A220 a)
+
+
+type alias A222 a =
+    A221 (A221 a)
+
+
+type alias A223 a =
+    A222 (A222 a)
+
+
+type alias A224 a =
+    A223 (A223 a)
+
+
+type alias A225 a =
+    A224 (A224 a)
+
+
+type alias A226 a =
+    A225 (A225 a)
+
+
+type alias A227 a =
+    A226 (A226 a)
+
+
+type alias A228 a =
+    A227 (A227 a)
+
+
+type alias A229 a =
+    A228 (A228 a)
+
+
+type alias A230 a =
+    A229 (A229 a)
+
+
+type alias A231 a =
+    A230 (A230 a)
+
+
+type alias A232 a =
+    A231 (A231 a)
+
+
+type alias A233 a =
+    A232 (A232 a)
+
+
+type alias A234 a =
+    A233 (A233 a)
+
+
+type alias A235 a =
+    A234 (A234 a)
+
+
+type alias A236 a =
+    A235 (A235 a)
+
+
+type alias A237 a =
+    A236 (A236 a)
+
+
+type alias A238 a =
+    A237 (A237 a)
+
+
+type alias A239 a =
+    A238 (A238 a)
+
+
+type alias A240 a =
+    A239 (A239 a)
+
+
+type alias A241 a =
+    A240 (A240 a)
+
+
+type alias A242 a =
+    A241 (A241 a)
+
+
+type alias A243 a =
+    A242 (A242 a)
+
+
+type alias A244 a =
+    A243 (A243 a)
+
+
+type alias A245 a =
+    A244 (A244 a)
+
+
+type alias A246 a =
+    A245 (A245 a)
+
+
+type alias A247 a =
+    A246 (A246 a)
+
+
+type alias A248 a =
+    A247 (A247 a)
+
+
+type alias A249 a =
+    A248 (A248 a)
+
+
+type alias A250 a =
+    A249 (A249 a)
+
+
+type alias A251 a =
+    A250 (A250 a)
+
+
+type alias A252 a =
+    A251 (A251 a)
+
+
+type alias A253 a =
+    A252 (A252 a)
+
+
+type alias A254 a =
+    A253 (A253 a)
+
+
+type alias A255 a =
+    A254 (A254 a)
+
+
+type alias A256 a =
+    A255 (A255 a)
+
+
+type alias A257 a =
+    A256 (A256 a)
+
+
+type alias A258 a =
+    A257 (A257 a)
+
+
+type alias A259 a =
+    A258 (A258 a)
+
+
+type alias A260 a =
+    A259 (A259 a)
+
+
+type alias A261 a =
+    A260 (A260 a)
+
+
+type alias A262 a =
+    A261 (A261 a)
+
+
+type alias A263 a =
+    A262 (A262 a)
+
+
+type alias A264 a =
+    A263 (A263 a)
+
+
+type alias A265 a =
+    A264 (A264 a)
+
+
+type alias A266 a =
+    A265 (A265 a)
+
+
+type alias A267 a =
+    A266 (A266 a)
+
+
+type alias A268 a =
+    A267 (A267 a)
+
+
+type alias A269 a =
+    A268 (A268 a)
+
+
+type alias A270 a =
+    A269 (A269 a)
+
+
+type alias A271 a =
+    A270 (A270 a)
+
+
+type alias A272 a =
+    A271 (A271 a)
+
+
+type alias A273 a =
+    A272 (A272 a)
+
+
+type alias A274 a =
+    A273 (A273 a)
+
+
+type alias A275 a =
+    A274 (A274 a)
+
+
+type alias A276 a =
+    A275 (A275 a)
+
+
+type alias A277 a =
+    A276 (A276 a)
+
+
+type alias A278 a =
+    A277 (A277 a)
+
+
+type alias A279 a =
+    A278 (A278 a)
+
+
+type alias A280 a =
+    A279 (A279 a)
+
+
+type alias A281 a =
+    A280 (A280 a)
+
+
+type alias A282 a =
+    A281 (A281 a)
+
+
+type alias A283 a =
+    A282 (A282 a)
+
+
+type alias A284 a =
+    A283 (A283 a)
+
+
+type alias A285 a =
+    A284 (A284 a)
+
+
+type alias A286 a =
+    A285 (A285 a)
+
+
+type alias A287 a =
+    A286 (A286 a)
+
+
+type alias A288 a =
+    A287 (A287 a)
+
+
+type alias A289 a =
+    A288 (A288 a)
+
+
+type alias A290 a =
+    A289 (A289 a)
+
+
+type alias A291 a =
+    A290 (A290 a)
+
+
+type alias A292 a =
+    A291 (A291 a)
+
+
+type alias A293 a =
+    A292 (A292 a)
+
+
+type alias A294 a =
+    A293 (A293 a)
+
+
+type alias A295 a =
+    A294 (A294 a)
+
+
+type alias A296 a =
+    A295 (A295 a)
+
+
+type alias A297 a =
+    A296 (A296 a)
+
+
+type alias A298 a =
+    A297 (A297 a)
+
+
+type alias A299 a =
+    A298 (A298 a)
+
+
+type alias A300 a =
+    A299 (A299 a)
+
+
+type alias Name =
+    String
+
+
+type Unused
+    = Unused (A300 Int)
+
+
+pub type Shown
+    = Shown (A300 Int)
+
+
+type Used
+    = Used (A300 Int) String
+
+
+pub f : A300 Int → Int
+f _ = "s"
+
+
+pub g : A300 Int → Name
+g _ = 1
+
+
+pub u : Int
+u = keep (Used 1 2)
+
+
+keep : Used → Int
+keep _ = 1
