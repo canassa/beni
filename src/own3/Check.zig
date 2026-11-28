@@ -168,7 +168,7 @@ pub const Limit = struct {
 pub const Result = struct {
     lines: []const Line,
     published: *Contract.Published,
-    /// Declarations that the walk gave up on (a nesting too deep, a group that did not settle).
+    /// Declarations that the walk gave up on (a nesting too deep, a group past a budget).
     limits: []const Limit,
     /// Each declaration's contract as text, when asked for.
     summaries: []const []const u8,
@@ -4025,7 +4025,7 @@ pub const Mod = struct {
     /// names, puts each member after the members it calls, the calls of a
     /// body in the order they are written. It reads the names and the
     /// bodies alone, never where a declaration stands in the module, so
-    /// the rounds, and whether the group settles within its limit, are the
+    /// the rounds, and whether the group settles within its budget, are the
     /// same in any order of the declarations. Research report 141: a ring
     /// of 40 functions walked in the module's order settled in a few rounds
     /// with the callees written first, and did not settle in 64 with the
@@ -4112,8 +4112,7 @@ pub const Mod = struct {
         defer m.drafts.clearRetainingCapacity();
         const mark = m.lines.items.len;
         const lmark = m.limits.items.len;
-        var rounds: u32 = 0;
-        while (true) : (rounds += 1) {
+        while (true) {
             var changed = false;
             var over = false;
             m.lines.shrinkRetainingCapacity(mark);
@@ -4147,28 +4146,9 @@ pub const Mod = struct {
                 }
                 break;
             }
-            if (rounds > 64) {
-                // The line names the member first by name: the walk's
-                // order is the call graph's, and neither depends on the
-                // order of the declarations.
-                var first = members[0];
-                for (members[1..]) |di| if (m.nameLess(di, first)) {
-                    first = di;
-                };
-                const text = if (members.len == 1) try std.fmt.allocPrint(m.arena, "limit {s}: the group did not settle", .{m.names.declName(m.in.module, first)}) else try std.fmt.allocPrint(m.arena, "limit {s}: the group of {d} declarations did not settle", .{ m.names.declName(m.in.module, first), members.len });
-                m.gaveUp(mark);
-                try m.declLimit(first, text);
-                // A contract of a round that is not the last says less than the
-                // group does: no member publishes one (kernel §8). An importer
-                // reads each as unknown code; a limit line of a module that is
-                // not the app's is no error, so the importer would read it.
-                for (members) |di| {
-                    m.contracts[di] = null;
-                    m.failed_decl[di] = true;
-                    m.contractChanged(di);
-                }
-                break;
-            }
+            // The rounds have no bound of their own (kernel §3.3 item 9): each
+            // walk of a member counts against that member's one budget and
+            // the module's, and the round that passes one is the last, above.
         }
         for (members) |di| m.state[di] = .done;
     }
