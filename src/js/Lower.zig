@@ -76,7 +76,9 @@ const SchemaLower = @import("SchemaLower.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const Hoists = @import("../own/Hoists.zig");
+const V3Reads = @import("../own3/Reads.zig");
 const Channel = @import("../own2/Hoists.zig");
+const Prepass = @import("../own2/Prepass.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -387,6 +389,36 @@ pub const Input = struct {
     /// reads it (`sanitize_runtime.mjs`). Test-only, development builds
     /// only.
     sanitize_lists: bool = false,
+    /// Under the sanitiser (not the in-place oracle, which shares
+    /// `sanitize_lists`' lowering): `Js.same` in a module outside core is a
+    /// call of the runtime's `same`, the identity trap (research report
+    /// 140). Core's identity compares are judged by hand there.
+    identity_trap: bool = false,
+    /// Under `--ownership=v3` with either oracle (research report 142): each
+    /// record update the v3 channel (`list_writes`) accepted is written in
+    /// place (`--lists-in-place`), or copied with its old object poisoned
+    /// (`--sanitize-lists`, `recordUpdateSanitized`).
+    /// Also the writers of `Dict` and `Set` (`ownership-v3-kernel.md` §12):
+    /// only under it does a call of one go through the oracle.
+    records_v3: bool = false,
+    /// A build of a chain the checker v3 judges (`"ownership": "v3"`,
+    /// `boundary.md` §5.2), with neither oracle: each record update v3's
+    /// channel accepted is written in place, with v3's reads read first, as
+    /// v1's clean table writes a module's (§31.10). Lists are written as
+    /// every build without an oracle writes them. With `records_v3`.
+    records_v3_plain: bool = false,
+    /// With `records_v3_plain`: the checker v3 accepted every record update
+    /// of this module (`Check.records_in_place`), so each is written in
+    /// place, as of a module whose v1 table is clean (§31.10). What lets a
+    /// nested update skip the store of its field's own object
+    /// (`sameFieldObject`).
+    records_clean_v3: bool = false,
+    /// With `records_v3_plain`: the calls, ascending, at which v3 accepted a
+    /// write of a record argument in place (`Check.record_calls`), each a
+    /// store (`suspension`), as v1's `ownership.writesAt` says of a call.
+    v3_record_calls: []const u32 = &.{},
+    /// The v3 oracle's reads read before an update's stores (`own3/Reads.zig`).
+    v3_reads: []const V3Reads.Read = &.{},
     /// The specifier of `_core/_sanitize.mjs`, relative to this module's
     /// output file: what `sanitize_lists` imports.
     sanitize_runtime: []const u8 = "./_core/_sanitize.mjs",
@@ -1316,6 +1348,11 @@ pub const Lowerer = struct {
     /// `List.append` of that item. A column by instruction, made on the
     /// first question.
     spread_roots: []u32 = &.{},
+    /// Under the v3 oracle, per instruction whether it is the callee of a
+    /// `call`: a writer of core named anywhere else is a writer value,
+    /// routed where it is made (`routedWriterValue`). A column by
+    /// instruction, made on the first question.
+    callee_marks: []bool = &.{},
     /// The padded nullary constructors this module has written in value
     /// position, each one module-level constant (`backend.md` §4, *A
     /// nullary constructor is one object*). Discovered like `needs`, so
@@ -1479,6 +1516,8 @@ pub const Lowerer = struct {
     hoist_ready: bool = false,
     hoist_at: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
     hoist_prefix: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
+    /// The rows `hoistsReady` read: v1's table, or the v3 oracle's channel's.
+    hoist_reads: ?[]const Hoists.Read = null,
     /// The reads placed after a `let` item (phase 2), by the local function
     /// that takes them (their `capture`, an instruction): the first read's
     /// row, and each row's next, a column per instruction and per row.
@@ -1645,6 +1684,8 @@ pub const Lowerer = struct {
         list_compare: bool = false,
         /// `_core/_sanitize.mjs`'s `list` (`Input.sanitize_lists`).
         sanitize: bool = false,
+        /// And its `writerWait` (`routedWriterValue`).
+        sanitize_wait: bool = false,
     };
 
     /// One derived function being lowered (`derivedArrow`).
@@ -3982,6 +4023,11 @@ pub const Lowerer = struct {
         // The runtime, when this module's derived functions reach it.
         if (try l.runtimeImport()) |statement| try out.append(l.scratch, statement);
         // The list sanitiser, when a list write of this module is sanitised.
+        // A writer value that may park (`routedWriterValue`).
+        if (l.needs.sanitize_wait) try out.append(l.scratch, try l.importStatement(l.in.sanitize_runtime, &.{.{
+            .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "writerWait"), .tag = JsIr.Name.no_tag }),
+            .local = try l.sanitizerLocal("writerWait"),
+        }}));
         if (l.needs.sanitize) try out.append(l.scratch, try l.importStatement(l.in.sanitize_runtime, &.{
             .{
                 .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "list"), .tag = JsIr.Name.no_tag }),
@@ -3994,6 +4040,34 @@ pub const Lowerer = struct {
             .{
                 .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "len"), .tag = JsIr.Name.no_tag }),
                 .local = try l.sanitizerLocal("len"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "same"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("same"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "start"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("start"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "settle"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("settle"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "front"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("front"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "record"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("record"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "listAt"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("listAt"),
+            },
+            .{
+                .imported = try l.name(.{ .module = .none, .base = try l.interner.getOrPut(l.gpa, "startAt"), .tag = JsIr.Name.no_tag }),
+                .local = try l.sanitizerLocal("startAt"),
             },
         }));
         // The markup runtime: the lowering's exports and the markup
@@ -4280,11 +4354,21 @@ pub const Lowerer = struct {
         }
     }
 
+    /// Whether v3 accepted a write of a record argument in place at the call
+    /// `inst` (`Input.v3_record_calls`).
+    fn v3WritesAt(l: *const Lowerer, inst: Inst.Index) bool {
+        return std.sort.binarySearch(u32, l.in.v3_record_calls, inst.int(), struct {
+            fn order(x: u32, y: u32) std.math.Order {
+                return std.math.order(x, y);
+            }
+        }.order) != null;
+    }
+
     fn suspension(l: *Lowerer, out: *StmtList, inst: Inst.Index, value: Node.Index) !Node.Index {
         // A call whose callee writes a record argument in place is a store
         // (`ownership-checker.md` §31.10, amended 2026-11-24): every call
         // lowering hands its call node through here.
-        if (l.b.tagOf(value) == .call and ((l.in.ownership.clean and l.in.ownership.writesAt(inst)) or l.calleeUnknown(inst))) l.b.markStores(value);
+        if (l.b.tagOf(value) == .call and ((l.in.ownership.clean and l.in.ownership.writesAt(inst)) or l.calleeUnknown(inst) or l.v3WritesAt(inst))) l.b.markStores(value);
         if (!l.suspendable) return value;
         if (!l.suspendsHere(l.in.dispatch.effectAt(inst).own)) return value;
         const p = l.pos(inst);
@@ -5455,7 +5539,88 @@ pub const Lowerer = struct {
         while (l.bir.instTag(at) == .local and depth < 8) : (depth += 1) at = l.letValueOf(at) orelse return null;
         const d = l.bir.instData(at);
         if (l.bir.instTag(at) != .ext_value) return null;
-        return l.listWriterAt(@fromBackingInt(@intCast(d.lhs)), d.rhs);
+        return l.coreWriterAt(@fromBackingInt(@intCast(d.lhs)), d.rhs);
+    }
+
+    /// `listWriterAt`, and under the v3 oracle (`Input.records_v3`) also
+    /// for a value of another package that is a top-level alias of such a
+    /// writer, through any number of aliases and modules (a platform's
+    /// `pub ins = Dict.insert`), as v3 reads the callee (`Mod.calleeOf`).
+    fn coreWriterAt(l: *Lowerer, module: Graph.Index, value: u32) ?[]const u8 {
+        if (l.listWriterAt(module, value)) |w| return w;
+        if (!l.in.records_v3 or module.int() >= l.in.provenance.len) return null;
+        const decl = l.in.provenance[module.int()].valueDecl(value) orelse return null;
+        var t: [2]u32 = .{ module.int(), decl.int() };
+        var budget: u32 = 16;
+        var moved = false;
+        while (budget > 0) : (budget -= 1) {
+            t = Prepass.aliasStep(l.in.birs, l.in.provenance, t) orelse break;
+            moved = true;
+        }
+        if (!moved or t[0] >= l.in.birs.len) return null;
+        const target: Graph.Index = @fromBackingInt(t[0]);
+        const bir = l.in.birs[t[0]];
+        if (t[1] >= bir.decls.len) return null;
+        return l.writerNamed(target, l.interner.slice(bir.symbol(bir.decls[t[1]].name)));
+    }
+
+    /// The local alias chain `callee` names a writer through (`upd =
+    /// Dict.update`, `q = upd`), followed to the writer's own reference,
+    /// or null where `callee` is no local.
+    fn aliasedWriterRef(l: *Lowerer, callee: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(callee) != .local) return null;
+        var at = callee;
+        var depth: u32 = 0;
+        while (l.bir.instTag(at) == .local and depth < 8) : (depth += 1) at = l.letValueOf(at) orelse return null;
+        return if (l.bir.instTag(at) == .ext_value) at else null;
+    }
+
+    /// The callee a write through a writer is lowered with: under the v3
+    /// oracle, a local alias of the writer is the writer's own reference,
+    /// since the alias's value is routed where it is made (`reference`)
+    /// and the write here is routed at its call: no write is routed twice.
+    fn unroutedCallee(l: *Lowerer, callee_inst: Inst.Index, callee: Node.Index) !Node.Index {
+        if (!l.routesWriterValues()) return callee;
+        const ref = l.aliasedWriterRef(callee_inst) orelse return callee;
+        return l.referenceBare(ref);
+    }
+
+    /// Whether this module's writer values are routed where they are made
+    /// (ownership-v3-kernel.md §12 item 5): under the v3 oracle, each
+    /// reference whose line v3's channel lists as an accepted write
+    /// (`Enforce.valueWriter`; `sanitizesAt`).
+    fn routesWriterValues(l: *const Lowerer) bool {
+        return l.in.records_v3 and l.in.list_writes != null and l.sanitizesLists();
+    }
+
+    /// Whether `inst` is the callee of a `call` (`callee_marks`).
+    fn isCallee(l: *Lowerer, inst: Inst.Index) bool {
+        if (l.callee_marks.len == 0) {
+            l.callee_marks = l.scratch.alloc(bool, l.bir.insts.len) catch return false;
+            @memset(l.callee_marks, false);
+            for (0..l.bir.insts.len) |i| {
+                const at: Inst.Index = @fromBackingInt(@intCast(i));
+                if (l.bir.instTag(at) != .call) continue;
+                const callee = l.bir.instData(at).lhs;
+                if (callee < l.callee_marks.len) l.callee_marks[callee] = true;
+            }
+        }
+        return inst.int() < l.callee_marks.len and l.callee_marks[inst.int()];
+    }
+
+    /// A writer of core named as a value under the v3 oracle: every call
+    /// of it writes under the oracle (`_sanitize$writer`). Its suspendable
+    /// twin (`Dict.sortBy$s`, its callback may park) answers a `Task`
+    /// where the callback waits: `_sanitize$writerWait(site, value,
+    /// Task.andThen)` settles the base once the answer is there.
+    fn routedWriterValue(l: *Lowerer, value: Node.Index, writer: []const u8, module: Graph.Index, v: u32, inst: Inst.Index) !Node.Index {
+        const p = l.pos(inst);
+        if (!(l.suspendsHere(l.in.dispatch.effectAt(inst).body) and l.externalTwin(module, v))) return l.sanitizedWriterValue(value, writer, p);
+        l.needs.sanitize = true;
+        l.needs.sanitize_wait = true;
+        const site = try std.fmt.allocPrint(l.scratch, "`{s}` value in {s} (at byte {d})", .{ writer, l.interner.slice(l.module_name), p });
+        const and_then = try l.coreValue(.Task, .andThen, p);
+        return l.call(try l.ident(try l.sanitizerLocal("writerWait"), p), &.{ try l.stringNode(site, p), value, and_then }, p);
     }
 
     /// Whether `inst` is a call a list's spread made (`[ …a, …b ]`): a call
@@ -5467,7 +5632,7 @@ pub const Lowerer = struct {
         const tag = l.in.token_tags[token];
         if (tag != .ellipsis and tag != .ascii_ellipsis) return false;
         const writer = l.listWriterOf(@fromBackingInt(@intCast(l.bir.instData(inst).lhs))) orelse return false;
-        return std.mem.eql(u8, writer, "append");
+        return std.mem.eql(u8, writer, "List.append");
     }
 
     /// Under the sanitiser, the rest of the spread or `++` chain whose head
@@ -5497,16 +5662,37 @@ pub const Lowerer = struct {
         return inst.int() < l.sanitize_chain.len and l.sanitize_chain[inst.int()];
     }
 
-    /// `listWriterOf` for value `value` of module `module`'s interface.
+    /// `listWriterOf` for value `value` of module `module`'s interface: the
+    /// writer's qualified name. Under the v3 oracle (`Input.records_v3`) the
+    /// writers of core's `Dict` and `Set` are writers too
+    /// (`ownership-v3-kernel.md` §12): their rows are v3's alone, so no other
+    /// checker accepts a write of theirs.
     fn listWriterAt(l: *Lowerer, module: Graph.Index, value: u32) ?[]const u8 {
         if (module.int() >= l.in.interfaces.len) return null;
         if (l.in.graph.modulePackage(module) != .core) return null;
-        if (l.in.graph.moduleName(module) != InternPool.WellKnown.List.symbol()) return null;
         const iface = &l.in.interfaces[module.int()];
         if (value >= iface.values.len) return null;
-        const spelling = l.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]);
-        const writers = [_][]const u8{ "set", "update", "push", "pop", "swap", "insertAt", "removeAt", "append" };
-        for (writers) |w| if (std.mem.eql(u8, w, spelling)) return w;
+        return l.writerNamed(module, l.interner.slice(iface.symbols[@backingInt(iface.values[value].name)]));
+    }
+
+    /// The writer's qualified name for value `spelling` of core module
+    /// `module` (`listWriterAt`), or null.
+    fn writerNamed(l: *Lowerer, module: Graph.Index, spelling: []const u8) ?[]const u8 {
+        if (l.in.graph.modulePackage(module) != .core) return null;
+        if (l.in.graph.moduleName(module) == InternPool.WellKnown.List.symbol()) {
+            const writers = [_][]const u8{ "List.set", "List.update", "List.push", "List.pop", "List.swap", "List.insertAt", "List.removeAt", "List.append" };
+            for (writers) |w| if (std.mem.eql(u8, w[5..], spelling)) return w;
+            return null;
+        }
+        if (!l.in.records_v3) return null;
+        const module_name = l.interner.slice(l.in.graph.moduleName(module));
+        if (std.mem.eql(u8, module_name, "Dict")) {
+            const writers = [_][]const u8{ "Dict.insert", "Dict.remove", "Dict.update", "Dict.swap", "Dict.insertAt", "Dict.sortBy" };
+            for (writers) |w| if (std.mem.eql(u8, w[5..], spelling)) return w;
+        } else if (std.mem.eql(u8, module_name, "Set")) {
+            const writers = [_][]const u8{ "Set.insert", "Set.remove", "Set.swap", "Set.insertAt", "Set.sortBy" };
+            for (writers) |w| if (std.mem.eql(u8, w[4..], spelling)) return w;
+        }
         return null;
     }
 
@@ -5517,8 +5703,12 @@ pub const Lowerer = struct {
     /// `inst` is the write's instruction and `first` a spread's first
     /// operand: under v2 the site also says whether the verdict rests on
     /// callers v2 did not all check (§7.3), so that a trap there is told
-    /// from an unsound verdict.
-    fn sanitizedWrite(l: *Lowerer, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32, inst: Inst.Index, first: ?Inst.Index) Allocator.Error!Node.Index {
+    /// from an unsound verdict. A write that may park here (`suspension`)
+    /// is `_sanitize$start(…)` behind the marker, then
+    /// `_sanitize$settle(base, answer, site)` with what it answered, the
+    /// base bound to a temporary first: the answer may come after the fiber
+    /// resumes, past any code `list` could run after the writer.
+    fn sanitizedWrite(l: *Lowerer, out: *StmtList, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, p: u32, inst: Inst.Index, first: ?Inst.Index) Allocator.Error!Node.Index {
         if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists() and args.len != 0);
         l.needs.sanitize = true;
         const note: []const u8 = if (l.in.list_writes) |channel| note: {
@@ -5530,12 +5720,42 @@ pub const Lowerer = struct {
             if (!w.callers) break :note ", whatever its callers";
             break :note if (l.in.callers_checked) ", every caller checked" else ", a caller may be unchecked";
         } else "";
-        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` in {s} (at byte {d}{s})", .{ writer_name, l.interner.slice(l.module_name), p, note });
+        const site = try std.fmt.allocPrint(l.scratch, "`{s}` in {s} (at byte {d}{s})", .{ writer_name, l.interner.slice(l.module_name), p, note });
         const all = try l.scratch.alloc(Node.Index, args.len + 2);
         all[0] = try l.stringNode(site, p);
         all[1] = writer;
         @memcpy(all[2..], args);
-        return l.call(try l.ident(try l.sanitizerLocal("list"), p), all, p);
+        if (!(l.suspendable and l.suspendsHere(l.in.dispatch.effectAt(inst).own))) return l.call(try l.ident(try l.sanitizerLocal("list"), p), all, p);
+        const base = try l.fresh(l.well.temp);
+        try l.constDecl(out, base, args[0], p);
+        all[2] = try l.ident(base, p);
+        const answer = try l.suspension(out, inst, try l.call(try l.ident(try l.sanitizerLocal("start"), p), all, p));
+        // The site last: the corpus counts a write's sites by the text that
+        // follows a call's parenthesis (`checkSanitisedSites`).
+        return l.call(try l.ident(try l.sanitizerLocal("settle"), p), &.{ try l.ident(base, p), answer, try l.stringNode(site, p) }, p);
+    }
+
+    /// Whether the call `inst` is a `List.cons` of an item before a
+    /// construction's base whose write is sanitised (`[ x, …xs, y ]` is
+    /// `List.cons x (List.append xs [ y ])`): through any more such items,
+    /// a spread's `List.append` that `sanitizesSpreadAt` wraps.
+    fn frontsSanitisedWrite(l: *Lowerer, inst: Inst.Index) Allocator.Error!bool {
+        if (!l.sanitizesLists()) return false;
+        var tail = l.consTail(inst) orelse return false;
+        while (l.consTail(tail)) |next| tail = next;
+        if (!l.isSpreadAppend(tail) or l.inSanitizeChain(tail)) return false;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(tail).rhs))), Inst.Index);
+        if (args.len == 0) return false;
+        return l.sanitizesSpreadAt(tail, args[0]);
+    }
+
+    /// `_sanitize$front(x, xs, site)`: an item put in front of a written
+    /// base, which the target does in place (`backend.md` §4, *Writes*),
+    /// where `List.cons` copies.
+    fn sanitizedFront(l: *Lowerer, written: []const Node.Index, p: u32) Allocator.Error!Node.Index {
+        l.needs.sanitize = true;
+        const site = try std.fmt.allocPrint(l.scratch, "an item put in front of a construction in {s} (at byte {d})", .{ l.interner.slice(l.module_name), p });
+        return l.call(try l.ident(try l.sanitizerLocal("front"), p), &.{ written[0], written[1], try l.stringNode(site, p) }, p);
     }
 
     /// `_sanitize$writer("List.<writer> value in M (at byte p)", value)`: a
@@ -5545,8 +5765,32 @@ pub const Lowerer = struct {
     fn sanitizedWriterValue(l: *Lowerer, value: Node.Index, writer_name: []const u8, p: u32) Allocator.Error!Node.Index {
         if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists());
         l.needs.sanitize = true;
-        const site = try std.fmt.allocPrint(l.scratch, "`List.{s}` value in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
+        const site = try std.fmt.allocPrint(l.scratch, "`{s}` value in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
         return l.call(try l.ident(try l.sanitizerLocal("writer"), p), &.{ try l.stringNode(site, p), value }, p);
+    }
+
+    /// A writer of `Dict` or `Set` that takes evidence first (`sortBy`),
+    /// under the v3 oracle (kernel §12): `_sanitize$listAt(site, writer, k,
+    /// …args)`, its base `args[k]`, the argument after the evidence. One
+    /// that may park here (its callback may wait) is
+    /// `_sanitize$startAt(…)` behind the marker, then
+    /// `_sanitize$settle(base, answer, site)`, the base bound to a
+    /// temporary first, as `sanitizedWrite` lowers a parking write.
+    fn sanitizedWriteAt(l: *Lowerer, out: *StmtList, writer: Node.Index, writer_name: []const u8, args: []const Node.Index, k: usize, p: u32, inst: Inst.Index) Allocator.Error!Node.Index {
+        if (std.debug.runtime_safety) std.debug.assert(l.sanitizesLists() and k < args.len);
+        l.needs.sanitize = true;
+        const site = try std.fmt.allocPrint(l.scratch, "`{s}` in {s} (at byte {d})", .{ writer_name, l.interner.slice(l.module_name), p });
+        const all = try l.scratch.alloc(Node.Index, args.len + 3);
+        all[0] = try l.stringNode(site, p);
+        all[1] = writer;
+        all[2] = try l.intNode(@intCast(k), p);
+        @memcpy(all[3..], args);
+        if (!(l.suspendable and l.suspendsHere(l.in.dispatch.effectAt(inst).own))) return l.call(try l.ident(try l.sanitizerLocal("listAt"), p), all, p);
+        const base = try l.fresh(l.well.temp);
+        try l.constDecl(out, base, args[k], p);
+        all[3 + k] = try l.ident(base, p);
+        const answer = try l.suspension(out, inst, try l.call(try l.ident(try l.sanitizerLocal("startAt"), p), all, p));
+        return l.call(try l.ident(try l.sanitizerLocal("settle"), p), &.{ try l.ident(base, p), answer, try l.stringNode(site, p) }, p);
     }
 
     /// `_sanitize$len(list)`: a read of a list's length under the
@@ -5558,7 +5802,8 @@ pub const Lowerer = struct {
     }
 
     /// `_sanitize$<export>`, one of the sanitiser's exports (`list`,
-    /// `writer`, `len`) as this module names it.
+    /// `writer`, `len`, `same`, `start`, `settle`, `front`) as this module
+    /// names it.
     fn sanitizerLocal(l: *Lowerer, comptime export_name: []const u8) !JsIr.NameIndex {
         return l.name(.{
             .module = (try l.interner.getOrPut(l.gpa, "_sanitize")).toOptional(),
@@ -6856,11 +7101,27 @@ pub const Lowerer = struct {
     /// read (its instruction, binding and closure): two writes may
     /// invalidate one read at different depths, and the first placement the
     /// lowering meets binds it (§31.14, *before the first accepted write*).
+    /// The reads a module's channel has the lowering read before an
+    /// update's stores: v1's table where it is clean (§31.14), or the v3
+    /// oracle's (`ownership-v3-kernel.md` §11, *A read of a written field,
+    /// read first*), whose updates `recordWrittenV3` writes. Null: none.
+    fn hoistReads(l: *Lowerer) Allocator.Error!?[]const Hoists.Read {
+        if (l.in.ownership.clean) return l.in.ownership.reads;
+        if (!l.in.records_v3 or !(l.sanitizesLists() or l.in.records_v3_plain)) return null;
+        if (l.in.list_writes == null) return null;
+        // v3's rows, as v1's: a chain of field reads from a local, read
+        // whole, and a closure's read where it is made (`capture`).
+        const rows = try l.scratch.alloc(Hoists.Read, l.in.v3_reads.len);
+        for (l.in.v3_reads, rows) |r, *to| to.* = .{ .decl = r.decl, .demand = r.demand, .inst = r.inst, .holder = r.holder, .path_start = 0, .path_len = r.path_len, .prefix_len = r.path_len, .placement = r.placement, .phase = r.phase, .capture = r.capture };
+        return rows;
+    }
+
     fn hoistsReady(l: *Lowerer) Allocator.Error!bool {
-        if (!l.in.ownership.clean) return false;
-        if (l.hoist_ready) return true;
+        if (l.hoist_ready) return l.hoist_reads != null;
         l.hoist_ready = true;
-        const t = l.in.ownership;
+        const reads = (try l.hoistReads()) orelse return false;
+        l.hoist_reads = reads;
+        const t = .{ .reads = reads };
         const groups = try l.scratch.alloc(u32, t.reads.len);
         var by_read: std.AutoHashMapUnmanaged([3]u32, u32) = .empty;
         for (t.reads, 0..) |r, i| {
@@ -6912,7 +7173,7 @@ pub const Lowerer = struct {
     fn placeHoists(l: *Lowerer, out: *StmtList, inst: Inst.Index, phase: u2) Allocator.Error!void {
         if (!try l.hoistsReady()) return;
         const rows = l.hoist_at.get((@as(u64, inst.int()) << 2) | phase) orelse return;
-        const t = l.in.ownership;
+        const t = .{ .reads = l.hoist_reads.? };
         const p = l.pos(inst);
         for (rows.items) |ri| {
             const r = t.reads[ri];
@@ -6996,7 +7257,7 @@ pub const Lowerer = struct {
     fn hoistedRead(l: *Lowerer, key: u64, p: u32) Allocator.Error!?Node.Index {
         if (!try l.hoistsReady()) return null;
         const rows = l.hoist_prefix.get(key) orelse return null;
-        const t = l.in.ownership;
+        const t = .{ .reads = l.hoist_reads.? };
         // One source read has one temporary: two groups bound for it are
         // two placements of one read, and the later one may come after a
         // store (§31.6, #2617).
@@ -7033,6 +7294,49 @@ pub const Lowerer = struct {
                 std.debug.panic("ownership: a hoisted record read was bound at a target its lowering does not reach (read rows {d} and {d})", .{ ri, live.row });
         }
         return null;
+    }
+
+    /// Whether the record update `inst` is one the v3 oracle writes
+    /// (`Input.records_v3`): a module whose list writes go through either
+    /// oracle, and an update its channel lists as accepted.
+    fn recordWrittenV3(l: *const Lowerer, inst: Inst.Index) bool {
+        if (!l.in.records_v3 or !(l.sanitizesLists() or l.in.records_v3_plain)) return false;
+        const channel = l.in.list_writes orelse return false;
+        const w = channel.find(inst.int()) orelse return false;
+        return w.kind == .update;
+    }
+
+    /// `{ r | f₁ = v₁, … }` under the sanitiser of the v3 oracle (research
+    /// report 142): the spread the plain build writes, its base bound to a
+    /// name, and the runtime's `record(base, copy, site)`, which poisons each
+    /// field of every older name of the object whose value an in-place store
+    /// would change, and links the base to the copy for the identity trap.
+    fn recordUpdateSanitized(l: *Lowerer, out: *StmtList, inst: Inst.Index, p: u32) Allocator.Error!Node.Index {
+        const d = l.bir.instData(inst);
+        const fields = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field);
+        const insts = try l.scratch.alloc(Inst.Index, fields.len + 1);
+        insts[0] = @fromBackingInt(@intCast(d.lhs));
+        for (fields, insts[1..]) |f, *slot| slot.* = f.value;
+        const values = try l.orderedExprs(out, insts, false);
+        var base = values[0];
+        if (l.b.tagOf(base) != .ident or l.isMutable(base)) {
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, base, p);
+            base = try l.ident(n, p);
+        }
+        // The fields named; the runtime copies the others out of the base,
+        // and reads none of these of it (`ownership-v3-kernel.md` §11 item 3).
+        var properties: std.ArrayList(Node.Index) = .empty;
+        for (fields, values[1..]) |f, value| {
+            try properties.append(l.scratch, try l.fieldProperty(l.bir.symbol(f.name), value, p));
+        }
+        // The reads the channel has read before the stores (`ownership-v3-kernel.md`
+        // §11): before the copy, so they read the old object's fields unpoisoned.
+        try l.placeHoists(out, inst, 1);
+        const copy = try l.object(properties.items, p);
+        const site = try std.fmt.allocPrint(l.scratch, "an update in {s} (at byte {d})", .{ l.interner.slice(l.module_name), p });
+        l.needs.sanitize = true;
+        return l.call(try l.ident(try l.sanitizerLocal("record"), p), &.{ base, copy, try l.stringNode(site, p) }, p);
     }
 
     /// `{ r | f₁ = v₁, … }` written in place (§31.10): the base, then each
@@ -7116,7 +7420,7 @@ pub const Lowerer = struct {
             // back changes nothing (§31.3, *Nested updates*). Not under the
             // sanitiser, whose inner update answers a new object. The inner
             // update's own stores are its value's, so they stay.
-            if (l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) skip: {
+            if ((l.in.ownership.clean or l.in.records_clean_v3) and l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) skip: {
                 // A call that answers the field's object (`answersFieldObject`)
                 // still runs: its writes are the update. Bound to a temporary
                 // here, the binding becomes the call as a statement, since
@@ -7196,7 +7500,7 @@ pub const Lowerer = struct {
     /// `base` a local. Only of a clean module, where the inner update
     /// answers its base's object.
     fn sameFieldObject(l: *Lowerer, base: Inst.Index, field: Symbol, value: Inst.Index) bool {
-        if (std.debug.runtime_safety) std.debug.assert(l.in.ownership.clean and !l.in.sanitize_records);
+        if (std.debug.runtime_safety) std.debug.assert((l.in.ownership.clean or l.in.records_clean_v3) and !l.in.sanitize_records);
         if (l.bir.instTag(base) != .local) return false;
         if (l.bir.instTag(value) == .call) return l.answersFieldObject(base, field, value);
         if (l.bir.instTag(value) != .record_update) return false;
@@ -7396,6 +7700,13 @@ pub const Lowerer = struct {
                 // without enforcement keep the spread until O4.
                 if (l.in.ownership.clean) {
                     l.in.ownership.assertAccepted(inst);
+                    return l.recordUpdateInPlace(out, inst, p);
+                }
+                // The v3 oracle (research report 142): an update v3 accepted is
+                // written in place under `--lists-in-place`, or copied and its
+                // old object poisoned under `--sanitize-lists`.
+                if (l.recordWrittenV3(inst)) {
+                    if (l.in.identity_trap) return l.recordUpdateSanitized(out, inst, p);
                     return l.recordUpdateInPlace(out, inst, p);
                 }
 
@@ -7722,6 +8033,20 @@ pub const Lowerer = struct {
     /// arity, so `let f = Dict.insert` is `(a, b, c) => Dict$insert(cmp, a,
     /// b, c)` and never `Dict$insert`.
     fn reference(l: *Lowerer, inst: Inst.Index) !Node.Index {
+        const value = try l.referenceBare(inst);
+        // A writer of core named as a value: routed where it is made
+        // (ownership-v3-kernel.md §12 item 5, *A writer value is routed
+        // where it is made*).
+        if (l.bir.instTag(inst) == .ext_value and l.routesWriterValues() and l.sanitizesAt(inst) and !l.isCallee(inst)) {
+            const d = l.bir.instData(inst);
+            const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+            if (l.coreWriterAt(module, d.rhs)) |writer| return l.routedWriterValue(value, writer, module, d.rhs, inst);
+        }
+        return value;
+    }
+
+    /// `reference`, with no routing of a writer value: the binding itself.
+    fn referenceBare(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const p = l.pos(inst);
         // A list a loop holds as an offset (§8, *Scalar views*): the offset
         // where the loop reads it so, the list built anywhere else.
@@ -10373,12 +10698,23 @@ pub const Lowerer = struct {
                     return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
                 const callee_name = try l.termName(target, p);
                 // `xs.push x` is `List.push xs x`, a write of its receiver.
-                if (target == .ext and evidence.len == 0 and l.sanitizesAt(inst)) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
+                if (target == .ext and l.sanitizesAt(inst)) if (l.listWriterAt(target.ext.module, @backingInt(target.ext.value))) |writer| {
                     const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
-                    return l.suspension(out, inst, try l.sanitizedWrite(callee_name, writer, values, p, inst, null));
+                    if (evidence.len == 0) return l.sanitizedWrite(out, callee_name, writer, values, p, inst, null);
+                    // `d.sortBy f`: the evidence first, then the receiver,
+                    // the base (`sanitizedWriteAt`).
+                    const all = try l.scratch.alloc(Node.Index, evidence.len + values.len);
+                    @memcpy(all[0..evidence.len], evidence);
+                    @memcpy(all[evidence.len..], values);
+                    return l.sanitizedWriteAt(out, callee_name, writer, all, evidence.len, p, inst);
                 };
-                const called = try l.receiverCall(out, callee_name, evidence, @fromBackingInt(@intCast(d.lhs)), args, p);
-                const value = try l.suspension(out, inst, called);
+                // A writer handed on as a value (`x.apply Dict.insert`) is
+                // routed where it is made (`reference`).
+                const values = try l.exprListWithHead(out, @fromBackingInt(@intCast(d.lhs)), args);
+                const all = try l.scratch.alloc(Node.Index, evidence.len + values.len);
+                @memcpy(all[0..evidence.len], evidence);
+                @memcpy(all[evidence.len..], values);
+                const value = try l.suspension(out, inst, try l.call(callee_name, all, p));
                 // An ordering operator against a non-primitive target is
                 // the `Order` test of §8.3: the method answers `Order` and
                 // the operator answers `Bool`.
@@ -11100,7 +11436,7 @@ pub const Lowerer = struct {
             try l.markSanitizeChain(inst, arg_insts);
             const values = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
             const append = try l.coreValue(.List, .append, p);
-            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return .{ .value = try l.suspension(out, inst, try l.sanitizedWrite(append, "append", values, p, inst, null)) };
+            if (l.sanitizesAt(inst) and !l.inSanitizeChain(inst)) return .{ .value = try l.sanitizedWrite(out, append, "List.append", values, p, inst, null) };
             return .{ .value = try l.suspension(out, inst, try l.call(append, values, p)) };
         }
         // Under `--release`, a `++` one of whose operands is a string —
@@ -11247,7 +11583,8 @@ pub const Lowerer = struct {
         l.term_choice = saved_choice;
         if (evidence.len == 0) {
             if ((if (arg_insts.len != 0) try l.sanitizesSpreadAt(inst, arg_insts[0]) else l.sanitizesAt(inst)) and !l.inSanitizeChain(inst)) if (l.listWriterOf(callee_inst)) |writer| if (written.len != 0)
-                return l.suspension(out, inst, try l.sanitizedWrite(callee, writer, written, p, inst, if (arg_insts.len != 0) arg_insts[0] else null));
+                return l.sanitizedWrite(out, try l.unroutedCallee(callee_inst, callee), writer, written, p, inst, if (arg_insts.len != 0) arg_insts[0] else null);
+            if (written.len == 2 and try l.frontsSanitisedWrite(inst)) return l.sanitizedFront(written, p);
             return l.suspension(out, inst, try l.call(callee, written, p));
         }
         // How the evidence is passed is the callee's convention
@@ -11259,6 +11596,11 @@ pub const Lowerer = struct {
         const args = try l.scratch.alloc(Node.Index, evidence.len + written.len);
         @memcpy(args[0..evidence.len], evidence);
         @memcpy(args[evidence.len..], written);
+        // A writer of `Dict` or `Set` that takes evidence (`sortBy`) under
+        // the v3 oracle (kernel §12): its base is the argument after the
+        // evidence (`sanitizedWriteAt`).
+        if (written.len != 0 and l.sanitizesAt(inst)) if (l.listWriterOf(callee_inst)) |writer|
+            return l.sanitizedWriteAt(out, try l.unroutedCallee(callee_inst, callee), writer, args, evidence.len, p, inst);
         return l.suspension(out, inst, try l.call(callee, args, p));
     }
 
@@ -11863,7 +12205,14 @@ pub const Lowerer = struct {
             W.null => l.nullNode(p),
             W.undefined => l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
             W.from, W.to => v[0],
-            W.same => l.binary(.strict_eq, v[0], v[1], p),
+            // Under the sanitiser, outside core, an identity compare goes
+            // through its trap (`sanitize_runtime.mjs`'s `same`, research
+            // report 140): it throws where an in-place write would change
+            // the answer.
+            W.same => if (l.in.identity_trap and l.in.graph.modulePackage(l.in.module) != .core) blk: {
+                l.needs.sanitize = true;
+                break :blk l.call(try l.ident(try l.sanitizerLocal("same"), p), &.{ v[0], v[1] }, p);
+            } else l.binary(.strict_eq, v[0], v[1], p),
             W.isNull => l.binary(.strict_eq, v[0], try l.nullNode(p), p),
             W.isUndefined => l.binary(.strict_eq, v[0], try l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused), p),
             W.isNullish => l.binary(.loose_eq, v[0], try l.nullNode(p), p),
@@ -12280,7 +12629,7 @@ pub const Lowerer = struct {
     fn lateFunction(l: *Lowerer, defs: []const Inst.Index, at: usize) !?usize {
         if (!try l.hoistsReady()) return null;
         if (defs[at].int() >= l.hoist_late_head.len) return null;
-        const t = l.in.ownership;
+        const t = .{ .reads = l.hoist_reads.? };
         var last: ?usize = null;
         var ri = l.hoist_late_head[defs[at].int()];
         while (ri != Hoists.none) : (ri = l.hoist_late_next[ri]) {
@@ -16650,7 +16999,10 @@ pub const Lowerer = struct {
             }
         }
         const static = h.group < d.written.len and !d.written[h.group];
-        const selector: ?u32 = if (producer or h.selector_group == std.math.maxInt(u32)) null else h.selector_group;
+        // A producer has no selector but a `Show` keyed by identity's, its
+        // payload's identity (`Writes.recordEdgeSelector`).
+        const show = ref == .node and st.built.tree.kind(ref.node) == .show;
+        const selector: ?u32 = if ((producer and !show) or h.selector_group == std.math.maxInt(u32)) null else h.selector_group;
         return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where, .entry_groups = entry_groups.items, .selector_group = selector };
     }
 

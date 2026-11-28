@@ -1,0 +1,25 @@
+-- The `via` is in a schema that another schema names: `Outer.print` runs
+-- `Inner`'s worker, which calls `back` with `v.inner.items`.
+import Io
+import Node exposing (Program)
+import Schema
+
+
+back : List Int → Result (List Schema.Issue) (List Int)
+back l = Ok (List.push l 3)
+
+
+schema Inner =
+    items : List Int via (Schema.conversion Ok back)
+
+
+schema Outer =
+    inner : Inner
+
+
+main : Program
+main = Io.run λ⊤ →
+    v = { inner = { items = [ 1, 2 ] } }
+    _ = Outer.print v
+    Debug.log (String.fromInt (List.length v.inner.items)) ⊤
+    Node.done

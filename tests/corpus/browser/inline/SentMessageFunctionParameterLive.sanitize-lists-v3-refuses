@@ -1,0 +1,2 @@
+# A message a command builds holds one list at two places, or a list a function parameter answers: update's write of it is refused (ownership-v3-kernel.md §6 rule 13, *A message a command builds*).
+54:5 list_still_used entry

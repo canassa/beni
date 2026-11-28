@@ -5,7 +5,7 @@ module SubOnShared
   50:10 entry SubOnShared.update msg#Got.0: accepted entry
   summary update: π1 R, π1#Got.0 RAW[storage], π1#Got.0[*] A; res .0 π1#Got.0, .0[*] ~π1#Got.0[*], .1#Cmd.0 shared(Cmd.none)#Cmd.0
   summary start: π1 R; res λr{lost}; π1 calls ≤1, supply 1 shared(SubOnShared.shared) borrowed
-  summary subscriptions: res #Listen.0 fresh1{lost}r{lost}, #Listen.0[*] condition(fresh6), #Listen.0[*].0 fresh2{lost}r{lost}, #Listen.0[*].0⋆ ~condition(fresh4) ~fresh4{lost}r{lost} ~λr{lost}, #Listen.0[*].2 fresh3{lost}r{lost}, #Listen.0[*].2⋆ ~condition(fresh5) ~fresh5 ~λ?r{lost} ~λr{lost}
+  summary subscriptions: res #Listen.0 fresh1{lost}r{lost}, #Listen.0[*] condition(fresh7), #Listen.0[*].0 fresh2{lost}r{lost}, #Listen.0[*].0⋆ ~condition(fresh4) ~esc5{lost}r{lost} ~fresh4{lost}r{lost}, #Listen.0[*].2 fresh3{lost}r{lost}, #Listen.0[*].2⋆ ~condition(fresh6) ~fresh6 ~λ?r{lost} ~λr{lost}
   summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
 total 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2

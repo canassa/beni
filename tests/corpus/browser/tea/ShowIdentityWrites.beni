@@ -1,0 +1,77 @@
+-- `browser/inline/ShowIdentityWrites` on `browser-tea`: a `Show` keyed by
+-- identity over a record, whose body is a new one exactly when the shown
+-- record is another value. A write of a field the body does not read
+-- (`age`) makes a new body; a write of a model field the body reads beside
+-- the record (`note`) keeps it; a message that writes nothing of the record
+-- keeps it (`Same`), and so does an update that rebuilds the `Maybe` around
+-- the very same record (`Rewrap`), which `browser-inline` makes a new one,
+-- its write set unable to tell. The fallback is kept across a write of
+-- what it reads. `browser-inline` prints the same page but for that and the
+-- empty comment this platform keeps after the `Show`.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Age
+    | Note
+    | Same
+    | Rewrap
+    | Clear
+    | Back
+
+
+type alias User =
+    name : String
+    age : Int
+
+
+type alias Model =
+    user : Maybe User
+    note : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Age →
+            { model | user = Maybe.map model.user λu → { u | age = u.age + 1 } }
+
+        Note →
+            { model | note = model.note ++ "!" }
+
+        Same →
+            model
+
+        Rewrap →
+            { model | user = Maybe.map model.user λu → u }
+
+        Clear →
+            { model | user = Nothing, note = "none" }
+
+        Back →
+            { model | user = Just { name = "Ada", age = 36 } }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="age" onClick={Age}>age</button>
+        <button id="note" onClick={Note}>note</button>
+        <button id="same" onClick={Same}>same</button>
+        <button id="rewrap" onClick={Rewrap}>rewrap</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="back" onClick={Back}>back</button>
+        <Show when={model.user} keyed fallback={<p>{model.note}<input id="nobody" /></p>}>
+            {λu → <label>{u.name}{model.note}<input id="shown" /></label>}
+        </Show>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { user = Just { name = "Ada", age = 36 }, note = "" }
+        , update = update
+        , view = view
+        }

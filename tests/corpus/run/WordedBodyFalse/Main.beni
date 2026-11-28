@@ -1,0 +1,28 @@
+-- Platform rows with ownership words and beni bodies that reach no
+-- JavaScript: the walk of such a body sees all of it, so a word that claims
+-- less than the walk found refuses the row, at the platform's build
+-- (ownership-v3-kernel.md §6 rule 10, *A worded body is checked against its
+-- walk*; research report 162). Before, the contract was the words whatever
+-- the walk found: the push of the list at key 1 was accepted in place while
+-- `peekBody`, worded `shallow`, read it again, and the sanitised run trapped.
+import Dict exposing (Dict)
+import Node exposing (Program)
+import Peek
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    d0 = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+    xs = Maybe.withDefault (Dict.get d0 1) []
+    ys = List.push xs 5
+    n = Peek.peekBody d0
+    [ ints ys, String.fromInt n ]
+
+
+main : Program
+main = Node.printLines (go ⊤)

@@ -1,0 +1,27 @@
+-- Walked platform code, no row: a `Js.Value` that is an `if` or a `case`
+-- whose one arm is a list (`Js.from [ x ]`), read at a type variable. The
+-- escape reads the value arm by arm, each at its own place. The safe build's
+-- check that every cell of it escaped read the value whole, at its own
+-- place, and built a map from the list's layout to the `Js.Value`'s, an
+-- entry of the location table that a later step reads; it panicked
+-- (ownership-v3-kernel.md §9, the row of `Frame.quiet`). The argument
+-- escapes, so v3 refuses the pushes (§3.4).
+import Node exposing (Program)
+import Pun
+
+
+go : Bool → String
+go c =
+    x0 = [ 1 ]
+    y0 = [ 2 ]
+    h : List (List Int)
+    h = Pun.enc c x0
+    k : List (List Int)
+    k = Pun.encMaybe (Just y0)
+    x = List.length (List.push x0 9)
+    y = List.length (List.push y0 9)
+    "${String.fromInt x} ${String.fromInt y} ${String.fromInt (List.length h)} ${String.fromInt (List.length k)}"
+
+
+main : Program
+main = Node.print (go True)

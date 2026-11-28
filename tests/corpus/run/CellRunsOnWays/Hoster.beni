@@ -1,0 +1,34 @@
+-- A type of another module whose method runs a function in which a writer
+-- fiber runs (CellRunsOnWays).
+import Duration
+import List
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+hosting : ⊤ → String
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update r λl → List.push (List.copy l) 5
+    Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+pub type HH
+    = HH
+
+
+pub go : HH → String
+go h =
+    case h of
+        HH →
+            hosting ⊤

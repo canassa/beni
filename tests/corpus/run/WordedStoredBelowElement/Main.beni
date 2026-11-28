@@ -1,0 +1,46 @@
+-- Rows that store a `List Int` beside a `written returned` list of
+-- `List (List Int)` (with `stored`, a stored callback, and `prepended`'s
+-- item). A `List Int` is no element of that list: the row puts it below an
+-- element, inside a new list that no word names, and the words say no count
+-- there (`[a, a]` is true of them). So the stored value states no position
+-- and the result's locations below its elements are `twice`
+-- (ownership-v3-kernel.md §4.4, §6 rule 10). Before, both readers took a
+-- store beside the one `written returned` list as one position at any
+-- location below the elements: the parts of `gg`'s pattern were apart, the
+-- push of `b` was accepted, and in place it wrote the list `rest` holds
+-- (`2 2`).
+import Dest
+import Node exposing (Program)
+
+
+lens : List (List Int) → Int
+lens ls = List.sum (List.map ls λq → List.length q)
+
+
+gg : List (List Int) → String
+gg list =
+    case list of
+        [ b, …rest ] →
+            w = List.push b 5
+            "${String.fromInt (List.length w)} ${String.fromInt (lens rest)}"
+
+        _ →
+            "none"
+
+
+first : List (List (List Int)) → String
+first l =
+    case l of
+        [ inner ] →
+            gg inner
+
+        _ →
+            "no"
+
+
+main : Program
+main =
+    a = first (Dest.nest [] [ 1 ])
+    b = first (Dest.focusNest [ [ [ 1 ] ] ] 0 λq → q)
+    c = first (Dest.consNest [ 1 ] [])
+    Node.print "${a} | ${b} | ${c}"

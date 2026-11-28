@@ -1,0 +1,1 @@
+A fiber that only reads a cell, beside a writer fiber of it, while the frame writes it, and of a record cell (#2594, blind round AZ). The reader runs at the switch points as a writer does and gives the handle no other holder: each write is accepted and runs in place (ownership-v3-kernel.md §13 item 12, amended 2026-11-22). Its live twin is CellReaderFiberLive.

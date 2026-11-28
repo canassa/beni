@@ -1,0 +1,27 @@
+-- One value at two places of an answer whose contract has one location: the
+-- caller reads the answer as a pair, and its two parts are one list. The
+-- callee's claim that no cell is at two of its places says nothing of two
+-- places of the caller below its one location, so the two are tested by
+-- their cells (ownership-v3-kernel.md §3.4): `bump` writes the first part and
+-- reads the second, and in place `b` would have 3 items.
+import List
+import Node exposing (Program)
+import Twin
+
+
+bump : List Int × List Int → Int × Int
+bump q =
+    case q of
+        ( a, b ) →
+            w = List.push a 9
+            ( List.length w, List.length b )
+
+
+go : Int → String
+go n =
+    ( x, y ) = bump (Twin.twin [ n, 2 ])
+    "${String.fromInt x} ${String.fromInt y}"
+
+
+main : Program
+main = Node.print (go 1)

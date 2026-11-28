@@ -1,0 +1,84 @@
+-- Every form of a call of a writer of `Dict`, `Set` or `List` that v3
+-- accepts is routed through the oracle (`ownership-v3-kernel.md` §12,
+-- *Lowering*): a walked writer called method-style (`d.update k f`,
+-- `d.sortBy f`, `s.insert x`) or through a local alias (`upd =
+-- Dict.update`), a writer handed on as a value (`apply Dict.insert d`,
+-- `Set.insert`, `List.push`), and a `sortBy` whose callback parks. A
+-- writer that takes a callback handed on as a value (`applyP Dict.sortBy`,
+-- whose callback parks) is routed too, and settles once its answer is
+-- there (`_sanitize$writerWait`, ownership-v3-kernel.md §12 item 5). Nothing
+-- reads a written value's old name, so each write is accepted, and the
+-- sanitised build and the in-place build print what the plain build
+-- prints. Before, these calls were accepted and lowered as plain calls,
+-- which copy, so a wrong acceptance of one could not be caught.
+import Dict exposing (Dict)
+import Io
+import Node exposing (Program)
+import Set exposing (Set)
+
+
+apply : (Dict Int Int, Int, Int → Dict Int Int), Dict Int Int → Dict Int Int
+apply f d = f d 3 30
+
+
+applyS : (Set Int, Int → Set Int), Set Int → Set Int
+applyS f s = f s 3
+
+
+applyL : (List Int, Int → List Int), List Int → List Int
+applyL f xs = f xs 3
+
+
+applyP : (Dict Int Int, (Int, Int → Int) → Dict Int Int), Dict Int Int → Dict Int Int
+applyP f d = f d λn _ →
+    Io.sleep 1
+    0 - n
+
+
+base : ⊤ → Dict Int Int
+base ⊤ = Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]
+
+
+render : Dict Int Int → String
+render d =
+    String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${String.fromInt v}") ","
+
+
+members : Set Int → String
+members s = String.join (List.map (Set.toList s) String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    upd = Dict.update
+    srt = Dict.sortBy
+    ins = Set.insert
+    a = (base ⊤).update 1 λ_ → Just 7
+    b = (base ⊤).sortBy λk _ → 0 - k
+    c = upd (base ⊤) 2 λ_ → Nothing
+    s = srt (base ⊤) λk _ → 0 - k
+    f = apply Dict.insert (base ⊤)
+    g = (Set.fromList [ 1, 2 ]).insert 4
+    h = ins (Set.fromList [ 1, 2 ]) 5
+    i = applyS Set.insert (Set.fromList [ 1, 2 ])
+    j = applyL List.push [ 1, 2 ]
+    p = Dict.sortBy (base ⊤) λn _ →
+        Io.sleep 1
+        0 - n
+    q = applyP Dict.sortBy (base ⊤)
+    [ render a
+    , render b
+    , render c
+    , render s
+    , render f
+    , members g
+    , members h
+    , members i
+    , String.join (List.map j String.fromInt) ","
+    , render p
+    , render q
+    ]
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (go ⊤)

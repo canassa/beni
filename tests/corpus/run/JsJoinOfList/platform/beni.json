@@ -1,0 +1,1 @@
+{ "platform": true, "name": "jsjoinoflist", "platforms": ["node"], "reexports": ["Node"] }

@@ -1,0 +1,11 @@
+--! A project's own platform layer: it overwrites a real key's properties.
+
+import Hosted exposing (Key)
+import Js
+
+
+--| The key `k`, with `f` written where a key once carried its comparer.
+pub alter : Key, (a, a → Order) → Key
+alter k f =
+    Js.set (Js.from k) "c" (Js.from f)
+    k

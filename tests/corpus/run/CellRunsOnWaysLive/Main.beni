@@ -1,0 +1,132 @@
+-- The live twins of CellRunsOnWays: each update writes a cell in place where
+-- code that runs on after a throw elsewhere can read it. A function in which
+-- a writer fiber runs, handed as `where` evidence to a helper that runs it
+-- masked, after a lend, through a second helper, at a reference, kept
+-- in an answer, or from another module, is refused where the evidence is
+-- bound; the fiber that runs a helper over its own function parameter after a
+-- function that lends the fiber is refused at the helper; a fiber that starts
+-- one in which a writer runs is refused where it is masked, and so is a mask
+-- after the start. On Node no throw happens here (ownership-v3-kernel.md §13
+-- item 12, *A defect*, (d), *The ways in*, *Descendants of a masked fiber*;
+-- #2633, #2638).
+import Duration
+import Hoster
+import Io
+import List
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+hosting : ⊤ → String
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update r λl → List.push l 5
+    Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+pub type H
+    = H
+
+
+pub go : H → String
+go h =
+    case h of
+        H →
+            hosting ⊤
+
+
+maskRun : a → String
+    where a.go : a → String
+maskRun x = Task.uninterruptible λ⊤ → x.go
+
+
+maskRun2 : a → String
+    where a.go : a → String
+maskRun2 x = maskRun x
+
+
+afterLend : Task.Scheduler, a → String
+    where a.go : a → String
+afterLend s x =
+    Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)
+    x.go
+
+
+keep : a → (⊤ → String)
+    where a.go : a → String
+keep x = λ⊤ → x.go
+
+
+applyH : (H → String), H → String
+applyH g x = g x
+
+
+twoCalls : (⊤ → ⊤), (⊤ → String) → String
+twoCalls f g =
+    f ⊤
+    g ⊤
+
+
+pAndH : ((⊤ → ⊤) → ⊤), (⊤ → ⊤), (⊤ → String) → String
+pAndH p l h =
+    p l
+    h ⊤
+
+
+-- The helper's own function parameter, run after a function that lends the fiber.
+midLend : Task.Scheduler, (⊤ → String) → String
+midLend s h = twoCalls (λ⊤ → Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)) h
+
+
+-- The same inside a closure.
+midNest : Task.Scheduler, (⊤ → String) → String
+midNest s h = twoCalls (λ⊤ → Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)) λ⊤ → h ⊤
+
+
+-- The same after a function that the callee hands to another.
+midRunner : Task.Scheduler, (⊤ → String) → String
+midRunner s h = pAndH (λx → x ⊤) (λ⊤ → Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)) h
+
+
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t
+
+
+-- A fiber started before the frame masks itself: a fiber that a masked one
+-- started runs on after a throw elsewhere (#2638).
+maskLater : ⊤ → String
+maskLater ⊤ =
+    t = Task.spawn hosting
+    Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 1)
+    Task.join t
+
+
+main : Program
+main = Io.run λ⊤ →
+    sc = Task.scheduler λ⊤ → ⊤
+    Node.printLines
+        [ fiber λ⊤ → maskRun H
+        , fiber λ⊤ → afterLend sc H
+        , fiber λ⊤ → maskRun2 H
+        , fiber λ⊤ → applyH maskRun H
+        , fiber λ⊤ → Task.uninterruptible (keep H)
+        , fiber λ⊤ → maskRun Hoster.HH
+        , fiber λ⊤ → midLend sc hosting
+        , fiber λ⊤ → midNest sc hosting
+        , fiber λ⊤ → midRunner sc hosting
+        , fiber λ⊤ → Task.uninterruptible λ⊤ → fiber hosting
+        , fiber λ⊤ → maskLater ⊤
+        ]

@@ -1,0 +1,15 @@
+{
+  "platform": true,
+  "name": "stash",
+  "platforms": [
+    "browser-tea"
+  ],
+  "reexports": [
+    "Browser",
+    "Cmd",
+    "Html",
+    "Sub",
+    "Tea",
+    "Stash"
+  ]
+}

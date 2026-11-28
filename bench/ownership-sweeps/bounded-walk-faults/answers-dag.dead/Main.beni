@@ -1,0 +1,97 @@
+-- The dead twin of `answers-dag.live` (research report 127): nothing reads `xs` after
+-- the write. The checker has no claim on the answer and refuses; the walk
+-- must end.
+import List
+import Node exposing (Program)
+import Ref
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+go : Int → String
+go n =
+    a0 = λl → l
+    b0 = λl → List.reverse l
+    c0 = λl → List.take l 1
+    a1 = λl → if List.length l > 1 then a0 l else if List.length l > 0 then b0 l else c0 l
+    b1 = λl → if List.length l > 1 then b0 l else if List.length l > 1 then c0 l else a0 l
+    c1 = λl → if List.length l > 1 then c0 l else if List.length l > 2 then a0 l else b0 l
+    a2 = λl → if List.length l > 2 then a1 l else if List.length l > 0 then b1 l else c1 l
+    b2 = λl → if List.length l > 2 then b1 l else if List.length l > 1 then c1 l else a1 l
+    c2 = λl → if List.length l > 2 then c1 l else if List.length l > 2 then a1 l else b1 l
+    a3 = λl → if List.length l > 3 then a2 l else if List.length l > 0 then b2 l else c2 l
+    b3 = λl → if List.length l > 3 then b2 l else if List.length l > 1 then c2 l else a2 l
+    c3 = λl → if List.length l > 3 then c2 l else if List.length l > 2 then a2 l else b2 l
+    a4 = λl → if List.length l > 4 then a3 l else if List.length l > 0 then b3 l else c3 l
+    b4 = λl → if List.length l > 4 then b3 l else if List.length l > 1 then c3 l else a3 l
+    c4 = λl → if List.length l > 4 then c3 l else if List.length l > 2 then a3 l else b3 l
+    a5 = λl → if List.length l > 5 then a4 l else if List.length l > 0 then b4 l else c4 l
+    b5 = λl → if List.length l > 5 then b4 l else if List.length l > 1 then c4 l else a4 l
+    c5 = λl → if List.length l > 5 then c4 l else if List.length l > 2 then a4 l else b4 l
+    a6 = λl → if List.length l > 6 then a5 l else if List.length l > 0 then b5 l else c5 l
+    b6 = λl → if List.length l > 6 then b5 l else if List.length l > 1 then c5 l else a5 l
+    c6 = λl → if List.length l > 6 then c5 l else if List.length l > 2 then a5 l else b5 l
+    a7 = λl → if List.length l > 7 then a6 l else if List.length l > 0 then b6 l else c6 l
+    b7 = λl → if List.length l > 7 then b6 l else if List.length l > 1 then c6 l else a6 l
+    c7 = λl → if List.length l > 7 then c6 l else if List.length l > 2 then a6 l else b6 l
+    a8 = λl → if List.length l > 8 then a7 l else if List.length l > 0 then b7 l else c7 l
+    b8 = λl → if List.length l > 8 then b7 l else if List.length l > 1 then c7 l else a7 l
+    c8 = λl → if List.length l > 8 then c7 l else if List.length l > 2 then a7 l else b7 l
+    a9 = λl → if List.length l > 9 then a8 l else if List.length l > 0 then b8 l else c8 l
+    b9 = λl → if List.length l > 9 then b8 l else if List.length l > 1 then c8 l else a8 l
+    c9 = λl → if List.length l > 9 then c8 l else if List.length l > 2 then a8 l else b8 l
+    a10 = λl → if List.length l > 10 then a9 l else if List.length l > 0 then b9 l else c9 l
+    b10 = λl → if List.length l > 10 then b9 l else if List.length l > 1 then c9 l else a9 l
+    c10 = λl → if List.length l > 10 then c9 l else if List.length l > 2 then a9 l else b9 l
+    a11 = λl → if List.length l > 11 then a10 l else if List.length l > 0 then b10 l else c10 l
+    b11 = λl → if List.length l > 11 then b10 l else if List.length l > 1 then c10 l else a10 l
+    c11 = λl → if List.length l > 11 then c10 l else if List.length l > 2 then a10 l else b10 l
+    a12 = λl → if List.length l > 12 then a11 l else if List.length l > 0 then b11 l else c11 l
+    b12 = λl → if List.length l > 12 then b11 l else if List.length l > 1 then c11 l else a11 l
+    c12 = λl → if List.length l > 12 then c11 l else if List.length l > 2 then a11 l else b11 l
+    a13 = λl → if List.length l > 13 then a12 l else if List.length l > 0 then b12 l else c12 l
+    b13 = λl → if List.length l > 13 then b12 l else if List.length l > 1 then c12 l else a12 l
+    c13 = λl → if List.length l > 13 then c12 l else if List.length l > 2 then a12 l else b12 l
+    a14 = λl → if List.length l > 14 then a13 l else if List.length l > 0 then b13 l else c13 l
+    b14 = λl → if List.length l > 14 then b13 l else if List.length l > 1 then c13 l else a13 l
+    c14 = λl → if List.length l > 14 then c13 l else if List.length l > 2 then a13 l else b13 l
+    a15 = λl → if List.length l > 15 then a14 l else if List.length l > 0 then b14 l else c14 l
+    b15 = λl → if List.length l > 15 then b14 l else if List.length l > 1 then c14 l else a14 l
+    c15 = λl → if List.length l > 15 then c14 l else if List.length l > 2 then a14 l else b14 l
+    a16 = λl → if List.length l > 16 then a15 l else if List.length l > 0 then b15 l else c15 l
+    b16 = λl → if List.length l > 16 then b15 l else if List.length l > 1 then c15 l else a15 l
+    c16 = λl → if List.length l > 16 then c15 l else if List.length l > 2 then a15 l else b15 l
+    a17 = λl → if List.length l > 17 then a16 l else if List.length l > 0 then b16 l else c16 l
+    b17 = λl → if List.length l > 17 then b16 l else if List.length l > 1 then c16 l else a16 l
+    c17 = λl → if List.length l > 17 then c16 l else if List.length l > 2 then a16 l else b16 l
+    a18 = λl → if List.length l > 18 then a17 l else if List.length l > 0 then b17 l else c17 l
+    b18 = λl → if List.length l > 18 then b17 l else if List.length l > 1 then c17 l else a17 l
+    c18 = λl → if List.length l > 18 then c17 l else if List.length l > 2 then a17 l else b17 l
+    a19 = λl → if List.length l > 19 then a18 l else if List.length l > 0 then b18 l else c18 l
+    b19 = λl → if List.length l > 19 then b18 l else if List.length l > 1 then c18 l else a18 l
+    c19 = λl → if List.length l > 19 then c18 l else if List.length l > 2 then a18 l else b18 l
+    a20 = λl → if List.length l > 20 then a19 l else if List.length l > 0 then b19 l else c19 l
+    b20 = λl → if List.length l > 20 then b19 l else if List.length l > 1 then c19 l else a19 l
+    c20 = λl → if List.length l > 20 then c19 l else if List.length l > 2 then a19 l else b19 l
+    a21 = λl → if List.length l > 21 then a20 l else if List.length l > 0 then b20 l else c20 l
+    b21 = λl → if List.length l > 21 then b20 l else if List.length l > 1 then c20 l else a20 l
+    c21 = λl → if List.length l > 21 then c20 l else if List.length l > 2 then a20 l else b20 l
+    a22 = λl → if List.length l > 22 then a21 l else if List.length l > 0 then b21 l else c21 l
+    b22 = λl → if List.length l > 22 then b21 l else if List.length l > 1 then c21 l else a21 l
+    c22 = λl → if List.length l > 22 then c21 l else if List.length l > 2 then a21 l else b21 l
+    a23 = λl → if List.length l > 23 then a22 l else if List.length l > 0 then b22 l else c22 l
+    b23 = λl → if List.length l > 23 then b22 l else if List.length l > 1 then c22 l else a22 l
+    c23 = λl → if List.length l > 23 then c22 l else if List.length l > 2 then a22 l else b22 l
+    a24 = λl → if List.length l > 24 then a23 l else if List.length l > 0 then b23 l else c23 l
+    b24 = λl → if List.length l > 24 then b23 l else if List.length l > 1 then c23 l else a23 l
+    c24 = λl → if List.length l > 24 then c23 l else if List.length l > 2 then a23 l else b23 l
+    xs = [ n, 2 ]
+    ys = List.push (a24 xs) 3
+    show ys
+
+
+main : Program
+main = Node.print (go 1)

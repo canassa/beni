@@ -1,0 +1,357 @@
+-- One function makes its own cell and nests an `if` 6 deep, the rest of the
+-- nesting in each arm; each first arm pushes onto the cell's list in place, each
+-- second stores a new list (#2599, `ownership-v3-kernel.md` §8 and §13 item 6).
+-- The cell's latest version after each `if` is the join of the arms' latest, so
+-- the joins nest 6 deep. Nothing reads an old list after a write: every push
+-- is accepted and runs in place. Before, each reading of the cell made the
+-- joins again, uncounted, and the walk passed its budget (depth 8 held 4.4 GB;
+-- `check_test.zig` has depths 8 to 10).
+import Debug
+import Io
+import List
+import Log exposing (Entry)
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+flag : Int → Bool
+flag n = Int.mod n 3 == 0
+
+
+pick : Int → Int
+pick n = Int.mod n 3
+
+
+sink : Entry → ⊤
+sink entry = Debug.log entry.message ⊤
+
+
+go : ⊤ → String
+go ⊤ =
+    c = Ref.make [ 0 ]
+    if flag 0 then
+        Ref.update c λl → List.push l 0
+        if flag 1 then
+            Ref.update c λl → List.push l 1
+            if flag 2 then
+                Ref.update c λl → List.push l 2
+                if flag 3 then
+                    Ref.update c λl → List.push l 3
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                else
+                    Ref.set c [ 3 ]
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+            else
+                Ref.set c [ 2 ]
+                if flag 3 then
+                    Ref.update c λl → List.push l 3
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                else
+                    Ref.set c [ 3 ]
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+        else
+            Ref.set c [ 1 ]
+            if flag 2 then
+                Ref.update c λl → List.push l 2
+                if flag 3 then
+                    Ref.update c λl → List.push l 3
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                else
+                    Ref.set c [ 3 ]
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+            else
+                Ref.set c [ 2 ]
+                if flag 3 then
+                    Ref.update c λl → List.push l 3
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                else
+                    Ref.set c [ 3 ]
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+    else
+        Ref.set c [ 0 ]
+        if flag 1 then
+            Ref.update c λl → List.push l 1
+            if flag 2 then
+                Ref.update c λl → List.push l 2
+                if flag 3 then
+                    Ref.update c λl → List.push l 3
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                else
+                    Ref.set c [ 3 ]
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+            else
+                Ref.set c [ 2 ]
+                if flag 3 then
+                    Ref.update c λl → List.push l 3
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                else
+                    Ref.set c [ 3 ]
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+        else
+            Ref.set c [ 1 ]
+            if flag 2 then
+                Ref.update c λl → List.push l 2
+                if flag 3 then
+                    Ref.update c λl → List.push l 3
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                else
+                    Ref.set c [ 3 ]
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+            else
+                Ref.set c [ 2 ]
+                if flag 3 then
+                    Ref.update c λl → List.push l 3
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                else
+                    Ref.set c [ 3 ]
+                    if flag 4 then
+                        Ref.update c λl → List.push l 4
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+                    else
+                        Ref.set c [ 4 ]
+                        if flag 5 then
+                            Ref.update c λl → List.push l 5
+                            Log.info "end"
+                        else
+                            Ref.set c [ 5 ]
+                            Log.info "end"
+    ints (Ref.get c)
+
+
+main : Program
+main = Io.run λ⊤ → Node.print (Log.withSink sink go)

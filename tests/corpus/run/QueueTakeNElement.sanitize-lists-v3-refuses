@@ -1,0 +1,2 @@
+# v3 refuses the push: the element `takeN` answers is the list the program reads after it (ownership-v3-kernel.md §3.4).
+18:17 list_still_used List.push

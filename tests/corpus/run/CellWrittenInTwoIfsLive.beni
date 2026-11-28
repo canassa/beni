@@ -1,0 +1,78 @@
+-- The live twins of CellWrittenInTwoIfs: a value taken out of the cell
+-- before the first `if`, between the two, or in an arm, and read after a
+-- later `if` writes the cell; a list that two `if`s pick and that a third
+-- writes. Each read sees the old value, so each write is refused.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+loanBefore : Int → String
+loanBefore n =
+    c = Ref.make [ 3, 4 ]
+    old = Ref.get c
+    if n > 7 then
+        Ref.update c λl → List.set l 0 18
+    if n > 2 then
+        Ref.update c λl → List.swap l 0 1
+    "${ints old} ${ints (Ref.get c)}"
+
+
+loanBetween : Int → String
+loanBetween n =
+    c = Ref.make [ 3, 4 ]
+    if n > 7 then
+        Ref.update c λl → List.set l 0 18
+    old = Ref.get c
+    if n > 2 then
+        Ref.update c λl → List.swap l 0 1
+    "${ints old} ${ints (Ref.get c)}"
+
+
+loanThird : Int → String
+loanThird n =
+    c = Ref.make [ 3, 4 ]
+    if n > 7 then
+        Ref.update c λl → List.set l 0 18
+    if n > 8 then
+        Ref.update c λl → List.set l 1 19
+    old = Ref.get c
+    if n > 2 then
+        Ref.update c λl → List.swap l 0 1
+    "${ints old} ${ints (Ref.get c)}"
+
+
+loanInArm : Int → String
+loanInArm n =
+    c = Ref.make [ 3, 4 ]
+    a = if n > 7 then [ 0 ] else Ref.get c
+    b = if n > 8 then [ 5 ] else a
+    if n > 1 then
+        Ref.update c λl → List.swap l 0 1
+    "${ints b} ${ints (Ref.get c)}"
+
+
+plain : Int → String
+plain n =
+    xs = [ 3, 4 ]
+    a = if n > 7 then [ 0 ] else xs
+    b = if n > 8 then [ 5 ] else a
+    c = if n > 1 then List.set xs 0 9 else xs
+    "${ints b} ${ints c}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ loanBefore 3
+        , loanBetween 3
+        , loanThird 3
+        , loanInArm 3
+        , plain 3
+        ]

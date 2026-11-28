@@ -1,0 +1,26 @@
+-- An `Int` read as a list through `Js.to`: the reading has a location (the
+-- list's array) that the value's own place does not have, so the answer is
+-- `unknown` over the value, never "holds nothing" (ownership-v3-kernel.md
+-- §3.4, *A cast*). Before, `ys` held no cell, the push of it was accepted,
+-- and in place it pushed onto `xs`, which is read after it.
+import Node exposing (Program)
+import Pun
+
+
+keep : Int → Int
+keep k = k
+
+
+go : Int → String
+go n =
+    xs = [ n, 2 ]
+    i : Int
+    i = Pun.conv xs
+    ys : List Int
+    ys = Pun.conv (keep i)
+    zs = List.push ys 9
+    "${String.fromInt (List.length zs)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print (go 1)

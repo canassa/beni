@@ -1,0 +1,1 @@
+Each write of a cell's contents is accepted and runs in place: nothing else holds the old contents, and a read of the cell after an update reads its new contents (ownership-v3-kernel.md §13). Its live twin is CellContentsInPlaceLive.

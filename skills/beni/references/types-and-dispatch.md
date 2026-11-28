@@ -98,7 +98,7 @@ import Dict exposing (Dict)
 
 
 pub letters : Dict Char Int
-letters = Dict.empty
+letters = Dict.empty ⊤
 ```
 
 ```beni

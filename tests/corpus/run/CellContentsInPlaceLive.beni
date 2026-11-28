@@ -1,0 +1,97 @@
+-- The live twins of `CellContentsInPlace` (`ownership-v3-kernel.md` §13): each
+-- write of a cell's contents here has another holder of the old contents, so
+-- each is refused. A loan taken before the update and read after it; a value
+-- stored in the cell and read after the cell's update; a value the cell was
+-- made with; a closure that captured a value taken out of the cell; a
+-- helper that answers the handle beside a number, a second name of it; one
+-- handle handed for two cells; and a fiber that reads a loan after a park
+-- while another updates the cell. Were a write accepted, the old holder would
+-- read the new contents in place.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+loan : ⊤ → String
+loan ⊤ =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    Ref.update r λxs → List.push xs 2
+    "${ints old} ${ints (Ref.get r)}"
+
+
+storedRead : ⊤ → String
+storedRead ⊤ =
+    xs = [ 1 ]
+    r = Ref.make [ 0 ]
+    Ref.set r xs
+    Ref.update r λys → List.push ys 2
+    "${ints xs} ${ints (Ref.get r)}"
+
+
+madeWith : ⊤ → String
+madeWith ⊤ =
+    xs = [ 1 ]
+    r = Ref.make xs
+    Ref.update r λys → List.push ys 2
+    "${ints xs} ${ints (Ref.get r)}"
+
+
+captured : ⊤ → String
+captured ⊤ =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    k = λ⊤ → ints old
+    Ref.update r λxs → List.push xs 2
+    k ⊤
+
+
+withCount : Ref (List Int) → Ref (List Int) × Int
+withCount r = ( r, 1 )
+
+
+renamed : ⊤ → String
+renamed ⊤ =
+    r = Ref.make [ 1 ]
+    ( s, _ ) = withCount r
+    old = Ref.get s
+    Ref.update r λxs → List.push xs 2
+    ints old
+
+
+both : Ref (List Int), Ref (List Int) → String
+both a b =
+    old = Ref.get b
+    Ref.update a λxs → List.push xs 2
+    ints old
+
+
+handedTwice : ⊤ → String
+handedTwice ⊤ =
+    r = Ref.make [ 1 ]
+    both r r
+
+
+parked : ⊤ → String
+parked ⊤ =
+    r = Ref.make [ 1 ]
+    reader = Task.spawn λ⊤ →
+        old = Ref.get r
+        Io.sleep 10
+        ints old
+    Io.sleep 1
+    Ref.update r λxs → List.push xs 2
+    Task.join reader
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ loan ⊤, storedRead ⊤, madeWith ⊤, captured ⊤, renamed ⊤, handedTwice ⊤, parked ⊤ ]

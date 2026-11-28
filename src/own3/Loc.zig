@@ -54,7 +54,26 @@ pub fn hits(c: u32, se: u32) bool {
     return c == se or c == all;
 }
 
-pub const LabelKind = enum(u4) { field, index, ctor_arg, elem, contents, row, member, env, slot };
+pub const LabelKind = enum(u4) { field, index, ctor_arg, elem, contents, row, member, env, slot, fslot };
+
+/// A record's field slot (kernel §11): the location of the slot that holds
+/// field `rank` of the record at the parent location, the cell that a record
+/// update writes in place. It is no step of the place graph: in a layout's
+/// `reps` it is the last word, a field step with `slot_bit` in its payload.
+pub const slot_bit: u32 = 1 << 27;
+
+pub fn slotLabel(rank: u32, cyc: bool) Label {
+    return .{ .kind = .fslot, .payload = @intCast(rank & (slot_bit - 1)), .cyc = cyc, .head = 0 };
+}
+
+fn slotRepWord(rank: u32) u32 {
+    return (Step{ .kind = .field, .payload = @intCast((rank & (slot_bit - 1)) | slot_bit) }).word();
+}
+
+fn isSlotRep(w: u32) bool {
+    const s = Step.fromWord(w);
+    return s.kind == .field and s.payload & slot_bit != 0;
+}
 
 /// One label of a location. `head` is the head of the place the step leaves
 /// (a `TypeId`, a tuple's arity, 0 for a record); `cyc` says that the label is
@@ -80,13 +99,21 @@ pub const Kind = enum(u8) {
     closure,
     /// A foreign value that does not cross: JavaScript's.
     @"opaque",
-    /// A cell (`Ref`, `Deferred`): its contents are never `own`.
+    /// A cell's handle (`Ref`, `Deferred`, `Fiber`): its contents are below it, at the step `◆` (kernel §13).
     cell,
+    /// A record's field slot (kernel §11): a record update writes it in place.
+    field,
 
+    /// Whether a location names every object below it. A list names its own
+    /// storage, a slot one field's, and a cell's handle its one array: what
+    /// each holds below is at locations of its own (kernel §11, §13).
     pub fn wide(k: Kind) bool {
-        return k != .list;
+        return k != .list and k != .field and k != .cell;
     }
 };
+
+/// `Table.holes`: per entry of a view, a wide entry of a coarser layout above it.
+pub const Holes = struct { read: []const u32, above: []const u32 };
 
 pub const Entry = struct {
     loc: u32,
@@ -101,12 +128,26 @@ pub const Proj = struct {
     child: PlaceId,
     /// Per entry of the child's layout: the entry of the parent's layout.
     up: []const u32,
-    /// Per entry of the parent's layout: the child's entries there, a run of `down`.
+    /// Per entry of the parent's layout, the child's entries there, a run of
+    /// `down` (`down_off`, one more than the parent's entries), when the
+    /// child's entries are at an eighth of the parent's or more. Else
+    /// sparse: `down_keys` names the entries of the parent that a child's
+    /// entry is at, ascending, and `down_off` has one more than it. A
+    /// projection of one field of a record of `n` fields is then the size of
+    /// the field's layout, not of the record's (research report 145).
+    down_keys: ?[]const u32,
     down_off: []const u32,
     down: []const u32,
 
     pub fn downOf(p: *const Proj, e: u32) []const u32 {
-        return p.down[p.down_off[e]..p.down_off[e + 1]];
+        const keys = p.down_keys orelse return p.down[p.down_off[e]..p.down_off[e + 1]];
+        const k = std.sort.lowerBound(u32, keys, e, struct {
+            fn order(x: u32, y: u32) std.math.Order {
+                return std.math.order(x, y);
+            }
+        }.order);
+        if (k == keys.len or keys[k] != e) return &.{};
+        return p.down[p.down_off[k]..p.down_off[k + 1]];
     }
 };
 
@@ -114,6 +155,21 @@ const LocKey = struct { parent: u32, label: u64 };
 const ProjKey = struct { place: u32, step: u32 };
 const PathKey = struct { parent: u32, step: u32 };
 const CoverKey = struct { sig: u32, of: u32 };
+const EntryKey = struct { layout: u32, loc: u32 };
+
+/// The units of one lookup in a hash table of the walk or of the location
+/// table (kernel §8): a lookup costs about four elements compared.
+pub const lookup_units = 4;
+
+/// The units of a scan or a copy of `n` words in a row (kernel §8): one, and
+/// one for each four words. A word of a run costs about a quarter of an
+/// element that a walk visits, measured on the corpus (research report 130).
+pub fn scanUnits(n: usize) u64 {
+    return 1 + n / 4;
+}
+
+/// A layout of at most this many entries is searched by a scan (`indexOf`).
+const small_layout = 16;
 
 pub const Path = struct {
     parent: u32,
@@ -155,6 +211,34 @@ pub const Table = struct {
     path_root: std.ArrayList(u32) = .empty,
 
     covers: std.AutoHashMapUnmanaged(CoverKey, []const u32) = .empty,
+    /// `holeBelow`'s answer for each place, a column by place: 0 not asked, 1 no, 2 yes.
+    hole_memo: std.ArrayList(u8) = .empty,
+    /// `familyBelow`'s answer for each place, as `hole_memo`.
+    family_memo: std.ArrayList(u8) = .empty,
+    /// The one place of every type variable (`Check.Mod.var_place`): any
+    /// other `var` place is a family's payload or a knot (`familyBelow`).
+    plain_var: u32 = none,
+    /// Per layout: the place it is the layout of, or `none` (a layout a
+    /// contract of another module was read into, the empty and the over layout).
+    layout_place: std.ArrayList(u32) = .empty,
+    /// `placeAt`'s answer for each (place, location) asked, `none` for no place.
+    place_at_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+    /// Per pair of layouts, `holes`' answer.
+    coarse: std.AutoHashMapUnmanaged(CoverKey, ?*const Holes) = .empty,
+    /// The entry of a location in a layout of more than `small_layout`
+    /// entries, by layout and location (`indexOf`): a lookup is one step,
+    /// not a scan of the layout.
+    entry_index: std.AutoHashMapUnmanaged(EntryKey, u32) = .empty,
+    /// The units of work that the table did so far (kernel §8): each step a
+    /// layout's visit takes, each entry of a projection, a path and a call
+    /// map it builds, and each location a call map's search climbs. The
+    /// module's budget counts them with the walks' (`Check.Mod.overBudget`).
+    units: u64 = 0,
+    /// Safe builds: the depth of the checks in progress that count no work
+    /// (kernel §9, `Check.Mod.quiet`). Such a check reads only what the
+    /// walk built: an entry it built would make the walk's own lookup of it
+    /// later a free one, which a release build, with no check, counts.
+    no_fill: u32 = 0,
     empty_layout: u32 = none,
     /// The layout of a place whose type has more locations than
     /// `max_layout_entries`: one summary location of a type variable. A walk
@@ -177,6 +261,10 @@ pub const Table = struct {
 
     pub fn deinit(t: *Table) void {
         const gpa = t.gpa;
+        t.hole_memo.deinit(gpa);
+        t.family_memo.deinit(gpa);
+        t.layout_place.deinit(gpa);
+        t.place_at_memo.deinit(gpa);
         t.loc_parent.deinit(gpa);
         t.loc_label.deinit(gpa);
         t.loc_summary.deinit(gpa);
@@ -192,7 +280,16 @@ pub const Table = struct {
         t.path_index.deinit(gpa);
         t.path_root.deinit(gpa);
         t.covers.deinit(gpa);
+        t.coarse.deinit(gpa);
+        t.entry_index.deinit(gpa);
         t.over.deinit(gpa);
+    }
+
+    /// Safe builds: the table is about to build an entry (a location, a
+    /// layout, a projection, a path, a map, a memo's answer); no check that
+    /// counts no work may (`no_fill`).
+    fn building(t: *const Table) void {
+        if (std.debug.runtime_safety and t.no_fill != 0) std.debug.panic("own3: a check that counts no work built an entry of the location table (kernel §9)", .{});
     }
 
     // ---- the location trie ---------------------------------------------------
@@ -200,6 +297,7 @@ pub const Table = struct {
     pub fn extend(t: *Table, parent: u32, label: Label) Allocator.Error!u32 {
         const got = try t.loc_index.getOrPut(t.gpa, .{ .parent = parent, .label = label.word() });
         if (got.found_existing) return got.value_ptr.*;
+        t.building();
         const id: u32 = @intCast(t.loc_parent.items.len);
         got.value_ptr.* = id;
         try t.loc_parent.append(t.gpa, parent);
@@ -252,10 +350,21 @@ pub const Table = struct {
     // ---- layouts ---------------------------------------------------------------
 
     pub fn addLayout(t: *Table, es: []const Entry) Allocator.Error!u32 {
+        t.building();
         const id: u32 = @intCast(t.layouts.items.len);
         try t.layouts.append(t.gpa, try t.arena.dupe(Entry, es));
         try t.reps.append(t.gpa, &.{});
+        try t.layout_place.append(t.gpa, none);
+        t.units +|= es.len;
+        if (es.len > small_layout) for (es, 0..) |e, i| try t.entry_index.put(t.gpa, .{ .layout = id, .loc = e.loc }, @intCast(i));
         return id;
+    }
+
+    /// The index of location `loc` in layout `id`, or `none`.
+    pub fn indexOf(t: *const Table, id: u32, loc: u32) u32 {
+        const es = t.layouts.items[id];
+        if (es.len <= small_layout) return indexOfLoc(es, loc);
+        return t.entry_index.get(.{ .layout = id, .loc = loc }) orelse none;
     }
 
     pub fn layoutEntries(t: *const Table, id: u32) []const Entry {
@@ -288,6 +397,179 @@ pub const Table = struct {
             .slot => .{ .kind = .slot, .payload = @intCast(s.payload & 0x7ffffff), .cyc = cyc, .head = head },
             .row, .level => .{ .kind = .row, .payload = 0, .cyc = cyc, .head = 0 },
         };
+    }
+
+    /// Safe builds (kernel §9, `Frame.checkPlaced`): whether the place that
+    /// `loc`'s labels reach from `place`, step by step, holds no cell:
+    /// true where a place on the way holds none at or below it (`holds` is
+    /// empty: `Maybe Int` where the reading has `Maybe (List a)`'s list), or
+    /// where the path names a slot, a row or a member of a cycle's deep
+    /// level, which other rules read (`slotsLost`, `cover`: a closed record
+    /// holds no field beyond those it names); false where `place` does not
+    /// have a step of it, or it reaches a place that holds a cell. It reads
+    /// the place graph only, and counts no work.
+    pub fn emptyAlong(t: *const Table, place: PlaceId, loc: u32, gpa: Allocator) Allocator.Error!bool {
+        var ls: std.ArrayList(u64) = .empty;
+        defer ls.deinit(gpa);
+        try t.labels(loc, &ls, gpa);
+        return t.emptyAlongLabels(place, ls.items, false);
+    }
+
+    /// `emptyAlong` of a path given as labels. With `cast` (a reader that
+    /// asks whether a type of a value says it can hold no cell where another
+    /// reading has one, `Frame.pairedLeaves`), a slot, a row, a deep level
+    /// and a wide place on the way say nothing (false), and a step the place
+    /// does not have says that it holds none (true).
+    pub fn emptyAlongLabels(t: *const Table, place: PlaceId, ls: []const u64, cast: bool) bool {
+        var p = place;
+        for (ls) |w| {
+            const l: Label = @bitCast(w);
+            if (t.places.holds(p).isEmpty()) return true;
+            if (l.cyc or l.kind == .fslot or l.kind == .member or l.kind == .row) return !cast;
+            if (cast and (t.places.kind(p) == .@"var" or t.places.kind(p) == .@"opaque")) return false;
+            const st = t.places.steps(p);
+            const next = for (st.steps, st.children) |s, c| {
+                if (s.kind == .level) continue;
+                const sl = t.stepLabel(p, s, false);
+                if (sl.kind == l.kind and sl.payload == l.payload) break c;
+            } else return cast;
+            p = next;
+        }
+        return t.places.holds(p).isEmpty();
+    }
+
+    /// The step of `place` that the label `w` of a location names, as
+    /// `placeAtWalk` finds it (and of the same type, where the label names
+    /// one: a constructor's argument, an opaque type's slot), or `null` (a
+    /// slot of a record, a row, a member or a step of a cycle's deep level,
+    /// or a label `place` has no step for). Counted.
+    pub fn stepOf(t: *Table, place: PlaceId, w: u64) ?Step {
+        const l: Label = @bitCast(w);
+        if (l.cyc or l.kind == .fslot or l.kind == .member or l.kind == .row) return null;
+        const st = t.places.steps(place);
+        t.units +|= st.steps.len;
+        for (st.steps) |s| {
+            if (s.kind == .level) continue;
+            const sl = t.stepLabel(place, s, false);
+            if (sl.kind == l.kind and sl.payload == l.payload and sl.head == l.head) return s;
+        }
+        return null;
+    }
+
+    /// The place that `loc`'s labels reach from `place`, step by step, or
+    /// null where `place` has no step of it, or the path names a slot, a row
+    /// or a member of a cycle's deep level, which no place step names.
+    /// Each answer is kept (`place_at_memo`); a walk of the labels is counted.
+    pub fn placeAt(t: *Table, place: PlaceId, loc: u32) Allocator.Error!?PlaceId {
+        const key: [2]u32 = .{ place.int(), loc };
+        if (t.place_at_memo.get(key)) |hit| return if (hit == none) null else @fromBackingInt(hit);
+        const got = try t.placeAtWalk(place, loc);
+        t.building();
+        try t.place_at_memo.put(t.gpa, key, if (got) |g| g.int() else none);
+        return got;
+    }
+
+    fn placeAtWalk(t: *Table, place: PlaceId, loc: u32) Allocator.Error!?PlaceId {
+        var ls: std.ArrayList(u64) = .empty;
+        defer ls.deinit(t.gpa);
+        try t.labels(loc, &ls, t.gpa);
+        t.units +|= scanUnits(ls.items.len);
+        var p = place;
+        for (ls.items) |w| {
+            const l: Label = @bitCast(w);
+            if (l.cyc or l.kind == .fslot or l.kind == .member or l.kind == .row) return null;
+            const st = t.places.steps(p);
+            t.units +|= st.steps.len;
+            p = for (st.steps, st.children) |s, c| {
+                if (s.kind == .level) continue;
+                const sl = t.stepLabel(p, s, false);
+                if (sl.kind == l.kind and sl.payload == l.payload) break c;
+            } else return null;
+        }
+        return p;
+    }
+
+    /// Whether `place` has a part of no location at or below it: a place on
+    /// the way that holds no cell (`Int`, `⊤`, `String`, `Maybe Int`'s
+    /// argument, a record's `Int` field, `List Int`'s elements), before a
+    /// type variable or an opaque type, which is a wide place and holds
+    /// whatever is below it. A value read at `place` through a cast can hold
+    /// a cell at such a part, where a reader finds `outside` (kernel §3.4,
+    /// research report 150). It reads the place graph; a cycle is visited
+    /// once, and each place's answer is kept.
+    pub fn holeBelow(t: *Table, place: PlaceId) Allocator.Error!bool {
+        const pi = place.int();
+        if (pi < t.hole_memo.items.len and t.hole_memo.items[pi] != 0) return t.hole_memo.items[pi] == 2;
+        var seen = try std.DynamicBitSetUnmanaged.initEmpty(t.gpa, t.places.count());
+        defer seen.deinit(t.gpa);
+        const b = try t.holeWalk(place, &seen);
+        t.building();
+        if (pi >= t.hole_memo.items.len) try t.hole_memo.appendNTimes(t.gpa, 0, @as(usize, t.places.count()) + 1 - t.hole_memo.items.len);
+        t.hole_memo.items[pi] = if (b) 2 else 1;
+        return b;
+    }
+
+    fn holeWalk(t: *Table, p: PlaceId, seen: *std.DynamicBitSetUnmanaged) Allocator.Error!bool {
+        if (t.places.holds(p).isEmpty()) return true;
+        switch (t.places.kind(p)) {
+            // A wide place: it holds every cell below it.
+            .@"var", .@"opaque" => return false,
+            .record, .tuple, .ctor, .list, .dict, .ref, .closure, .cross => {},
+        }
+        if (p.int() >= seen.capacity()) try seen.resize(t.gpa, @as(usize, t.places.count()) + 1, false);
+        if (seen.isSet(p.int())) return false;
+        seen.set(p.int());
+        const st = t.places.steps(p);
+        t.units +|= 1 + st.steps.len;
+        for (st.steps, st.children) |s, c| {
+            if (s.kind == .level) continue;
+            if (try t.holeWalk(c, seen)) return true;
+        }
+        return false;
+    }
+
+    /// Whether layout `id` is the layout of a place with no family below it
+    /// (`cover`): a layout no place was read into says nothing, and is not.
+    fn regularLayout(t: *Table, id: u32) Allocator.Error!bool {
+        if (id >= t.layout_place.items.len) return false;
+        const p = t.layout_place.items[id];
+        if (p == none) return false;
+        return !try t.familyBelow(@fromBackingInt(p));
+    }
+
+    /// Whether a family's payload, or a knot of a type with no name, is at or
+    /// below `place`: a `var` place that is not the one place of every type
+    /// variable (`plain_var`), or one with a step (`ownership-v2.md` §2.1, *A
+    /// family*). A cycle is visited once, and each place's answer is kept.
+    fn familyBelow(t: *Table, place: PlaceId) Allocator.Error!bool {
+        const pi = place.int();
+        if (pi < t.family_memo.items.len and t.family_memo.items[pi] != 0) return t.family_memo.items[pi] == 2;
+        var seen = try std.DynamicBitSetUnmanaged.initEmpty(t.gpa, t.places.count());
+        defer seen.deinit(t.gpa);
+        const b = try t.familyWalk(place, &seen);
+        t.building();
+        if (pi >= t.family_memo.items.len) try t.family_memo.appendNTimes(t.gpa, 0, @as(usize, t.places.count()) + 1 - t.family_memo.items.len);
+        t.family_memo.items[pi] = if (b) 2 else 1;
+        return b;
+    }
+
+    fn familyWalk(t: *Table, p: PlaceId, seen: *std.DynamicBitSetUnmanaged) Allocator.Error!bool {
+        if (p.int() >= seen.capacity()) try seen.resize(t.gpa, @as(usize, t.places.count()) + 1, false);
+        if (seen.isSet(p.int())) return false;
+        seen.set(p.int());
+        const st = t.places.steps(p);
+        t.units +|= 1 + st.steps.len;
+        if (t.places.kind(p) == .@"var" and (p.int() != t.plain_var or st.steps.len != 0)) return true;
+        for (st.children) |c| if (try t.familyWalk(c, seen)) return true;
+        return false;
+    }
+
+    /// `holeBelow` of the place that `loc` names from `place`; a path that
+    /// names no place (a slot, a row, a deep level, a step `place` does not
+    /// have) is a hole: nothing says what is there.
+    pub fn holeAt(t: *Table, place: PlaceId, loc: u32) Allocator.Error!bool {
+        const p = (try t.placeAt(place, loc)) orelse return true;
+        return t.holeBelow(p);
     }
 
     fn memberLabel(t: *const Table, m: PlaceId, k: Kind) Label {
@@ -326,6 +608,7 @@ pub const Table = struct {
         if (pi >= t.layout_of.items.len) try t.layout_of.appendNTimes(t.gpa, none, @as(usize, t.places.count()) + 1 - t.layout_of.items.len);
         const have = t.layout_of.items[pi];
         if (have != none) return have;
+        t.building();
         if (t.places.holds(place).isEmpty()) {
             t.layout_of.items[pi] = t.empty_layout;
             return t.empty_layout;
@@ -350,6 +633,7 @@ pub const Table = struct {
             const reps = try t.arena.alloc([]const u32, b.out.items.len);
             for (reps, b.rep_at.items) |*r, at| r.* = try t.arena.dupe(u32, b.rep_steps.items[at[0]..][0..at[1]]);
             t.reps.items[id] = reps;
+            t.layout_place.items[id] = pi;
         }
         t.layout_of.items[pi] = id;
         return id;
@@ -370,9 +654,29 @@ pub const Table = struct {
             return;
         }
         slot.* = .{ t.build_gen, @intCast(b.out.items.len) };
+        t.units +|= scanUnits(b.steps.items.len);
         try b.out.append(t.gpa, .{ .loc = loc, .kind = kind, .single = !t.loc_summary.items[loc] });
         try b.rep_at.append(t.gpa, .{ @intCast(b.rep_steps.items.len), @intCast(b.steps.items.len) });
         try b.rep_steps.appendSlice(t.gpa, b.steps.items);
+    }
+
+    /// The field slots of a record at `place`, at `loc` (kernel §11): one
+    /// location for each field the place names, the cell that an update of
+    /// that field writes. A field its row holds is the row's: the row's
+    /// location, a type variable, names every object below it. In the deep
+    /// level of a cycle (`cyc`) the slots of every record of the cycle that
+    /// name one field are one summary location, which is the pessimistic
+    /// side: two cells under one name.
+    fn addSlots(t: *Table, b: *Building, place: PlaceId, loc: u32, cyc: bool) Allocator.Error!void {
+        if (b.over or t.places.kind(place) != .record) return;
+        const st = t.places.steps(place);
+        t.units +|= st.steps.len * lookup_units;
+        for (st.steps) |s| {
+            if (s.kind != .field) continue;
+            try b.steps.append(t.gpa, slotRepWord(s.payload));
+            try t.addEntry(b, try t.extend(loc, slotLabel(s.payload, cyc)), .field);
+            _ = b.steps.pop();
+        }
     }
 
     /// A place reached by a step that does not stay in a cycle: `loc` is its own location.
@@ -387,11 +691,14 @@ pub const Table = struct {
         }
         if (objectKind(t.places.kind(place))) |k| {
             try t.addEntry(b, loc, k);
-            // What a cell holds is never `own`, and nothing is below a
-            // variable, a function or a foreign value.
-            if (k != .list) return;
+            // A list's elements and a cell's contents are below it (kernel
+            // §13); nothing is below a variable, a function or a foreign value.
+            if (k != .list and k != .cell) return;
         }
+        try t.addSlots(b, place, loc, false);
         const st = t.places.steps(place);
+        // Each step extends a location: a lookup.
+        t.units +|= st.steps.len * lookup_units;
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -405,9 +712,11 @@ pub const Table = struct {
         if (b.over) return;
         if (objectKind(t.places.kind(place))) |k| {
             try t.addEntry(b, loc, k);
-            if (k != .list) return;
+            if (k != .list and k != .cell) return;
         }
+        try t.addSlots(b, place, loc, false);
         const st = t.places.steps(place);
+        t.units +|= st.steps.len * (lookup_units + scanUnits(b.on_path.items.len - base));
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -428,6 +737,7 @@ pub const Table = struct {
     /// The deep level of the cycle of `place`, entered at the location `entry`: each member once.
     fn visitDeep(t: *Table, b: *Building, place: PlaceId, entry: u32) Allocator.Error!void {
         const scc = t.places.sccOf(place);
+        t.units +|= scanUnits(b.seen_scc.items.len);
         for (b.seen_scc.items) |x| if (x[0] == scc and x[1] == entry) return;
         try b.seen_scc.append(t.gpa, .{ scc, entry });
         const mbase = b.members.items.len;
@@ -437,13 +747,16 @@ pub const Table = struct {
 
     fn deepMember(t: *Table, b: *Building, m: PlaceId, entry: u32, mbase: usize) Allocator.Error!void {
         if (b.over) return;
+        t.units +|= scanUnits(b.members.items.len - mbase);
         if (std.mem.indexOfScalar(u32, b.members.items[mbase..], m.int()) != null) return;
         try b.members.append(t.gpa, m.int());
         if (objectKind(t.places.kind(m))) |k| {
             try t.addEntry(b, try t.extend(entry, t.memberLabel(m, k)), k);
-            if (k != .list) return;
+            if (k != .list and k != .cell) return;
         }
+        try t.addSlots(b, m, entry, true);
         const st = t.places.steps(m);
+        t.units +|= st.steps.len * lookup_units;
         for (st.steps, st.children) |s, c| {
             if (s.kind == .level) continue;
             try b.steps.append(t.gpa, s.word());
@@ -465,6 +778,14 @@ pub const Table = struct {
         var deep = false;
         if (in_cycle) try on_path.append(t.gpa, root.int());
         for (steps) |w| {
+            // A step: a child in the place graph, a location extended, a scan of the path.
+            t.units +|= lookup_units + scanUnits(on_path.items.len);
+            // A field slot ends a path (`addSlots`): the slot of the record at `cur`.
+            if (isSlotRep(w)) {
+                if (t.places.kind(cur) != .record) return null;
+                const rank = Step.fromWord(w).payload & (slot_bit - 1);
+                return try t.extend(if (deep) entry else loc, slotLabel(rank, deep));
+            }
             const s = Step.fromWord(w);
             const next = t.places.child(cur, s) orelse return null;
             if (in_cycle and t.places.sameComponent(cur, next)) {
@@ -512,6 +833,7 @@ pub const Table = struct {
     pub fn proj(t: *Table, place: PlaceId, s: Step) Allocator.Error!?*const Proj {
         const key: ProjKey = .{ .place = place.int(), .step = s.word() };
         if (t.proj_index.get(key)) |i| return if (i == none) null else t.projs.items[i];
+        t.building();
         const child = t.places.child(place, s) orelse {
             try t.proj_index.put(t.gpa, key, none);
             return null;
@@ -531,23 +853,64 @@ pub const Table = struct {
                 up[j] = none;
                 continue;
             };
-            up[j] = indexOfLoc(t.layoutEntries(pl), ploc);
+            up[j] = t.indexOf(pl, ploc);
         }
-        // The inverse: per entry of the parent, the child's entries there.
-        const down_off = try t.arena.alloc(u32, pn + 1);
-        const down = try t.arena.alloc(u32, cn);
-        var n: u32 = 0;
-        for (0..pn) |i| {
-            down_off[i] = n;
-            for (up, 0..) |u, j| if (u == i) {
-                down[n] = @intCast(j);
-                n += 1;
+        var at: usize = 0;
+        for (up) |u| {
+            if (u != none) at += 1;
+        }
+        if (at *| 8 >= pn) {
+            // The inverse: per entry of the parent, the child's entries there,
+            // in the order of the child's entries (a counting sort).
+            t.units +|= pn + cn;
+            const down_off = try t.arena.alloc(u32, pn + 1);
+            @memset(down_off, 0);
+            for (up) |u| if (u != none) {
+                down_off[u + 1] += 1;
             };
+            for (1..pn + 1) |i| down_off[i] += down_off[i - 1];
+            const n = down_off[pn];
+            const down = try t.arena.alloc(u32, n);
+            const fill = try t.gpa.alloc(u32, pn);
+            defer t.gpa.free(fill);
+            @memcpy(fill, down_off[0..pn]);
+            for (up, 0..) |u, j| if (u != none) {
+                down[fill[u]] = @intCast(j);
+                fill[u] += 1;
+            };
+            const id: u32 = @intCast(t.projs.items.len);
+            const pr = try t.arena.create(Proj);
+            pr.* = .{ .child = child, .up = up, .down_keys = null, .down_off = down_off, .down = down };
+            try t.projs.append(t.gpa, pr);
+            try t.proj_index.put(t.gpa, key, id);
+            return pr;
         }
-        down_off[pn] = n;
+        // Sparse: the parent's entries that a child's entry is at, and the
+        // child's entries there, in the order of the child's entries (a sort
+        // of the pairs; `Proj.down_keys`).
+        var pairs: std.ArrayList([2]u32) = .empty;
+        defer pairs.deinit(t.gpa);
+        for (up, 0..) |u, j| if (u != none) try pairs.append(t.gpa, .{ u, @intCast(j) });
+        std.mem.sort([2]u32, pairs.items, {}, struct {
+            fn lt(_: void, x: [2]u32, y: [2]u32) bool {
+                return x[0] < y[0] or (x[0] == y[0] and x[1] < y[1]);
+            }
+        }.lt);
+        t.units +|= @min(1 + cn + pairs.items.len, pn + cn);
+        const down = try t.arena.alloc(u32, pairs.items.len);
+        var keys: std.ArrayList(u32) = .empty;
+        var offs: std.ArrayList(u32) = .empty;
+        for (pairs.items, 0..) |pj, i| {
+            if (i == 0 or pairs.items[i - 1][0] != pj[0]) {
+                try keys.append(t.arena, pj[0]);
+                try offs.append(t.arena, @intCast(i));
+            }
+            down[i] = pj[1];
+        }
+        try offs.append(t.arena, @intCast(pairs.items.len));
         const id: u32 = @intCast(t.projs.items.len);
         const pr = try t.arena.create(Proj);
-        pr.* = .{ .child = child, .up = up, .down_off = down_off, .down = down[0..n] };
+        pr.* = .{ .child = child, .up = up, .down_keys = keys.items, .down_off = offs.items, .down = down };
         try t.projs.append(t.gpa, pr);
         try t.proj_index.put(t.gpa, key, id);
         return pr;
@@ -559,7 +922,9 @@ pub const Table = struct {
         const pi = place.int();
         if (pi >= t.path_root.items.len) try t.path_root.appendNTimes(t.gpa, none, @as(usize, t.places.count()) + 1 - t.path_root.items.len);
         if (t.path_root.items[pi] != none) return t.path_root.items[pi];
+        t.building();
         const n = t.layouts.items[try t.layoutOf(place)].len;
+        t.units +|= n;
         const ident = try t.arena.alloc(u32, n);
         for (ident, 0..) |*x, i| x.* = @intCast(i);
         const id: u32 = @intCast(t.paths.items.len);
@@ -572,11 +937,13 @@ pub const Table = struct {
     pub fn pathExtend(t: *Table, path: u32, s: Step) Allocator.Error!?u32 {
         const key: PathKey = .{ .parent = path, .step = s.word() };
         if (t.path_index.get(key)) |i| return if (i == none) null else i;
+        t.building();
         const p = t.paths.items[path];
         const pr = (try t.proj(p.place, s)) orelse {
             try t.path_index.put(t.gpa, key, none);
             return null;
         };
+        t.units +|= pr.up.len;
         const to_root = try t.arena.alloc(u32, pr.up.len);
         for (to_root, pr.up) |*x, u| x.* = if (u == none) none else p.to_root[u];
         const id: u32 = @intCast(t.paths.items.len);
@@ -609,44 +976,87 @@ pub const Table = struct {
         return y == a;
     }
 
-    /// Whether the type of layout `sig` has no object at the location `loc`
-    /// or below it, where `loc` is a location of another reading of the same
-    /// type position (a wider one: a type variable where `sig` has `Int`).
-    /// True only when the label paths can be compared: `loc` is of no deep
-    /// level, and no deep level of `sig` starts above it.
-    pub fn noObject(t: *const Table, sig: u32, loc: u32) bool {
-        if (t.deepEntry(loc) != none) return false;
-        for (t.layoutEntries(sig)) |s| {
-            // An entry at the location or below it, or a wide entry above it.
-            if (t.isPrefix(loc, s.loc)) return false;
-            if (s.kind.wide() and t.isPrefix(s.loc, loc)) return false;
-            // A deep level that starts above the location names cells at each depth.
-            const entry = t.deepEntry(s.loc);
-            if (entry != none and t.isPrefix(entry, loc)) return false;
+    /// Whether the cells at location `b` are cells at location `a` or below
+    /// it, where the two are locations of two readings of one type position:
+    /// `a` is `b` or above it, and a `row` label of `a` stands for each field
+    /// label at its place (a record keeps in its row the fields it does not
+    /// name). On the side of "yes": a row is read as holding every field,
+    /// named or not. Never used to say that two locations are apart.
+    pub fn within(t: *const Table, a: u32, b: u32) bool {
+        const da = t.loc_depth.items[a];
+        var y = b;
+        if (t.loc_depth.items[y] < da) return false;
+        while (t.loc_depth.items[y] > da) y = t.loc_parent.items[y];
+        var x = a;
+        while (x != y) {
+            const lx: Label = @bitCast(t.loc_label.items[x]);
+            const ly: Label = @bitCast(t.loc_label.items[y]);
+            if (lx.word() != ly.word() and !(lx.kind == .row and (ly.kind == .field or ly.kind == .row or ly.kind == .fslot))) return false;
+            x = t.loc_parent.items[x];
+            y = t.loc_parent.items[y];
         }
         return true;
     }
 
-    /// The entries of layout `sig` that are parts of the location `loc`,
-    /// where `loc` is a wide location of another reading of the same type
-    /// position (a type variable where `sig` has `List (List Int)`): each
-    /// cell below a wide location is a cell of it. `skip` is an entry that
-    /// the caller has already. An entry of a deep level that starts above
-    /// `loc` names cells at each depth, so it is one of them.
-    pub fn belowWide(t: *const Table, sig: u32, loc: u32, skip: u32, out: *std.ArrayList(u32), gpa: Allocator) Allocator.Error!void {
-        for (t.layoutEntries(sig), 0..) |s, i| {
-            if (i == skip) continue;
-            if (t.isPrefix(loc, s.loc) or t.startsAbove(s.loc, loc)) try out.append(gpa, @intCast(i));
-        }
-    }
-
-    /// Whether `deep` is a location of a deep level that starts at `loc` or above it.
-    pub fn startsAbove(t: *const Table, deep: u32, loc: u32) bool {
-        const entry = t.deepEntry(deep);
-        return entry != none and t.isPrefix(entry, loc);
-    }
-
     // ---- the call map ----------------------------------------------------------
+
+    /// Whether the signature's layout `sig` reads the region at or below the
+    /// location `entry`, where a deep level starts, through a type variable
+    /// or a row. If it does not, the type there is concrete: the caller's type
+    /// is the same type, with the same cycles and the same cells at each deep
+    /// location, and a label path names one set of cells in both. If it does,
+    /// a type argument can name the container again, at that variable or in a
+    /// cycle nested below it, and one deep location of the caller can hold
+    /// cells the signature names at several entries. No sample path decides
+    /// that, since a location can stand for several places: so it is the
+    /// pessimistic answer, and no match inside the deep level stands.
+    fn cycleWider(t: *Table, sig: u32, entry: u32) bool {
+        t.units +|= t.layoutEntries(sig).len;
+        for (t.layoutEntries(sig)) |s| if (s.kind == .@"var" and t.isPrefix(entry, s.loc)) return true;
+        return false;
+    }
+
+    /// Per entry `j` of `view`: `above`, the entry of `of` that holds its
+    /// cells when it is a wide entry strictly above `j`'s location (a
+    /// `Js.Value` read as a list of records, a type variable of a folded
+    /// payload), or `none`; and `read`, that entry where the call map
+    /// `cover(view, of)` puts it at another entry of `view`, so that a
+    /// reading through the map alone finds none of `j`'s cells. Null when
+    /// no entry has one. A reading of a value of layout `of` at `j` reads
+    /// `read[j]` too (the fallback is all of the wide entry), and where `j` is
+    /// a summary location its cells are no single place: the wide entry
+    /// cannot say which of them are at two of its places (kernel §3.4, §4.1,
+    /// §4.4). Kept for each pair; it costs the two maps (kernel §8).
+    pub fn holes(t: *Table, view: u32, of: u32) Allocator.Error!?*const Holes {
+        if (view == of) return null;
+        const key: CoverKey = .{ .sig = view, .of = of };
+        if (t.coarse.get(key)) |x| return x;
+        t.building();
+        const ves = t.layoutEntries(view);
+        const oes = t.layoutEntries(of);
+        // Per entry of `view`, the entry of `of` that holds its cells; and
+        // per entry of `of`, the entry of `view` that a reading puts it at.
+        const up = try t.cover(of, view);
+        const down = try t.cover(view, of);
+        t.units +|= scanUnits(up.len);
+        var x: ?*Holes = null;
+        for (ves, up, 0..) |ve, k, j| if (k < all and oes[k].kind.wide() and oes[k].loc != ve.loc) {
+            const h = x orelse blk: {
+                const h = try t.arena.create(Holes);
+                const read = try t.arena.alloc(u32, ves.len);
+                const above = try t.arena.alloc(u32, ves.len);
+                @memset(read, none);
+                @memset(above, none);
+                h.* = .{ .read = read, .above = above };
+                x = h;
+                break :blk h;
+            };
+            @constCast(h.above)[j] = k;
+            if (down[k] != j and down[k] != all) @constCast(h.read)[j] = k;
+        };
+        try t.coarse.put(t.gpa, key, x);
+        return x;
+    }
 
     /// Per entry of layout `of` (a caller's type), the entry of layout `sig`
     /// (a signature's type) that covers it: the same location, or a wide
@@ -661,16 +1071,51 @@ pub const Table = struct {
     pub fn cover(t: *Table, sig: u32, of: u32) Allocator.Error![]const u32 {
         const key: CoverKey = .{ .sig = sig, .of = of };
         if (t.covers.get(key)) |m| return m;
+        t.building();
         const se = t.layoutEntries(sig);
         const oe = t.layoutEntries(of);
         const m = try t.arena.alloc(u32, oe.len);
+        // A reading with the signature's own layout, of a place with no
+        // family below it: each location is the signature's, a deep level's
+        // included. A type with no family is regular, so a caller's graph is
+        // the callee's under the substitution (`ownership-v2.md` §2.1, *A
+        // family*), and the same place names the same cells in both (kernel
+        // §4.1, *A reading with the signature's own layout*). A family's
+        // payload names cells at every depth, so its place is no such fact.
+        if (sig == of and try t.regularLayout(sig)) {
+            t.units +|= scanUnits(oe.len);
+            for (m, 0..) |*x, e| x.* = @intCast(e);
+            try t.covers.put(t.gpa, key, m);
+            return m;
+        }
         const row: Label = .{ .kind = .row, .payload = 0, .cyc = false, .head = 0 };
         for (m, oe) |*x, e| {
             x.* = none;
             var a = e.loc;
+            // A location of a deep level names one cell of each member of the
+            // caller's cycle. Its label path in the signature names the
+            // signature's cycle, which can be smaller: a type argument that
+            // names the container again (`Tree2 T`, where `T` holds a
+            // `List (Tree2 T)`) puts places of the caller's cycle under a
+            // wide entry of the signature. Then one label path names two sets
+            // of cells, and no entry covers it (research report 125 §6).
+            // The climb to the root that `deepEntry` takes.
+            t.units +|= scanUnits(t.loc_depth.items[e.loc]);
+            const deep = t.deepEntry(e.loc);
+            const wider = deep != none and t.cycleWider(sig, deep);
+            // Every match the walk can take — the location itself, a wide
+            // entry above it, a row that holds its field — is one test: when
+            // the caller's cycle is wider, a signature entry inside the deep
+            // level names fewer cells than the caller's location holds.
+            var two_sets = false;
             while (true) {
-                const i = indexOfLoc(se, a);
+                t.units +|= 1;
+                const i = t.indexOf(sig, a);
                 if (i != none and (a == e.loc or se[i].kind.wide())) {
+                    if (wider and a != deep and t.isPrefix(deep, a)) {
+                        two_sets = true;
+                        break;
+                    }
                     x.* = i;
                     break;
                 }
@@ -678,8 +1123,12 @@ pub const Table = struct {
                 a = t.loc_parent.items[a];
                 // A field that the signature's record does not name is in its row.
                 if (t.find(a, row.word())) |r| {
-                    const ri = indexOfLoc(se, r);
+                    const ri = t.indexOf(sig, r);
                     if (ri != none) {
+                        if (wider and r != deep and t.isPrefix(deep, r)) {
+                            two_sets = true;
+                            break;
+                        }
                         x.* = ri;
                         break;
                     }
@@ -688,9 +1137,10 @@ pub const Table = struct {
             if (x.* != none or se.len == 0) continue;
             x.* = all;
             const entry = t.deepEntry(e.loc);
-            if (entry == none) continue;
+            if (entry == none or two_sets) continue;
             var one: u32 = none;
             var count: u32 = 0;
+            t.units +|= se.len;
             for (se, 0..) |s, i| if (s.kind.wide() and t.isPrefix(entry, s.loc)) {
                 one = @intCast(i);
                 count += 1;

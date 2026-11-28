@@ -1,0 +1,68 @@
+-- load
+<body>
+  <main>
+    <button id="keep">"keep"</button>
+    <button id="swap">"swap"</button>
+    <button id="bump2">"bump2"</button>
+    <p id="s">
+      "1a"
+      " "
+      "2b"
+      <!---->
+      " "
+      "3c"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #keep
+<body>
+  <main>
+    <button id="keep">"keep"</button>
+    <button id="swap">"swap"</button>
+    <button id="bump2">"bump2"</button>
+    <p id="s">
+      "1a"
+      " "
+      "2b"
+      <!---->
+      " "
+      "1a"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="keep">"keep"</button>
+    <button id="swap">"swap"</button>
+    <button id="bump2">"bump2"</button>
+    <p id="s">
+      "2b"
+      " "
+      "1a"
+      <!---->
+      " "
+      "1a"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #bump2
+<body>
+  <main>
+    <button id="keep">"keep"</button>
+    <button id="swap">"swap"</button>
+    <button id="bump2">"bump2"</button>
+    <p id="s">
+      "2b"
+      " "
+      "1001a"
+      <!---->
+      " "
+      "1a"
+      <!---->
+    </p>
+  </main>
+</body>

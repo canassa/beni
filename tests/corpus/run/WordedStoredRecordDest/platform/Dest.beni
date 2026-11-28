@@ -1,0 +1,10 @@
+--! A test platform: rows that store an item beside a `written returned`
+--! parameter that is no list at its root, into a list below the result's
+--! root, and put it there twice.
+
+--| JavaScript `(r, v) => { r.items = r.items.concat([v, v]); return r; }`.
+pub foreign pure intoRec : written returned { items : List a }, stored a → { items : List a }
+
+
+--| JavaScript `(n, v) => ({ items: [v, v] })`.
+pub foreign pure intoIntRec : written returned Int, stored a → { items : List a }

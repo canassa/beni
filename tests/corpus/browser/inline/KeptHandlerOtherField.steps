@@ -1,0 +1,4 @@
+element "root"
+click #rename
+click #pick
+click #rename

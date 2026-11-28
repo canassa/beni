@@ -1,0 +1,23 @@
+-- The cast row `returned a → b` (JavaScript `{a: a, b: []}`) handed to `List.map` as a
+-- function value, its answers read as `Int × List Int`: the list is at the `Int`.
+-- The row's cast reaches the holder only where the row casts by its types
+-- (ownership-v3-kernel.md §3.4, §6 rule 10).
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    hs : List (Int × List Int)
+    hs = List.map [ x0 ] Pun.wrapPair
+    h = Maybe.withDefault (List.head hs) ( 0, [] )
+    ( hq, _ ) = h
+    z : List Int
+    z = Pun.conv hq
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

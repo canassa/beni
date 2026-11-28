@@ -95,6 +95,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // lists in place, and not otherwise.
     options.ownership = true;
     options.records_in_place = build.records_in_place;
+    options.library = build.library;
 
     var session = Session.init(gpa, io, options) catch return fail(stderr, "beni: out of memory", .{});
     defer session.deinit();
@@ -103,6 +104,10 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // checking none (`ownership-v2.md` §7.3).
     if (build.sanitize_lists and !session.enforce_ownership) {
         return fail(stderr, "beni: --sanitize-lists needs a build that enforces ownership: an in-place platform, --ownership-everywhere or --records-in-place", .{});
+    }
+    // The in-place oracle edits only accepted writes, for the same reason.
+    if (build.lists_in_place and !session.enforce_ownership) {
+        return fail(stderr, "beni: --lists-in-place needs a build that enforces ownership: an in-place platform, --ownership-everywhere or --records-in-place", .{});
     }
 
     const summary = session.run(build.paths, Session.check_phases, stderr) catch |err| switch (err) {
@@ -154,6 +159,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .test_hooks = build.test_hooks,
         .sanitize_records = build.sanitize_records,
         .sanitize_lists = build.sanitize_lists,
+        .lists_in_place = build.lists_in_place,
         .schema_shapes = build.schema_shapes,
         .fuzz = build.fuzz,
         .points_to_largest = build.points_to_largest,

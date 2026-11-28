@@ -1,0 +1,1 @@
+The append of seed is accepted under v3 and runs in place: extended is its one reader, and the module loader evaluates it once (ownership-v3-kernel.md §7, *A constant read once*).

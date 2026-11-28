@@ -1,0 +1,30 @@
+-- A function that casts, captured by a lambda: `k = Pun.conv` reads the `Int`
+-- that `Pun.hide` made of `xs` back as a list. The lambda hands `k` a value of
+-- no location, so the holder's layout names nothing of what `k` answers, and
+-- v3 read the answer as a list nobody held and wrote it in place, while `xs`
+-- was read after (research report 158's second review, on the base too). A
+-- cast function's answer read at a location that is not wide is lost now
+-- (`ownership-v3-kernel.md` §3.4, *A cast function in a holder*): each push is
+-- refused.
+import List
+import Node exposing (Program)
+import Pun
+import String
+
+
+showL : List Int → String
+showL l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    xs = [ 1 ]
+    n = Pun.hide xs
+    k = Pun.conv
+    ys : List Int
+    ys = (λy → k y) n
+    zs = List.push ys 5
+    ws : List Int
+    ws = Maybe.withDefault (Maybe.map (Just n) λy → k y) []
+    vs = List.push ws 6
+    Node.print "${showL zs} ${showL vs} ${showL xs}"

@@ -1,0 +1,87 @@
+-- A cell's contents written in place where nothing else holds them
+-- (`ownership-v3-kernel.md` §13, #981, #2521): `Ref.update` hands its
+-- function the contents, which it writes, and the cell holds the answer; a
+-- `Ref.get` after reads the new contents, so no old value is read. A store
+-- renews the contents, a helper's update renews its caller's cell, and a
+-- branch that updates in one arm joins the two versions. Each line is the
+-- same in a plain, a sanitised and an in-place build.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+type alias Counter =
+    items : List Int
+    n : Int
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+pushed : ⊤ → String
+pushed ⊤ =
+    r = Ref.make [ 1, 2 ]
+    Ref.update r λxs → List.push xs 5
+    ints (Ref.get r)
+
+
+bump : Ref (List Int) → ⊤
+bump r = Ref.update r λxs → List.push xs 1
+
+
+twice : ⊤ → String
+twice ⊤ =
+    r = Ref.make [ 0 ]
+    bump r
+    bump r
+    ints (Ref.get r)
+
+
+stored : ⊤ → String
+stored ⊤ =
+    r = Ref.make [ 0 ]
+    Ref.set r [ 7 ]
+    Ref.update r λxs → List.push xs 8
+    ints (Ref.get r)
+
+
+taken : ⊤ → String
+taken ⊤ =
+    r = Ref.make [ 1 ]
+    old = Ref.modify r λxs → ( xs, [] )
+    "${ints (List.push old 2)} ${ints (Ref.get r)}"
+
+
+counted : ⊤ → String
+counted ⊤ =
+    r = Ref.make { items = [ 1 ], n = 0 }
+    Ref.update r λk → { k | items = List.push k.items 2, n = k.n + 1 }
+    c = Ref.get r
+    "${ints c.items} ${String.fromInt c.n}"
+
+
+keyed : ⊤ → String
+keyed ⊤ =
+    r = Ref.make (Dict.fromList [ ( 1, [ 1 ] ) ])
+    Ref.update r λd → Dict.insert d 2 [ 2 ]
+    String.fromInt (Dict.size (Ref.get r))
+
+
+branch : Bool → String
+branch c =
+    r = Ref.make [ 0 ]
+    if c then
+        Ref.set r [ 5 ]
+    else
+        ⊤
+    Ref.update r λxs → List.push xs 3
+    ints (Ref.get r)
+
+
+main : Program
+main =
+    Node.printLines
+        [ pushed ⊤, twice ⊤, stored ⊤, taken ⊤, counted ⊤, keyed ⊤, branch True, branch False ]

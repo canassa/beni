@@ -1,0 +1,19 @@
+-- The second module of CellWriterBeforeRenew: a callee of another
+-- module that forks a fiber, sleeps and stores, and one that runs a closure and
+-- sleeps.
+import Duration
+import Ref exposing (Ref)
+import Task
+
+
+pub forkSet : Ref (List Int), (⊤ → ⊤) → ⊤
+forkSet r w =
+    _ = Task.spawn w
+    Task.sleep (Duration.millis 5)
+    Ref.set r [ 9 ]
+
+
+pub runSleep : (⊤ → ⊤) → ⊤
+runSleep s =
+    s ⊤
+    Task.sleep (Duration.millis 5)

@@ -1,0 +1,1 @@
+Each of these rows of `core/` states the positions of what it puts in its new list, so the parts of a list pattern over it are apart and the update is written in place (ownership-v3-kernel.md §4.4, §6 rule 10).

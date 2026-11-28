@@ -1,0 +1,207 @@
+-- A callee can run a closure more than once within one call
+-- (`ownership-v3-kernel.md` §13 item 11, amended 2026-11-22): a closure
+-- that writes the contents of a cell it captured, then stores there a list
+-- it made and lets that list escape, writes the list in place on its next
+-- run, while the holder it escaped to still reads it. So each program here
+-- is refused: the list completes a `Deferred` (run by `List.map`, by a user
+-- helper and by `List.foldl`), a spawned fiber reads it after a sleep, a
+-- queue holds it in a record, a callee that makes it completes a
+-- `Deferred` with it, and the closure completes a `Deferred` with the
+-- cell's contents after it stores the list; and a closure whose first run
+-- stores one list it made at both parts of a pair, which no other holder
+-- has, or that puts one part's old list at both parts (its next run
+-- pushes onto the first part). Were the write accepted,
+-- each holder would read the second run's push.
+import Deferred exposing (Deferred)
+import Io
+import List
+import Node exposing (Program)
+import Queue exposing (Queue)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+twice : (⊤ → ⊤) → ⊤
+twice g =
+    g ⊤
+    g ⊤
+
+
+deferred : ⊤ → String
+deferred ⊤ =
+    r = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    g =
+        λu →
+            Ref.update r λxs → List.push xs 1
+            l = [ 7 ]
+            Ref.set r l
+            _ = Deferred.complete d l
+            u
+    _ = List.map [ ⊤, ⊤ ] g
+    ints (Deferred.wait d)
+
+
+helper : ⊤ → String
+helper ⊤ =
+    r = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    twice λ⊤ →
+        Ref.update r λxs → List.push xs 1
+        l = [ 7 ]
+        Ref.set r l
+        _ = Deferred.complete d l
+        ⊤
+    ints (Deferred.wait d)
+
+
+folded : ⊤ → String
+folded ⊤ =
+    r = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    n = List.foldl [ 1, 2 ] 0 λx k →
+        _ = Ref.modify r λxs → ( 1, List.push xs x )
+        l = [ 7 ]
+        Ref.set r l
+        _ = Deferred.complete d l
+        k + 1
+    "${String.fromInt n} ${ints (Deferred.wait d)}"
+
+
+spawned : ⊤ → String
+spawned ⊤ =
+    r = Ref.make [ 0 ]
+    g =
+        λu →
+            Ref.update r λxs → List.push xs 1
+            l = [ 7 ]
+            Ref.set r l
+            Task.spawn λ⊤ →
+                Io.sleep 5
+                ints l
+    fs = List.map [ ⊤, ⊤ ] g
+    String.join (List.map fs Task.join) " "
+
+
+queued : ⊤ → String
+queued ⊤ =
+    r = Ref.make [ 0 ]
+    q = Queue.unbounded ⊤
+    g =
+        λu →
+            Ref.update r λxs → List.push xs 1
+            l = [ 7 ]
+            Ref.set r l
+            _ = Queue.offer q { xs = l }
+            u
+    _ = List.map [ ⊤, ⊤ ] g
+    String.join (List.map (Queue.takeAll q) λo → ints o.xs) " "
+
+
+made : Deferred (List Int) → List Int
+made d =
+    l = [ 7 ]
+    _ = Deferred.complete d l
+    l
+
+
+calleeMade : ⊤ → String
+calleeMade ⊤ =
+    r = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    g =
+        λu →
+            Ref.update r λxs → List.push xs 1
+            Ref.set r (made d)
+            u
+    _ = List.map [ ⊤, ⊤ ] g
+    ints (Deferred.wait d)
+
+
+contents : ⊤ → String
+contents ⊤ =
+    r = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    g =
+        λu →
+            Ref.update r λxs → List.push xs 1
+            Ref.set r [ 7 ]
+            _ = Deferred.complete d (Ref.get r)
+            u
+    _ = List.map [ ⊤, ⊤ ] g
+    ints (Deferred.wait d)
+
+
+pairPart : ⊤ → String
+pairPart ⊤ =
+    r = Ref.make ( [ 0 ], [ 0 ] )
+    cnt = Ref.make 0
+    g =
+        λu →
+            Ref.update r λ( a, b ) → ( List.push a 1, b )
+            k = Ref.get cnt
+            Ref.set cnt (k + 1)
+            if k == 0 then
+                l = [ 7 ]
+                Ref.set r ( l, l )
+            u
+    _ = List.map [ ⊤, ⊤ ] g
+    v = Ref.get r
+    ints v.1
+
+
+oldPart : ⊤ → String
+oldPart ⊤ =
+    r = Ref.make ( [ 0 ], [ 0 ] )
+    cnt = Ref.make 0
+    g =
+        λu →
+            Ref.update r λ( a, b ) → ( List.push a 1, b )
+            k = Ref.get cnt
+            Ref.set cnt (k + 1)
+            if k == 0 then
+                Ref.update r λ( a, b ) → ( a, a )
+            u
+    _ = List.map [ ⊤, ⊤ ] g
+    v = Ref.get r
+    ints v.1
+
+
+otherPart : ⊤ → String
+otherPart ⊤ =
+    r = Ref.make ( [ 0 ], [ 0 ] )
+    g =
+        λu →
+            Ref.update r λ( a, b ) → ( List.push a 1, b )
+            k =
+                case Ref.get r of
+                    ( _, b ) →
+                        List.length b
+            Ref.update r λ( a, b ) → ( b, b )
+            k
+    ints (twice2 g)
+
+
+twice2 : (⊤ → Int) → List Int
+twice2 g = [ g ⊤, g ⊤ ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ deferred ⊤
+        , helper ⊤
+        , folded ⊤
+        , spawned ⊤
+        , queued ⊤
+        , calleeMade ⊤
+        , contents ⊤
+        , pairPart ⊤
+        , oldPart ⊤
+        , otherPart ⊤
+        ]

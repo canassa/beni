@@ -1,0 +1,26 @@
+-- Research report 150 §11's residual: a `Js.Value` inside a container cast at a type
+-- variable, in a frame whose own answer is that variable. `wrapV ( x0, x0 )` is the
+-- pair itself (`Js.from`), so `Just` of it has the type `Maybe Js.Value` and the pair
+-- as its part; `fromMaybeV` answers it at `b`, and the lambda answers that at its own
+-- variable. Its caller reads a pair whose second part is an `Int`: the list. The
+-- part is read as what it was made from now, so the lambda casts
+-- (ownership-v3-kernel.md §3.4, *What a value was made from*).
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    k = λ⊤ → Pun.fromMaybeV (Just (Pun.wrapV ( x0, x0 )))
+    h : List Int × Int
+    h = k ⊤
+    ( _, hq ) = h
+    z : List Int
+    z = Pun.conv hq
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

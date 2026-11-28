@@ -1,0 +1,5 @@
+# The live twins of CellParkedOutside (#2600): a body stores a top-level list, record or constructor's list in its cell and parks, while a writer fiber its caller spawned writes the contents in place: the top-level value changes. The body is a helper, a closure List.map or Task.scope runs, or a helper that waits on a Deferred. Each writer is refused.
+60:9 list_still_used value
+69:9 list_still_used value
+81:9 list_still_used value
+101:9 list_still_used value

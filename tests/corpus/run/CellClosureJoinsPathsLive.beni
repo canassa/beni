@@ -1,0 +1,184 @@
+-- A closure or a local function that stores into a cell it captured on
+-- some ways through its body only (`ownership-v3-kernel.md` §13 items 3, 6
+-- and 11): an `if` with no `else`, a `case` arm, the second operand of
+-- `&&`, a `?` before the store, two storing arms of which the first stores
+-- another cell's contents, a local function with a parameter, a helper
+-- that closes over its parameter's cell, record and `Dict` contents, a
+-- closure that stores and then updates, and a writer fiber that stores on
+-- one arm while a reader fiber holds a loan across a park. On the way
+-- that does not store, the cell still holds what `old` (or `s`) reads, so
+-- each later update in place is refused. Before, the capture's root was
+-- made where the body first named it, inside the arm or after the `?`, and
+-- the walk joined neither: the renewal named one way, and each update ran
+-- in place under the old holder.
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+apply : (⊤ → ⊤) → ⊤
+apply g = g ⊤
+
+
+bump : Ref (List Int) → Bool
+bump r =
+    Ref.set r [ 9 ]
+    True
+
+
+step : Bool → Result String ⊤
+step c = if c then Ok ⊤ else Err "x"
+
+
+modifyWith : Ref a, Bool, a → ⊤
+modifyWith r c v =
+    f = λ⊤ → if c then Ref.set r v else ⊤
+    f ⊤
+
+
+noElse : Bool → String
+noElse c =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    f = λ⊤ → if c then Ref.set r [ 9 ] else ⊤
+    f ⊤
+    Ref.update r λl → List.push l 5
+    ints old
+
+
+caseArm : Int → String
+caseArm k =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    f =
+        λ⊤ →
+            case k of
+                0 →
+                    Ref.set r [ 9 ]
+                _ →
+                    ⊤
+    f ⊤
+    Ref.update r λl → List.push l 5
+    ints old
+
+
+andArm : Bool → String
+andArm c =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    f = λ⊤ → c && bump r
+    _ = f ⊤
+    Ref.update r λl → List.push l 5
+    ints old
+
+
+early : Bool → String
+early c =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    f : ⊤ → Result String ⊤
+    f ⊤ =
+        step c?
+        Ref.set r [ 9 ]
+        Ok ⊤
+    _ = f ⊤
+    Ref.update r λl → List.push l 5
+    ints old
+
+
+firstArm : Int → String
+firstArm k =
+    r = Ref.make [ 1 ]
+    s = Ref.make (List.range 1 2)
+    t = Ref.make (List.range 3 4)
+    f =
+        λ⊤ →
+            case k of
+                0 →
+                    Ref.set r (Ref.get s)
+                1 →
+                    Ref.set r (Ref.get t)
+                _ →
+                    Ref.set r [ 7 ]
+    f ⊤
+    Ref.update r λl → List.push l 5
+    "${ints (Ref.get s)} ${ints (Ref.get t)}"
+
+
+localFn : Bool → String
+localFn c =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    setIt : Bool → ⊤
+    setIt d = if d then Ref.set r [ 9 ] else ⊤
+    setIt c
+    Ref.update r λl → List.push l 5
+    ints old
+
+
+helper : Bool → String
+helper c =
+    r = Ref.make (Dict.fromList [ ( 1, 1 ) ])
+    old = Ref.get r
+    modifyWith r c (Dict.empty ⊤)
+    Ref.update r λd → Dict.insert d 2 2
+    String.fromInt (Dict.size old)
+
+
+record : Bool → String
+record c =
+    r = Ref.make { items = [ 1 ], n = 0 }
+    old = Ref.get r
+    f = λ⊤ → if c then Ref.set r { items = [ 9 ], n = 1 } else ⊤
+    f ⊤
+    Ref.update r λx → { x | items = List.push x.items 5 }
+    ints old.items
+
+
+storeThenWrite : Bool → String
+storeThenWrite c =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    apply λ⊤ →
+        if c then Ref.set r [ 9 ] else ⊤
+        Ref.update r λl → List.push l 5
+    ints old
+
+
+fibers : Bool → String
+fibers c =
+    r = Ref.make [ 1 ]
+    a = Task.spawn λ⊤ →
+        old = Ref.get r
+        Io.sleep 5
+        ints old
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        if c then Ref.set r [ 9 ] else ⊤
+        Ref.update r λl → List.push l 5
+    Task.join b
+    Task.join a
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ noElse False
+        , caseArm 1
+        , andArm False
+        , early False
+        , firstArm 0
+        , localFn False
+        , helper False
+        , record False
+        , storeThenWrite False
+        , fibers False
+        ]

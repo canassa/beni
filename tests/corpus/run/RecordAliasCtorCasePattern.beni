@@ -1,0 +1,25 @@
+-- A `case` pattern by a record alias's constructor is a record pattern
+-- (ownership-v3-kernel.md §11.4): `P u v` binds the fields `p` and `q`.
+-- Both are `xs`, so the push of `u` writes the list that `v` reads after
+-- it, and v3 refuses it. Projected by the constructor's row, a step a
+-- record does not have, `u` held nothing and the push was accepted: in
+-- place `v` had 2 items.
+import Node exposing (Program)
+
+
+type alias P =
+    p : List Int
+    q : List Int
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    case { p = xs, q = xs } of
+        P u v →
+            w = List.push u 9
+            "${String.fromInt (List.length w)} ${String.fromInt (List.length v)}"
+
+
+main : Program
+main = Node.print (go 0)

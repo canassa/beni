@@ -1,0 +1,7 @@
+# The live twins of CellReaderHeld: the caller writes in place what a pending reader fiber still reads (the answered handle's contents, an answered loan, a loan stored in the caller's cell, a handle in a record, the list the cell was made with, its second cell). The fiber then reads the written list, so each write is refused (#2604).
+34:10 list_still_used List.push
+50:10 list_still_used List.push
+66:5 list_still_used call
+81:10 list_still_used List.push
+95:10 list_still_used List.push
+110:10 list_still_used List.push

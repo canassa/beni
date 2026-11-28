@@ -1,0 +1,2 @@
+# v3 refuses the push: `takeAt` answers an element of `outer` at `Int`, which has no location for it, so `x0` escapes at the call (ownership-v3-kernel.md §6 rule 10).
+15:22 list_still_used List.push

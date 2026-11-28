@@ -1,0 +1,2 @@
+# The callback answers the list it is handed, which is at two places of the argument: the elements of the result are one list twice (ownership-v3-kernel.md §4.4).
+25:12 list_still_used call

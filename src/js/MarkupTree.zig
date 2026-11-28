@@ -318,6 +318,113 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
     };
 }
 
+/// The `let_def` instructions whose values `lowering` keeps beyond the call
+/// of the function that made them (`Lowering.keeps_let`, `boundary.md`
+/// §9.4.8, *What a lowering keeps*): each `let` the tree moved into a root,
+/// when the lowering evaluates the root's values itself (`groups`) and says
+/// it keeps that one. Ascending; empty for a lowering that does not group.
+/// The ownership checker reads each as held by the root (kernel §6.14). It
+/// is a superset of what the emitter keeps: a root that the emitter does not
+/// group after all (`Lower.markupGrouped`) evaluates its `let`s in place.
+pub fn keptLets(arena: Allocator, built: *const Built, bir: *const Bir, lowering: *const m.Lowering) Allocator.Error![]const u32 {
+    if (!lowering.groups) return &.{};
+    var out: std.ArrayList(u32) = .empty;
+    for (built.tree.roots, 0..) |root, ri| {
+        if (root.lets.len == 0) continue;
+        const decl = built.root_decls[ri];
+        if (decl >= bir.decls.len) continue;
+        const d = bir.decls[decl];
+        for (0..root.lets.len) |k| {
+            if (!lowering.keeps_let(&built.tree, @fromBackingInt(@intCast(ri)), @intCast(k))) continue;
+            const lv = built.values[@backingInt(root.lets.at(@intCast(k)))].let_value;
+            try out.append(arena, bir.locals[d.locals_start + lv.local].inst.int());
+        }
+    }
+    std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+    return out.items;
+}
+
+/// The instructions of the handlers that `lowering` reads where their event
+/// fires (`Lowering.reads_handler_at_event`, `boundary.md` §9.4.8, *A
+/// handler read at the event*): of each root, every event of an element its
+/// markup reaches through elements and fragments, whose handler is an
+/// instruction of the root, that the lowering says it reads at the event.
+/// Ascending. The ownership checker reads each as a call made where the
+/// event fires only in a root that is the whole body of a function its
+/// module names only as a program's `view` (kernel §6 rule 12): the
+/// lowering's answer is for such a root.
+pub fn handlersAtEvent(arena: Allocator, built: *const Built, lowering: *const m.Lowering) Allocator.Error![]const u32 {
+    var out: std.ArrayList(u32) = .empty;
+    for (built.tree.roots, 0..) |root, ri| {
+        if (root.kind != .expression) continue;
+        try handlersBelow(arena, built, lowering, @fromBackingInt(@intCast(ri)), root.node, &out);
+    }
+    std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+    return out.items;
+}
+
+/// The instructions of the hole values that `lowering` evaluates at most
+/// once in each evaluation of the function a root is the body of
+/// (`Lowering.evaluates_hole_once`, `boundary.md` §9.4.8, *A hole evaluated
+/// once*): of each root, every hole its markup reaches through elements and
+/// fragments whose value is an instruction, that the lowering names.
+/// Ascending. The ownership checker reads each so only where the root is
+/// the whole body of a function, or an arm's markup of such a root's hole
+/// (kernel §6 rule 12, *A hole evaluated once*).
+pub fn holesOnce(arena: Allocator, built: *const Built, lowering: *const m.Lowering) Allocator.Error![]const u32 {
+    var out: std.ArrayList(u32) = .empty;
+    for (built.tree.roots, 0..) |root, ri| {
+        if (root.kind != .expression) continue;
+        try holesBelow(arena, built, lowering, @fromBackingInt(@intCast(ri)), root.node, &out);
+    }
+    std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+    return out.items;
+}
+
+fn holesBelow(arena: Allocator, built: *const Built, lowering: *const m.Lowering, ri: m.Root.Index, n: m.Node.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
+    const tree = &built.tree;
+    const children = switch (tree.kind(n)) {
+        .element => tree.element(n).children,
+        .fragment => tree.fragment(n).children,
+        else => return,
+    };
+    for (tree.childrenOf(children)) |c| {
+        if (tree.kind(c) == .hole) {
+            const inst = switch (built.values[@backingInt(tree.hole(c).value)]) {
+                .inst => |i| i,
+                .call => |c2| c2.inst,
+                else => continue,
+            };
+            if (lowering.evaluates_hole_once(tree, ri, c)) try out.append(arena, inst.int());
+            continue;
+        }
+        try holesBelow(arena, built, lowering, ri, c, out);
+    }
+}
+
+fn handlersBelow(arena: Allocator, built: *const Built, lowering: *const m.Lowering, ri: m.Root.Index, n: m.Node.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
+    const tree = &built.tree;
+    switch (tree.kind(n)) {
+        .element => {
+            const e = tree.element(n);
+            for (0..e.items.len) |k| {
+                const at: u32 = e.items.start + @as(u32, @intCast(k));
+                const it = tree.items[at];
+                if (it.kind != .event or it.value.kind != .dynamic) continue;
+                const v = it.value.dynamic orelse continue;
+                const inst = switch (built.values[@backingInt(v)]) {
+                    .inst => |i| i,
+                    else => continue,
+                };
+                if (lowering.reads_handler_at_event(tree, ri, at)) try out.append(arena, inst.int());
+            }
+            for (tree.childrenOf(e.children)) |c| try handlersBelow(arena, built, lowering, ri, c, out);
+        },
+        .fragment => for (tree.childrenOf(tree.fragment(n).children)) |c| try handlersBelow(arena, built, lowering, ri, c, out),
+        else => {},
+    }
+}
+
 const Builder = struct {
     arena: Allocator,
     in: Input,

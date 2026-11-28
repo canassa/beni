@@ -1,0 +1,7 @@
+# A tree that holds one record at three places: its parts carry no position, and the call that hands it to rootKids is refused (ownership-v3-kernel.md §4.4).
+56:25 list_still_used call
+56:25 list_still_used call
+56:25 record_still_used call
+56:25 record_still_used call
+56:25 record_still_used call
+56:25 record_still_used call

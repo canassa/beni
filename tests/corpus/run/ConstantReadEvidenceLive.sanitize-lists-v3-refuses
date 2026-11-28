@@ -1,0 +1,2 @@
+# The reader of seed has a where clause, so its body runs once per evidence, and the append is refused (ownership-v3-kernel.md §7, *A constant read once*).
+25:19 list_still_used ++

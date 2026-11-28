@@ -1,0 +1,18 @@
+--! Helpers that write the program's records in place, in a module of their
+--! own: the program's `update` calls them, and its `view` reads the fields
+--! they write.
+
+pub type alias Item =
+    n : Int
+    name : String
+
+
+--| One more, through a callback of `core/`.
+pub bump : Item → Item
+bump item =
+    Maybe.withDefault (Maybe.map (Just item) λi → { i | n = i.n + 1 }) { n = 0, name = "none" }
+
+
+--| Both items of any record that has them, renamed and counted.
+pub both : { r | a : Item, b : Item } → { r | a : Item, b : Item }
+both r = { r | a = { (r.a) | name = "A${String.fromInt r.a.n}" }, b = bump r.b }

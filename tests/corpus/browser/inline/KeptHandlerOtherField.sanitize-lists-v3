@@ -1,0 +1,1 @@
+A handler the runtime keeps reads the model's id alone: update writes label and n in place under --ownership=v3 (ownership-v3-kernel.md §6 rule 3).

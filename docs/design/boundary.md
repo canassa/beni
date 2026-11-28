@@ -1059,6 +1059,21 @@ and `browser-direct`'s manifest drops it. What a platform does owe instead:
 - **the direct row's obligations** that its runtime keeps: P1–P4 and P7, in
   `ownership-checker.md` §30.3 and `backend.md` §15.5's amendment of 2026-10-15.
 
+**Which ownership checker judges the chain's programs is `"ownership"`** (*added 2026-11-27, on the
+ownership checker v3's branch only, #2657*; [`ownership-v3-kernel.md`](ownership-v3-kernel.md)).
+`"ownership": "v3"` says that `check` and `build` of a program built for the chain judge its
+ownership with the checker v3 (`src/own3/`), as the hidden `--ownership=v3` does, and enforce
+what it refuses; a `--ownership=` flag still names the checker, and `dump` prints the one its flags
+name. Such a build writes in place each record update v3 accepted, with v3's reads read first
+(`Lower.Input.records_v3_plain`), as v1's build writes a clean module's (`ownership-checker.md`
+§31.10), and reads the per-module facts that v1's clean table gives (kernel §11, last paragraph); its
+refusals name neither the prototype nor the flag; its lists are written as every build without an oracle writes them. Under
+`--ownership=v3` on the command line, with no oracle flag, nothing is written in place: that build
+is the oracle's copying leg (`bench/ownership-sweeps/run.mjs`). v3 reads no cache and no block of
+the checked core, so these builds check core from source (*a cost, #2657*). No other value is accepted, and a chain that does not say it is judged by v1. Inherited
+first-found down the chain like every field (§9.1). `browser-inline` declares it
+(`Chain.ownershipV3`, `Session.Options.ownership_chosen`).
+
 **The entry file's named exports are part of that shape, and it is `"exports"`** (*added
 2026-10-20*, §9.12 (c)). A platform whose host finds code by the entry module's export names — a
 Durable Object class, under Cloudflare Workers — declares `"exports": "program"`: the entry file
@@ -2700,6 +2715,27 @@ handler the bare value, which is the defect 1.25 corrects; `inline` targets 1.25
 reads, conservatively true for unknown reads and for a program that is not a document. A lowering
 that targets 1.31 sees what it saw; `inline` targets 1.32.
 
+**Version 1.42** (*added 2026-11-14*, numbered 1.42 when master's 1.26–1.41 merged in; additive, gated on nothing; research report 134):
+`Lowering.keeps_let`, which `let`s of a grouped root (`Root.lets`) the lowering keeps beyond the call of
+the function that made them, and reads at a later call (§9.4.8, *What a lowering keeps*). Its default
+keeps every one, and the ownership checker refuses every write of a kept `let`. `dom` says which it
+keeps (`keepsLet`), `inline` that it keeps none (`keepsNoLet`). A lowering that does not set `keeps_let` is read as
+keeping every `let` its root evaluates.
+
+**Version 1.43** (*added 2026-11-27*, additive, gated on nothing; #2657): `Lowering.reads_handler_at_event`,
+whether the lowering reads an event's handler where the event fires, for a root that is the whole body of
+a function its module names only as a program's `view` (§9.4.8, *A handler read at the event*). Its
+default keeps every handler, and the ownership checker then reads the handler as a closure the runtime
+keeps. `inline` targets 1.43 and says it reads at the event each handler of an element its root reaches
+through elements and fragments alone, in a root with no `let`.
+
+**Version 1.45** (*added 2026-11-27*, additive, gated on nothing; #2729): `Program.HoleFacts.selector_group`
+of a `Show` keyed by identity — the read set of its payload's identity alone (`write-sets.md`, *a `Show`
+keyed by identity*) — where 1.19 gave it only for a branch hole. A key whose writes conflict with it may
+make the shown value another object, so a lowering that keeps no such value (§9.4.8) remounts the body at
+that key's pass. The field is handed to every lowering; one that targets 1.44 reads no selector of a `Show`, so it sees what it saw. `inline` targets 1.45 (`browser-inline.md`
+§8.2, amended 2026-11-27).
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
@@ -2793,7 +2829,9 @@ byte is cached (§9.6).
 *Added 2026-11-13, the owner's decision.* **The checker counts a `view`'s markup as holding none of
 the lists in its holes once the runtime has it. In return, every platform's runtime reads a hole's
 value only while it renders the markup that holds it, and keeps no list from a hole to read after
-that render.** The compiler cannot see a runtime's code, so it trusts this rule. Every platform that
+that render.** *Amended 2026-11-15 (research report 142): records are written in place, so the rule
+holds of a record as of a list: a runtime keeps no record from a hole to read, or to compare by
+identity, after the render (§9.4.4, *Skip on a record's identity*).* The compiler cannot see a runtime's code, so it trusts this rule. Every platform that
 renders markup must keep it, and a test for each one shows that it does (below).
 
 **The render.** A runtime renders a markup value from the time it has the value (the answer of a
@@ -2835,6 +2873,76 @@ A runtime that needs a value from one render in the next keeps a value that hold
 cannot, the compiler must not treat the program's lists as unshared; the rule is changed in this
 section first.
 
+*Amended 2026-11-27 (#2729): what `inline` kept and no longer keeps.* The `inline` runtime kept the value
+a `Show` keyed by identity showed, a record, to compare with the next pass's by `===`, and a `For` keyed
+by reference kept each item to match its rows — both of the kinds this section forbids, found when the
+build users get (records written in place where v3 accepts them) printed another page than the build that
+copies (`browser/inline/ShowAndBranches`). Now the `Show` keeps such a value only when it holds no record
+and no list, and otherwise remounts at a key whose write set may make it another object (§9.4.6 version
+1.45; `browser-inline.md` §8.2, amended 2026-11-27); the `For` is refused over items that are not
+primitive-`eq` (`browser-inline.md` §9, amended 2026-11-27). The tests are
+`browser/inline/ShowIdentityWrites` and `ShowAndBranches` (one page in every build) and
+`build/bad/inline/ForByReferenceRecord/`.
+
+**What a lowering keeps** (*added 2026-11-14*, research report 134). The rule above is the runtime's.
+A lowering that evaluates a root's values itself (`groups`, §9.4.6 version 1.5) can keep more: the
+`dom` root keeps a `let` that only the root reads, and evaluates it again only when a path it reads
+changed (`backend.md` §15.4, *The `let` rule*). A later render reads the value an earlier render made.
+**A lowering may keep a value of the program beyond the call that made it only when it says so**, or
+when the value's type is identity-safe (`Tree.identitySafe`: it holds no list and no record, so no cell
+of it is written in place). It says so through the interface: `Lowering.keeps_let` names each `let`
+of a root that it keeps, and its default is that it keeps every one. The ownership checker reads each
+kept `let` as held by the root: it escapes where it is bound, so no write of it, or of a cell it
+shares, runs in place (`ownership-v3-kernel.md` §5.3, §6.14). A `let` that the lowering makes again
+on every call, before anything reads it, is not kept: the `dom` root makes a `let` again on every render
+when it reads a path whose value is not identity-safe. The test is `browser/dom/KeptLetInPlace` and
+`browser/tea/KeptLetInPlace` (a `.sanitize-lists-v3-refuses` page: the push of a kept `let` is refused),
+and `browser/dom/KeptLetRemade` (its safe twin, written in place under the sanitiser).
+
+**A handler read at the event** (*added 2026-11-27*, #2657). The rule above lets a runtime keep an
+event's function and call it after `update` ran; then what the function captured is read late, and the
+checker counts it as escaped where the markup is made. A lowering that evaluates the handler where the
+event fires, from the values the `view` is handed then, keeps nothing of the render for it, and reads
+nothing late. It says so through the interface: `Lowering.reads_handler_at_event` names each event of a
+root, for a root that is the whole body of a function its module names only as the `view` of a program's
+record, whose handler it reads so wherever it writes that root — no closure made at a render, no
+argument of a helper's call and no `let` in a slot is kept for it. Its default is that it keeps every
+handler. The ownership checker reads such a handler as a call made where the event fires, whose message
+escapes (`ownership-v3-kernel.md` §6.12, *A handler read at the event*). `inline` reads at the event the
+handler of each element that the root reaches through elements and fragments alone, in a root with no
+`let`: its listener evaluates the message from the model the page holds, or from a piece's holders
+(`browser-inline.md` §8.3, §8.4). A row, an arm, a region, a `Show` body and a helper's markup keep the
+closure, or the arguments, of the render that made them. The tests are `browser/inline/KeptHandlerSameField`,
+`PointerInput`, `PieceHandler`, `PieceHandlerCell` and `PieceHandlerReplaced` (pages written in place
+under the sanitiser), and `browser/inline/KeptHandlerNamedTwice` (a `.sanitize-lists-v3-refuses` page:
+the `view` is named again in a helper, so its handler is kept).
+
+**A hole evaluated once** (*added 2026-11-27*, #2657; interface 1.44). A lowering may evaluate a hole's
+value where it renders, from the values the hole read (the `dom` lowering's block of a root's inputs,
+`backend.md` §15.4), and so evaluate it again, or later, from values read at an earlier evaluation; the
+checker therefore counts markup as holding every value a hole's evaluation reads. A lowering that
+evaluates a hole only as a part of one evaluation of the function the markup is in says so through the
+interface: `Lowering.evaluates_hole_once` names each hole of a root, for a root that is the whole body of
+a function, or the markup of an arm of an `if` or a `case` that is the value of a hole of such a root,
+whose value it evaluates, wherever it writes that root, **at most once in each evaluation of the
+function**, from the values that evaluation made or was handed, and never again from a value it read
+at an earlier evaluation. A helper's call in such a hole is made there, at most once, with its
+arguments evaluated there. Its default is `false` for every hole. When a hole's evaluation writes a cell
+in place, the old value of that cell is read again only by another evaluation of the hole, so the
+ownership checker does not count the markup as holding the values of which every cell the hole's own
+evaluation wrote at a call that is not pure and total (a pure, total value may still be evaluated in
+an arm not taken, or again at an event); the hole's value, and every value the evaluation read of a cell it did not write, it
+still holds (`ownership-v3-kernel.md` §6.12, *A hole evaluated once*). `inline` says so of each hole
+that the root reaches through elements and fragments alone, in a root with no `let`: it evaluates the
+hole in the binding function of its group, once on each pass that runs that function, and it evaluates
+again in that function each `let` and each helper's argument the hole reads (`browser-inline.md` §8.2,
+*Evaluation order*); a branch's arm is a root of its own, evaluated only when its value takes the arm,
+or, eagerly, for an arm whose values are proven pure and total (no list writer). A `For` row, a `Show`
+body and a component are not reached, and the `let`s of a root are memo nodes or values of one
+binding. The tests are `browser/inline/TotalCallBranchOwnership`, a page written in place under the
+sanitiser, and `browser/inline/HoleOnceDispatchLive` and `HoleOnceEagerArmsLive`, whose `Dict` inserts
+are pure and total and stay refused.
+
 **What the checker concludes from the rule** (`ownership-v3-kernel.md` §6.12, §6.13). The rule is
 about the runtime, so the checker uses it only where the program gives markup to the runtime:
 
@@ -2866,7 +2974,8 @@ weaken the rule:
 - the `dom` runtime runs `update` inside a render when removing a focused node fires `blur` there
   (Chrome), and then renders the old view's answer (#2502);
 - the `dom` lowering keeps a helper's `let` value, which can be a list, from one render to the next
-  (#2503);
+  (#2503); *since 2026-11-14 the lowering says so and the checker refuses every write of a kept
+  `let` (above, *What a lowering keeps*), so this is no longer a hole of the checker*;
 - a `For` keyed by reference over list or record items compares the kept old item by identity
   (#2504);
 - on the checker side, a markup value holds a hole's result where the `dom` lowering reads the
@@ -3530,6 +3639,20 @@ builds `{ t, c, v }` with `Js.object` — the identity, the type's `compare` as 
 `where` clause (`comparer`), the value — and `compare` orders two keys of different types by their
 identities with `Js.lt` (§4.2), under `Js.pure` as the sibling was `foreign pure`; two keys of one
 type go through the stored `compare` with `Js.apply`, read back at `Order`.
+
+*Amended 2026-11-17 (#2552, research report 154):* **a key does not carry its comparer.** `Hosted`
+keeps a private `Map` from a type identity to that type's `compare`, and `key` is its only writer: it
+stores `comparer k` (the `where` clause's evidence) under `k`'s identity and builds `{ t, v }`.
+`compare` reads the comparer of two keys of one identity from that map, never from a key, so it runs
+only a comparer `key` stored, whatever a `Key` value is or has become: a value made with `Js.to`, or a
+real key whose properties a platform's code overwrote, cannot hand it a function. An identity the map
+has no comparer for is a defect: `compare` stops the program, never answers. Storing a comparer is
+idempotent and seen only through `compare`, so the store is `Js.pure` and `key` stays `pure`; it is
+handed the comparer and the identity, never the key, so the key's value is held by the key alone.
+This is the fact `compare`'s ownership words rest on (`ownership-v3-kernel.md` §6 rule 10, *A
+platform's trusted row*): `compare : borrowed Key, borrowed Key → Order`. What it does not close is
+`Js.to`'s general hazard, which every type has: a platform can make a value whose reads run its own
+code (a getter, a proxy), and a key's `v` is read.
 
 A function the platform hands a body — every `Send` — is `impure`, so a release build never
 drops a send. When `Hosted` is written in beni, a typed adapter calls the supplied send through

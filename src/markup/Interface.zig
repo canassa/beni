@@ -127,7 +127,21 @@ const std = @import("std");
 /// module writes as pieces, under the constructors of the `Html.map`s around
 /// the root's call, for an event of that root whose message goes through the
 /// program's dispatcher (`browser-inline.md` §8.4, amended 2026-11-24).
-pub const version: Version = .{ .major = 1, .minor = 41 };
+/// Version 1.42 adds `Lowering.keeps_let`: which `let`s of a grouped root
+/// the lowering keeps beyond the call of the function that made them
+/// (`boundary.md` §9.4.8, *What a lowering keeps*).
+/// Version 1.43 adds `Lowering.reads_handler_at_event`: which events of a
+/// root the lowering reads the handler of where the event fires, from the
+/// values the root's function holds then (`boundary.md` §9.4.8, *A handler
+/// read at the event*).
+/// Version 1.44 adds `Lowering.evaluates_hole_once`: which holes of a root
+/// the lowering evaluates at most once in each evaluation of the function
+/// the root is the body of, and never again from what an earlier
+/// evaluation read (`boundary.md` §9.4.8, *A hole evaluated once*).
+/// Version 1.45: `Program.HoleFacts.selector_group` of a `Show` keyed by
+/// identity, the read set of its payload's identity alone (`boundary.md`
+/// §9.4.6, `write-sets.md` *a `Show` keyed by identity*).
+pub const version: Version = .{ .major = 1, .minor = 45 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -234,6 +248,50 @@ pub const Lowering = struct {
     /// chain that names it may prerender. False: a prerendering build is
     /// refused.
     prerenders: bool = false,
+    /// 1.42 (`boundary.md` §9.4.8, *What a lowering keeps*): whether the
+    /// lowering keeps the value of root `root`'s `k`-th `let` (`Root.lets`,
+    /// which it evaluates itself because it `groups`) beyond the call of
+    /// the function that made it, and reads it at a later call: a `let`
+    /// evaluated once and read on each render after. The ownership checker
+    /// reads each such value as held by a holder that it does not follow,
+    /// so no write of it, or of a cell it shares, runs in place. A `let`
+    /// evaluated again on every call, before anything reads it, is not
+    /// kept. **The default keeps every one**: a lowering that says nothing
+    /// is read on the side that refuses. A lowering that does not `groups`
+    /// evaluates no `let` of its own, and is not asked.
+    ///
+    /// Nothing else of the program may be kept beyond the call that made
+    /// it, except a value whose type is identity-safe (`Tree.identitySafe`:
+    /// immutable, so it holds no cell that can be written in place), and
+    /// what the platform rule of §9.4.8 lets a runtime keep.
+    keeps_let: *const fn (tree: *const Tree, root: Root.Index, k: u32) bool = keepsEveryLet,
+    /// 1.43 (`boundary.md` §9.4.8, *A handler read at the event*): whether,
+    /// for root `root`, when it is the whole body of a function that its
+    /// module names only as the `view` of a program's record, the lowering
+    /// reads the handler of event `item` (an index into `Tree.items`)
+    /// where the event fires, wherever it writes the root: it evaluates
+    /// the handler's value then, from the function's parameters as they
+    /// are then, and keeps no value of a render for it — no closure made at
+    /// a render, no argument of a helper's call, no `let` kept in a slot.
+    /// The ownership checker then reads the handler as a call made where
+    /// the event fires, whose message escapes, and not as a closure that
+    /// the runtime keeps. **The default is that the lowering keeps every
+    /// handler**: a lowering that says nothing is read on the side that
+    /// refuses.
+    reads_handler_at_event: *const fn (tree: *const Tree, root: Root.Index, item: u32) bool = keepsEveryHandler,
+    /// 1.44 (`boundary.md` §9.4.8, *A hole evaluated once*): whether, for
+    /// root `root`, when it is the whole body of a function or the markup of
+    /// an arm of an `if` or a `case` that is a hole's value of such a root,
+    /// the lowering evaluates the value of hole `node` at most once in each
+    /// evaluation of the function, wherever it writes the root: from the
+    /// values that evaluation made or was handed, never again from a value
+    /// it read at an earlier evaluation, and a helper's call in the hole is
+    /// made there, at most once, with its arguments evaluated there. The
+    /// ownership checker then reads the old value of a cell that the hole's
+    /// own evaluation wrote as read by nothing the markup keeps. **The
+    /// default is false**: the lowering may evaluate a hole again, or later,
+    /// from the values it read (the `dom` lowering's block of inputs).
+    evaluates_hole_once: *const fn (tree: *const Tree, root: Root.Index, node: Node.Index) bool = evaluatesNoHoleOnce,
 
     pub const Effects = struct {
         sub: []const u8,
@@ -264,6 +322,41 @@ pub const Lowering = struct {
         };
     };
 };
+
+/// 1.42: `Lowering.keeps_let`'s default: every `let` is kept.
+pub fn keepsEveryLet(tree: *const Tree, root: Root.Index, k: u32) bool {
+    _ = tree;
+    _ = root;
+    _ = k;
+    return true;
+}
+
+/// 1.43: `Lowering.reads_handler_at_event`'s default: every handler is kept
+/// from the render that made it.
+pub fn keepsEveryHandler(tree: *const Tree, root: Root.Index, item: u32) bool {
+    _ = tree;
+    _ = root;
+    _ = item;
+    return false;
+}
+
+/// 1.44: `Lowering.evaluates_hole_once`'s default: no hole is known to be
+/// evaluated once.
+pub fn evaluatesNoHoleOnce(tree: *const Tree, root: Root.Index, node: Node.Index) bool {
+    _ = tree;
+    _ = root;
+    _ = node;
+    return false;
+}
+
+/// 1.42: `Lowering.keeps_let` of a lowering that evaluates a `let` again in
+/// each piece of code that reads it, as a local of that code, and keeps none.
+pub fn keepsNoLet(tree: *const Tree, root: Root.Index, k: u32) bool {
+    _ = tree;
+    _ = root;
+    _ = k;
+    return false;
+}
 
 /// 1.6: a value of a module of the platform chain, by the module's name and
 /// its own.
@@ -529,7 +622,10 @@ pub const Program = struct {
         /// read set of choosing its arm alone — its scrutinee and the facts
         /// each arm is taken under, not what the arms' values read — as a
         /// group number, as `group` is. Null when the pass has none: then
-        /// choosing the arm is taken to read all of `group`.
+        /// choosing the arm is taken to read all of `group`. 1.45: of a
+        /// `Show` keyed by identity, the read set of its payload's identity
+        /// alone: a key whose writes conflict with it may make the payload
+        /// another object (`write-sets.md` §1.3).
         selector_group: ?u32 = null,
     };
 

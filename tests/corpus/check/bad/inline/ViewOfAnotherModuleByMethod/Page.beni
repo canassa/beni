@@ -1,0 +1,14 @@
+import Html exposing (Html)
+
+
+pub type Msg
+    = Got Int
+    | Bump
+
+
+pub type Item
+    = Item (List Int)
+
+
+pub show : Item, Int → Html Msg
+show it k = <div><button class="it" onClick={λ_ → Got k}>i</button></div>

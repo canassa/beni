@@ -1,0 +1,27 @@
+-- The record sanitiser compares a field's old and new value with
+-- `Object.is`, not `===` (research report 165, its review). `bump` writes
+-- `k` of `v` in place, and `v.x`, a NaN that no write changed, is read
+-- after: v3 accepts the write, and the sanitised build must not trap on
+-- the field it did not write (`NaN !== NaN`). The same test with `===`
+-- missed a field written from `0` to `-0`, which `1 / x` tells apart.
+import Node exposing (Program)
+
+
+type alias F =
+    x : Float
+    k : Int
+
+
+bump : F → F
+bump v = { v | k = v.k + 1 }
+
+
+go : ⊤ → List String
+go ⊤ =
+    v = { x = 0 / 0, k = 0 }
+    w = bump v
+    [ String.fromInt w.k, String.fromFloat v.x ]
+
+
+main : Program
+main = Node.printLines (go ⊤)

@@ -1,0 +1,76 @@
+-- load
+<body>
+  <main>
+    <button id="share">"share"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+    <p id="w2">
+      "2"
+      ":"
+      "b"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #share
+<body>
+  <main>
+    <button id="share">"share"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+    <p id="w2">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="share">"share"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "11"
+      ":"
+      "a"
+      <!---->
+    </p>
+    <p id="w2">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="share">"share"</button>
+    <button id="bump">"bump"</button>
+    <p id="w">
+      "21"
+      ":"
+      "a"
+      <!---->
+    </p>
+    <p id="w2">
+      "1"
+      ":"
+      "a"
+      <!---->
+    </p>
+  </main>
+</body>

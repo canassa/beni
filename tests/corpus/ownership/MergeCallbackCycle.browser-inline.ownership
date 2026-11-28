@@ -13,12 +13,12 @@ module MergeCallbackCycle
   summary onLeft: π3 RAW[storage], π3[*] A; res [*] ~π3[*], π3
   summary onBoth: res shared(MergeCallbackCycle.shared)
   summary onRight: π3 RA; res π3
-  summary sharedFromBoth: res [*] ~shared(MergeCallbackCycle.shared)[*], ~condition(fresh1) ~fresh1 ~shared(MergeCallbackCycle.shared)
-  summary sharedStart: res ~condition(fresh1) ~shared(MergeCallbackCycle.shared)
+  summary sharedFromBoth: π1 RE, π2 RE; res [*] ~shared(MergeCallbackCycle.shared)[*], ~fresh1 ~shared(MergeCallbackCycle.shared)
+  summary sharedStart: π1 RE, π2 RE; res ~shared(MergeCallbackCycle.shared)
   summary keepFirst: π4 RA; res π4
-  summary fine: res ~condition(fresh1) ~fresh1
+  summary fine: π1 RE, π2 RE; res ~fresh1
   summary onBothSum: π4 RAW[storage], π4[*] A; res [*] ~π4[*], π4
-  summary collect: res ~condition(fresh1) ~fresh1
+  summary collect: π1 RE, π2 RE; res ~fresh1
   demands 11: accepted 9 (fresh 3, call 0, param 2, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 2
 total 11: accepted 9 (fresh 3, call 0, param 2, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause top-level 1

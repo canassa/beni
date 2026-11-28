@@ -1,0 +1,51 @@
+-- Two keys of an identity `Hosted.key` never made, from a project's own
+-- platform layer (`boundary.md` §9.8.3, amended 2026-11-17): `Hosted.compare`
+-- has no comparer for it, and it stops the program with a defect, never an
+-- answer. The model's count before the defect stays on the page.
+import Cmd exposing (Cmd)
+import Evil
+import Hosted
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Inc
+    | Boom
+
+
+type alias Model =
+    n : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Inc →
+            ( { model | n = model.n + 1 }, Cmd.none )
+
+        Boom →
+            if Hosted.compare (Evil.forged [ 1 ]) (Evil.forged [ 2 ]) == LT then
+                ( { model | n = 100 }, Cmd.none )
+            else
+                ( { model | n = 200 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="n">{model.n}</p>
+        <button id="inc" onClick={Inc}>inc</button>
+        <button id="boom" onClick={Boom}>boom</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { n = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

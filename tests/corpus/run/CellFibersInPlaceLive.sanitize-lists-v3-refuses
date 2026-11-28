@@ -1,0 +1,25 @@
+# A fiber writes a cell in place while a value taken out of it is alive where another fiber can run (a loan the frame reads after a join, a loan a fiber holds across its park, a helper that does so, a loan a fiber answers, an update whose function runs other fibers, a helper handed a function that answers a loan or the cell, a generic helper handed the cell): refused (ownership-v3-kernel.md §13 item 12).
+30:9 list_still_used call
+30:9 list_still_used call
+30:9 list_still_used call
+30:9 list_still_used call
+30:9 list_still_used call
+31:5 list_still_used call
+31:5 list_still_used call
+42:9 list_still_used value
+52:9 list_still_used value
+59:5 list_still_used call
+60:5 list_still_used call
+60:5 list_still_used call
+73:9 list_still_used value
+85:9 list_still_used value
+96:9 list_still_used value
+100:9 list_still_used value
+119:11 list_still_used call
+119:11 list_still_used call
+138:11 list_still_used call
+138:11 list_still_used call
+154:11 list_still_used call
+154:11 list_still_used call
+167:11 list_still_used call
+167:11 list_still_used call

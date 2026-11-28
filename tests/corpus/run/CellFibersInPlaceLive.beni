@@ -1,0 +1,188 @@
+-- The live twins of `CellFibersInPlace` (`ownership-v3-kernel.md` §13 item
+-- 12, #981): a fiber writes the contents of a cell in place while a value
+-- taken out of the cell before is alive where another fiber can run, so
+-- each write is refused, with the copy fix. A loan the frame takes before it
+-- joins the writer and reads after; a writer that takes a loan, parks and
+-- reads it; a reader fiber that does so, spawned after the writer; a helper
+-- that does so; a writer whose answer, which `Task.join` hands back, is a
+-- loan; an update whose function runs other fibers while it holds the
+-- contents; a helper handed a function that answers a value taken out of
+-- the cell, or the cell, which it holds across its park; and a generic
+-- helper handed the cell at a type variable, which holds a value taken out
+-- of it, or hands it to a function that does. Were a write accepted, the
+-- loan would read it in place.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+joined : ⊤ → String
+joined ⊤ =
+    log = Ref.make [ 0 ]
+    old = Ref.get log
+    a = Task.spawn λ⊤ → Ref.update log λl → List.push l 1
+    Task.join a
+    ints old
+
+
+writerLoan : ⊤ → String
+writerLoan ⊤ =
+    log = Ref.make [ 0 ]
+    a = Task.spawn λ⊤ →
+        old = Ref.get log
+        Io.sleep 2
+        ints old
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    Task.join b
+    Task.join a
+
+
+readerLater : ⊤ → String
+readerLater ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    a = Task.spawn λ⊤ →
+        old = Ref.get log
+        Io.sleep 2
+        ints old
+    Task.join b
+    Task.join a
+
+
+peek : Ref (List Int) → String
+peek h =
+    old = Ref.get h
+    Io.sleep 2
+    ints old
+
+
+helper : ⊤ → String
+helper ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    got = peek log
+    Task.join b
+    got
+
+
+answered : ⊤ → String
+answered ⊤ =
+    log = Ref.make [ 0 ]
+    a = Task.spawn λ⊤ → Ref.get log
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    old = Task.join a
+    Task.join b
+    ints old
+
+
+switching : ⊤ → String
+switching ⊤ =
+    log = Ref.make [ 0 ]
+    a = Task.spawn λ⊤ →
+        Ref.update log λl →
+            Task.fromHost λ⊤ → ⊤
+            List.push l 1
+    b = Task.spawn λ⊤ → Ref.update log λl → List.push l 2
+    Task.join a
+    Task.join b
+    ints (Ref.get log)
+
+
+peekWith : (⊤ → List Int) → String
+peekWith g =
+    old = g ⊤
+    Io.sleep 2
+    ints old
+
+
+getter : ⊤ → String
+getter ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    got = peekWith λ⊤ → Ref.get log
+    Task.join b
+    got
+
+
+peekCell : (⊤ → Ref (List Int)) → String
+peekCell hx =
+    h = hx ⊤
+    old = Ref.get h
+    Io.sleep 2
+    ints old
+
+
+cellGetter : ⊤ → String
+cellGetter ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ →
+        Io.sleep 1
+        Ref.update log λl → List.push l 2
+    got = peekCell λ⊤ → log
+    Task.join b
+    got
+
+
+holdAt : a, (a → List Int) → String
+holdAt x g =
+    old = g x
+    Task.yieldNow ⊤
+    ints old
+
+
+generic : ⊤ → String
+generic ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ → Ref.update log λl → List.push l 2
+    got = holdAt log λh → Ref.get h
+    Task.join b
+    got
+
+
+withIt : a, (a → String) → String
+withIt x k = k x
+
+
+handedOn : ⊤ → String
+handedOn ⊤ =
+    log = Ref.make [ 0 ]
+    b = Task.spawn λ⊤ → Ref.update log λl → List.push l 2
+    got = withIt log λh →
+        old = Ref.get h
+        Task.yieldNow ⊤
+        ints old
+    Task.join b
+    got
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ joined ⊤
+        , writerLoan ⊤
+        , readerLater ⊤
+        , helper ⊤
+        , answered ⊤
+        , switching ⊤
+        , getter ⊤
+        , cellGetter ⊤
+        , generic ⊤
+        , handedOn ⊤
+        ]

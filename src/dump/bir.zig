@@ -399,6 +399,7 @@ const Dumper = struct {
     fn own2Row(d: *Dumper, decl_: Bir.Decl) !void {
         try d.ownRow("own", d.bir.extra[decl_.own_start..decl_.own_end]);
         try d.ownRow("own2", d.bir.extra[decl_.own2_start..decl_.own2_end]);
+        try d.ownRow3(d.bir.extra[decl_.own3_start..decl_.own3_end]);
     }
 
     fn ownRow(d: *Dumper, comptime label: []const u8, words: []const u32) !void {
@@ -409,6 +410,22 @@ const Dumper = struct {
             try d.w.writeAll(if (at == 0) " " else ", ");
             if (words[at] == Bir.own_result) try d.w.writeAll("res") else if (words[at] == Bir.own_type) try d.w.writeAll("type") else try d.w.print("π{d}", .{words[at] + 1});
             for (std.enums.values(Ast.OwnWord)) |w| {
+                if (words[at + 1] & w.bit() != 0) try d.w.print(" {t}", .{w});
+            }
+        }
+        try d.w.writeByte('\n');
+    }
+
+    /// `  own3 π2 position`: the words only the ownership checker v3 reads
+    /// (`Ast.OwnWord3`), when the signature has one.
+    fn ownRow3(d: *Dumper, words: []const u32) !void {
+        if (words.len == 0) return;
+        try d.w.writeAll("  own3");
+        var at: usize = 0;
+        while (at + 1 < words.len) : (at += 2) {
+            try d.w.writeAll(if (at == 0) " " else ", ");
+            if (words[at] == Bir.own_result) try d.w.writeAll("res") else try d.w.print("π{d}", .{words[at] + 1});
+            for (std.enums.values(Ast.OwnWord3)) |w| {
                 if (words[at + 1] & w.bit() != 0) try d.w.print(" {t}", .{w});
             }
         }

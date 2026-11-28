@@ -148,3 +148,20 @@ keeps xs ys =
     held = Js.read r
     last = [ …held, 1 ]
     List.length zs + List.length more + List.length last
+
+
+-- `same` reads both operands (`borrowed`): in place, a list kept from
+-- before a write is `===` to the written one, so a compare after the write
+-- is a read of the old list, rejected, whichever operand it is.
+sameAfterFirst : List Int → Bool
+sameAfterFirst xs =
+    kept = xs
+    ys = [ …xs, 1 ]
+    Js.same kept ys
+
+
+sameAfterSecond : List Int → Bool
+sameAfterSecond xs =
+    kept = xs
+    ys = [ …xs, 1 ]
+    Js.same ys kept

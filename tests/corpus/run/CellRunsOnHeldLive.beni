@@ -1,0 +1,198 @@
+-- The live twins of CellRunsOnHeld: each update writes a cell in place where
+-- code that runs on after a throw elsewhere can read it. A closure that
+-- `Task.spawn` started as a reader or a writer of the cell goes on to a
+-- holder that does not fork it (a helper that keeps it in a list a masked
+-- fiber runs); a function in which a writer fiber runs is answered by a
+-- wrapper that the frame masks, or run by a helper after a call that lends
+-- the fiber to another scheduler. On Node no throw happens here; each write
+-- in place, writer and hosting function is refused (ownership-v3-kernel.md
+-- §13 item 12, *A defect*, (d), *Down*, *Up* and *After such a call*; #2622).
+
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+-- Keeps the function in a list that a fiber runs inside a mask.
+stash : (⊤ → a) → ⊤
+stash g =
+    fs = [ g ]
+    _ = Task.spawn λ⊤ →
+        Task.uninterruptible λ⊤ →
+            List.foldl fs ⊤ λh _ →
+                _ = h ⊤
+                ⊤
+    ⊤
+
+
+wrap : (⊤ → a) → (⊤ → a)
+wrap g = λ⊤ → g ⊤
+
+
+hwrap : (⊤ → a) → (⊤ → a)
+hwrap g = wrap λ⊤ → g ⊤
+
+
+apply2 : ((⊤ → a) → a), (⊤ → a) → a
+apply2 g x = g x
+
+
+-- Runs its function parameter after a call that lends the fiber to another scheduler.
+lendThen : Task.Scheduler, (⊤ → a) → a
+lendThen s g =
+    Task.withScheduler s λ⊤ → Task.sleep (Duration.millis 1)
+    g ⊤
+
+
+-- Runs its two function parameters, one after the other.
+twoCalls : (⊤ → ⊤), (⊤ → a) → a
+twoCalls f g =
+    f ⊤
+    g ⊤
+
+
+-- Runs a list of functions, then its function parameter.
+runThenG : List (⊤ → ⊤), (⊤ → a) → a
+runThenG fs g =
+    List.foldl fs ⊤ λh _ → h ⊤
+    g ⊤
+
+
+hosting : ⊤ → String
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update r λl → List.push l 5
+    Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+-- A reader that `Task.spawn` started goes on into a helper's list.
+stashReader : ⊤ → String
+stashReader ⊤ =
+    r = Ref.make [ 1, 2 ]
+    rd =
+        λ⊤ →
+            Task.sleep (Duration.millis 5)
+            ints (Ref.get r)
+    t = Task.spawn rd
+    stash rd
+    Task.yieldNow ⊤
+    Ref.update r λl → List.push l 5
+    Task.join t
+
+
+-- The same with a writer.
+stashWriter : ⊤ → String
+stashWriter ⊤ =
+    r = Ref.make [ 1, 2 ]
+    wr =
+        λ⊤ →
+            Task.sleep (Duration.millis 5)
+            Ref.update r λl → List.push l 7
+            ints (Ref.get r)
+    t = Task.spawn wr
+    stash wr
+    Task.yieldNow ⊤
+    Ref.update r λl → List.push l 5
+    Task.join t
+
+
+-- A wrapper that answers a hosting function, masked.
+wrapMask : ⊤ → String
+wrapMask ⊤ = Task.uninterruptible (wrap hosting)
+
+
+-- The wrapper bound first.
+wrapLocal : ⊤ → String
+wrapLocal ⊤ =
+    w = wrap hosting
+    Task.uninterruptible w
+
+
+-- A wrapper of a wrapper.
+wrapTwice : ⊤ → String
+wrapTwice ⊤ = Task.uninterruptible (hwrap hosting)
+
+
+-- A local wrapper.
+wrapLambda : ⊤ → String
+wrapLambda ⊤ =
+    lw = λg → λ⊤ → g ⊤
+    Task.uninterruptible (lw hosting)
+
+
+-- The mask is a function value, and the wrapper its argument.
+wrapApplied : ⊤ → String
+wrapApplied ⊤ = apply2 Task.uninterruptible (wrap hosting)
+
+
+-- A helper runs a hosting function after it lends the fiber to another scheduler.
+lendThenHost : ⊤ → String
+lendThenHost ⊤ =
+    sc = Task.scheduler λ⊤ → ⊤
+    lendThen sc hosting
+
+
+-- A helper runs a hosting function after another function lends the fiber.
+twoCallsHost : ⊤ → String
+twoCallsHost ⊤ =
+    sc = Task.scheduler λ⊤ → ⊤
+    twoCalls (λ⊤ → Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)) hosting
+
+
+-- A helper runs a hosting function after a list of functions, one of
+-- which lends the fiber to another scheduler.
+listThenHost : ⊤ → String
+listThenHost ⊤ =
+    sc = Task.scheduler λ⊤ → ⊤
+    runThenG [ λ⊤ → Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1) ] hosting
+
+
+-- A fiber runs a captured function that lends it, then a captured hosting one.
+capturedThenHost : ⊤ → String
+capturedThenHost ⊤ =
+    sc = Task.scheduler λ⊤ → ⊤
+    lend = λ⊤ → Task.withScheduler sc λ⊤ → Task.sleep (Duration.millis 1)
+    h = λ⊤ → hosting ⊤
+    t = Task.spawn λ⊤ →
+        lend ⊤
+        h ⊤
+    Task.join t
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ fiber stashReader
+        , fiber stashWriter
+        , fiber wrapMask
+        , fiber wrapLocal
+        , fiber wrapTwice
+        , fiber wrapLambda
+        , fiber wrapApplied
+        , fiber lendThenHost
+        , fiber twoCallsHost
+        , fiber listThenHost
+        , fiber capturedThenHost
+        ]
+
+
+-- Each shape runs in a fiber of its own: in one frame, a call of a
+-- function that started a reader or a writer, and then one that can mask,
+-- is refused (#2653).
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t

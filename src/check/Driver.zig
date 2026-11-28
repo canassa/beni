@@ -74,6 +74,16 @@ hoists: []@import("../own/Hoists.zig").Table,
 /// v2's lowering channel per module (`own2/Hoists.zig`), written by the
 /// worker that checked it; empty unless `--ownership=v2`.
 channels: []@import("../own2/Hoists.zig").Table = &.{},
+/// v3's reads read first per module (`own3/Reads.zig`), written by the
+/// worker that checked it; empty unless `--ownership=v3`.
+hoist_reads: [][]const @import("../own3/Reads.zig").Read = &.{},
+/// Per module, whether v3 accepted every record update of it
+/// (`Check.records_in_place`), written by the worker that checked it; all
+/// false unless `--ownership=v3`.
+records_in_place: []bool = &.{},
+/// Per module, the calls at which v3 accepted a write of a record argument
+/// (`Check.record_calls`), written by the worker that checked it.
+record_calls: [][]const u32 = &.{},
 /// Per module, written by the worker that checked it before `finish`
 /// releases its dependents: whether an error reached it — its own (an
 /// earlier phase's, which quiets it, or its check's), or any dependency's,
@@ -466,8 +476,12 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
             const file = d.graph.moduleFile(m);
             const bir = d.artifacts.bir(file);
             const token_count: u32 = @intCast(d.artifacts.spans(file).len());
+            // Under `--ownership=v3` the entry's block is read last, in place
+            // of the module's walk (`ownership-v3-kernel.md` §7.1): a block
+            // that this session cannot read is a miss as the others are.
             if (loaded.hoists.verifyAgainstBir(bir, d.interner, &loaded.sidecar.table) and loaded.plan.verifyAgainstBir(bir, token_count) and
-                loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types))
+                loaded.plan.verifyTargets(m, bir, d.graph, d.interfaces, d.interner, d.types) and
+                (if (d.options.ownership3) |ctx| try @import("../own3/Enforce.zig").restore(ctx, d, m, loaded.ownership) else true))
                 return d.install(m, loaded);
             // A malformed or stale sidecar is a cache miss. Release the
             // entry here because the normal check below replaces it. The

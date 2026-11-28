@@ -1,0 +1,38 @@
+-- Two mutually recursive loops share a state that keeps a snapshot: `la`
+-- stores `acc.cur` at `snap`, `lb` writes `acc.cur`'s field (kernel §5 test
+-- 2, §11). The group answers `snap`, so the call that writes `cur.a` has it
+-- as another operand. In place the snapshot would see the write, "5 5",
+-- where the copying program prints "5 0". v3 refuses the call.
+import Node exposing (Program)
+
+
+type alias P =
+    a : Int
+    b : Int
+
+
+type alias S =
+    cur : P
+    snap : P
+
+
+la : Int, S → S
+la k acc =
+    if k > 2 then
+        acc
+    else
+        lb (k + 1) { acc | snap = acc.cur }
+
+
+lb : Int, S → S
+lb k acc =
+    if k > 2 then
+        acc
+    else
+        la (k + 1) { acc | cur = { (acc.cur) | a = acc.cur.a + 5 } }
+
+
+main : Program
+main =
+    r = la 1 { cur = { a = 0, b = 0 }, snap = { a = 0, b = 0 } }
+    Node.print "${String.fromInt r.cur.a} ${String.fromInt r.snap.a}"

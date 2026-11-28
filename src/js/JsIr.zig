@@ -36,6 +36,14 @@
 //! Statements and expressions share one node array and one `Tag` enum, the
 //! way `Ast` and `Bir` do; `Tag.isStatement` separates them, and `verify`
 //! checks that a statement never appears where an expression belongs.
+//!
+//! **A tree of statements, a DAG of expressions.** A statement has one
+//! parent. An expression may have several: lowering hands one node of a
+//! `case` subject to the decision tree's tests, to the patterns' reads and
+//! to an `as` binding or a variable arm, and `Spec`'s copies share leaves.
+//! A pass that rewrites a node in place rewrites it for every parent, so it
+//! may only make a rewrite true at each of them (`backend.md` §9, *Reading
+//! off*, amended for #2547; research report 152).
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;

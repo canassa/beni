@@ -1,0 +1,1 @@
+Fibers that each update one cell write its contents in place where no value taken out of the cell is alive across a call where another fiber can run (ownership-v3-kernel.md §13 item 12, #981). Its live twin is CellFibersInPlaceLive.

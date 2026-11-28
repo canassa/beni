@@ -118,6 +118,10 @@ pub fn ctor(env: Env, sig: Signature, ordinal: u32, ranks: []const u32) Error!Co
 /// A worded declaration's contract (§2.13.6), over the places of its
 /// signature at this use.
 pub fn fromWords(env: Env, sig: Signature) Error!Contract.Id {
+    // `copyof` of a record (`Record.copy`) is the ownership checker v3's
+    // (research report 142): v2 reads the declaration as the `foreign` with
+    // no word it was before, pessimistic with a `host` result (§2.10).
+    if (Env.has(sig.result_words, .copyof) and env.places.kind(sig.result) == .record) return pessimistic(env, @intCast(sig.params.len), true);
     var d: Draft = .{ .arity = @intCast(sig.params.len), .flags = .{ .returns = true, .words = true } };
     const r = try env.root(sig.result);
     d.flags.cross = !Slots.holdsAny(env.places, r);

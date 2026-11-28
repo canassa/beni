@@ -1,0 +1,405 @@
+-- `rot` rotates 60 list fields of a record on each recursive call, so its
+-- contract learns one written field a round, and each round walks a heavy
+-- body over a type of 1024 locations: about 6.5 s to check (research report
+-- 128 §5).
+import Io
+import List
+import Node exposing (Program)
+
+
+type alias T0 =
+    List Int
+
+
+type alias T1 =
+    T0 × T0
+
+
+type alias T2 =
+    T1 × T1
+
+
+type alias T3 =
+    T2 × T2
+
+
+type alias T4 =
+    T3 × T3
+
+
+type alias T5 =
+    T4 × T4
+
+
+type alias T6 =
+    T5 × T5
+
+
+type alias T7 =
+    T6 × T6
+
+
+type alias T8 =
+    T7 × T7
+
+
+type alias T9 =
+    T8 × T8
+
+
+type alias T10 =
+    T9 × T9
+
+
+mk1 : ⊤ → T1
+mk1 ⊤ = ( [ 1 ], [ 2 ] )
+
+
+mk2 : ⊤ → T2
+mk2 ⊤ = ( mk1 ⊤, mk1 ⊤ )
+
+
+mk3 : ⊤ → T3
+mk3 ⊤ = ( mk2 ⊤, mk2 ⊤ )
+
+
+mk4 : ⊤ → T4
+mk4 ⊤ = ( mk3 ⊤, mk3 ⊤ )
+
+
+mk5 : ⊤ → T5
+mk5 ⊤ = ( mk4 ⊤, mk4 ⊤ )
+
+
+mk6 : ⊤ → T6
+mk6 ⊤ = ( mk5 ⊤, mk5 ⊤ )
+
+
+mk7 : ⊤ → T7
+mk7 ⊤ = ( mk6 ⊤, mk6 ⊤ )
+
+
+mk8 : ⊤ → T8
+mk8 ⊤ = ( mk7 ⊤, mk7 ⊤ )
+
+
+mk9 : ⊤ → T9
+mk9 ⊤ = ( mk8 ⊤, mk8 ⊤ )
+
+
+mk10 : ⊤ → T10
+mk10 ⊤ = ( mk9 ⊤, mk9 ⊤ )
+
+
+step : T10, Int → T10
+step t n =
+    if n > 0 then
+        t
+    else
+        t
+
+
+type alias R =
+    a001 : List Int
+    a002 : List Int
+    a003 : List Int
+    a004 : List Int
+    a005 : List Int
+    a006 : List Int
+    a007 : List Int
+    a008 : List Int
+    a009 : List Int
+    a010 : List Int
+    a011 : List Int
+    a012 : List Int
+    a013 : List Int
+    a014 : List Int
+    a015 : List Int
+    a016 : List Int
+    a017 : List Int
+    a018 : List Int
+    a019 : List Int
+    a020 : List Int
+    a021 : List Int
+    a022 : List Int
+    a023 : List Int
+    a024 : List Int
+    a025 : List Int
+    a026 : List Int
+    a027 : List Int
+    a028 : List Int
+    a029 : List Int
+    a030 : List Int
+    a031 : List Int
+    a032 : List Int
+    a033 : List Int
+    a034 : List Int
+    a035 : List Int
+    a036 : List Int
+    a037 : List Int
+    a038 : List Int
+    a039 : List Int
+    a040 : List Int
+    a041 : List Int
+    a042 : List Int
+    a043 : List Int
+    a044 : List Int
+    a045 : List Int
+    a046 : List Int
+    a047 : List Int
+    a048 : List Int
+    a049 : List Int
+    a050 : List Int
+    a051 : List Int
+    a052 : List Int
+    a053 : List Int
+    a054 : List Int
+    a055 : List Int
+    a056 : List Int
+    a057 : List Int
+    a058 : List Int
+    a059 : List Int
+    a060 : List Int
+
+
+rot : R, T10, Int → R
+rot r t0 n =
+    t1 = step t0 1
+    t2 = step t1 2
+    t3 = step t2 3
+    t4 = step t3 4
+    t5 = step t4 5
+    t6 = step t5 6
+    t7 = step t6 7
+    t8 = step t7 8
+    t9 = step t8 9
+    t10 = step t9 10
+    t11 = step t10 11
+    t12 = step t11 12
+    t13 = step t12 13
+    t14 = step t13 14
+    t15 = step t14 15
+    t16 = step t15 16
+    t17 = step t16 17
+    t18 = step t17 18
+    t19 = step t18 19
+    t20 = step t19 20
+    t21 = step t20 21
+    t22 = step t21 22
+    t23 = step t22 23
+    t24 = step t23 24
+    t25 = step t24 25
+    t26 = step t25 26
+    t27 = step t26 27
+    t28 = step t27 28
+    t29 = step t28 29
+    t30 = step t29 30
+    t31 = step t30 31
+    t32 = step t31 32
+    t33 = step t32 33
+    t34 = step t33 34
+    t35 = step t34 35
+    t36 = step t35 36
+    t37 = step t36 37
+    t38 = step t37 38
+    t39 = step t38 39
+    t40 = step t39 40
+    t41 = step t40 41
+    t42 = step t41 42
+    t43 = step t42 43
+    t44 = step t43 44
+    t45 = step t44 45
+    t46 = step t45 46
+    t47 = step t46 47
+    t48 = step t47 48
+    t49 = step t48 49
+    t50 = step t49 50
+    t51 = step t50 51
+    t52 = step t51 52
+    t53 = step t52 53
+    t54 = step t53 54
+    t55 = step t54 55
+    t56 = step t55 56
+    t57 = step t56 57
+    t58 = step t57 58
+    t59 = step t58 59
+    t60 = step t59 60
+    t61 = step t60 61
+    t62 = step t61 62
+    t63 = step t62 63
+    t64 = step t63 64
+    t65 = step t64 65
+    t66 = step t65 66
+    t67 = step t66 67
+    t68 = step t67 68
+    t69 = step t68 69
+    t70 = step t69 70
+    t71 = step t70 71
+    t72 = step t71 72
+    t73 = step t72 73
+    t74 = step t73 74
+    t75 = step t74 75
+    t76 = step t75 76
+    t77 = step t76 77
+    t78 = step t77 78
+    t79 = step t78 79
+    t80 = step t79 80
+    t81 = step t80 81
+    t82 = step t81 82
+    t83 = step t82 83
+    t84 = step t83 84
+    t85 = step t84 85
+    t86 = step t85 86
+    t87 = step t86 87
+    t88 = step t87 88
+    t89 = step t88 89
+    t90 = step t89 90
+    t91 = step t90 91
+    t92 = step t91 92
+    t93 = step t92 93
+    t94 = step t93 94
+    t95 = step t94 95
+    t96 = step t95 96
+    t97 = step t96 97
+    t98 = step t97 98
+    t99 = step t98 99
+    t100 = step t99 100
+    if n ≤ 0 then
+        { r | a001 = List.push r.a001 1 }
+    else
+        rot
+            { a001 = r.a002
+            , a002 = r.a003
+            , a003 = r.a004
+            , a004 = r.a005
+            , a005 = r.a006
+            , a006 = r.a007
+            , a007 = r.a008
+            , a008 = r.a009
+            , a009 = r.a010
+            , a010 = r.a011
+            , a011 = r.a012
+            , a012 = r.a013
+            , a013 = r.a014
+            , a014 = r.a015
+            , a015 = r.a016
+            , a016 = r.a017
+            , a017 = r.a018
+            , a018 = r.a019
+            , a019 = r.a020
+            , a020 = r.a021
+            , a021 = r.a022
+            , a022 = r.a023
+            , a023 = r.a024
+            , a024 = r.a025
+            , a025 = r.a026
+            , a026 = r.a027
+            , a027 = r.a028
+            , a028 = r.a029
+            , a029 = r.a030
+            , a030 = r.a031
+            , a031 = r.a032
+            , a032 = r.a033
+            , a033 = r.a034
+            , a034 = r.a035
+            , a035 = r.a036
+            , a036 = r.a037
+            , a037 = r.a038
+            , a038 = r.a039
+            , a039 = r.a040
+            , a040 = r.a041
+            , a041 = r.a042
+            , a042 = r.a043
+            , a043 = r.a044
+            , a044 = r.a045
+            , a045 = r.a046
+            , a046 = r.a047
+            , a047 = r.a048
+            , a048 = r.a049
+            , a049 = r.a050
+            , a050 = r.a051
+            , a051 = r.a052
+            , a052 = r.a053
+            , a053 = r.a054
+            , a054 = r.a055
+            , a055 = r.a056
+            , a056 = r.a057
+            , a057 = r.a058
+            , a058 = r.a059
+            , a059 = r.a060
+            , a060 = r.a001
+            }
+            t100
+            (n - 1)
+
+
+mkR : ⊤ → R
+mkR ⊤ =
+    { a001 = [ 1 ]
+    , a002 = [ 2 ]
+    , a003 = [ 3 ]
+    , a004 = [ 4 ]
+    , a005 = [ 5 ]
+    , a006 = [ 6 ]
+    , a007 = [ 7 ]
+    , a008 = [ 8 ]
+    , a009 = [ 9 ]
+    , a010 = [ 10 ]
+    , a011 = [ 11 ]
+    , a012 = [ 12 ]
+    , a013 = [ 13 ]
+    , a014 = [ 14 ]
+    , a015 = [ 15 ]
+    , a016 = [ 16 ]
+    , a017 = [ 17 ]
+    , a018 = [ 18 ]
+    , a019 = [ 19 ]
+    , a020 = [ 20 ]
+    , a021 = [ 21 ]
+    , a022 = [ 22 ]
+    , a023 = [ 23 ]
+    , a024 = [ 24 ]
+    , a025 = [ 25 ]
+    , a026 = [ 26 ]
+    , a027 = [ 27 ]
+    , a028 = [ 28 ]
+    , a029 = [ 29 ]
+    , a030 = [ 30 ]
+    , a031 = [ 31 ]
+    , a032 = [ 32 ]
+    , a033 = [ 33 ]
+    , a034 = [ 34 ]
+    , a035 = [ 35 ]
+    , a036 = [ 36 ]
+    , a037 = [ 37 ]
+    , a038 = [ 38 ]
+    , a039 = [ 39 ]
+    , a040 = [ 40 ]
+    , a041 = [ 41 ]
+    , a042 = [ 42 ]
+    , a043 = [ 43 ]
+    , a044 = [ 44 ]
+    , a045 = [ 45 ]
+    , a046 = [ 46 ]
+    , a047 = [ 47 ]
+    , a048 = [ 48 ]
+    , a049 = [ 49 ]
+    , a050 = [ 50 ]
+    , a051 = [ 51 ]
+    , a052 = [ 52 ]
+    , a053 = [ 53 ]
+    , a054 = [ 54 ]
+    , a055 = [ 55 ]
+    , a056 = [ 56 ]
+    , a057 = [ 57 ]
+    , a058 = [ 58 ]
+    , a059 = [ 59 ]
+    , a060 = [ 60 ]
+    }
+
+
+main : Program
+main = Io.run λ⊤ →
+    r = rot (mkR ⊤) (mk10 ⊤) 3
+    Debug.log (String.fromInt (List.length r.a001)) ⊤
+    Node.done

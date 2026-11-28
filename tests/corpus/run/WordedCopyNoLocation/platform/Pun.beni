@@ -1,0 +1,12 @@
+--! A test platform: a value read at another type of the same JavaScript shape.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| JavaScript `(xs) => xs.slice()`: a new list of the same elements, as an `Int`.
+pub foreign pure copyAll : borrowed List a → copyof Int

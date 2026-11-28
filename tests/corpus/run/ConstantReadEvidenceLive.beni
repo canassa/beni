@@ -1,0 +1,43 @@
+-- A live twin of `ConstantReadOnce`: the reader has a `where` clause, so the
+-- backend makes it a memo per evidence, and its body runs once for each
+-- evidence it is read at (ownership-v3-kernel.md §7, *A constant read once*,
+-- `Mod.runsAtLoad`). v3 refuses the append: in place, the second and third
+-- runs would append to the list the first one wrote.
+import List
+import Node exposing (Program)
+import String
+
+
+type Foo
+    = Foo Int
+
+
+type Tag a
+    = Tag
+
+
+seed : List Int
+seed = List.range 1 2
+
+
+extended : List Int × Tag a
+    where a.eq : a, a → Bool
+extended = ( seed ++ [ 3 ], Tag )
+
+
+same : Tag a, a → Bool
+    where a.eq : a, a → Bool
+same _ x = x == x
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main =
+    ( l1, t1 ) = extended
+    ( l2, t2 ) = extended
+    ( l3, t3 ) = extended
+    ok = same t1 1 && same t2 (Foo 1) && same t3 2
+    Node.printLines [ show l1, show l2, show l3, if ok then "eq" else "ne" ]

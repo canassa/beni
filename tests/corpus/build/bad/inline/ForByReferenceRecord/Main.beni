@@ -1,0 +1,54 @@
+-- A `For` keyed by reference over records (browser-inline.md §9, amended
+-- 2026-11-27): the runtime would match the rows by keeping each record and
+-- comparing its identity, which an update that writes the record in place
+-- keeps where a copy makes another, so the page would show another thing
+-- in the build users get than in the one that copies (`boundary.md`
+-- §9.4.8). Class 1 (§5), refused at the `For`, naming a key function and
+-- position. Over a `String`, a number, a `Char`, a `Bool` or an `Order`,
+-- identity is the value, and the same `For` builds (`browser/inline/ForShapes`).
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Rename
+
+
+type alias Row =
+    id : Int
+    name : String
+
+
+type alias Model =
+    rows : List Row
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Rename →
+            { model
+                | rows =
+                    List.map model.rows λr → if r.id == 1 then { r | name = r.name ++ "!" } else r
+            }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="rename" onClick={Rename}>rename</button>
+        <ul>
+            <For each={model.rows} keyed>
+                {λr → <li>{r.name}<input id={"in" ++ String.fromInt r.id} /></li>}
+            </For>
+        </ul>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { rows = [ { id = 1, name = "Ada" }, { id = 2, name = "Bob" } ] }
+        , update = update
+        , view = view
+        }

@@ -1,0 +1,1 @@
+v3 reads a field that a call writes in place before the call (ownership-v3-kernel.md §11 item 10, *a call that writes a record it was handed*): the arm `#tuple` reads the count `said` writes, and carries the old one.

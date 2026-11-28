@@ -1,0 +1,23 @@
+-- The live twin of `ConstantReadOnce`: the one reader of `seed` is a
+-- function, which runs each time it is called, so `seed` is no reader's own
+-- (ownership-v3-kernel.md §7, *A constant read once*) and v3 refuses the
+-- append. In place, the second call would answer `1,2,3,4`.
+import List
+import Node exposing (Program)
+import String
+
+
+seed : List Int
+seed = List.range 1 2
+
+
+extended : Int → List Int
+extended n = seed ++ [ n ]
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main = Node.printLines [ show (extended 3), show (extended 4) ]

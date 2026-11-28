@@ -1,0 +1,243 @@
+-- The live twins of `CellClosureWrites` (`ownership-v3-kernel.md` §13 item
+-- 11): a closure writes the contents of a cell it captured, and another
+-- holder reads the old contents, so each write is refused. A value taken out
+-- of the cell before a direct call and read after; the same, the closure
+-- handed to a function; a function handed the handle and the closure, which
+-- reads its own loan after calling it; a value taken out of the cell handed
+-- beside the closure; a closure that captured a value taken out of the cell
+-- and reads it after its own update; a closure that may never run, whose
+-- store the maker must not trust before its own update; a closure called
+-- inside an update of the same cell; a closure in a list; one captured by
+-- another closure that reads a loan after calling it; one handed to the
+-- frame's own function parameter; one in a spawned fiber; and a list a
+-- closure stores in the cell and answers too, which the maker updates;
+-- and a closure that a callee runs again while it holds what an earlier
+-- run answered, stored in a cell it handed, or stored and answered.
+-- Were a write accepted, the old holder would read the new contents in
+-- place.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+apply : (⊤ → ⊤) → ⊤
+apply f = f ⊤
+
+
+applyInt : (⊤ → Int) → Int
+applyInt f = f ⊤
+
+
+applyList : (⊤ → List Int) → List Int
+applyList f = f ⊤
+
+
+never : (⊤ → ⊤) → ⊤
+never _ = ⊤
+
+
+reenter : Ref (List Int), (⊤ → ⊤) → Int
+reenter r f =
+    v = Ref.get r
+    f ⊤
+    List.length v
+
+
+hold : List Int, (⊤ → ⊤) → Int
+hold v f =
+    f ⊤
+    List.length v
+
+
+direct : ⊤ → Int
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    old = Ref.get r
+    c = λ⊤ → Ref.update r λxs → List.push xs 1
+    c ⊤
+    List.length old
+
+
+handed : ⊤ → Int
+handed ⊤ =
+    r = Ref.make [ 0 ]
+    old = Ref.get r
+    apply λ⊤ → Ref.update r λxs → List.push xs 1
+    List.length old
+
+
+sameCell : ⊤ → Int
+sameCell ⊤ =
+    r = Ref.make [ 0 ]
+    reenter r λ⊤ → Ref.update r λxs → List.push xs 1
+
+
+loanBeside : ⊤ → Int
+loanBeside ⊤ =
+    r = Ref.make [ 0 ]
+    hold (Ref.get r) λ⊤ → Ref.update r λxs → List.push xs 1
+
+
+capturedLoan : ⊤ → Int
+capturedLoan ⊤ =
+    r = Ref.make [ 0 ]
+    old = Ref.get r
+    c =
+        λ⊤ →
+            Ref.update r λxs → List.push xs 1
+            List.length old
+    c ⊤
+
+
+neverRuns : ⊤ → Int
+neverRuns ⊤ =
+    r = Ref.make [ 0 ]
+    xs = [ 7 ]
+    old = Ref.get r
+    never λ⊤ → Ref.set r xs
+    Ref.update r λys → List.push ys 1
+    List.length old
+
+
+inUpdate : ⊤ → Int
+inUpdate ⊤ =
+    r = Ref.make [ 0 ]
+    c = λ⊤ → Ref.update r λxs → List.push xs 1
+    Ref.update r λxs →
+        c ⊤
+        List.push xs 2
+    List.length (Ref.get r)
+
+
+inList : ⊤ → Int
+inList ⊤ =
+    r = Ref.make [ 0 ]
+    old = Ref.get r
+    fs = [ λ⊤ → Ref.update r λxs → List.push xs 1 ]
+    _ = List.map fs λg → g ⊤
+    List.length old
+
+
+nested : ⊤ → Int
+nested ⊤ =
+    r = Ref.make [ 0 ]
+    c = λ⊤ → Ref.update r λxs → List.push xs 1
+    d =
+        λ⊤ →
+            v = Ref.get r
+            apply c
+            List.length v
+    applyInt d
+
+
+ownParam : ((⊤ → ⊤) → ⊤) → Int
+ownParam h =
+    r = Ref.make [ 0 ]
+    old = Ref.get r
+    h λ⊤ → Ref.update r λxs → List.push xs 1
+    List.length old
+
+
+spawned : ⊤ → Int
+spawned ⊤ =
+    r = Ref.make [ 0 ]
+    old = Ref.get r
+    f = Task.spawn λ⊤ → Ref.update r λxs → List.push xs 1
+    Io.sleep 5
+    Task.join f
+    List.length old
+
+
+storeAnswered : ⊤ → Int
+storeAnswered ⊤ =
+    r = Ref.make [ 1 ]
+    zs = applyList λ⊤ →
+        ys = [ 9 ]
+        Ref.set r ys
+        ys
+    Ref.update r λxs → List.push xs 5
+    List.length zs
+
+
+feed : (List Int → List Int) → Int
+feed f =
+    a = f [ 5 ]
+    b = f a
+    List.length b
+
+
+withCell : (Ref (List Int) → ⊤) → Int
+withCell f =
+    c = Ref.make [ 0 ]
+    f c
+    a = Ref.get c
+    f c
+    List.length a
+
+
+mappedLoans : ⊤ → Int
+mappedLoans ⊤ =
+    r = Ref.make [ 1 ]
+    zs = List.map [ 1, 2 ] λx →
+        Ref.update r λys → List.push ys x
+        Ref.get r
+    List.length (Maybe.withDefault (List.get zs 0) [])
+
+
+fedBack : ⊤ → Int
+fedBack ⊤ =
+    r = Ref.make [ 1 ]
+    feed λp →
+        before = List.length p
+        Ref.update r λys → List.push ys 2
+        if List.length p == before then Ref.get r else [ 99 ]
+
+
+storedInHanded : ⊤ → Int
+storedInHanded ⊤ =
+    r = Ref.make [ 1 ]
+    withCell λc →
+        Ref.update r λys → List.push ys 2
+        Ref.set c (Ref.get r)
+
+
+storedTwice : ⊤ → Int
+storedTwice ⊤ =
+    r = Ref.make [ 1 ]
+    zs = List.map [ 1, 2 ] λx →
+        Ref.update r λys → List.push ys x
+        zz = [ x ]
+        Ref.set r zz
+        zz
+    List.length (Maybe.withDefault (List.get zs 0) [])
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.print
+        (String.join
+            (List.map
+                [ direct ⊤
+                , handed ⊤
+                , sameCell ⊤
+                , loanBeside ⊤
+                , capturedLoan ⊤
+                , neverRuns ⊤
+                , inUpdate ⊤
+                , inList ⊤
+                , nested ⊤
+                , ownParam apply
+                , spawned ⊤
+                , storeAnswered ⊤
+                , mappedLoans ⊤
+                , fedBack ⊤
+                , storedInHanded ⊤
+                , storedTwice ⊤
+                ]
+                String.fromInt
+            )
+            " "
+        )

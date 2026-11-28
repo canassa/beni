@@ -1325,7 +1325,10 @@ forTemplate html =
 --| `(parent, end, list, key, make, set)`: the rows of a `For`, children of
 --| `parent` before `end` (null: its last children), made to agree with `list` (`browser-inline.md` §9, amended
 --| 2026-11-23). An item's key is its position when `key` is undefined, the
---| item itself when it is null, and what `key` gives of it otherwise. Each
+--| item itself when it is null — a `String`, a number, a `Char`, a `Bool` or
+--| an `Order`, whose identity is its value: the lowering compiles a `For`
+--| keyed by reference over no other item (§9, amended 2026-11-27) — and what
+--| `key` gives of it otherwise. Each
 --| item takes the row its key had, or, past the rows of that key, a new
 --| one `make` gives: rows that share a key are matched in order, by rank.
 --| Every row is then `set` with its item and its position, in order, kept
@@ -1425,13 +1428,29 @@ armShown regionState k make set =
 --| the fallback, 1 the body — shown and `set`, and made afresh, the shown
 --| arm's node removed, when `key` is not `===` the key the region last
 --| showed: the body remounts when its key changes. The key is kept as the
---| state's `v`, apart from the arm's number.
+--| state's `v`, apart from the arm's number, so it holds no record and no list
+--| (`boundary.md` §9.4.8): a key function's, or the shown value of a `Show`
+--| keyed by identity whose type holds neither. Any other `Show` keyed by
+--| identity is `armShown`'s, with `renew` (amended 2026-11-27).
 pub keyShown : V, V, V, V, V → ⊤
 keyShown regionState k key make set =
     if not (Js.same (Js.get regionState "v") key) then
         Js.set regionState "v" key
         Js.set regionState "k" Js.undefined
     armShown regionState k make set
+
+
+--| `(state)`: the body of a `Show` keyed by identity over a value that is
+--| not primitive-`eq` made a new one at the region's next `armShown`, which
+--| removes the shown body's node then (`browser-inline.md` §8.2, amended
+--| 2026-11-27, *A `Show` keyed by identity*). Its entry runs before the
+--| `Show`'s at a key whose writes may make the shown value another object,
+--| by the write set: the runtime keeps no value to compare (`boundary.md`
+--| §9.4.8). A shown fallback is kept.
+pub renew : V → ⊤
+renew regionState =
+    if Js.same (Js.get regionState "k") (Js.from 1) then
+        Js.set regionState "k" Js.undefined
 
 
 --| `()`: a row of a `For` whose top is a branch (`browser-inline.md` §9,

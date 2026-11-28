@@ -819,6 +819,34 @@ beni over `Js` in `Inline.beni`:
     so the body is not remounted where `browser-tea` remounts it: the table of `language.md`
     §11.18 read with §9's *Identity*, and the same listed difference as a `For` keyed by
     reference. By key, the two agree.
+    *Amended 2026-11-27 (#2729): **a `Show` keyed by identity**; the bullet above is
+    superseded.* It kept the shown record as its key and compared it by `===`, a breach of
+    `boundary.md` §9.4.8 and of rule 8: once `update` wrote the record in place, the build users
+    get kept the body that the build that copies, and `browser-tea`, made anew
+    (`browser/inline/ShowAndBranches`, whose golden had held the in-place page). Now the runtime
+    keeps no value that may hold a record or a list. By identity over a value that is
+    primitive-`eq` (`Show.value_is_primitive`) or identity-safe (`Tree.identitySafe`: it holds no
+    record and no list, so nothing writes it in place), the key is still the value, kept and
+    compared by `keyShown`, which `boundary.md` §9.4.8 allows. **Over any other value, the
+    write set decides**: the `Show` has no key, its entry shows its arms by `armShown`, and a
+    **renewal entry** of its own stands just before it, in the read set of the payload's
+    identity alone (`HoleFacts.selector_group` of the `Show`, interface 1.45; `write-sets.md`,
+    *a `Show` keyed by identity*): the `Just`'s payload, not what the body or the fallback
+    reads. A key whose writes conflict with that read set may make the payload another object
+    (`write-sets.md` §1.3), so its pass runs the renewal entry first, which marks a shown body
+    (`renew(state)`); the `Show`'s entry, which the same pass runs, then removes it and makes a
+    new one, or shows the fallback. A shown fallback is kept, as it was. Where the pass gives no
+    such read set, the `Show`'s whole read set stands for it: the body is a new one at the pass of
+    every key whose writes conflict with that read set (its statement groups and the controls'
+    buckets, which also run the entry, do not renew it). So whether the body is a new one depends on the source and the message, never
+    on whether the arm wrote the record in place or copied it: both builds print the same page.
+    Against `browser-tea`, which compares the record by identity at every render, it differs only
+    where the write set over-approximates — an arm that may give back the very same record, as
+    `Maybe.map model.user (λu → u)` does, makes a new body — and where a `when` builds a new
+    record at each evaluation from what no key writes, which `browser-tea` remounts at every
+    render and `browser-inline` never. Pages `browser/inline/ShowIdentityWrites` and
+    `browser/tea/ShowIdentityWrites` (the listed difference in their headers) and
+    `browser/inline/ShowAndBranches`, whose golden is the page the copying build prints.
   - **What stays refused** (class 1, at the `Show`): a `Show` that is not among an element's
     children in the `view`'s own markup — at the `view`'s top, in a fragment, in a `For`'s row, in
     a region's arm, in a helper's or another module's markup; one followed by text, a hole or a
@@ -1119,6 +1147,28 @@ a constructor's fields (§8.4); and a handler written as a literal.
 *Amended 2026-11-24 (#2063):* such an event of another module's markup is compiled too: the root
 makes the message, and the program hands the root its dispatcher (§8.4, the amendment of that
 date). `PieceEventArgs/` builds and is withdrawn. A handler written as a literal stays refused.
+
+**Records written in place: a hole refreshes because a field it reads was written.** *Added
+2026-11-15 (research report 142, the owner's decision of that day: a record update the checker
+accepts writes its base's own object, as JavaScript does).* After an update the model, every held
+slice and the update's answer are one object, so no reference can say what changed, and none is
+asked: a hole, a binding or a row refreshes because the key's write set names a field it reads
+(`Writes.conflicts`, the buckets of `keyBuckets`), never because a value is another object than the
+one it last saw. Field identity is no longer load-bearing. What the lowering and the runtime compare
+are scalars against what the DOM shows (`Inline.text`, `prop`, `writeProp`, an attribute guard),
+arm numbers and strings; `copyIn`'s `next === old` skips a copy that a route's function answered as
+the old object, which holds every field already, written in place or not; `Key.replaced` decides
+whether a held slice keeps its object (stores and cells), never whether anything refreshes.
+
+The write set follows a write wherever the program makes it: a helper of the module and of another
+module is summarised from its body and instantiated at the call (`Writes.applyClosure`, `direct`;
+`browser/inline/TickInPlace`, `browser/inline/HelperOtherModuleWrite`); a callback of `List.map`,
+`indexedMap`, `update` and the `Dict` rows writes `p[*].f` (`write-sets.md` §3.7); `Maybe.map` and
+`Result` are summarised from their bodies; a command's or task's message is a key like any other.
+Where the pass cannot follow a write — an unknown callee, a `foreign` with no body, the depth cap, a
+recursion cut, the work cap — the write is `Fresh` or `value ρ` at its path, and `conflicts` matches
+every read at or below it: every hole under that path refreshes (`Writes.freshCall`, `mkFresh`,
+`Emit.sparseConflicts`). A key the pass cut short is refused (§5). Nothing is skipped on a guess.
 
 ### 8.4 Pieces: another module's view and arms
 
@@ -2370,6 +2420,21 @@ The simple form is S2c's row unit with none of S2d's edits:
   Keyed by reference, an item an arm wrote in place is the same object, so its row is kept: the
   table of `language.md` §11.9 (*the very same item value is in both lists*), where `browser-tea`
   made a new row.
+  *Amended 2026-11-27 (#2729, #2504): the sentence above is withdrawn.* To match rows by
+  reference, `forRows` keeps each item from one pass to the next and compares it by identity,
+  which `boundary.md` §9.4.8 allows only for a value that holds no record and no list: a record
+  an arm wrote in place is the same object where the copying build makes another, so the two
+  builds print different pages. No write set can stand in for it, since the rows are matched by
+  which item is which, and a filter or a sort keeps the items of the copying build. So `forRows`
+  keys a row by its item (`key` null) only over a `String`, a number, a `Char`, a `Bool` or an
+  `Order` (`For.item_is_primitive`), whose identity is its value. **A `For` keyed by reference
+  over any other item type is class 1**, refused at the `For` with a key function
+  (`keyed={.id}`) or position (`keyed={False}`) to write instead (`build/bad/inline/ForByReferenceRecord/`).
+  The permanent answer is the owner's (#2504: a refusal, a warning with another behaviour, or keys
+  by value); no page of the corpus keys such a `For` by reference. The test is stricter than
+  §9.4.8: it also refuses an item type that holds no record and no list but is not primitive-`eq`
+  (a tuple of numbers, a type of constructors with no fields), which the `Show` keeps through
+  `Tree.identitySafe`; the interface has no such fact for a `For`'s item yet.
 - **Row events.** A row's event goes through the program's dispatcher (§8.3, amended
   2026-11-05): the row's `set` evaluates the event's handler value with the row's values, as a
   binding evaluates any value (§8.2, #466), and the listener hands the dispatcher that message —
@@ -2591,7 +2656,7 @@ order. The edits are runtime functions of `Inline.beni`, each shipped only when 
 |---|---|---|
 | `at(L, k)` | makes `k`'s row agree with the dictionary: drops it if `k` is absent, runs its `set` if present, builds and appends it if new (a new key is the last entry); it never moves a row, so a write that may move a key is `sync`'s | after an `insert`, `remove` or `update` of `k`, and for the selector's two keys |
 | `swap(L, a, b)` | exchanges the rows and nodes of `a` and `b` | after `Dict.swap d a b` |
-| `sync(L, all)` | reconciles every row with the dictionary: rows reused by key, rows of keys that left removed, the rest put in order by the longest increasing subsequence of their old places; a fresh dictionary with no key in common empties the parent in one call; `all` runs every reused row's `set`, otherwise only rows whose value is another object | after a write the lowering cannot follow key by key (§9.4), and for a load that replaces the dictionary |
+| `sync(L, all)` | reconciles every row with the dictionary: rows reused by key, rows of keys that left removed, the rest put in order by the longest increasing subsequence of their old places; a fresh dictionary with no key in common empties the parent in one call; `all` runs every reused row's `set`, and without it no reused row's `set` runs, since the write set says no kept key's value changed; a row is never compared with a value it kept (§9.4, *Identity*) | after a write the lowering cannot follow key by key (§9.4), and, with `all`, for a load that replaces the dictionary |
 
 **The key → row lookup.** The dictionary's index maps a key to its entry pair (`backend.md` §4,
 amended 2026-10-25: the owner's decision of §9.10 question 3), so a position is not free, and the
@@ -2624,7 +2689,7 @@ brotli fixed against tea-inline's single forward pass, nothing per table.
 dictionary is a `For`'s (§9.3) and that the lowering writes itself — in the handler, in an arm
 piece, in a function of the root's own module that the key's arm calls, or in a callback lambda
 written there (a `List.foldl` over keys) — is followed at once by its row edit: `at(L, κ)` for the
-first three, `swap(L, a, b)` for `swap`, `sync(L)` for `insertAt`, κ being the call's own key
+first three, `swap(L, a, b)` for `swap`, `sync(L, false)` and then `at(L, κ)` for `insertAt`, κ being the call's own key
 argument, bound where the call evaluates it. Such a function takes the root's list as one more
 parameter, as an arm piece takes its slice, and the root plan names which lists each function is
 handed; one that is also called where no list is in hand is written a second time for the root,
@@ -2645,7 +2710,8 @@ tag, and called `at` for a tag that allowed a key to move.
 | `kept` | nothing for the storage |
 | `at κ k` | `at(L, κ)` (κ does not move: `write-sets.md`'s tag) |
 | `swap κ₁ κ₂` | `swap(L, κ₁, κ₂)` |
-| `grow`, `prune`, `permute`, `clear`, `replaced` | `sync(L, w)`, `w` when the residual writes below `p{…}` |
+| `grow`, `replaced` | `sync(L, true)`: a kept key may hold another value (an `insert` of a key already there, a union, a new dictionary) |
+| `prune`, `permute`, `clear` | `sync(L, w)`, `w` when the residual writes below `p{…}` |
 
 Then, **whatever the tag**, the residual's writes below the path: `at(L, κ)` for each `p{κ}`
 write, and `sync(L, true)` (every row's `set`, no node moved) for a `p{*}` write, unless the tag's
@@ -2670,7 +2736,7 @@ dictionary (`Dict.size model.rows`) is an ordinary binding in the dictionary pat
 **The list in the buckets.** The list is an entry of its root in the bucket of its dictionary path
 (§8.4, *Buckets*). The first render runs it, which appends a row per entry; a load of pushed state
 that replaces the dictionary (§8.4's routes: a dictionary field is assigned, as a list's is) runs
-it again, which is `sync`, so a page with such a route ships `sync`. A key whose edits this
+it again, which is `sync(L, true)`, so a page with such a route ships `sync`. A key whose edits this
 section writes leaves that one entry out of its pass, and runs the bucket's other entries as
 usual.
 
@@ -2680,18 +2746,28 @@ root of another module (§8.4) — and the template's elements are numbered with
 template constant is named and numbered as the root's other constants are, by the input-derived
 order of §8.4.
 
-**Identity.** `sync` skips a reused row's `set` when its value is the same object, and only then:
-the edit tags say whether the key wrote below `p{…}`, and when it did, `sync` runs every `set`
-(`all`). That is §3's rule — analysis says "possibly changed", a compare says "changed" — with the
-write set deciding, never identity alone, so an in-place `Dict.update` of a value never meets an
-identity compare.
+**Identity.** No row decides by identity. Whether a reused row's `set` runs is the write's to say:
+`at(L, κ)` runs κ's, and `sync(L, all)` runs every reused row's exactly when `all` — when the
+edits' tag or the residual says a kept key may hold another value (the table above) — and no
+reused row's otherwise. A row keeps no value to compare a new one with. Inside `set`, each hole's
+guard compares the hole's new scalar with what the DOM shows (`text`, `prop`), never a value of
+the model with one the row kept.
+
+*Amended 2026-11-15 (research report 140):* the first text skipped a reused row's `set` when its
+value was the same object, outside `all`. Lists, records and `Dict` values are edited in place on
+every platform (`backend.md` §4, *Every platform edits in place*), so a value edited in place is
+the same object after the write: identity says "unchanged" exactly when the write changed it,
+which is the stale-row class of #2504 on `browser`. The write set already names every write, so
+the compare could only add a wrong answer: a write it did not name is a defect of the write-set
+pass, not something a compare can mend.
 
 ### 9.5 Rows and the ownership checker
 
 Every `Dict` write is the language's, checked by `ownership-checker.md` §32 on every platform
 (#294, #320): S2 adds no write and no exemption. What the lowering adds is compiler-owned access,
-as §8.4's root closures are: the list's reader of its dictionary, each row's last value (read only
-by its `set` and by `sync`'s compare) and the edits' reads of the dictionary after a write. They
+as §8.4's root closures are: the list's reader of its dictionary, each row's value as its last `set`
+was handed it (read by that `set` and by the row's handlers, never compared with another value,
+§9.4, *Identity*) and the edits' reads of the dictionary after a write. They
 read the dictionary the write returned, which is the same object, and they are no holder of the
 old one: the checker's verdict on the source is the program's. A row's handler captures its key, a
 scalar that crosses (§31.6); one that captures the row's value whole has it as a borrowed payload,
@@ -2766,7 +2842,7 @@ widgets off (the S1 close of 2026-10-24). These rows price only what S2 adds to 
 tea-inline's microtask groups, whose list entry runs on every write of its field, the variant's
 list skips a dictionary that is the same object as at its last run: that stands for §9.4's rule
 that a key whose edits are written leaves the list's entry out of its pass, and is not the design's
-`sync`, which never decides by identity alone.
+`sync`, which never decides by identity (§9.4, amended 2026-11-15).
 
 *Corrected 2026-10-25, the review of #973:* the big-table target's `serverUpdate` first applied the
 changes before a bad one and then stopped; it now validates every change before the first write,

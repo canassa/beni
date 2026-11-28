@@ -54,6 +54,6 @@ main : Tea.Program
 main =
     Browser.mountAt
         (Tea.sandbox
-            { init = λ⊤ → { items = [ A, B ], d = Dict.empty }, update = update, view = view }
+            { init = λ⊤ → { items = [ A, B ], d = Dict.empty ⊤ }, update = update, view = view }
         )
         "root"

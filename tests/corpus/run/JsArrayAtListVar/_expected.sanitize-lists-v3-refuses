@@ -1,0 +1,2 @@
+# v3 refuses the push: `arrL` reads a `Js.Value` it made of parts at `List b` (ownership-v3-kernel.md §3.4; research report 151).
+19:22 list_still_used List.push

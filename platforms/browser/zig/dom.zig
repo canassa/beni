@@ -103,7 +103,25 @@ pub const lowering: m.Lowering = .{
     // A root computes its own values, by what they read (backend.md §15.4,
     // *A root computes its own values*).
     .groups = true,
+    // What the root keeps of its `let`s from one render to the next
+    // (`boundary.md` §9.4.8, *What a lowering keeps*).
+    .keeps_let = keepsLet,
 };
+
+/// `Lowering.keeps_let` (backend.md §15.4, *The `let` rule*): the root keeps
+/// each of its `let`s in `d<k>` and evaluates it again only when a path it
+/// reads is not `===` the one it was made from. A path whose value is not
+/// identity-safe is never compared, so a `let` that reads one is made again
+/// on every render, before it is read: it is not kept. Every other is, and
+/// a later render reads the value an earlier one made. `hoistGroupedKind` writes
+/// the test, and checks in safe builds that it says the same.
+fn keepsLet(tree: *const m.Tree, index: m.Root.Index, k: u32) bool {
+    const r = tree.root(index);
+    for (tree.readsOf(r.lets.at(k))) |rd| {
+        if (!tree.identitySafe(r.reads.at(rd))) return false;
+    }
+    return true;
+}
 
 /// Everything is hoisted by the roots that need it, where the enclosing
 /// declaration is being lowered: a row's values can only be placed there.
@@ -889,6 +907,13 @@ pub const Gen = struct {
             const kept = try g.print("d{d}", .{k});
             var condition: ?m.Expr = null;
             const reads = g.tree.readsOf(lv);
+            // The test is `true` on every render exactly when the `let` is
+            // not kept: what this lowering told the ownership checker.
+            if (std.debug.runtime_safety) {
+                var every = false;
+                for (reads) |rd| every = every or !g.tree.identitySafe(r.reads.at(rd));
+                std.debug.assert(keepsLet(g.tree, index, @intCast(k)) == !every);
+            }
             if (reads.len == 0) {
                 condition = try js.binary(.strict_eq, try g.member(try g.ident(i), kept), undef);
             } else for (reads, 0..) |rd, j| {

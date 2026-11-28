@@ -1,0 +1,1 @@
+Each writer value is reached through something that answers it (an identity, a lambda, a local, a closure) and v3 accepts each call where it runs: the oracle routes the value where it is made (ownership-v3-kernel.md §12 item 5).

@@ -1,0 +1,30 @@
+-- A function `a → b` handed to a holder that reads its answer as `Int`:
+-- the function answers its parameter, and the holder's answer type has no
+-- location for it. What the function answers there escapes where it meets
+-- the holder (ownership-v3-kernel.md §3.4). Before, the holder's contract
+-- saw an answer of no location, and the list the holder handed it went
+-- nowhere.
+import Node exposing (Program)
+import Pun
+
+
+apply : (a → Int), a → Int
+apply f x = f x
+
+
+cast : a → b
+cast x = Pun.conv x
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    h = apply cast x0
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

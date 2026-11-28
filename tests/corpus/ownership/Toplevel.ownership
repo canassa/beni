@@ -5,18 +5,17 @@ module Toplevel
   40:5 update model: accepted call
   40:25 construction model.todos: accepted call
   44:19 ++ <literal>: accepted fresh
-  51:31 construction xs: rejected element: d#Dict.0#Node.2 holds it and is read at 51:13 (approx)
-  58:15 call Toplevel.bump Dict.empty#Dict.0#Node.2: accepted fresh (Toplevel.bump writes π1#Dict.0#Node.2)
+  51:31 construction xs: rejected unknown: the list came from JavaScript (approx)
   summary addSeed: res shared(Toplevel.seed)
   summary addModel: res .todos shared(Toplevel.seed), shared(Toplevel.initialModel)◦
   summary init: res .todos fresh1, fresh501◦
   summary addFresh: res .todos fresh1, fresh501◦
   summary reading: res fresh1
-  summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0 ~condition(fresh1){lost}, #Dict.0#Node.1 condition(fresh2) ~condition(fresh10){excl π1#Dict.0#Node.1} ~condition(fresh3){lost} ~π1#Dict.0#Node.1r{lost}, #Dict.0#Node.2 condition(fresh4) ~condition(fresh11){lost} ~condition(fresh3){lost} ~fresh11{lost} ~π1#Dict.0#Node.2{lost}r{lost}, #Dict.0#Node.3 condition(fresh5) ~condition(fresh3){lost} ~condition(fresh6){lost} ~condition(fresh7){lost} ~π1#Dict.0#Node.3{lost}r{lost} ~π1#Dict.0#Node.4{lost}r{lost}, #Dict.0#Node.4 condition(fresh8) ~condition(fresh3){lost} ~condition(fresh7){lost} ~condition(fresh9){lost} ~π1#Dict.0#Node.3{lost}r{lost} ~π1#Dict.0#Node.4{lost}r{lost}
-  summary fromEmpty: res #Dict.0 ~condition(fresh1){lost}, #Dict.0#Node.1 condition(fresh2) ~condition(fresh10) ~condition(fresh3){lost}, #Dict.0#Node.2 condition(fresh4) ~condition(fresh11){lost} ~condition(fresh3){lost} ~fresh11{lost}, #Dict.0#Node.3 condition(fresh5) ~condition(fresh3){lost} ~condition(fresh6){lost} ~condition(fresh7){lost}, #Dict.0#Node.4 condition(fresh8) ~condition(fresh3){lost} ~condition(fresh7){lost} ~condition(fresh9){lost}
-  demands 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+  summary bump: π1 RE; res ⊤{lost}r{lost}
+  summary fromEmpty: res ⊤{lost}r{lost}
+  demands 5: accepted 2 (fresh 1, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
   records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
-total 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 5: accepted 2 (fresh 1, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
+cause unknown 1
 cause top-level 2
-cause element 1

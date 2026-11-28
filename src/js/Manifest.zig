@@ -60,6 +60,10 @@
 //!   `ownership-checker.md` §28.2): the chain's code may write a list's
 //!   array in place, so `check` and `build` run the ownership checker and
 //!   its rejections are errors. No other value; inherited first-found.
+//! - `ownership` — `"v3"`, on the ownership checker v3's branch only
+//!   (`boundary.md` §5.2, `ownership-v3-kernel.md` §0): `check` and
+//!   `build` of the chain judge ownership with the checker v3 unless
+//!   `--ownership=` names one. No other value; inherited first-found.
 //! - `entryHost` — the top entry realm (`workers.md` §4), inherited first-found.
 //!   `entryKinds` give worker entries their own realm. The old `host: page`
 //!   promise is diagnosed as obsolete before output.
@@ -102,6 +106,7 @@ reexports: []const []const u8 = &.{},
 markup: Markup = .{},
 html: ?[]const u8 = null,
 lists: ?Lists = null,
+ownership: ?Ownership = null,
 host: ?Host = null,
 entryHost: ?EntryHost = null,
 build: Build = .{},
@@ -149,6 +154,10 @@ pub const Build = struct {
 /// `"lists"` (`boundary.md` §5.2): what the chain's code may do with a
 /// list's array. One value; any other is a malformed manifest.
 pub const Lists = enum { @"in-place" };
+
+/// `"ownership"` (`boundary.md` §5.2): the ownership checker that judges
+/// the chain's programs. One value; any other is a malformed manifest.
+pub const Ownership = enum { v3 };
 
 /// `"host"` (`boundary.md` §5.2, added 2026-10-24): where the chain's code
 /// always runs. One value, `"page"`; any other is a malformed manifest.
@@ -209,6 +218,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         markup: ?Markup = null,
         html: ?[]const u8 = null,
         lists: ?Lists = null,
+        ownership: ?Ownership = null,
         host: ?Host = null,
         entryHost: ?EntryHost = null,
         build: ?Build = null,
@@ -250,6 +260,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .markup = parsed.markup orelse .{},
         .html = parsed.html,
         .lists = parsed.lists,
+        .ownership = parsed.ownership,
         .host = parsed.host,
         .entryHost = parsed.entryHost,
         .build = parsed.build orelse .{},

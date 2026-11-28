@@ -1,0 +1,22 @@
+-- A record built by its alias's constructor is the record its literal
+-- makes, with its object and its field slots (ownership-v3-kernel.md
+-- §11.2): `{ a | k = 5 }` writes the slot `k` that `a.k` reads after it,
+-- so v3 refuses the update. As a construction of its fields alone the
+-- slots held no cell, the update was accepted, and in place `a.k` read 5.
+import Node exposing (Program)
+
+
+type alias P =
+    k : Int
+    u : List Int
+
+
+go : Int → String
+go n =
+    a = P n [ 1 ]
+    a2 = { a | k = 5 }
+    "${String.fromInt a2.k} ${String.fromInt a.k}"
+
+
+main : Program
+main = Node.print (go 0)

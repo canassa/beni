@@ -1,0 +1,1 @@
+Each write of a cell's contents is accepted under v3 and runs in place: the list built from the loan is read after the update by List.length alone, which reads its own array and not the loan it holds (ownership-v3-kernel.md §12 item 7, §13, #2584).

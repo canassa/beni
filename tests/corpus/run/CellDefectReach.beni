@@ -1,0 +1,164 @@
+-- A function that code a defect runs reaches reads a cell: a helper wraps
+-- its parameter in a closure for `Task.onDefect`, in a second helper, in a
+-- local closure, in a record, a list, a cell or a `Dict`, in a closure in
+-- a record, or applies a function to it with `_`. The reader runs at any
+-- point, so it shares the handle (ownership-v3-kernel.md §13 item 12, *A
+-- defect*, amended), and the frame writes a copy of the contents, accepted.
+-- No defect happens. Its live twin, CellDefectReachLive, writes in place,
+-- refused (#2609).
+import Dict
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+call : (⊤ → ⊤), ⊤ → ⊤
+call f x = f x
+
+
+wrapped : (⊤ → ⊤) → ⊤
+wrapped f = Task.onDefect λ⊤ → f ⊤
+
+
+wrappedTwo : (⊤ → ⊤) → ⊤
+wrappedTwo f = wrapped λ⊤ → f ⊤
+
+
+nested : (⊤ → ⊤) → ⊤
+nested f =
+    g = λ⊤ → f ⊤
+    Task.onDefect λ⊤ → g ⊤
+
+
+inRecord : (⊤ → ⊤) → ⊤
+inRecord f =
+    b = { h = f }
+    Task.onDefect λ⊤ → b.h ⊤
+
+
+inList : (⊤ → ⊤) → ⊤
+inList f =
+    fs = [ f ]
+    Task.onDefect λ⊤ → List.foldl fs ⊤ λg _ → g ⊤
+
+
+inCell : (⊤ → ⊤) → ⊤
+inCell f =
+    c = Ref.make f
+    Task.onDefect λ⊤ → (Ref.get c) ⊤
+
+
+inDict : (⊤ → ⊤) → ⊤
+inDict f =
+    d = Dict.singleton 1 f
+    Task.onDefect λ⊤ →
+        case Dict.get d 1 of
+            Just g →
+                g ⊤
+            Nothing →
+                ⊤
+
+
+partial : (⊤ → ⊤) → ⊤
+partial f = Task.onDefect (call f _)
+
+
+inBox : (⊤ → ⊤) → ⊤
+inBox f =
+    b = { h = λ⊤ → f ⊤ }
+    Task.onDefect λ⊤ → b.h ⊤
+
+
+wrappedProbe : ⊤ → String
+wrappedProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    wrapped λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 6
+    ints (Ref.get r)
+
+
+wrappedTwoProbe : ⊤ → String
+wrappedTwoProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    wrappedTwo λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 7
+    ints (Ref.get r)
+
+
+nestedProbe : ⊤ → String
+nestedProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    nested λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 8
+    ints (Ref.get r)
+
+
+inRecordProbe : ⊤ → String
+inRecordProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    inRecord λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 9
+    ints (Ref.get r)
+
+
+inListProbe : ⊤ → String
+inListProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    inList λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 10
+    ints (Ref.get r)
+
+
+inCellProbe : ⊤ → String
+inCellProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    inCell λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 11
+    ints (Ref.get r)
+
+
+inDictProbe : ⊤ → String
+inDictProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    inDict λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 12
+    ints (Ref.get r)
+
+
+partialProbe : ⊤ → String
+partialProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    partial λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 13
+    ints (Ref.get r)
+
+
+inBoxProbe : ⊤ → String
+inBoxProbe ⊤ =
+    r = Ref.make [ 1, 2 ]
+    inBox λ⊤ → Log.info "hook ${ints (Ref.get r)}"
+    Ref.update r λl → List.push (List.copy l) 14
+    ints (Ref.get r)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ wrappedProbe ⊤
+        , wrappedTwoProbe ⊤
+        , nestedProbe ⊤
+        , inRecordProbe ⊤
+        , inListProbe ⊤
+        , inCellProbe ⊤
+        , inDictProbe ⊤
+        , partialProbe ⊤
+        , inBoxProbe ⊤
+        ]

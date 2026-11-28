@@ -1,0 +1,26 @@
+-- The answered alias, observed by a derived `==` on the answer: the callee
+-- writes a field of one parameter and answers the other, the caller hands
+-- it one record at both places and compares the two answers (kernel §5
+-- test 2, §11). The copying program prints "ne"; in place the two are one
+-- object, "eq". v3 refuses the call.
+import Node exposing (Program)
+
+
+type alias P =
+    a : Int
+    b : Int
+
+
+g : P, P → P × P
+g u v = ( { u | a = u.a + 5 }, v )
+
+
+f : P → P × P
+f q = g q q
+
+
+main : Program
+main =
+    case f { a = 0, b = 0 } of
+        ( u, v ) →
+            Node.print (if u == v then "eq" else "ne")

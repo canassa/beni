@@ -1,0 +1,250 @@
+-- A fiber runs a function that forks a fiber in which a writer runs, and one
+-- that masks, both handed to one call: two captures handed to a helper, in
+-- either order, through a closure the fiber runs, a helper's two parameters,
+-- three functions to one helper, two functions run in a `List.map`, two arms
+-- of a fold, a helper of another module, a record of the two, a list that
+-- holds the one that masks, and a method that masks. Each update writes a
+-- copy of the contents, accepted (ownership-v3-kernel.md §13 item 12, *A
+-- defect*, (d), *Up*; #2674). Its live twin is CellStartedPairLive.
+import Duration
+import Hoster
+import Io
+import List
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+hosting : ⊤ → String
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λl → List.push (List.copy l) 5
+    Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+forker : ⊤ → ⊤
+forker ⊤ =
+    _ = Task.spawn hosting
+    ⊤
+
+
+noop : ⊤ → ⊤
+noop ⊤ = ⊤
+
+
+twoCalls : (⊤ → ⊤), (Int → ⊤) → ⊤
+twoCalls f g =
+    f ⊤
+    g 1
+
+
+twoCallsRev : (Int → ⊤), (⊤ → ⊤) → ⊤
+twoCallsRev g f =
+    f ⊤
+    g 1
+
+
+threeCalls : (⊤ → ⊤), (⊤ → ⊤), (Int → ⊤) → ⊤
+threeCalls f x g =
+    f ⊤
+    x ⊤
+    g 1
+
+
+mapBoth : (⊤ → ⊤), (Int → ⊤) → ⊤
+mapBoth f g =
+    _ = List.map [ 1 ] λn →
+        f ⊤
+        g n
+    ⊤
+
+
+foldArms : (⊤ → ⊤), (Int → ⊤) → ⊤
+foldArms f g = List.foldl [ 1, 2 ] ⊤ λn _ → if n == 1 then f ⊤ else g n
+
+
+viaRecord : { f : ⊤ → ⊤, g : Int → ⊤ } → ⊤
+viaRecord r =
+    r.f ⊤
+    r.g 1
+
+
+twoEv : (⊤ → ⊤), a → ⊤
+    where a.run : a → ⊤
+twoEv f x =
+    f ⊤
+    x.run
+
+
+go2 : (⊤ → ⊤), (Int → ⊤) → ⊤
+go2 h k =
+    t = Task.spawn λ⊤ → twoCalls h k
+    Task.join t
+
+
+twoCap : ⊤ → String
+twoCap ⊤ =
+    h = forker
+    k = Hoster.masker
+    t = Task.spawn λ⊤ → twoCalls h k
+    Task.join t
+    "twoCap"
+
+
+twoCapRev : ⊤ → String
+twoCapRev ⊤ =
+    h = forker
+    k = Hoster.masker
+    t = Task.spawn λ⊤ → twoCallsRev k h
+    Task.join t
+    "twoCapRev"
+
+
+twoCapDeep : ⊤ → String
+twoCapDeep ⊤ =
+    h = forker
+    k = Hoster.masker
+    go = λ⊤ → twoCalls h k
+    t = Task.spawn λ⊤ → go ⊤
+    Task.join t
+    "twoCapDeep"
+
+
+twoCapParam : ⊤ → String
+twoCapParam ⊤ =
+    go2 forker Hoster.masker
+    "twoCapParam"
+
+
+twoCapParamMod : ⊤ → String
+twoCapParamMod ⊤ =
+    Hoster.go2 forker Hoster.masker
+    "twoCapParamMod"
+
+
+twoCapMod : ⊤ → String
+twoCapMod ⊤ =
+    h = forker
+    k = Hoster.masker
+    t = Task.spawn λ⊤ → Hoster.twoCalls h k
+    Task.join t
+    "twoCapMod"
+
+
+threeCap : ⊤ → String
+threeCap ⊤ =
+    h = forker
+    k = Hoster.masker
+    t = Task.spawn λ⊤ → threeCalls h noop k
+    Task.join t
+    "threeCap"
+
+
+mapCap : ⊤ → String
+mapCap ⊤ =
+    h = forker
+    k = Hoster.masker
+    t = Task.spawn λ⊤ → mapBoth h k
+    Task.join t
+    "mapCap"
+
+
+foldCap : ⊤ → String
+foldCap ⊤ =
+    h = forker
+    k = Hoster.masker
+    t = Task.spawn λ⊤ → foldArms h k
+    Task.join t
+    "foldCap"
+
+
+recordCap : ⊤ → String
+recordCap ⊤ =
+    h = forker
+    k = Hoster.masker
+    t = Task.spawn λ⊤ → viaRecord { f = h, g = k }
+    Task.join t
+    "recordCap"
+
+
+listCap : ⊤ → String
+listCap ⊤ =
+    h = forker
+    k = Hoster.masker
+    t = Task.spawn λ⊤ → twoCalls h λn → List.foldl [ k ] ⊤ λg _ → g n
+    Task.join t
+    "listCap"
+
+
+evCap : ⊤ → String
+evCap ⊤ =
+    h = forker
+    t = Task.spawn λ⊤ → twoEv h Hoster.Mk
+    Task.join t
+    "evCap"
+
+
+-- A function that masks, kept in top-level data that holds no cell.
+cfgT : (Int → ⊤) × Int
+cfgT = ( Hoster.masker, 0 )
+
+
+cfgM : Maybe (Int → ⊤)
+cfgM = Just Hoster.masker
+
+
+topTup : ⊤ → String
+topTup ⊤ =
+    case cfgT of
+        ( g, _ ) →
+            twoCalls forker g
+    "topTup"
+
+
+topMaybe : ⊤ → String
+topMaybe ⊤ =
+    h = forker
+    case cfgM of
+        Just g →
+            t = Task.spawn λ⊤ → twoCalls h g
+            Task.join t
+
+        Nothing →
+            ⊤
+    "topMaybe"
+
+
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ fiber twoCap
+        , fiber twoCapRev
+        , fiber twoCapDeep
+        , fiber twoCapParam
+        , fiber twoCapParamMod
+        , fiber twoCapMod
+        , fiber threeCap
+        , fiber mapCap
+        , fiber foldCap
+        , fiber recordCap
+        , fiber listCap
+        , fiber evCap
+        , fiber topTup
+        , fiber topMaybe
+        ]

@@ -116,6 +116,13 @@ pub fn claim(d: *Driver, m: Graph.Index, scratch: *Arena, tid: u32) Error!void {
         pairs.items,
     ));
     try d.compareKey(m, scratch);
+    // A run whose keys are the transitive recipe (`Check.Cutoff.transitive`):
+    // the key in use is the one `compareKey` made, over the keys of the
+    // imports, which are transitive in turn.
+    if (cutoff.transitive) {
+        std.debug.assert(m.int() < cutoff.compare.len);
+        cutoff.keys.set(m, cutoff.compare[m.int()]);
+    }
     if (!cutoff.keys.isCacheable(m)) return;
     if (m.int() >= d.options.cached.len) return;
     // The checked core first (`fast-compiler.md` §8, *The checked core,

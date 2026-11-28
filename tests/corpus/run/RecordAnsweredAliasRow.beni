@@ -1,0 +1,26 @@
+-- The answered alias through extensible records: the callee's parameters
+-- are rows, it writes a field of one and answers the other, and the caller
+-- hands it one record at both places (kernel §4.1, §5 test 2, §11). In
+-- place the answer would be the written object, "5 5", where the copying
+-- program prints "5 0". v3 refuses the call.
+import Node exposing (Program)
+
+
+type alias P =
+    a : Int
+    b : Int
+
+
+g : { r | a : Int }, { s | a : Int } → { r | a : Int } × { s | a : Int }
+g u v = ( { u | a = u.a + 5 }, v )
+
+
+f : P → P × P
+f q = g q q
+
+
+main : Program
+main =
+    case f { a = 0, b = 0 } of
+        ( u, v ) →
+            Node.print "${String.fromInt u.a} ${String.fromInt v.a}"

@@ -1,0 +1,7 @@
+--! A module of the test platform: a function of no words that reads a dictionary's storage alone.
+
+import Dict exposing (Dict)
+
+
+pub size : Dict Int (List Int) → Int
+size d = Dict.size d

@@ -1,0 +1,44 @@
+-- A platform foreign with an ownership word is JavaScript: called as a method of the
+-- model (`model.next k`) it gets the model as `this` and keeps it, so no location of
+-- the model is `update`'s own (ownership-v3-kernel.md §6 rule 2, *A field called as a method*).
+import Html exposing (Html)
+import Keep
+import Tea
+
+
+type Msg
+    = Add
+    | Show
+
+
+type alias Model =
+    xs : List Int
+    shown : Int
+    next : Int → Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            k = model.next (List.length model.xs)
+            { model | xs = List.push model.xs k }
+
+        Show →
+            { model | shown = Keep.keptLen 0 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="show" onClick={Show}>show</button>
+        <p>{List.length model.xs}</p>
+        <p>{model.shown}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { xs = [ 0 ], shown = 0, next = Keep.keeper }, update = update, view = view }

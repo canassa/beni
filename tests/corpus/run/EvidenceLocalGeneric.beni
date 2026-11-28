@@ -1,0 +1,276 @@
+-- A method handed as evidence through a local function generalised over a
+-- `where` (`ownership-v3-kernel.md` §6 rule 11, #2601): the shapes of
+-- `EvidenceLocalGenericLive`, its live twin, with methods that only read
+-- what they are handed. The evidence is judged where the local is called or
+-- handed on, and a method that reads is no refusal there; so each write in
+-- place after the call, of a base that nothing reads after it, is accepted
+-- and runs in place. Each line is the same in a plain, a sanitised and an
+-- in-place build.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+yn : Bool → String
+yn b = if b then "t" else "f"
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+renderD : Dict Int Int → String
+renderD d =
+    String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${String.fromInt v}") ","
+
+
+type alias R =
+    n : Int
+    m : Int
+
+
+showR : R → String
+showR r = "${String.fromInt r.n}/${String.fromInt r.m}"
+
+
+type Sink
+    = Sink
+
+
+pub add : Sink, List Int → List Int
+add _ l = List.map l λx → x + 1
+
+
+pub put : Sink, R → R
+put _ r = { n = r.n + 1, m = r.m }
+
+
+pub ins : Sink, Dict Int Int → Dict Int Int
+ins _ d = Dict.fromList (Dict.toList d)
+
+
+pub grow : Sink, Ref (List Int) → Int
+grow _ r = List.length (Ref.get r)
+
+
+addOnce : a, List Int → List Int
+    where a.add : a, List Int → List Int
+addOnce k l = k.add l
+
+
+viaOnce : a, List Int → List Int
+    where a.add : a, List Int → List Int
+viaOnce k l = addOnce k l
+
+
+putOnce : a, R → R
+    where a.put : a, R → R
+putOnce k r = k.put r
+
+
+insOnce : a, Dict Int Int → Dict Int Int
+    where a.ins : a, Dict Int Int → Dict Int Int
+insOnce k d = k.ins d
+
+
+growOnce : a, Ref (List Int) → Int
+    where a.grow : a, Ref (List Int) → Int
+growOnce k r = k.grow r
+
+
+type Bag
+    = Bag (List Int)
+
+
+pub compare : Bag, Bag → Order
+compare a b =
+    case ( a, b ) of
+        ( Bag x, Bag y ) →
+            (List.length x).compare (List.length y)
+
+
+pub eq : Bag, Bag → Bool
+eq a b =
+    case ( a, b ) of
+        ( Bag x, Bag y ) →
+            List.length x == List.length y
+
+
+type Box
+    = Box (List Int)
+
+
+pub fromInts : List Int → Box
+fromInts l = Box (List.map l λx → x + 1)
+
+
+build : List Int → a
+    where a.fromInts : List Int → a
+build l = a.fromInts l
+
+
+unbox : Box → List Int
+unbox b =
+    case b of
+        Box l →
+            l
+
+
+lam : ⊤ → String
+lam ⊤ =
+    xs = [ 1, 2 ]
+    f = λk → addOnce k xs
+    s = ints (f Sink)
+    zs = List.push xs 9
+    "${s} ${ints zs}"
+
+
+local : ⊤ → String
+local ⊤ =
+    xs = [ 1, 2 ]
+    f k = addOnce k xs
+    s = ints (f Sink)
+    zs = List.push xs 9
+    "${s} ${ints zs}"
+
+
+partial : ⊤ → String
+partial ⊤ =
+    xs = [ 1, 2 ]
+    f = addOnce _ xs
+    s = ints (f Sink)
+    zs = List.push xs 9
+    "${s} ${ints zs}"
+
+
+nested : ⊤ → String
+nested ⊤ =
+    xs = [ 1, 2 ]
+    h = λk → addOnce k xs
+    f = λk → h k
+    s = ints (f Sink)
+    zs = List.push xs 9
+    "${s} ${ints zs}"
+
+
+mapped : ⊤ → String
+mapped ⊤ =
+    xs = [ 1, 2 ]
+    f = λk → addOnce k xs
+    yss = List.map [ Sink ] f
+    n = List.length yss
+    zs = List.push xs 9
+    "${String.fromInt n} ${ints zs}"
+
+
+handedOn : ⊤ → String
+handedOn ⊤ =
+    xs = [ 1, 2 ]
+    f = λk → viaOnce k xs
+    s = ints (f Sink)
+    zs = List.push xs 9
+    "${s} ${ints zs}"
+
+
+record : ⊤ → String
+record ⊤ =
+    r = { n = 1, m = 2 }
+    f = λk → putOnce k r
+    s = showR (f Sink)
+    t = { r | m = 9 }
+    "${s} ${showR t}"
+
+
+dict : ⊤ → String
+dict ⊤ =
+    d = Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]
+    f = λk → insOnce k d
+    s = renderD (f Sink)
+    d3 = Dict.insert d 3 30
+    "${s} ${renderD d3}"
+
+
+cell : ⊤ → String
+cell ⊤ =
+    r = Ref.make [ 1, 2 ]
+    f = λk → growOnce k r
+    n = f Sink
+    Ref.update r λl → List.push l 9
+    "${String.fromInt n} ${ints (Ref.get r)}"
+
+
+equal : ⊤ → String
+equal ⊤ =
+    xs = [ 1, 2 ]
+    f = λp q → p == q
+    b = f (Bag xs) (Bag [ 1 ])
+    zs = List.push xs 9
+    "${yn b} ${ints zs}"
+
+
+less : ⊤ → String
+less ⊤ =
+    xs = [ 1, 2 ]
+    f = λp q → p < q
+    b = f (Bag xs) (Bag [ 1 ])
+    zs = List.push xs 9
+    "${yn b} ${ints zs}"
+
+
+sorted : ⊤ → String
+sorted ⊤ =
+    xs = [ 1, 2 ]
+    f = λl → List.sort l
+    n = List.length (f [ Bag xs, Bag [ 1 ] ])
+    zs = List.push xs 9
+    "${String.fromInt n} ${ints zs}"
+
+
+member : ⊤ → String
+member ⊤ =
+    xs = [ 1, 2 ]
+    f = λl v → List.member l v
+    b = f [ Bag [ 1 ] ] (Bag xs)
+    zs = List.push xs 9
+    "${yn b} ${ints zs}"
+
+
+derived : ⊤ → String
+derived ⊤ =
+    xs = [ 1, 2 ]
+    f = λp q → p == q
+    b = f ( Bag xs, 1 ) ( Bag [ 1 ], 1 )
+    zs = List.push xs 9
+    "${yn b} ${ints zs}"
+
+
+returned : ⊤ → String
+returned ⊤ =
+    xs = [ 1, 2 ]
+    f = λl → build l
+    b : Box
+    b = f xs
+    "${ints (unbox b)} ${ints xs}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ lam ⊤
+        , local ⊤
+        , partial ⊤
+        , nested ⊤
+        , mapped ⊤
+        , handedOn ⊤
+        , record ⊤
+        , dict ⊤
+        , cell ⊤
+        , equal ⊤
+        , less ⊤
+        , sorted ⊤
+        , member ⊤
+        , derived ⊤
+        , returned ⊤
+        ]

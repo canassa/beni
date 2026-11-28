@@ -35,14 +35,14 @@ right = Set.fromList [ "c", "b" ]
 main : Program
 main =
     Node.printLines
-        [ show Set.empty
+        [ show (Set.empty ⊤)
         , show (Set.singleton "Tom")
-        , flag (Set.isEmpty Set.empty)
+        , flag (Set.isEmpty (Set.empty ⊤))
         , flag (Set.isEmpty (Set.singleton "Tom"))
         , flag (Set.member left "a")
         , flag (Set.member left "z")
-        , flag (Set.member Set.empty "a")
-        , String.fromInt (Set.size Set.empty)
+        , flag (Set.member (Set.empty ⊤) "a")
+        , String.fromInt (Set.size (Set.empty ⊤))
         , String.fromInt (Set.size left)
         , show (Set.fromList [ "c", "a", "b", "a", "c" ])
         , String.fromInt (Set.size (Set.fromList [ "a", "a", "a" ]))
@@ -50,11 +50,11 @@ main =
         , String.fromInt (Set.size (Set.insert left "a"))
         , show (Set.remove left "z")
         , show (Set.remove left "a")
-        , show (Set.remove Set.empty "z")
+        , show (Set.remove (Set.empty ⊤) "z")
         , show (Set.union left right)
-        , show (Set.union left Set.empty)
+        , show (Set.union left (Set.empty ⊤))
         , show (Set.intersect left right)
-        , show (Set.intersect left Set.empty)
+        , show (Set.intersect left (Set.empty ⊤))
         , show (Set.diff left right)
         , show (Set.diff right left)
         , show (Set.diff left left)

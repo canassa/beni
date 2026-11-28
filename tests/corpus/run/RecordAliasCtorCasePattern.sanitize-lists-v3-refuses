@@ -1,0 +1,2 @@
+# v3 refuses the push: the constructor pattern binds the fields, and `u` is the list `v` reads after it (ownership-v3-kernel.md §11.4).
+20:17 list_still_used List.push

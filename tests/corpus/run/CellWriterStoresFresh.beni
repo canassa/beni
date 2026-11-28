@@ -1,0 +1,59 @@
+-- A writer fiber that pushes a fresh list onto a list of lists in a cell,
+-- or inserts one into a `Dict` of lists (#2594): the row of
+-- `Ref.update` hands the function each part of the contents at its place,
+-- so the push writes the outer storage and not the elements, and a later
+-- run writes no list an earlier run stored. A loan of an element taken
+-- before a push onto the outer list is read after it. Each write is
+-- accepted and runs in place (ownership-v3-kernel.md §13 item 2, amended
+-- 2026-11-22).
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showN : List (List Int) → String
+showN ls = String.join (List.map ls ints) "|"
+
+
+showD : Dict Int (List Int) → String
+showD d = String.join (List.map (Dict.toList d) λ( a, b ) → "${String.fromInt a}=${ints b}") " "
+
+
+nested : ⊤ → String
+nested ⊤ =
+    c = Ref.make [ [ 0 ] ]
+    a = Task.spawn λ⊤ → Ref.update c λd → List.push d [ 1 ]
+    Task.join a
+    showN (Ref.get c)
+
+
+cache : ⊤ → String
+cache ⊤ =
+    c = Ref.make (Dict.fromList [ ( 0, [ 0 ] ) ])
+    w = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update c λd → Dict.insert d 7 [ 7 ]
+    s = showD (Ref.get c)
+    Task.yieldNow ⊤
+    Task.join w
+    "${s} ${showD (Ref.get c)}"
+
+
+elementKept : ⊤ → String
+elementKept ⊤ =
+    c = Ref.make [ [ 0 ] ]
+    el = List.get (Ref.get c) 0
+    Ref.update c λd → List.push d [ 9 ]
+    "${showN (Ref.get c)} ${ints (Maybe.withDefault el [])}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ nested ⊤, cache ⊤, elementKept ⊤ ]

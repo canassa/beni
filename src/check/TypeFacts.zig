@@ -91,6 +91,12 @@ pub fn settle(
             e.comparable = inWellKnownTable(types, @fromBackingInt(@intCast(i))) or
                 declaresPubCompare(types, e.module, bir, @fromBackingInt(@intCast(i)));
             if (!e.comparable) try order_queue.append(gpa, @intCast(i));
+            // core's ordered Dict is foreign: it has no compare, and what
+            // holds it is told so (language.md §6.8).
+            if (types.well_known.dict.int() == i) {
+                e.holds_collection = true;
+                try collection_queue.append(gpa, @intCast(i));
+            }
             continue;
         }
         if (types.well_known.dict.int() == i or

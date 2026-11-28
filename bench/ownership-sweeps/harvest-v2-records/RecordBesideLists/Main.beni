@@ -1,0 +1,86 @@
+-- ownership: a record's write beside a list's write of one call
+-- (`ownership-v2.md` §2.11.2 item 4, *a record's write beside a list's*;
+-- R-8.6, R-4.8.8). A callee's requirement is one selection for all of its
+-- writes. `twin` hands `pushA` a new record whose two fields are one list:
+-- the write of the list `a` is refused, and the write of the record's own
+-- object is accepted, because no pair that it asks meets. `twice` hands
+-- `both` one list twice: the push is refused, the update of `b` is
+-- accepted. A record that meets another record stays refused: one record
+-- handed twice (`same`), and a record in a list that the callee returns
+-- (`inList`). Apart arguments are accepted (`apart`).
+import Node exposing (Program)
+
+
+type alias B =
+    x : Int
+
+
+type alias Pair =
+    a : List Int
+    b : List Int
+
+
+pushA : Pair → Pair
+pushA p = { p | a = [ …p.a, 1 ] }
+
+
+both : B, List Int, List Int → B × List Int × List Int
+both b xs ys = ( { b | x = b.x + 1 }, List.push xs 1, ys )
+
+
+pair : B, B → B × B
+pair p q = ( { p | x = p.x + 1 }, q )
+
+
+keepIn : B, List B → B × List B
+keepIn p qs = ( { p | x = p.x + 1 }, qs )
+
+
+pub twin : List Int → Pair
+twin xs = pushA { a = xs, b = xs }
+
+
+pub twice : B, List Int → B × List Int × List Int
+twice b xs = both b xs xs
+
+
+pub same : B → B × B
+same b = pair b b
+
+
+pub inList : B → B × List B
+inList b = keepIn b [ b ]
+
+
+pub apart : B, List Int, List Int → B × List Int × List Int
+apart b xs ys = both b xs ys
+
+
+ls : List Int → String
+ls xs = String.join (List.map xs String.fromInt) ","
+
+
+run : ⊤ → List String
+run ⊤ =
+    ( b1, x1, y1 ) = twice { x = 1 } [ 0 ]
+    p = twin [ 5 ]
+    ( s1, s2 ) = same { x = 3 }
+    ( i1, i2 ) = inList { x = 4 }
+    ( b2, x2, y2 ) = apart { x = 1 } [ 0 ] [ 9 ]
+    [ String.fromInt b1.x
+    , ls x1
+    , ls y1
+    , ls p.a
+    , ls p.b
+    , String.fromInt s1.x
+    , String.fromInt s2.x
+    , String.fromInt i1.x
+    , ls (List.map i2 λq → q.x)
+    , String.fromInt b2.x
+    , ls x2
+    , ls y2
+    ]
+
+
+main : Program
+main = Node.printLines (run ⊤)

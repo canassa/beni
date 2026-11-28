@@ -75,7 +75,7 @@ view model = <p>{Dict.size model.rows} {List.length model.xs}</p>
 main : Browser.Program
 main =
     Tea.sandbox
-        { init = λ⊤ → { rows = Dict.empty, xs = [], grid = [], ys = [] }
+        { init = λ⊤ → { rows = Dict.empty ⊤, xs = [], grid = [], ys = [] }
         , update = update
         , view = view
         }

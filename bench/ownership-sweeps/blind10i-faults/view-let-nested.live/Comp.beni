@@ -1,0 +1,17 @@
+import Html exposing (Html)
+import List
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+fresh : Int → List Int
+fresh k = [ 1, k ]
+
+
+pub counter : { n : Int } → Html msg
+counter props =
+    xs = [ 1, 2 ]
+    ys = List.push xs props.n
+    <i>{show ys}</i>

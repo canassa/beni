@@ -1,0 +1,51 @@
+-- `wrapN` answers its tree at the root in one arm and below new nodes in the
+-- other. A run answers one of the two, so no list of the tree is at two
+-- places of the answer (`ownership-v3-kernel.md` §4.4, *One value of a join
+-- at a time*); v3 read the two arms together, called `wrapN` nonlinear, and
+-- refused `incAll`'s writes of the answer's lists (`element`). The run prints
+-- what the copying run prints.
+import List
+import Node exposing (Program)
+import String
+
+
+type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+wrapN : Int, Tree → Tree
+wrapN n a =
+    if n == 0 then
+        a
+    else
+        Node (wrapN (n - 1) a) [] Leaf
+
+
+wrapped : Int, Tree → Tree
+wrapped n t = incAll (wrapN n t)
+
+
+show : Tree → String
+show t =
+    case t of
+        Node l xs r →
+            sep = ","
+            "(${show l} ${String.join (List.map xs String.fromInt) sep} ${show r})"
+
+        Leaf →
+            "."
+
+
+main : Program
+main = Node.print (show (wrapped 2 (Node Leaf [ 7 ] (Node Leaf [ 8 ] Leaf))))

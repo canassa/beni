@@ -1,0 +1,1 @@
+Each write of a list pattern's part is apart from the other parts, so v3 writes the records in place (ownership-v3-kernel.md §4.4, *The parts of a list pattern are apart*).

@@ -1,0 +1,4 @@
+# A copy put at another index, or into another list, leaves the element it was read from where it was: the `coord` record is at two places and `move`'s write of it is refused (ownership-v3-kernel.md §6 rule 10, *A position*).
+80:25 list_still_used call
+80:25 list_still_used call
+80:42 list_still_used call

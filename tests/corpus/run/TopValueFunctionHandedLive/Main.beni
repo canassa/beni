@@ -1,0 +1,37 @@
+-- The live twin of TopValueFunctionHanded: the push writes the list in
+-- place, and the answer of the helper, which holds it, is read after. Before,
+-- the top-level value read as a value of no cell and the write was accepted:
+-- in place it printed `1,2 1,2` (ownership-v3-kernel.md §13 item 12, *A
+-- defect*, (d), #2674).
+import Lib
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+apply : a, b, (a, b → c) → c
+apply u v f = f u v
+
+
+handed : ⊤ → String
+handed ⊤ =
+    k = [ 1 ]
+    x = (apply [] k Lib.ctor).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+handedAgain : ⊤ → String
+handedAgain ⊤ =
+    k = [ 1 ]
+    x = (apply [] k Lib.again).a
+    n = List.push k 2
+    "${show n} ${show x}"
+
+
+main : Program
+main = Node.printLines [ handed ⊤, handedAgain ⊤ ]

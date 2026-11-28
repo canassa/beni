@@ -1988,6 +1988,7 @@ const Case = struct {
         // Enforcement refusals use the same platform as their ownership dump.
         if ((c.kind == .check_bad or c.kind == .check_good) and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {
             if (c.fixture.platform) |name| try list.append(c.arena, try std.fmt.allocPrint(c.arena, "--platform={s}", .{name}));
+            if (c.goldenExists("ownership-v1")) try list.append(c.arena, "--ownership=v1");
         }
         if (c.fixture.markup and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) try list.append(c.arena, "--platform=html");
         if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build"))) {
@@ -2218,6 +2219,9 @@ const Case = struct {
                 "--platform=node",
         });
         if (c.fixture.everywhere) try args.append(c.arena, "--ownership-everywhere");
+        // A fixture of the checker v1 on a chain that names v3 (`.ownership-v1`,
+        // its reason): v1 judges it, as `--ownership=v1` says.
+        if (c.goldenExists("ownership-v1")) try args.append(c.arena, "--ownership=v1");
         // A prerendering build, whose `main` says `Browser.prerender`, runs
         // the suite's `node` (`prerender.md` §5.1, §5.2).
         const path: ?[]const u8 = if (c.fixture.prerender) try w.nodePath() else null;
@@ -2460,6 +2464,11 @@ const Case = struct {
             const written = c.w.read(try std.fmt.allocPrint(c.arena, "{s}/{s}.mjs", .{ out, path })) catch continue;
             // The checker's accepted list writes, by "line:col [value ]List.<writer>".
             var wanted: std.StringArrayHashMapUnmanaged(u32) = .empty;
+            // v3's accepted `call` lines, by "line:col": a walked writer
+            // called method-style or through an alias (`call upd xs`), and a
+            // call that hands a writer on as a value (`call Main.apply xs`),
+            // each wrapped at its call (ownership-v3-kernel.md §12).
+            var calls: std.StringArrayHashMapUnmanaged(void) = .empty;
             var lines = std.mem.splitScalar(u8, section[header_end + 1 ..], '\n');
             while (lines.next()) |raw| {
                 const line = std.mem.trimStart(u8, raw, " ");
@@ -2476,30 +2485,41 @@ const Case = struct {
                 // at the write itself.
                 if (std.mem.eql(u8, checker, "v2") and std.mem.startsWith(u8, line[verdict..], ": accepted callback-param")) continue;
                 var rest = line[space + 1 .. verdict];
+                if (std.mem.eql(u8, checker, "v3") and std.mem.startsWith(u8, rest, "call ")) try calls.put(c.arena, at, {});
                 var value = false;
                 if (std.mem.startsWith(u8, rest, "value ")) {
                     value = true;
                     rest = rest["value ".len..];
                 }
+                // v3 says `List.update`, which has no words, at the call
+                // (`call List.update xs`); the build wraps it as a writer.
+                if (std.mem.eql(u8, checker, "v3") and std.mem.startsWith(u8, rest, "call List.update ")) rest = rest["call ".len..];
+                // And a walked writer of `Dict` or `Set` (`call Dict.update d`),
+                // whose sites v3's oracle wraps beside `Dict`'s and `Set`'s
+                // primitives (ownership-v3-kernel.md §12).
+                if (std.mem.eql(u8, checker, "v3") and (std.mem.startsWith(u8, rest, "call Dict.") or std.mem.startsWith(u8, rest, "call Set."))) rest = rest["call ".len..];
                 const op_end = std.mem.indexOfScalar(u8, rest, ' ') orelse rest.len;
                 const op = rest[0..op_end];
                 if (std.mem.indexOf(u8, rest[op_end..], "[*]") != null) continue;
-                const writer: []const u8 = if (std.mem.startsWith(u8, op, "List."))
-                    op["List.".len..]
+                const keyed = std.mem.eql(u8, checker, "v3") and keyedWriter(op);
+                const writer: []const u8 = if (std.mem.startsWith(u8, op, "List.") or keyed)
+                    op
                 else if (!value and (std.mem.eql(u8, op, "construction") or std.mem.eql(u8, op, "++")))
-                    "append"
+                    "List.append"
                 else
                     continue;
-                const k = try std.fmt.allocPrint(c.arena, "{s} {s}List.{s}", .{ at, if (value) "value " else "", writer });
+                const k = try std.fmt.allocPrint(c.arena, "{s} {s}{s}", .{ at, if (value) "value " else "", writer });
                 const slot = try wanted.getOrPut(c.arena, k);
                 slot.value_ptr.* = if (slot.found_existing) slot.value_ptr.* + 1 else 1;
             }
             // The build's sites: "`List.<w>`[ value] in M (at byte N)".
             var got: std.StringArrayHashMapUnmanaged(u32) = .empty;
-            var it = std.mem.splitSequence(u8, written, "(\"`List.");
+            var it = std.mem.splitSequence(u8, written, "(\"`");
             _ = it.next();
             while (it.next()) |piece| {
                 const tick = std.mem.indexOfScalar(u8, piece, '`') orelse continue;
+                // A site of `List`, or under v3 of `Dict` or `Set`.
+                if (!std.mem.startsWith(u8, piece, "List.") and !(std.mem.eql(u8, checker, "v3") and keyedWriter(piece[0..tick]))) continue;
                 const value = std.mem.startsWith(u8, piece[tick + 1 ..], " value in ");
                 const at = std.mem.indexOf(u8, piece, "(at byte ") orelse continue;
                 const digits = piece[at + "(at byte ".len ..];
@@ -2515,7 +2535,7 @@ const Case = struct {
                         c_no = 1;
                     } else if (b & 0xC0 != 0x80) c_no += 1;
                 }
-                const k = try std.fmt.allocPrint(c.arena, "{d}:{d} {s}List.{s}", .{ l_no, c_no, if (value) "value " else "", piece[0..tick] });
+                const k = try std.fmt.allocPrint(c.arena, "{d}:{d} {s}{s}", .{ l_no, c_no, if (value) "value " else "", piece[0..tick] });
                 const slot = try got.getOrPut(c.arena, k);
                 slot.value_ptr.* = if (slot.found_existing) slot.value_ptr.* + 1 else 1;
             }
@@ -2526,6 +2546,7 @@ const Case = struct {
                 failed = true;
             };
             for (got.keys(), got.values()) |k, n| if (!wanted.contains(k)) {
+                if (calls.contains(k[0 .. std.mem.indexOfScalar(u8, k, ' ') orelse k.len])) continue;
                 detail("{s}: {s}: the sanitised build wraps {s} ({d}), which is no list write {s} accepted\n", .{ c.fixture.name, source, k, n, checker });
                 failed = true;
             };
@@ -2536,8 +2557,16 @@ const Case = struct {
         }
     }
 
+    /// Whether `op` names a writer of core's `Dict` or `Set`, whose
+    /// accepted calls v3's oracle wraps (`Lower.listWriterAt`).
+    fn keyedWriter(op: []const u8) bool {
+        const writers = [_][]const u8{ "Dict.insert", "Dict.remove", "Dict.update", "Dict.swap", "Dict.insertAt", "Dict.sortBy", "Set.insert", "Set.remove", "Set.swap", "Set.insertAt", "Set.sortBy" };
+        for (writers) |w| if (std.mem.eql(u8, w, op)) return true;
+        return false;
+    }
+
     fn ownershipOnly(stderr: []const u8) bool {
-        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit", "comparison_changes_value" };
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit", "comparison_changes_value", "false_ownership_word" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
         _ = it.next();
@@ -2829,6 +2858,20 @@ const Case = struct {
                 if (separate) "release-expected" else "expected",
                 c.bless and separate,
             );
+            // A fixture of v3's list pass (`.sanitize-lists-v3`) is built
+            // once more as a release with its accepted list writes edited
+            // in place (`--lists-in-place`): the specialiser and the
+            // optimiser over the in-place lowering, which keeps a call
+            // where a plain release has a read it drops (research report
+            // 152). It must print the release golden; a fixture whose
+            // sanitised run must crash has no such golden.
+            if (c.goldenExists("sanitize-lists-v3") and !c.goldenExists("sanitize-lists-v3-crash")) {
+                var lists: std.ArrayList([]const u8) = .empty;
+                try lists.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership=v3", "--ownership-everywhere", "--lists-in-place", "--release", "--allow-debug", "--check-call-graph", "--out=release-lists-v3" });
+                if (c.cfg.mode == .pending) try lists.append(c.arena, "--diagnostics=json");
+                try lists.appendSlice(c.arena, try buildPaths(c.arena, sources));
+                try c.runOnce("release-lists-v3", .release, lists.items, if (separate) "release-expected" else "expected", false);
+            }
         }
     }
 
@@ -3317,6 +3360,21 @@ const Case = struct {
         if (steps) |bytes| try c.w.write(steps_name, bytes);
         const script: Script = .{ .name = if (steps != null) steps_name else null, .bytes = steps orelse "" };
 
+        // A page that v3 must refuse (`.sanitize-lists-v3-refuses`), on a
+        // chain v3 judges (`"ownership": "v3"`, `boundary.md` §5.2): its
+        // plain build is refused, with exactly the writes the file names,
+        // and there is no page to run. On any other chain the page runs.
+        if (c.goldenExists("sanitize-lists-v3-refuses")) if (try c.ownershipRefusals(platform_arg, &.{}, sources)) |got| {
+            const want = try c.expectedRefusals("sanitize-lists-v3-refuses");
+            if (!std.mem.eql(u8, got, want)) {
+                detail("{s}: its build refuses, but not what sanitize-lists-v3-refuses names\n--- expected ---\n{s}--- refused ---\n{s}", .{ c.fixture.name, want, got });
+                because("[out] the build refuses other writes than sanitize-lists-v3-refuses names", .{});
+                return error.SanitisedRefusalDiffers;
+            }
+            _ = try c.v3Page(platform_arg, sources);
+            return;
+        };
+
         if (c.fixture.values) return c.valueFuzz(h, script, sources, platform_arg);
 
         // Both builds first, then every page that must run in one Node
@@ -3350,7 +3408,8 @@ const Case = struct {
         // A page with a `.sanitize-lists-v3` file (its reason), on any
         // platform: built under the ownership prototype and the list
         // sanitiser (`v3Page`), against the same golden.
-        const v3_pages = [1]?PagePlan{if (pages[0] != null and c.goldenExists("sanitize-lists-v3")) try c.v3Page(platform_arg, sources) else null};
+        const v3_pages = [1]?PagePlan{if (pages[0] != null and (c.goldenExists("sanitize-lists-v3") or c.goldenExists("sanitize-lists-v3-refuses"))) try c.v3Page(platform_arg, sources) else null};
+        if (pages[0] != null and c.goldenExists("sanitize-lists-refuses")) try c.v1Refuses(platform_arg, sources);
         if (pages[0] != null) try c.checkCompiledSchemas(pageOut(.dev));
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
@@ -3485,6 +3544,24 @@ const Case = struct {
         };
     }
 
+    /// A page with a `.sanitize-lists-refuses` file: a fixed soundness
+    /// defect, as `.sanitize-lists-v3-refuses` is, for the ownership
+    /// checker v1. It must refuse exactly the writes the file names. The
+    /// page of the default build runs as every page does.
+    fn v1Refuses(c: Case, platform_arg: []const u8, sources: []const []const u8) !void {
+        const flags: []const []const u8 = &.{"--ownership-everywhere"};
+        if (try c.ownershipRefusals(platform_arg, flags, sources)) |got| {
+            const want = try c.expectedRefusals("sanitize-lists-refuses");
+            if (std.mem.eql(u8, got, want)) return;
+            detail("{s}: v1 refuses, but not what sanitize-lists-refuses names\n--- expected ---\n{s}--- refused ---\n{s}", .{ c.fixture.name, want, got });
+            because("[v1] refuses other writes than sanitize-lists-refuses names", .{});
+            return error.SanitisedRefusalDiffers;
+        }
+        detail("{s}: v1 accepts a page it must refuse (sanitize-lists-refuses)\n", .{c.fixture.name});
+        because("[v1] accepts a page it must refuse", .{});
+        return error.SanitisedRefusalAccepted;
+    }
+
     /// The page of a fixture with a `.sanitize-lists-v3` file (its reason):
     /// the program built under the ownership prototype with its check
     /// enforced (`--ownership=v3 --ownership-everywhere`) and under the list
@@ -3493,8 +3570,26 @@ const Case = struct {
     /// runtime that kept a list from a hole and reads it after `update`
     /// wrote it traps (`boundary.md` §9.4.8). The build must wrap a list
     /// write, or the page tests nothing. Never blessed, never cached.
+    ///
+    /// A page with a `.sanitize-lists-v3-refuses` file instead is a fixed
+    /// soundness defect: the prototype must refuse exactly the writes it
+    /// names, and there is no page to run. When the prototype accepts the
+    /// program, the case fails.
     fn v3Page(c: Case, platform_arg: []const u8, sources: []const []const u8) !?PagePlan {
         const out = "out-lists-v3";
+        const flags: []const []const u8 = &.{ "--ownership=v3", "--ownership-everywhere" };
+        if (c.goldenExists("sanitize-lists-v3-refuses")) {
+            if (try c.ownershipRefusals(platform_arg, flags, sources)) |got| {
+                const want = try c.expectedRefusals("sanitize-lists-v3-refuses");
+                if (std.mem.eql(u8, got, want)) return null;
+                detail("{s}: v3 refuses, but not what sanitize-lists-v3-refuses names\n--- expected ---\n{s}--- refused ---\n{s}", .{ c.fixture.name, want, got });
+                because("[" ++ out ++ "] v3 refuses other writes than sanitize-lists-v3-refuses names", .{});
+                return error.SanitisedRefusalDiffers;
+            }
+            detail("{s}: v3 accepts a page it must refuse (sanitize-lists-v3-refuses)\n", .{c.fixture.name});
+            because("[" ++ out ++ "] v3 accepts a page it must refuse", .{});
+            return error.SanitisedRefusalAccepted;
+        }
         var args: std.ArrayList([]const u8) = .empty;
         try args.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership=v3", "--ownership-everywhere", "--sanitize-lists", "--out=" ++ out });
         try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
@@ -4005,6 +4100,7 @@ const Case = struct {
         var args: std.ArrayList([]const u8) = .empty;
         const platform = if (own_platform) "platform" else c.fixture.platform orelse "node";
         try args.appendSlice(c.arena, &.{ "build", try std.fmt.allocPrint(c.arena, "--platform={s}", .{platform}), "--out=out" });
+        if (c.goldenExists("ownership-v1")) try args.append(c.arena, "--ownership=v1");
         if (!c.fixture.app) try args.append(c.arena, "--library");
         // `--allow-debug` rides with `--release` here for `run/`'s reason:
         // one rule for the whole corpus, so that a shape golden can be about
@@ -4191,7 +4287,10 @@ const Case = struct {
                 const platform = if (everywhere) name[0 .. name.len - everywhere_suffix.len] else name;
                 const flag = try std.fmt.allocPrint(c.arena, "--platform={s}", .{platform});
                 const flags: []const []const u8 = if (everywhere) &.{ flag, "--ownership-everywhere" } else &.{flag};
-                const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json" }, flags, &.{path} }));
+                // The report is v1's (`dump` prints the checker its flags
+                // name), so the check is v1's too, on a chain that names v3
+                // as on any other (`"ownership"`, `boundary.md` §5.2).
+                const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json", "--ownership=v1" }, flags, &.{path} }));
                 const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership" }, flags, &.{path} }));
                 try expectExit(0, r);
                 try c.ownershipCached(flags, path, checked);
@@ -4485,7 +4584,7 @@ const Case = struct {
         const trace = try std.fmt.allocPrint(c.arena, "ownership-trace-{s}.json", .{name});
         const profile = try std.fmt.allocPrint(c.arena, "--self-profile={s}/{s}", .{ project, trace });
         for ([_][]const u8{ "writes", "reads" }) |pass| {
-            const cmd = try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json" }, flags, if (c.fixture.core) &.{"--core"} else &.{}, &.{ dir, profile, path } });
+            const cmd = try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json", "--ownership=v1" }, flags, if (c.fixture.core) &.{"--core"} else &.{}, &.{ dir, profile, path } });
             const r = try c.w.runWith(cmd, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
             if (r.exit_code != checked.exit_code or !std.mem.eql(u8, r.stderr, checked.stderr)) {
                 detail("{s}: the check that {s} the cache disagrees with --no-cache (exit {d}, not {d})\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass, r.exit_code, checked.exit_code, r.stderr });
@@ -4956,6 +5055,7 @@ fn passName(out_dir: []const u8) []const u8 {
     if (std.mem.eql(u8, out_dir, "out-in-place")) return "dev-in-place";
     if (std.mem.eql(u8, out_dir, "out-stores")) return "dev-stores";
     if (std.mem.eql(u8, out_dir, "release-stores")) return "release-stores";
+    if (std.mem.eql(u8, out_dir, "release-lists-v3")) return "release-lists-v3";
     if (std.mem.eql(u8, out_dir, "release-library")) return "release-library";
     if (std.mem.eql(u8, out_dir, "out-library")) return "dev-library";
     return if (std.mem.eql(u8, out_dir, "release")) "release" else "dev";

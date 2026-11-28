@@ -1,0 +1,33 @@
+-- A record offered to a `Queue` and taken back by `Queue.takeAll` is the
+-- record the program still holds: `takeAll` makes its answer with `Js.to`
+-- from a `Js.Value`, whose layout has no element step, and the element
+-- location of the answer is read through the wide entry above it
+-- (ownership-v3-kernel.md §3.4). In place, `r0.x` would print 99.
+import Io
+import List
+import Node exposing (Program)
+import Queue
+
+
+type alias R =
+    x : Int
+    y : Int
+
+
+go : Int → Program
+go n =
+    r0 = { x = n, y = 2 }
+    q = Queue.unbounded ⊤
+    _ = Queue.offer q r0
+    w =
+        case Queue.takeAll q of
+            [ v, …_ ] →
+                { v | x = 99 }
+
+            [] →
+                r0
+    Node.print "${String.fromInt w.x} ${String.fromInt r0.x}"
+
+
+main : Program
+main = Io.run λ⊤ → go 1

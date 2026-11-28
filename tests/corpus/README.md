@@ -322,10 +322,17 @@ output the evidence.
 
 A `<name>.sanitize-lists-v3` file (its reason) gives the same pass under the
 ownership prototype (`--ownership=v3 --ownership-everywhere`), checked against
-its `dump --stage=ownership --ownership=v3`. A `browser/` page may carry one too,
+its `dump --stage=ownership --ownership=v3`. Such a `run/` fixture (with no
+`-crash` file) is also built as a release with its accepted writes edited in
+place (`--ownership=v3 --ownership-everywhere --lists-in-place --release`), in
+the release part, and must print the release golden: the specialiser and the
+optimiser over the in-place lowering (research report 152). A `browser/` page may carry one too,
 on any platform: the page is built once more under `--ownership=v3
 --ownership-everywhere --sanitize-lists` and must show `.expected`, and the
-build must wrap at least one list write. These are the tests of
+build must wrap at least one list write. A page with a
+`<name>.sanitize-lists-v3-refuses` file instead must be refused under
+`--ownership=v3 --ownership-everywhere` with exactly the refusals it names
+(below), and the case fails when it is accepted (`browser/dom/KeptLetInPlace`). These are the tests of
 `boundary.md` §9.4.8, one per platform that renders markup
 (`run/SsrHolesInPlace`, `browser/dom/HolesInPlace`, `browser/tea/HolesInPlace`,
 `browser/inline/HolesInPlace`): a runtime that kept a list from a hole and

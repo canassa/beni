@@ -1,0 +1,1 @@
+The push of each element is accepted under v3 and runs in place: hold runs its function once, so the captured list is at one place of its answer (ownership-v3-kernel.md §12 item 8).

@@ -1,0 +1,26 @@
+-- A tuple read as a record two steps below a type variable of a callee's
+-- answer: the caller's slot `.0.a.a=` gets its cells from the callee's one
+-- location, which holds the inner tuple's list and no object, and no slot
+-- of the field `a` is below it, so the slot is a cell no claim names and v3
+-- refuses the update (ownership-v3-kernel.md §3.4). The write was of the
+-- list alone, and in place `inner`'s number read 5.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    inner = ( n, [ 1 ] )
+    pr : { a : { a : Int, b : List Int }, b : Int } × Int
+    pr = Pun.convPair ( inner, 2 )
+    case pr of
+        ( p, _ ) →
+            q = p.a
+            q2 = { q | a = 5 }
+            case inner of
+                ( m, _ ) →
+                    "${String.fromInt q2.a} ${String.fromInt m}"
+
+
+main : Program
+main = Node.print (go 0)

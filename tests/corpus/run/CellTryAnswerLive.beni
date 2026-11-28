@@ -1,0 +1,92 @@
+-- A function answers a cell inside a `Maybe` or a `Result` after a `?`
+-- whose operand is a `Maybe` or a `Result` of another type (#2595), and
+-- what it answers holds its argument: the success part of the operand put
+-- in the new cell, or the operand's `Err`, which is the argument. A caller
+-- that writes the cell's contents and then reads the argument (in one
+-- fiber, or while another fiber writes), or that writes the argument and
+-- then reads the `Err`, reads an old value after a write: each write is
+-- refused. Before, the check stopped on the `?`.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+wrap : List Int → Maybe (List Int)
+wrap xs = if List.length xs > 0 then Just xs else Nothing
+
+
+wrapOk : List Int → Result String (List Int)
+wrapOk xs = if List.length xs > 0 then Ok xs else Err "empty"
+
+
+check : List Int → Result (List Int) Int
+check xs = if List.length xs > 5 then Ok 1 else Err xs
+
+
+inCell : List Int → Maybe (Ref (List Int))
+inCell xs =
+    x = (wrap xs)?
+    Just (Ref.make x)
+
+
+inCellOk : List Int → Result String (Ref (List Int))
+inCellOk xs =
+    x = (wrapOk xs)?
+    Ok (Ref.make x)
+
+
+inErr : List Int → Result (List Int) (Ref Int)
+inErr xs =
+    y = (check xs)?
+    Ok (Ref.make y)
+
+
+cellThenArg : ⊤ → List String
+cellThenArg ⊤ =
+    xs = [ 1, 2 ]
+    case inCell xs of
+        Just c →
+            Ref.update c λl → List.set l 0 9
+            [ ints xs, ints (Ref.get c) ]
+
+        Nothing →
+            [ "none" ]
+
+
+fiberThenArg : ⊤ → List String
+fiberThenArg ⊤ =
+    xs = [ 1, 2 ]
+    case inCellOk xs of
+        Ok c →
+            b = Task.spawn λ⊤ → Ref.update c λl → List.push l 3
+            Task.yieldNow ⊤
+            s = ints xs
+            Task.join b
+            [ s, ints (Ref.get c) ]
+
+        Err msg →
+            [ msg ]
+
+
+argThenErr : ⊤ → List String
+argThenErr ⊤ =
+    xs = [ 1, 2 ]
+    r = inErr xs
+    ys = List.set xs 0 99
+    case r of
+        Err l →
+            [ ints ys, ints l ]
+
+        Ok c →
+            [ String.fromInt (Ref.get c) ]
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines (List.concat [ cellThenArg ⊤, fiberThenArg ⊤, argThenErr ⊤ ])

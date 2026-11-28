@@ -1,0 +1,38 @@
+-- Twin of view-let-kept.live: the render reads `xs` again after the push. v3 refuses it.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    k : Int
+    items : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | k = model.k + 1 }
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+view : Model → Html Msg
+view model =
+    xs = [ 1, 2 ]
+    ys = List.push xs model.k
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p>{show ys}</p>
+        <p>{show xs}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { k = 0, items = [ 5 ] }, update = update, view = view }

@@ -1,0 +1,27 @@
+-- A function whose result is a pair with a type variable, read by its
+-- caller as `List Int × Int`: the second part of its result holds its
+-- parameter, and the caller's instance has no location there. That part
+-- escapes at the call (ownership-v3-kernel.md §3.4); before, the call read
+-- the first part only.
+import Node exposing (Program)
+import Pun
+
+
+g : a → List Int × b
+g x = ( [ 1 ], Pun.conv x )
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    p : List Int × Int
+    p = g x0
+    ( _, h ) = p
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

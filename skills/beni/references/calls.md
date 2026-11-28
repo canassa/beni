@@ -106,7 +106,7 @@ import Dict exposing (Dict)
 
 
 pub tally : List String → Dict String Int
-tally words = List.foldl words Dict.empty λword counts →
+tally words = List.foldl words (Dict.empty ⊤) λword counts →
     Dict.update counts word λn → Just (Maybe.withDefault n 0 + 1)
 ```
 

@@ -1,0 +1,169 @@
+-- A fiber that runs a function which forks a fiber in which a writer runs,
+-- and then one that masks, as two captures, two local lambdas, two
+-- parameters of a helper, or a lambda over a helper's own function
+-- parameter; a helper that forks a writer and a reader of its own cell and
+-- returns, and a mask after its call; a scope whose close runs a finaliser
+-- another fiber deferred, which parks masked, after its function forked such
+-- a fiber; a scope whose function runs such a function within; and a mask
+-- after a call of one that joined its writer. Each update writes a copy of
+-- the contents, accepted (ownership-v3-kernel.md §13 item 12, *A defect*,
+-- (d), *After such a call*, *Descendants of a masked fiber*,
+-- `Contract.runs_on`; #2653). Its live twin is CellScopeCloseLive.
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+hosting : ⊤ → String
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update r λl → List.push (List.copy l) 5
+    Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+-- A helper that forks a writer and a reader of a cell it made, and returns
+-- while they run.
+hostAndLeave : ⊤ → ⊤
+hostAndLeave ⊤ =
+    q = Ref.make [ 1, 2 ]
+    _ = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update q λl → List.push (List.copy l) 5
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 5)
+        _ = ints (Ref.get q)
+        ⊤
+    ⊤
+
+
+forker : ⊤ → ⊤
+forker ⊤ =
+    _ = Task.spawn hosting
+    ⊤
+
+
+masker : Int → ⊤
+masker _ = Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 1)
+
+
+go2 : (⊤ → ⊤), (Int → ⊤) → ⊤
+go2 h k =
+    t = Task.spawn λ⊤ →
+        h ⊤
+        k 1
+    Task.join t
+
+
+capFirst : ⊤ → String
+capFirst ⊤ =
+    h = forker
+    k = masker
+    t = Task.spawn λ⊤ →
+        h ⊤
+        k 1
+    Task.join t
+    "capFirst"
+
+
+capFirstLam : ⊤ → String
+capFirstLam ⊤ =
+    h =
+        λ⊤ →
+            _ = Task.spawn hosting
+            ⊤
+    k = λ_ → Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 1)
+    t = Task.spawn λ⊤ →
+        h ⊤
+        k 1
+    Task.join t
+    "capFirstLam"
+
+
+capFirstParam : ⊤ → String
+capFirstParam ⊤ =
+    go2 forker masker
+    "capFirstParam"
+
+
+hostThenMask : ⊤ → String
+hostThenMask ⊤ =
+    t = Task.spawn λ⊤ →
+        hostAndLeave ⊤
+        masker 1
+    Task.join t
+    "hostThenMask"
+
+
+deferScope : ⊤ → String
+deferScope ⊤ =
+    t = Task.spawn λ⊤ →
+        Task.scope λsp →
+            _ = Task.spawn hosting
+            _ = Task.spawn λ⊤ → Task.defer sp λ_ → Task.sleep (Duration.millis 1)
+            Task.yieldNow ⊤
+    Task.join t
+    "deferScope"
+
+
+scopeHost : ⊤ → String
+scopeHost ⊤ = Task.scope λ_ → hosting ⊤
+
+
+-- `hosting` joins its writer before it returns: the mask after it is
+-- refused all the same (the pessimistic side).
+joinedThenMask : ⊤ → String
+joinedThenMask ⊤ =
+    s = hosting ⊤
+    masker 1
+    s
+
+
+-- The sibling that masks is a local lambda over the helper's own function
+-- parameter.
+wrapRunner : (Int → ⊤) → ⊤
+wrapRunner g =
+    h = forker
+    k = λn → g n
+    t = Task.spawn λ⊤ →
+        h ⊤
+        k 1
+    Task.join t
+
+
+wrapOwn : ⊤ → String
+wrapOwn ⊤ =
+    wrapRunner masker
+    "wrapOwn"
+
+
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ fiber capFirst
+        , fiber capFirstLam
+        , fiber capFirstParam
+        , fiber hostThenMask
+        , fiber deferScope
+        , fiber scopeHost
+        , fiber joinedThenMask
+        , fiber wrapOwn
+        ]

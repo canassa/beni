@@ -1,0 +1,12 @@
+--! A test platform: a value read at another type of the same JavaScript shape.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| JavaScript `(a) => a`: it answers what it was handed, as an `Int`.
+pub foreign pure stash : returned a → Int

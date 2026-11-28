@@ -1,0 +1,1 @@
+A field that holds NaN and that no write changed is read after an accepted record update: the sanitiser must leave it alone (Object.is, research report 165's review).

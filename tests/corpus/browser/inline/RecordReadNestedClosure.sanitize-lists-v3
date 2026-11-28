@@ -1,0 +1,1 @@
+v3 reads a field path that a closure nested in a closure captures where the outermost one is made, before the arm's store, a local function's where its `let` starts (ownership-v3-kernel.md §6 rule 3, §11 item 10): each field is written in place, and each command sends the old value.

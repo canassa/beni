@@ -1,0 +1,11 @@
+--! A test platform: a `Js.Value` made in two `if`s in a row.
+
+import Js
+
+
+--| A new JavaScript array of `x` or of `y`, and then either that array or
+--| a new one of its first element, read at another type.
+pub pick : Bool, Bool, a, a → b
+pick c d x y =
+    j = if c then Js.array [ Js.from x ] else Js.array [ Js.from y ]
+    Js.to (if d then j else Js.array [ Js.at j 0 ])

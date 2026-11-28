@@ -635,6 +635,15 @@ prefix range used by `cancelAll`. W47's type identities and comparison evidence
 remain unchanged. Dict and Set themselves no longer have `compare` and are
 refused as keys with the reason named in the diagnostic.
 
+*Amended 2026-11-19 (research report 160):* built on the ownership checker v3's
+branch with the pair index below. Until v3 is the checker a build enforces, every
+public writer of `core/Dict.js` copies (new header, entries, pairs and `Map`) and
+leaves its argument as it was; only a write v3 accepts is made in place, and only
+under its oracle (`--lists-in-place`, `ownership-v3-kernel.md` §12). The one
+writer that edits in place is the private `put`, into storage the loop that calls
+it made. "Every accepted writer mutates this storage on every platform" above is
+the target, not the state.
+
 *Amended 2026-10-25 (the owner, #298; measured in `browser-inline.md` §9.7):* the
 `index` maps each key to **its entry pair**, not to the pair's position. The
 bijection becomes: `index.size === entries.length`, each key occurs once, and
@@ -1135,7 +1144,14 @@ no longer the spread `({ ...r, a: x })`:
 - **Hoists** (*revised the same day*, `ownership-checker.md` Â§31.14). A later read of a written field is read
   into a temporary before the write, at the placement the checker's table names, and a closure that captures a
   field path reads it when it is made. The table is in the module's cache entry beside its summary block
-  (`ownership-checker.md` Â§31.10).
+  (`ownership-checker.md` Â§31.10). *Amended 2026-11-27 (#2657):* under the checker v3
+  (`ownership-v3-kernel.md` §6 rule 3, *A field path a closure captures*, and §11 item 10) the same rows
+  come from v3's channel (`own3/Reads.zig`, with the closure in `capture`): each field path that a closure
+  of an application module captures, read where the closure is made, in every module whether it writes or
+  not, and a read of a field that a call writes, read before the call. The lowering places them as it
+  places v1's. Only a build that writes v3's accepted writes in place (`--lists-in-place`, and the
+  sanitiser `--sanitize-lists`) reads the channel, so a build that writes nothing in place does not move by
+  one byte.
 - **A barrier.** A record update is a barrier to Â§9's optimiser, as a list demand is (*`--release`*, above).
   No read of a written field, or of anything that may alias the base, is moved across it. No single-use
   binding of such a read is inlined past it. It is never dropped as unused.
@@ -8074,7 +8090,11 @@ for an effect, and whose initialiser does nothing â `Opt` drops it whole â
 statement `undefined`, so no read of the parameter is left. *Amended 2026-11-15 (#2512):* the
 initialiser node itself is left as it was. Lowering shares a node among the reads of one value (a
 `case`'s subject is its tests' and an `as` binding's), so writing `undefined` over it wrote it over
-the live reads too (`run/ReleaseUnreadAsList`). The pass takes this in every round, but
+the live reads too (`run/ReleaseUnreadAsList`). *Amended 2026-11-17 (#2547):* the rule is general.
+Lowering hands one node to several readers wherever a pattern reads one value twice, so `JsIr` is a
+DAG there, and a rewrite this pass makes in place must hold at every parent of the node: a fold to
+the node's value does, a drop licensed by one reader being dead does not (research report 152 counts
+the sites; `run/ReleaseAsBoundScrutinee`, `run/ReleaseAsListInPlace`). The pass takes this in every round, but
 such a drop asks for no round of its own â what it exposes the next round finds, whichever asks â
 since the extra rounds it asked for cost a `--schema-library` release build a third more analyses.
 The model binding of `mount` (`let e = a.init`) is dead only once its self-assignment is gone and
@@ -12668,6 +12688,12 @@ computed from, and otherwise not at all, which is Solid's `createMemo` recovered
 group whose ops read `shown` reads `model.items`, so it runs exactly when `shown` may be another
 list, and reads the one kept. A `let` used anywhere else â in a condition that chooses between two
 roots, in two roots â stays where it is, an input like any other local.
+
+*Amended 2026-11-14* (research report 134): a kept `let` is a value one render makes and a later
+render reads, so the lowering says which `let`s it keeps (`Lowering.keeps_let`, `boundary.md` §9.4.8,
+*What a lowering keeps*): each whose test can be false, that is each that reads no path whose value is
+not identity-safe. The ownership checker refuses every write of a kept `let` in place
+(`ownership-v3-kernel.md` §6.14); what the root emits does not change.
 
 A row's root is not a grouped root: Â§15.5's rows keep their inputs and item tests. A root inside a
 `For` row, a `Show` body or another root's value is grouped as any root: its block is made where it

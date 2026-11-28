@@ -1,0 +1,23 @@
+-- A platform row whose word puts its parameter in the result, where the
+-- result's type has no location to hold it: `returned a → Int`. The
+-- answer is the same JavaScript value, and a cast reads it back as the
+-- list, so the list escapes at the call (ownership-v3-kernel.md §6 rule
+-- 10). Before, the row put the parameter at every location of the result,
+-- which were none: the push of `x0` was accepted, and in place it pushed
+-- onto the array that `z` still is.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    h = Pun.stash x0
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

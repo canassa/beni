@@ -2512,6 +2512,23 @@ test "ownership v3 (the step 0 prototype): a refusal is an error under enforceme
     try testing.expectEqual(@as(u8, 1), refused.exit_code);
     try testing.expect(std.mem.indexOf(u8, refused.stderr, "List.push xs is refused: later-use") != null);
     try testing.expect(std.mem.indexOf(u8, refused.stderr, "call Cases.five xs is refused: disjoint") != null);
+    // A writer kept where no rule follows it: the message names the fix
+    // (ownership-v3-kernel.md §12 item 5).
+    try w.write("Kept.beni",
+        \\import Dict exposing (Dict)
+        \\
+        \\
+        \\kept : ⊤ → Dict Int Int
+        \\kept ⊤ =
+        \\    ops = { ins = Dict.insert }
+        \\    ops.ins (Dict.fromList [ ( 1, 10 ) ]) 3 30
+        \\
+    );
+    const kept = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Kept.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), kept.exit_code);
+    try testing.expect(std.mem.indexOf(u8, kept.stderr, "value Dict.insert is refused: call") != null);
+    try testing.expect(std.mem.indexOf(u8, kept.stderr, "Call the function directly where it writes") != null);
+    try testing.expect(std.mem.indexOf(u8, kept.stderr, "change a copy (`Dict.copy`)") != null);
     // Without the hidden flag the same module is v1's to judge.
     try w.write("Main.beni",
         \\import Page
@@ -2533,6 +2550,483 @@ test "ownership v3 (the step 0 prototype): a refusal is an error under enforceme
     try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
 }
 
+/// `through` is generic in its answer and answers what its function
+/// parameter answers. `run` hands it its own function parameter, whose answer
+/// has `n` constructors with two lists each, two times, reads both answers at
+/// each location, and pushes onto its list parameter.
+fn answerThrough(a: std.mem.Allocator, n: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype T\n");
+    for (0..n) |i| try out.print(a, "    {s} C{d} (List Int) (List Int)\n", .{ if (i == 0) "=" else "|", i });
+    try out.appendSlice(a,
+        \\
+        \\
+        \\through : (x → a), x → a
+        \\through f x = f x
+        \\
+        \\
+        \\size : T → Int
+        \\size t =
+        \\    case t of
+        \\
+    );
+    for (0..n) |i| try out.print(a, "        C{d} a b →\n            List.length a + List.length b\n\n", .{i});
+    try out.appendSlice(a,
+        \\
+        \\run : (Int → T), Int, List Int → List Int
+        \\run mk k xs =
+        \\    t = through mk k
+        \\    u = through mk (k + 1)
+        \\    List.push xs (size t + size u)
+        \\
+        \\
+        \\make : Int → T
+        \\make k = C0 [ k ] [ k, k ]
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (List.length (run make 3 [ 1, 2 ])))
+        \\
+    );
+    return out.items;
+}
+
+test "ownership v3: the answer of a function parameter, read at each of 512 locations, is judged" {
+    // The one wide location of `through`'s result holds the answer of `mk`,
+    // and `run` reads it at each of the 512 locations of `T`. Each of them
+    // built the same run of 512 atoms and removed its repeats: 262 144 atoms
+    // for each of the two calls, and the walk of `run` passed its budget from
+    // 192 constructors on (#2539). A call now keeps the run of the first
+    // location for the others (kernel §8, *An expansion that reads nothing of
+    // its location is made once for a call's result*).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try answerThrough(w.arena.allocator(), 256));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 2: accepted 2 (fresh 1, call 0, param 1,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 2: accepted 2 (fresh 1, call 0, param 1,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+test "ownership v3: the check of a shared run stops on no correct program" {
+    // Two programs that the first check of a shared run stopped the safe
+    // compiler on (the review of #2539). In the first, the answer of an
+    // unknown function is lost, and the argument is a join of two lists of
+    // the frame: the atoms of the kept run have the context of an arm, and
+    // a walk that counts no work gives them none, so the two runs are
+    // compared without contexts. In the second, the callee calls a function
+    // held in a record of 19 fields: the walk to it makes an index of the
+    // record's parts at its second step, which a check may not build, so
+    // such an expansion is not kept for the next location.
+    const programs = [_][]const u8{
+        \\import Node
+        \\
+        \\
+        \\through : (x → a), x → a
+        \\through f x = f x
+        \\
+        \\
+        \\swap : List Int → List Int × List Int
+        \\swap xs = ( [ 1 ], xs )
+        \\
+        \\
+        \\run : Bool, List Int, List Int → Int
+        \\run b xs ys =
+        \\    fs = [ swap, λvs → ( vs, [ 2 ] ) ]
+        \\    g = Maybe.withDefault (List.head fs) swap
+        \\    case through g (if b then xs else ys) of
+        \\        ( p, q ) →
+        \\            List.length p + List.length q
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (run True [ 1, 2 ] [ 3 ]))
+        \\
+        ,
+        \\import Node
+        \\
+        \\
+        \\type alias Big x a =
+        \\    { f : x → a
+        \\    , a1 : Int
+        \\    , a2 : Int
+        \\    , a3 : Int
+        \\    , a4 : Int
+        \\    , a5 : Int
+        \\    , a6 : Int
+        \\    , a7 : Int
+        \\    , a8 : Int
+        \\    , a9 : Int
+        \\    , a10 : Int
+        \\    , a11 : Int
+        \\    , a12 : Int
+        \\    , a13 : Int
+        \\    , a14 : Int
+        \\    , a15 : Int
+        \\    , a16 : Int
+        \\    , a17 : Int
+        \\    , a18 : Int
+        \\    }
+        \\
+        \\
+        \\runBox : Big x a, x → a
+        \\runBox box x =
+        \\    g = box.f
+        \\    g x
+        \\
+        \\
+        \\probe : (List Int → List Int × List Int), List Int → List Int × List Int
+        \\probe mk xs =
+        \\    runBox { f = mk, a1 = 1, a2 = 2, a3 = 3, a4 = 4, a5 = 5, a6 = 6, a7 = 7, a8 = 8, a9 = 9, a10 = 10, a11 = 11, a12 = 12, a13 = 13, a14 = 14, a15 = 15, a16 = 16, a17 = 17, a18 = 18 } xs
+        \\
+        \\
+        \\swap : List Int → List Int × List Int
+        \\swap xs = ( [ 1 ], xs )
+        \\
+        \\
+        \\main : Node.Program
+        \\main =
+        \\    case probe swap [ 1, 2 ] of
+        \\        ( p, q ) →
+        \\            Node.print (String.fromInt (List.length p + List.length q))
+        \\
+        ,
+    };
+    for (programs) |source| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        try w.write("Main.beni", source);
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total ") == null) {
+            std.debug.print("wanted a dump and exit 0; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr[0..@min(r.stderr.len, 2000)] });
+            return error.TestUnexpectedVerdict;
+        }
+    }
+}
+
+/// A record of `n` lists, `grow` that pushes onto each field in one update,
+/// and `main` that hands it a new record.
+fn recordOfLists(a: std.mem.Allocator, n: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype alias R =\n");
+    for (0..n) |i| try out.print(a, "    f{d} : List Int\n", .{i});
+    try out.appendSlice(a, "\n\ngrow : R → R\ngrow r =\n    { r\n");
+    for (0..n) |i| try out.print(a, "        {s} f{d} = List.push r.f{d} {d}\n", .{ if (i == 0) "|" else ",", i, i, i });
+    try out.appendSlice(a, "    }\n\n\nstart : Int → R\nstart k =\n");
+    for (0..n) |i| try out.print(a, "    {s} f{d} = [ k ]\n", .{ if (i == 0) "{" else ",", i });
+    try out.appendSlice(a, "    }\n\n\nmain : Node.Program\nmain = Node.print (String.fromInt (List.length (grow (start 1)).f0))\n");
+    return out.items;
+}
+
+test "ownership v3: a call that writes 464 locations of a new record is judged" {
+    // `grow` writes the slot and the list of each of 232 fields, and `main`
+    // hands it a new record. Each of the 464 writes of the call is tested
+    // against each other location of the record (kernel §5, test 2), and the
+    // test copied the kept read of that location and compared its atoms: the
+    // walk of `main` passed its budget from 230 fields on (#2534, #2535). A
+    // write passes only the kept reads that have an atom at a root and entry
+    // of it now (kernel §8), and the walk is in its budget.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try recordOfLists(w.arena.allocator(), 232));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 697: accepted 697 (fresh 0, call 464, param 233,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 697: accepted 697 (fresh 0, call 464, param 233,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+/// A record of `n` numbers, `step` that writes each field, and `go` that
+/// hands a new record through `calls` calls of `step` (#2535).
+fn recordThroughCalls(a: std.mem.Allocator, n: u32, calls: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype alias W =\n");
+    for (0..n) |i| try out.print(a, "    f{d} : Int\n", .{i});
+    try out.appendSlice(a, "\n\ninit : Int → W\ninit k =\n");
+    for (0..n) |i| try out.print(a, "    {s} f{d} = k\n", .{ if (i == 0) "{" else ",", i });
+    try out.appendSlice(a, "    }\n\n\nstep : W → W\nstep w =\n    { w\n");
+    for (0..n) |i| try out.print(a, "        {s} f{d} = w.f{d} + 1\n", .{ if (i == 0) "|" else ",", i, i });
+    try out.appendSlice(a, "    }\n\n\ngo : Int → W\ngo n =\n    init n\n");
+    for (0..calls) |_| try out.appendSlice(a, "        ▷ step\n");
+    try out.appendSlice(a, "\n\nmain : Node.Program\nmain = Node.print (String.fromInt (go 1).f0)\n");
+    return out.items;
+}
+
+test "ownership v3: a record of 100 fields through 10 calls that write each field is judged" {
+    // Each of the 1 000 writes of `go` is tested against each later read of
+    // the record (kernel §5, test 4), and a read of a record that the frame
+    // made tests each of its 100 runs. Each run is an old name for the
+    // write, a step for each, and as many more for the lists of runs
+    // (#2535). The runs of a root that are all old names are one step now
+    // (kernel §8).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try recordThroughCalls(w.arena.allocator(), 100, 10));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 1001: accepted 1001 (fresh 0, call 1000, param 1,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 1001: accepted 1001 (fresh 0, call 1000, param 1,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+test "ownership v3: a record of 250 fields through 10 calls that write each field is judged" {
+    // The shape of #2535 itself: 2 500 writes. The walk of `go` needed 38
+    // million units and earns 2.19 million. Three rules of kernel §8 take
+    // it to 1.4 million: a write passes only the kept reads that it marked,
+    // the runs of a root that are all old names are one step, and a later
+    // read that its root's facts settle is no step.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try recordThroughCalls(w.arena.allocator(), 250, 10));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 2501: accepted 2501 (fresh 0, call 2500, param 1,") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 2501: accepted 2501 (fresh 0, call 2500, param 1,` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+test "ownership v3: a write with two entries of one root marks the kept reads at each" {
+    // `l` is the list of `p.a` or of `p.b`: two atoms of one root, at two
+    // entries. `q.f0` holds `l` and `q.f3` holds the list of `p.b`. The
+    // write of `q.f0` marks the kept reads at the root and entry of each of
+    // its atoms (kernel §8), so it passes the kept read of `q.f3`, which
+    // reaches it, and is refused; the write of `q.f3` is refused for `q.f0`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\type alias Q =
+        \\    f0 : List Int
+        \\    f1 : List Int
+        \\    f2 : List Int
+        \\    f3 : List Int
+        \\
+        \\
+        \\type alias P =
+        \\    a : List Int
+        \\    b : List Int
+        \\
+        \\
+        \\grow : Q → Q
+        \\grow q =
+        \\    { q
+        \\        | f0 = List.push q.f0 0
+        \\        , f1 = List.push q.f1 1
+        \\        , f2 = List.push q.f2 2
+        \\        , f3 = List.push q.f3 3
+        \\    }
+        \\
+        \\
+        \\go : P, Bool → Int
+        \\go p c =
+        \\    l = if c then p.a else p.b
+        \\    q =
+        \\        { f0 = l
+        \\        , f1 = [ 1 ]
+        \\        , f2 = [ 2 ]
+        \\        , f3 = p.b
+        \\        }
+        \\    s = grow q
+        \\    List.length s.f0 + List.length s.f3
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (go { a = [ 7 ], b = [ 8, 9 ] } False))
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    const want = [_][]const u8{
+        "35:9 call Main.grow q.f0: rejected disjoint: another operand of the same operation reaches it",
+        "35:9 call Main.grow q.f1: accepted fresh",
+        "35:9 call Main.grow q.f2: accepted fresh",
+        "35:9 call Main.grow q.f3: rejected disjoint: another operand of the same operation reaches it",
+        "demands 15: accepted 13 (fresh 8, call 0, param 5,",
+    };
+    for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+        std.debug.print("wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
+test "ownership v3: a location that the callee only answers is passed by a later write" {
+    // `o` holds the record `i` at `x` and at `y`. `g` writes the four
+    // locations of `o.x` and only answers `o.y`. The first write is of the
+    // slot `v`: of the answered locations it passes only the slot `v` of
+    // `o.y` (the slots of two fields are two cells, kernel §11), which is
+    // the written cell. The second write is of the slot `w`, and the slot
+    // `w` of `o.y` has no kept read yet: the write passes it (kernel §8, *A
+    // write passes only the kept reads that have an atom at a root and
+    // entry of it*), and is refused for it, as each of the four writes is.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\type alias In =
+        \\    v : List Int
+        \\    w : List Int
+        \\
+        \\
+        \\type alias Out =
+        \\    x : In
+        \\    y : In
+        \\
+        \\
+        \\bump : In → In
+        \\bump i =
+        \\    { i
+        \\        | v = List.push i.v 1
+        \\        , w = List.push i.w 2
+        \\    }
+        \\
+        \\
+        \\wrap : In → Out
+        \\wrap i =
+        \\    { x = i
+        \\    , y = i
+        \\    }
+        \\
+        \\
+        \\g : Out → Out
+        \\g o =
+        \\    { x = bump o.x
+        \\    , y = o.y
+        \\    }
+        \\
+        \\
+        \\go : In → Int
+        \\go i =
+        \\    o = wrap i
+        \\    p = g o
+        \\    List.length p.x.v + List.length p.y.w
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (go { v = [ 7 ], w = [ 8, 9 ] }))
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    const want = [_][]const u8{
+        "39:9 call Main.g o.x.v=: rejected disjoint: another operand of the same operation reaches it",
+        "39:9 call Main.g o.x.w=: rejected disjoint: another operand of the same operation reaches it",
+        "39:9 call Main.g o.x.v: rejected disjoint: another operand of the same operation reaches it",
+        "39:9 call Main.g o.x.w: rejected disjoint: another operand of the same operation reaches it",
+    };
+    for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+        std.debug.print("wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
+test "ownership v3: a later read of a function parameter's answer is tested against the write" {
+    // `ys` is the answer of the function parameter `f`, which was handed
+    // `xs` and can answer it. The write of `xs` has no atom of the answer's
+    // root, and the answer has no run; but what the function was handed can
+    // be in its answer (`rootReach`), so the facts of the root do not settle
+    // the pair (kernel §8, *A later read that its root's facts settle is no
+    // step*), and the write is refused for the later read of `ys`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\run : (List Int → List Int), List Int → Int
+        \\run f xs =
+        \\    ys = f xs
+        \\    zs = List.push xs 1
+        \\    List.length ys + List.length zs
+        \\
+        \\
+        \\keep : (List Int → List Int), Int → Int
+        \\keep f n =
+        \\    xs = [ n ]
+        \\    ys = f xs
+        \\    zs = List.push xs 1
+        \\    List.length ys + List.length zs
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (run (λxs → xs) [ 7, 8 ] + keep (λxs → xs) 3))
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    const want = [_][]const u8{
+        "7:10 List.push xs: rejected later-use: it is read again at 8:5 (<call List.length>)",
+        "15:10 List.push xs: rejected later-use: it is read again at 16:5 (<call List.length>)",
+    };
+    for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+        std.debug.print("wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
+test "ownership v3: a write is compared with a kept read that holds a function parameter's answer" {
+    // `grow` writes 8 locations of `r`, so the call keeps an index of its
+    // kept reads by the root and entry of their atoms, and a write passes
+    // only the kept reads that have an atom at a root and entry of it
+    // (kernel §8). The field `b` holds the answer of the function parameter
+    // `f`, which can be `xs`: the answer's atom has its own root, and the
+    // cells of `xs` are in its base. Such a read has no place in the index
+    // and is compared with each write, so the write of `r.a` (the cells of
+    // `xs`) is refused: `b` reaches it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\type alias R =
+        \\    a : List Int
+        \\    b : List Int
+        \\    c : List Int
+        \\    d : List Int
+        \\
+        \\
+        \\grow : R → R
+        \\grow r =
+        \\    { r
+        \\        | a = List.push r.a 1
+        \\        , b = List.push r.b 2
+        \\        , c = List.push r.c 3
+        \\        , d = List.push r.d 4
+        \\    }
+        \\
+        \\
+        \\run : (List Int → List Int), List Int → Int
+        \\run f xs =
+        \\    ys = f xs
+        \\    r =
+        \\        { a = xs
+        \\        , b = ys
+        \\        , c = [ 1 ]
+        \\        , d = [ 2 ]
+        \\        }
+        \\    s = grow r
+        \\    List.length s.a + List.length s.b
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (run (λxs → xs) [ 7, 8 ]))
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    const want = [_][]const u8{
+        "30:9 call Main.grow r.a: rejected disjoint: another operand of the same operation reaches it",
+        "30:9 call Main.grow r.c: accepted fresh",
+        "30:9 call Main.grow r.d: accepted fresh",
+        "total 14: accepted 12 (fresh 7, call 0, param 5,",
+    };
+    for (want) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+        std.debug.print("wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
 // The first full run of the sanitiser corpus under the prototype accepted 19
 // programs that it must refuse (research report 111 §4.2). Each has a write
 // that changes a list in place while another holder reads it: a plain build
@@ -2551,9 +3045,10 @@ test "ownership v3 (the step 0 prototype): the sanitiser fixtures that the first
     const single = [_]Want{
         .{ .name = "SanitiserAnswerLeft", .at = "36:9", .cause = "escaped", .count = 2 },
         .{ .name = "SanitiserCellStaleLength", .at = "27:11", .cause = "supply", .count = 1 },
-        .{ .name = "SanitiserCellStoredCapture", .at = "28:22", .cause = "escaped", .count = 4 },
-        .{ .name = "SanitiserFoldAlternativesShared", .at = "51:16", .cause = "disjoint", .count = 8 },
-        .{ .name = "SanitiserFoldAnswerFedKept", .at = "30:11", .cause = "supply", .count = 3 },
+        .{ .name = "SanitiserCellStoredCapture", .at = "28:22", .cause = "later-use", .count = 4 },
+        .{ .name = "SanitiserFoldAlternativesShared", .at = "51:16", .cause = "disjoint", .count = 5 },
+        // Two since kernel §13: `step`'s store of `a` into its parameter's cell, after its write of `acc`, is no escape before that write; the fold still refuses.
+        .{ .name = "SanitiserFoldAnswerFedKept", .at = "30:11", .cause = "supply", .count = 2 },
         .{ .name = "SanitiserFoldHandsLabelKeeps", .at = "32:29", .cause = "supply", .count = 1 },
         .{ .name = "SanitiserFoldKeepsAnswer", .at = "28:10", .cause = "supply", .count = 6 },
         .{ .name = "SanitiserLabelRounds", .at = "26:9", .cause = "later-use", .count = 1 },
@@ -2806,6 +3301,21 @@ test "ownership v3: the faults of round 2 are refused" {
         \\    w = List.update v 0 λm → List.push m 9
         \\    List.length w
         \\
+        \\
+        \\pub joinArgLive : Int → Int
+        \\joinArgLive c =
+        \\    xs = [ [ 1 ], [ 2 ] ]
+        \\    ys =
+        \\        List.map xs
+        \\            (case c of
+        \\                0 →
+        \\                    λl → List.push l 1
+        \\
+        \\                _ →
+        \\                    λl → l
+        \\            )
+        \\    List.length ys + List.foldl xs 0 λl n → n + List.length l
+        \\
     );
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Round2.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
@@ -2815,7 +3325,10 @@ test "ownership v3: the faults of round 2 are refused" {
         // `twice`: `back` loses the closure, so each function that it captured is in the default.
         "  32:10 value <call Round2.back>: rejected supply: the function writes a parameter that the callee reads again or does not hand as its own\n",
         // `joinArg`: each arm flows to the parameter of `List.map`, so the write is a demand on `xs`.
-        "  45:9 call List.map xs[*]: rejected later-use: it is read again at 53:22 (<call List.length>)\n",
+        // `List.length xs` reads the outer array alone (`borrowed shallow`), never the elements the
+        // map wrote, so the write is safe; `joinArgLive` reads the elements after it.
+        "  45:9 call List.map xs[*]: accepted fresh\n",
+        "  144:9 call List.map xs[*]: rejected later-use: it is read again at 152:22 (<call List.foldl>)\n",
         "  60:9 value <call>: rejected call: a function that writes its parameter goes where the checker does not follow it\n",
         // `later`: `b` was called before it was bound. `a` and `b` call each
         // other, so they are walked as one group: `a` hands `q` to `b`, which
@@ -2823,14 +3336,18 @@ test "ownership v3: the faults of round 2 are refused" {
         "  76:9 call a q: rejected later-use: it is read again at 77:21 (<call List.length>)\n",
         // `selfPass`: the lists of the deeper nodes are a demand on `t` too.
         "  95:9 call walk t⟨List⟩: rejected later-use: it is read again at 96:13 (<call Round2.sum>)\n",
-        "  107:10 List.push k: rejected escaped: it escaped before the write\n",
+        // `capEsc`: the closure that `List.map` runs keeps `k` in the cell it
+        // captured, which the frame follows and reads after (kernel §13 item 11).
+        "  107:10 List.push k: rejected later-use: it is read again at 108:35 (<call Ref.get>)\n",
         // `capEsc2`: the function that answers the closure lets its parameter escape.
         "  123:10 List.push k: rejected escaped: it escaped before the write\n",
         // `ansTwice`: the two elements are one answer of `f`.
         "  136:9 call List.update v[*]: rejected element: one cell can be at two positions of it\n",
         // Report 111's prototype accepted each of the 14 demands that it made here.
-        // The two more are the writes of `later`'s group in its own frames.
-        "total 26: accepted 16 (fresh 2, call 1, param 0, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 10\n",
+        // The two more are the writes of `later`'s group in its own frames; `joinArgLive` adds two.
+        // `nest` adds three refusals at 18:9 since `comp`'s answer is the closure it makes
+        // (kernel §6 rule 2, *A function a body answers*): the write of `s` it reaches.
+        "total 31: accepted 18 (fresh 3, call 1, param 0, callback-param 14, once 0, entry 0; assumed 0), pending 0, rejected 13\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -3710,6 +4227,7 @@ test "ownership v3: the faults of the review of report 114 are refused" {
         \\
         \\type alias Model =
         \\    step : Int
+        \\    items : List Int
         \\
         \\
         \\update : Msg, Model → Model
@@ -3722,21 +4240,24 @@ test "ownership v3: the faults of the review of report 114 are refused" {
         \\
         \\pub view : Model → Html Msg
         \\view model =
-        \\    q = [ model.step, 2 ]
+        \\    q = [ model.step, List.length model.items ]
         \\    v = <ul><For each={q}>{λi → <li>{String.fromInt i}</li>}</For></ul>
         \\    w = List.push q 9
         \\    <div>{v}<p>{show w}</p></div>
         \\
         \\
         \\main : Browser.Program
-        \\main = Browser.program { init = λ⊤ → { step = 0 }, update = update, view = view }
+        \\main = Browser.program { init = λ⊤ → { step = 0, items = [] }, update = update, view = view }
     );
     {
         const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=browser", "Page.beni" }, .{ .raw_diagnostics = true });
         try testing.expectEqual(@as(u8, 0), r.exit_code);
         for ([_][]const u8{
-            "  27:9 List.push q: rejected later-use: it is read again at 28:5 (<expression>)\n",
-            "total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1\n",
+            // `q` reads a list of the model, so the root makes it again on each
+            // render and keeps none (kernel §6.14): the refusal is the markup's.
+            "  28:9 List.push q: rejected later-use: it is read again at 29:5 (<expression>)\n",
+            // `update` writes the model's `step` in place, which the entry accepts (research report 142).
+            "total 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1\n",
         }) |line| {
             if (std.mem.indexOf(u8, r.stdout, line) == null) {
                 std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -4116,8 +4637,11 @@ test "ownership v3 (the step 0 prototype): the accepted twins of the refused fix
     const twins = [_][]const u8{
         "SanitiserPairCycleFoldApart", "SanitiserPairCycleLoopApart", "SanitiserPairCycleParamApart", "SanitiserPairCrossEdgeFoldApart",
         "SanitiserFoldHandsLabel",     "SanitiserFoldAlternatives",   "SanitiserRecordCallback",      "SanitiserPrependFront",
-        "SanitiserFoldAnswerFed",      "SanitiserFoldAccumulator",    "SanitiserCellCapture",
+        "SanitiserFoldAnswerFed",      "SanitiserFoldAccumulator",
     };
+    // `SanitiserCellCapture` left this list with research report 142: its
+    // `Ref.update` and `Ref.modify` functions update the cell's record, which
+    // is written in place now, and a cell's contents are never `own` (#2518).
     var argv: std.ArrayList([]const u8) = .empty;
     try argv.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node" });
     for (twins) |name| try argv.append(a, try std.fmt.allocPrint(a, "tests/corpus/run/{s}.beni", .{name}));
@@ -4168,12 +4692,22 @@ test "ownership v3 (the step 0 prototype): the two faults that the generator fou
         \\    v3 = [ …q, 8 ]
         \\    List.length v3 + List.length v0
         \\
+        \\
+        \\pub twiceLive : List Int → Int
+        \\twiceLive q =
+        \\    v0 = [ q, q ]
+        \\    v3 = [ …q, 8 ]
+        \\    List.length v3 + List.foldl v0 0 λl n → n + List.length l
+        \\
     );
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Gen.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     for ([_][]const u8{
         "  18:21 List.push v0.a: rejected later-use: it is read again at 19:5 (<call List.length>)\n",
-        "  25:12 construction q: rejected later-use: it is read again at 26:22 (<call List.length>)\n",
+        // `twice`: `List.length v0` reads `v0`'s own array, not the list `q` it holds twice, so the push
+        // is safe (`List.length` is `borrowed shallow`); `twiceLive` reads `q` through `v0` after it.
+        "  25:12 construction q: accepted param\n",
+        "  32:12 construction q: rejected later-use: it is read again at 33:22 (<call List.foldl>)\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -4340,7 +4874,14 @@ test "ownership v3: the faults of the third blind test are refused" {
 //   writes `x`. The answer of a function parameter can hold what the function
 //   was handed, so its escape is an escape of `x` (kernel §5, test 3); and the
 //   caller judges its writes after every escape of the call (§6.2). Both the
-//   callee's write and the caller's are refused.
+//   callee's write and the caller's were refused. Since kernel §13 a cell's
+//   contents are no escape: `keep`'s store is a renewal of its parameter's
+//   cell, which its caller reads after the call, as it reads an answer. So the
+//   frame reads what it left in the cell where it answers (`readCells`), and
+//   `keep`'s write of `x` is refused there, after the store, by test 4. The
+//   caller reads the cell's renewed contents as the new name of `x` that
+//   `keep` wrote (§5.1), as it reads an answer of a written parameter: the
+//   callee's refusal is the one that a store before a write needs.
 test "ownership v3: the faults that the review of the kernel proved are refused" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -4383,9 +4924,9 @@ test "ownership v3: the faults that the review of the kernel proved are refused"
     const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Fourth.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     for ([_][]const u8{
-        "  13:5 List.set x: rejected escaped: it escaped before the write\n",
+        "  13:5 List.set x: rejected later-use: it is read again at 13:5 (<expression>)\n",
         "  26:9 call List.update ys[*]: rejected element: one cell can be at two positions of it\n",
-        "  33:9 call Fourth.keep <literal>: rejected escaped: it escaped before the write\n",
+        "  33:9 call Fourth.keep <literal>: accepted fresh\n",
     }) |line| {
         if (std.mem.indexOf(u8, r.stdout, line) == null) {
             std.debug.print("missing line: {s}in:\n{s}\n", .{ line, r.stdout });
@@ -4771,22 +5312,24 @@ test "ownership v3: the entry's siblings and markup's inputs are refused" {
         \\main : Browser.Program
         \\main = Browser.program { init = λ⊤ → { items = [ 1, 2 ], cached = <p>none</p>, n = 3 }, update = update, view = view }
         },
+        // `xs` reads a list of the model, so the root makes it again on each
+        // render and keeps none (kernel §6.14): the refusal is the hole's.
         .{ .name = "Inputs", .platform = "--platform=browser", .line = "List.push xs: rejected later-use", .text =
         \\import Browser
         \\import Html exposing (Html)
         \\import List
         \\
         \\
-        \\helper : Int → Html Int
-        \\helper n =
-        \\    xs = List.repeat n 1
+        \\helper : { n : Int, items : List Int } → Html Int
+        \\helper model =
+        \\    xs = List.repeat (model.n + List.length model.items) 1
         \\    m = <p id="a">{List.sum xs}</p>
         \\    ys = List.push xs 9
         \\    <div><button id="add" onClick={1}>add</button>{m}<p id="b">{List.length ys}</p></div>
         \\
         \\
         \\main : Browser.Program
-        \\main = Browser.program { init = λ⊤ → 3, update = λd n → n + d, view = helper }
+        \\main = Browser.program { init = λ⊤ → { n = 3, items = [] }, update = λd model → { model | n = model.n + d }, view = helper }
         },
     };
     for (cases) |c| {
@@ -4921,6 +5464,108 @@ test "ownership v3: the faults of the review of report 120 are refused" {
     }
 }
 
+// A walk that gave up accepts nothing (kernel §3.3), a send included. A send
+// asks nothing of the sender, so a send refused for a cause of its own walk
+// (here `unknown`: the message holds a top-level list) is accepted on the
+// entry rule. Where the walk then gives up (a lambda nested past the frame
+// depth), that line was accepted all the same, beside the limit; the module
+// authorised no write, but the line said the send was judged. The same where
+// the sends' own lambda is walked well and another part of the declaration
+// gives up (`Model.beni`): each line of a walk that gave up is refused, and
+// only the limit is an error. Its
+// safe twin, the same program with no deep lambda, keeps the accepted line.
+test "ownership v3: a walk that gave up accepts no send" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var deep: std.ArrayList(u8) = .empty;
+    try deep.appendSlice(a, "0");
+    const head =
+        \\import Cmd exposing (Cmd)
+        \\import Html exposing (Html)
+        \\import Sub
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Both (List Int)
+        \\    | Count Int
+        \\
+        \\
+        \\update : Msg, Int → Int × Cmd Msg
+        \\update msg model =
+        \\    case msg of
+        \\        Both xs →
+        \\            ( model + List.length xs, Cmd.none )
+        \\
+        \\        Count n →
+        \\            ( model + n, Cmd.none )
+        \\
+        \\
+        \\top : List Int
+        \\top = [ 3, 4 ]
+        \\
+        \\
+        \\main : Tea.Program
+        \\main =
+        \\    Tea.element
+        \\        { init =
+        \\            λ⊤ →
+        \\                ( 0
+    ;
+    const mid =
+        \\
+        \\                , Cmd.perform λsend →
+        \\                    send (Both top)
+        \\                    send (Count
+    ;
+    const tail =
+        \\)
+        \\                )
+        \\        , update = update
+        \\        , view = λmodel → <p>{String.fromInt model}</p>
+        \\        , subscriptions = λ_ → Sub.none
+        \\        }
+        \\
+    ;
+    try w.write("Twin.beni", try std.mem.concat(a, u8, &.{ head, mid, " 0", tail }));
+    // 210 lambdas, each in the last: past the 200 frames that `solveCodes`
+    // walks before the walk gives up (`child.depth > 200`).
+    for (0..210) |_| {
+        const inner = try a.dupe(u8, deep.items);
+        deep.clearRetainingCapacity();
+        try deep.print(a, "(λ⊤ → {s}) ⊤", .{inner});
+    }
+    try w.write("Deep.beni", try std.mem.concat(a, u8, &.{ head, mid, " (", deep.items, ")", tail }));
+    try w.write("Model.beni", try std.mem.concat(a, u8, &.{ head, " + (", deep.items, ")", mid, " 0", tail }));
+    for ([_]struct { file: []const u8, lines: []const []const u8 }{
+        .{ .file = "Twin.beni", .lines = &.{"  33:21 send <constructor …>: accepted entry\n"} },
+        .{ .file = "Deep.beni", .lines = &.{
+            "  33:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
+            "  34:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
+            "  limit main: the walk gave up\n",
+        } },
+        .{ .file = "Model.beni", .lines = &.{
+            "  33:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
+            "  34:21 send <constructor …>: rejected limit: the walk of this declaration gave up\n",
+            "  limit main: the walk gave up\n",
+        } },
+    }) |c| {
+        const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=browser-tea", c.file }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        for (c.lines) |line| if (std.mem.indexOf(u8, r.stdout, line) == null) {
+            std.debug.print("{s}: missing line {s}in:\n{s}\n", .{ c.file, line, r.stdout });
+            return error.TestExpectedLine;
+        };
+    }
+    // Enforced, the module's limit is its one error: a line refused because
+    // the walk gave up is no write of a list, and has no `List.copy` fix.
+    const r = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=browser-tea", "Model.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "limit main: the walk gave up") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stderr, "List.copy") == null);
+}
+
 // Research reports 121 and 122, the fifth blind test (readers C and D): ten
 // programs that v3 accepted and that then read a list after an in-place
 // write, each with a safe twin. Every live program is refused, and every twin
@@ -4939,35 +5584,17 @@ test "ownership v3: the faults of the review of report 120 are refused" {
 // - `row-parameter`, `for-row-message`, `for-row-keeps`: the runtime calls a
 //   `For` row with each item of `each`; the row is applied to them as at a
 //   call site, so what it keeps of its item escapes (kernel §6.12).
-test "ownership v3: the faults of the fifth blind test are refused" {
+/// One case of the fifth blind test's faults: `check` with v3 of one
+/// program of `bench/ownership-sweeps/`. Each test below judges one program
+/// and its twin: v3 checks the platform's modules in every process (it has
+/// no cache), so each run costs seconds, and twenty in one test came close
+/// to its 120-second guard under load (#2603).
+const FifthBlindCase = struct { name: []const u8, platform: []const u8, accepted: bool, why: []const u8 = "" };
+
+fn fifthBlindCases(cases: []const FifthBlindCase) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const a = w.arena.allocator();
-    const Case = struct { name: []const u8, platform: []const u8, accepted: bool, why: []const u8 = "" };
-    const tea = "platforms/browser-tea";
-    const page = "platforms/browser";
-    const cases = [_]Case{
-        .{ .name = "blind5c-faults/entry-tuple-pair.live", .platform = tea, .accepted = false, .why = "entry Main.update model.0" },
-        .{ .name = "blind5c-faults/entry-tuple-pair.dead", .platform = tea, .accepted = true },
-        .{ .name = "blind5c-faults/entry-unknown-settle.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
-        .{ .name = "blind5c-faults/entry-unknown-settle.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5c-faults/entry-unknown-view.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
-        .{ .name = "blind5c-faults/entry-unknown-view.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5c-faults/hole-closure.live", .platform = page, .accepted = false, .why = "later-use" },
-        .{ .name = "blind5c-faults/hole-closure.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5c-faults/row-parameter.live", .platform = page, .accepted = false, .why = "entry Main.update model.rows[*]" },
-        .{ .name = "blind5c-faults/row-parameter.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5d-faults/for-row-keeps.live", .platform = "node", .accepted = false, .why = "escaped" },
-        .{ .name = "blind5d-faults/for-row-keeps.dead", .platform = "node", .accepted = true },
-        .{ .name = "blind5d-faults/for-row-message.live", .platform = page, .accepted = false, .why = "entry Main.update model.rows[*]" },
-        .{ .name = "blind5d-faults/for-row-message.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5d-faults/pair-model.live", .platform = tea, .accepted = false, .why = "entry Main.update model.0" },
-        .{ .name = "blind5d-faults/pair-model.dead", .platform = tea, .accepted = true },
-        .{ .name = "blind5d-faults/settle-no-code.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
-        .{ .name = "blind5d-faults/settle-no-code.dead", .platform = page, .accepted = true },
-        .{ .name = "blind5d-faults/view-no-code.live", .platform = page, .accepted = false, .why = "entry Main.update model.items" },
-        .{ .name = "blind5d-faults/view-no-code.dead", .platform = page, .accepted = true },
-    };
     for (cases) |c| {
         const r = try w.runWith(&.{
             "check",
@@ -4984,6 +5611,76 @@ test "ownership v3: the faults of the fifth blind test are refused" {
             return error.TestUnexpectedVerdict;
         }
     }
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/entry-tuple-pair" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/entry-tuple-pair.live", .platform = "platforms/browser-tea", .accepted = false, .why = "entry Main.update model.0" },
+        .{ .name = "blind5c-faults/entry-tuple-pair.dead", .platform = "platforms/browser-tea", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/entry-unknown-settle" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/entry-unknown-settle.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5c-faults/entry-unknown-settle.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/entry-unknown-view" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/entry-unknown-view.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5c-faults/entry-unknown-view.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/hole-closure" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/hole-closure.live", .platform = "platforms/browser", .accepted = false, .why = "later-use" },
+        .{ .name = "blind5c-faults/hole-closure.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5c-faults/row-parameter" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5c-faults/row-parameter.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.rows[*]" },
+        .{ .name = "blind5c-faults/row-parameter.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/for-row-keeps" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/for-row-keeps.live", .platform = "node", .accepted = false, .why = "escaped" },
+        .{ .name = "blind5d-faults/for-row-keeps.dead", .platform = "node", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/for-row-message" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/for-row-message.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.rows[*]" },
+        .{ .name = "blind5d-faults/for-row-message.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/pair-model" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/pair-model.live", .platform = "platforms/browser-tea", .accepted = false, .why = "entry Main.update model.0" },
+        .{ .name = "blind5d-faults/pair-model.dead", .platform = "platforms/browser-tea", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/settle-no-code" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/settle-no-code.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5d-faults/settle-no-code.dead", .platform = "platforms/browser", .accepted = true },
+    });
+}
+
+test "ownership v3: the faults of the fifth blind test are refused: blind5d-faults/view-no-code" {
+    try fifthBlindCases(&.{
+        .{ .name = "blind5d-faults/view-no-code.live", .platform = "platforms/browser", .accepted = false, .why = "entry Main.update model.items" },
+        .{ .name = "blind5d-faults/view-no-code.dead", .platform = "platforms/browser", .accepted = true },
+    });
 }
 
 // The siblings of the fifth blind test's faults that the audit of research
@@ -5216,5 +5913,1979 @@ test "ownership v3: the siblings of the fifth blind test are refused" {
             std.debug.print("{s}: missing line {s}; exit {d}:\n{s}{s}\n", .{ c.name, c.line, r.exit_code, r.stdout, r.stderr });
             return error.TestExpectedLine;
         }
+    }
+}
+
+// Research report 124, reader E: two faults, each a missing fact read as
+// "nothing" (kernel §1), each shown by two programs in
+// `bench/ownership-sweeps/blind6e-faults/` that the prototype accepted and
+// that then trapped.
+//
+// - `entry-row-*`: a function of the program's record takes the model as
+//   `{ r | n : Int }` and keeps it. The entry matched model locations with
+//   the contract's by label path, and the row's location is no prefix of a
+//   field's, so the function kept nothing. Every comparison now goes
+//   through the call map (kernel §6.13).
+// - `top-rewrite*`: a function hands a list to its function parameter,
+//   writes it, and goes where the checker does not follow it. The code that
+//   runs it hands a function that keeps what it is handed (kernel §6.8).
+//
+// Each `.live` twin is refused and each `.dead` twin is accepted.
+test "ownership v3: the faults of the sixth blind test are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { name: []const u8, platform: []const u8, accepted: bool, why: []const u8 = "" };
+    const tea = "platforms/browser-tea";
+    const page = "platforms/browser";
+    const cases = [_]Case{
+        .{ .name = "entry-row-view", .platform = page, .accepted = false, .why = "entry Main.update model.items is refused" },
+        .{ .name = "entry-row-view.live", .platform = page, .accepted = false, .why = "entry Main.update model.items is refused" },
+        .{ .name = "entry-row-view.dead", .platform = page, .accepted = true },
+        .{ .name = "entry-row-update", .platform = page, .accepted = false, .why = "entry Main.settle model.items is refused" },
+        .{ .name = "entry-row-update.live", .platform = page, .accepted = false, .why = "entry Main.settle model.items is refused" },
+        .{ .name = "entry-row-update.dead", .platform = page, .accepted = true },
+        .{ .name = "top-rewrite", .platform = "node", .accepted = false, .why = "value Main.body is refused: supply: the function changes a value" },
+        .{ .name = "top-rewrite.live", .platform = "node", .accepted = false, .why = "value <call Main.body> is refused: supply: the function keeps a value" },
+        .{ .name = "top-rewrite.dead", .platform = "node", .accepted = true },
+        .{ .name = "top-rewrite-send", .platform = tea, .accepted = false, .why = "value <call Cmd.perform> is refused: supply: the function changes a value" },
+        .{ .name = "top-rewrite-send.live", .platform = tea, .accepted = false, .why = "value <call Cmd.perform> is refused: supply: the function changes a value" },
+        .{ .name = "top-rewrite-send.dead", .platform = tea, .accepted = true },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        const r = try w.runWith(&.{
+            "check",
+            "--ownership=v3",
+            "--ownership-everywhere",
+            "--no-cache",
+            try std.fmt.allocPrint(a, "--platform={s}", .{c.platform}),
+            try std.fmt.allocPrint(a, "--root=bench/ownership-sweeps/blind6e-faults/{s}", .{c.name}),
+            try std.fmt.allocPrint(a, "bench/ownership-sweeps/blind6e-faults/{s}/Main.beni", .{c.name}),
+        }, .{ .raw_diagnostics = true, .cwd = .inherit });
+        const ok = if (c.accepted) r.exit_code == 0 else r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, r.exit_code, r.stderr });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+// The siblings of the sixth blind test's faults that the audit of research
+// report 125 found. Each is accepted before and traps; each is refused now,
+// and its twin that writes a copy is accepted:
+//
+// - `HolderRewrite`: a known function runs `body`, and what it hands
+//   `body`'s function parameter is a function in the default state, which
+//   keeps what it is handed: `body` writes a list after it handed it there
+//   (kernel §6.8, `defaultParams`).
+// - `HolderAnswer`: the same holder, and `body` answers the list it handed
+//   its function parameter: the list escaped there, and the caller writes
+//   the answer.
+// - `AnswerRow`: a function over `{ r | n : Int }` in a location whose type
+//   is `Model`: its answer's row holds the model's `items`, which the
+//   composition read as "no object" by label path (`answersAt`, `anyMeets`).
+// - `SupplyRow`: the same function keeps its parameter in a fiber: what the
+//   holder hands its row is the model's `items` (`slotsOf`).
+// - `PartialRewrite`: the same `body` as a partial application, `body 1 _`,
+//   kept in a `Ref`: a lambda whose own parameter is `body`'s callback.
+// - `CycleAnswer`, `CycleEscape` (found by this round's review): a type
+//   argument names the container again (`Tree2 T`, where `T` holds a
+//   `List (Tree2 T)`), so the caller's deep level holds lists that the
+//   signature `Tree2 a` has under `a`. The call map paired the two deep
+//   locations by label path; a function's answer or escape of `a` missed
+//   the caller's deep lists (`Loc.cover`, `cycleWider`).
+// - `CycleAncestor`, `CycleRow` (the review's second pass): the same, where
+//   the caller's deep location is below a wide entry of the signature's
+//   deep level, and where the caller's cycle passes through a row, a step
+//   the caller's place graph cannot follow.
+// - `CycleRowField` (the review's third pass): a field of the caller's deep
+//   level that the signature holds in a row inside its own deep level.
+// - `CycleNested` (the review's fourth pass): the wider cycle is nested in
+//   the deep level of another, which alone was tested.
+// - `CycleMerged` (the review's fifth pass): one deep location of the
+//   caller stands for two places, two cycles, and a sample path saw one.
+//   The map now pairs a deep location only where the signature has no type
+//   variable or row in that region (`Loc.cycleWider`).
+// - `CycleAboveVariable` (the review's seventh pass): the caller enters its
+//   cycle above the signature's variable (`List (Tree2 T)`), so a rule that
+//   looked for the argument's objects under the variable's path missed them.
+// - `EvidenceRewrite`: a method handed as evidence writes a list after it
+//   handed it to its function parameter; the code that runs evidence hands
+//   it the default (kernel §6.11, `Contract.Effect.rewrites`).
+test "ownership v3: the siblings of the sixth blind test are refused" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { name: []const u8, why: []const u8, text: []const u8, write: []const u8 };
+    const cases = [_]Case{
+        .{ .name = "HolderRewrite", .why = "value <call Main.runWith> is refused: supply: the function changes a value", .write = "List.push xs", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\body : (List Int → ⊤) → ⊤
+        \\body send =
+        \\    xs = [ 1 ]
+        \\    send xs
+        \\    ys = List.push xs 2
+        \\    send ys
+        \\
+        \\
+        \\runWith : ((List Int → ⊤) → ⊤), Ref (List (List Int)) → ⊤
+        \\runWith b r = b λl → Ref.set r (List.concat [ Ref.get r, [ l ] ])
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    r = Ref.make []
+        \\    runWith body r
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "HolderAnswer", .why = "List.push ys is refused: escaped", .write = "List.push ys", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\body : (List Int → ⊤) → List Int
+        \\body send =
+        \\    xs = [ 1 ]
+        \\    send xs
+        \\    xs
+        \\
+        \\
+        \\runWith : ((List Int → ⊤) → List Int), Ref (List (List Int)) → List Int
+        \\runWith b r = b λl → Ref.set r [ l ]
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    r = Ref.make []
+        \\    ys = runWith body r
+        \\    zs = List.push ys 2
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (Debug.toString zs) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "AnswerRow", .why = "List.push m0.items is refused: later-use", .write = "List.push m0.items", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\    n : Int
+        \\
+        \\
+        \\bump : { r | n : Int } → { r | n : Int }
+        \\bump m = { m | n = m.n + 1 }
+        \\
+        \\
+        \\apply : (Model → Model), Model → Model
+        \\apply g m = g m
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    m0 = { items = [ 1 ], n = 0 }
+        \\    m1 = apply bump m0
+        \\    ys = List.push m0.items 2
+        \\    Debug.log (Debug.toString m1.items) ⊤
+        \\    Debug.log (Debug.toString ys) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "PartialRewrite", .why = "value <lambda> is refused: supply: the function changes a value", .write = "List.push xs", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\body : Int, (List Int → ⊤) → ⊤
+        \\body n send =
+        \\    xs = [ n ]
+        \\    send xs
+        \\    ys = List.push xs 2
+        \\    send ys
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    r = Ref.make []
+        \\    cell = Ref.make (body 1 _)
+        \\    g = Ref.get cell
+        \\    g λl → Ref.set r (List.concat [ Ref.get r, [ l ] ])
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "EvidenceRewrite", .why = "value <call Main.walk> is refused: call: a function that changes a value", .write = "List.push xs", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Box
+        \\    = Box Int
+        \\
+        \\
+        \\pub each : Box, (List Int → ⊤) → ⊤
+        \\each _ f =
+        \\    xs = [ 1 ]
+        \\    f xs
+        \\    ys = List.push xs 2
+        \\    f ys
+        \\
+        \\
+        \\walk : a, (List Int → ⊤) → ⊤ where a.each : a, (List Int → ⊤) → ⊤
+        \\walk x f = x.each f
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    r = Ref.make []
+        \\    walk (Box 1) λl → Ref.set r (List.concat [ Ref.get r, [ l ] ])
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleAnswer", .why = "call Main.grow t⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
+        \\import List
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\getA : Tree2 a → a
+        \\getA t =
+        \\    case t of
+        \\        Node a _ →
+        \\            a
+        \\
+        \\
+        \\grow : Tree2 T → List (Tree2 T)
+        \\grow t =
+        \\    case getA t of
+        \\        T [ Node _ kids ] →
+        \\            List.push kids (Node (T []) [])
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\kidsLen : Tree2 T → Int
+        \\kidsLen x =
+        \\    case x of
+        \\        Node _ k →
+        \\            List.length k
+        \\
+        \\
+        \\otherKids : Tree2 T → Int
+        \\otherKids t =
+        \\    case t of
+        \\        Node _ l →
+        \\            List.foldl l 0 λx acc → acc + kidsLen x
+        \\
+        \\
+        \\use : Tree2 T → String
+        \\use t =
+        \\    g = grow t
+        \\    "${String.fromInt (List.length g)} ${String.fromInt (otherKids t)}"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    shared = [ Node (T []) [] ]
+        \\    inner = Node (T []) shared
+        \\    Node.print (use (Node (T [ inner ]) [ inner ]))
+        \\
+        },
+        .{ .name = "CycleEscape", .why = "call Main.grow t⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\keepA : Ref (List a), Tree2 a → ⊤
+        \\keepA r t =
+        \\    case t of
+        \\        Node a _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\
+        \\grow : Tree2 T → List (Tree2 T)
+        \\grow t =
+        \\    case t of
+        \\        Node (T [ Node _ kids ]) _ →
+        \\            List.push kids (Node (T []) [])
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    t = Node (T [ Node (T []) [ Node (T []) [] ] ]) []
+        \\    r = Ref.make []
+        \\    keepA r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleAncestor", .why = "call Main.grow t#Node.1[*] is refused: later-use", .write = "List.push l", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a b
+        \\    = Node a b (List (Tree2 a b))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T (List (List Int))))
+        \\
+        \\
+        \\keepA : Ref (List a), Tree2 a b → ⊤
+        \\keepA r t =
+        \\    case t of
+        \\        Node a _ _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\
+        \\grow : Tree2 T (List (List Int)) → List Int
+        \\grow t =
+        \\    case t of
+        \\        Node (T [ Node _ [ l ] _ ]) _ _ →
+        \\            List.push l 9
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    t = Node (T [ Node (T []) [ [ 1 ] ] [] ]) [ [ 0 ] ] []
+        \\    r = Ref.make []
+        \\    keepA r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (Debug.toString g) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleRow", .why = "call Main.grow t⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree3 a
+        \\    = Node a (List (Tree3 a))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree3 { n : Int, sub : T }))
+        \\
+        \\
+        \\keepR : Ref (List { r | n : Int }), Tree3 { r | n : Int } → ⊤
+        \\keepR r t =
+        \\    case t of
+        \\        Node a _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\
+        \\grow : Tree3 { n : Int, sub : T } → List (Tree3 { n : Int, sub : T })
+        \\grow t =
+        \\    case t of
+        \\        Node top _ →
+        \\            case top.sub of
+        \\                T [ Node _ kids ] →
+        \\                    List.push kids (Node { n = 9, sub = T [] } [])
+        \\
+        \\                _ →
+        \\                    []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    leaf = Node { n = 2, sub = T [] } []
+        \\    t = Node { n = 0, sub = T [ Node { n = 1, sub = T [] } [ leaf ] ] } []
+        \\    r = Ref.make []
+        \\    keepR r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleRowField", .why = "call Main.grow t#Node.1.extra is refused: later-use", .write = "List.push b.extra", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree4 a b
+        \\    = Node a b (List (Tree4 a b))
+        \\
+        \\
+        \\type alias Rec =
+        \\    n : Int
+        \\    extra : List Int
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree4 T Rec))
+        \\
+        \\
+        \\keepA : Ref (List a), Tree4 a { r | n : Int } → ⊤
+        \\keepA r t =
+        \\    case t of
+        \\        Node a _ _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\
+        \\grow : Tree4 T Rec → List Int
+        \\grow t =
+        \\    case t of
+        \\        Node (T [ Node _ b _ ]) _ _ →
+        \\            List.push b.extra 9
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    t = Node (T [ Node (T []) { n = 1, extra = [ 1 ] } [] ]) { n = 0, extra = [ 0 ] } []
+        \\    r = Ref.make []
+        \\    keepA r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (Debug.toString g) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleNested", .why = "call Main.grow t#O.1⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type Outer a
+        \\    = O (List (Outer a)) (Tree2 a)
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\keepNested : Ref (List a), Outer a → ⊤
+        \\keepNested r t =
+        \\    case t of
+        \\        O [ O _ (Node a _) ] _ →
+        \\            Ref.set r [ a ]
+        \\
+        \\        _ →
+        \\            ⊤
+        \\
+        \\
+        \\grow : Outer T → List (Tree2 T)
+        \\grow t =
+        \\    case t of
+        \\        O [ O _ (Node (T [ Node _ kids ]) _) ] _ →
+        \\            List.push kids (Node (T []) [])
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    inner = T [ Node (T []) [ Node (T []) [] ] ]
+        \\    t = O [ O [] (Node inner []) ] (Node (T []) [])
+        \\    r = Ref.make []
+        \\    keepNested r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleMerged", .why = "call Main.grow t.x⟨List⟩ is refused: later-use", .write = "List.push kids", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type Outer2 a b
+        \\    = O { x : Tree2 a, kids : List (Outer2 a b) }
+        \\    | P { x : Tree2 b, more : List (Outer2 a b) }
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\keepB : Ref (List b), Outer2 a b → ⊤
+        \\keepB r t =
+        \\    case t of
+        \\        O o →
+        \\            case o.kids of
+        \\                [ P p ] →
+        \\                    case p.x of
+        \\                        Node b _ →
+        \\                            Ref.set r [ b ]
+        \\
+        \\                _ →
+        \\                    ⊤
+        \\
+        \\        P _ →
+        \\            ⊤
+        \\
+        \\
+        \\grow : Outer2 Int T → List (Tree2 T)
+        \\grow t =
+        \\    case t of
+        \\        O o →
+        \\            case o.kids of
+        \\                [ P p ] →
+        \\                    case p.x of
+        \\                        Node (T [ Node _ kids ]) _ →
+        \\                            List.push kids (Node (T []) [])
+        \\
+        \\                        _ →
+        \\                            []
+        \\
+        \\                _ →
+        \\                    []
+        \\
+        \\        P _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    inner = P { x = Node (T [ Node (T []) [ Node (T []) [] ] ]) [], more = [] }
+        \\    t = O { x = Node 0 [], kids = [ inner ] }
+        \\    r = Ref.make []
+        \\    keepB r t
+        \\    g = grow t
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "CycleAboveVariable", .why = "call Main.grow l⟨List⟩ is refused: later-use", .write = "List.push ts", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\
+        \\
+        \\type Tree2 a
+        \\    = Node a (List (Tree2 a))
+        \\
+        \\
+        \\type T
+        \\    = T (List (Tree2 T))
+        \\
+        \\
+        \\keepA : Ref (List a), List (Tree2 a) → ⊤
+        \\keepA r l =
+        \\    case l of
+        \\        [ Node a _ ] →
+        \\            Ref.set r [ a ]
+        \\
+        \\        _ →
+        \\            ⊤
+        \\
+        \\
+        \\grow : List (Tree2 T) → List (Tree2 T)
+        \\grow l =
+        \\    case l of
+        \\        [ Node (T ts) _ ] →
+        \\            List.push ts (Node (T []) [])
+        \\
+        \\        _ →
+        \\            []
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    l = [ Node (T [ Node (T []) [] ]) [] ]
+        \\    r = Ref.make []
+        \\    keepA r l
+        \\    g = grow l
+        \\    Debug.log (Debug.toString (Ref.get r)) ⊤
+        \\    Debug.log (String.fromInt (List.length g)) ⊤
+        \\    Node.done
+        \\
+        },
+        .{ .name = "SupplyRow", .why = "List.push m0.items is refused: escaped", .write = "List.push m0.items", .text =
+        \\import Io
+        \\import List
+        \\import Node exposing (Program)
+        \\import Task
+        \\
+        \\
+        \\type alias Model =
+        \\    items : List Int
+        \\    n : Int
+        \\
+        \\
+        \\keep : { r | n : Int } → ⊤
+        \\keep m =
+        \\    _ = Task.spawn λ⊤ →
+        \\        Io.sleep 5
+        \\        Debug.log (Debug.toString m) ⊤
+        \\    ⊤
+        \\
+        \\
+        \\apply : (Model → ⊤), Model → ⊤
+        \\apply g m = g m
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    m0 = { items = [ 1 ], n = 0 }
+        \\    apply keep m0
+        \\    ys = List.push m0.items 2
+        \\    Debug.log (Debug.toString ys) ⊤
+        \\    Io.sleep 20
+        \\    Node.done
+        \\
+        },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        // The program, then its twin that writes a copy: refused, then accepted.
+        for ([_]bool{ false, true }) |dead| {
+            const dir = try std.fmt.allocPrint(a, "{s}{s}", .{ c.name, if (dead) ".dead" else "" });
+            const file = try std.fmt.allocPrint(a, "{s}/Main.beni", .{dir});
+            var text = c.text;
+            if (dead) {
+                // `List.push x` becomes `List.push (List.copy x)`.
+                const at = std.mem.indexOf(u8, text, c.write).?;
+                const arg = c.write["List.push ".len..];
+                text = try std.fmt.allocPrint(a, "{s}List.push (List.copy {s}){s}", .{ text[0..at], arg, text[at + c.write.len ..] });
+            }
+            try w.write(file, text);
+            const root = try std.fs.path.join(a, &.{ try w.projectPath(), dir });
+            const main = try std.fs.path.join(a, &.{ try w.projectPath(), file });
+            const r = try w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", try std.fmt.allocPrint(a, "--root={s}", .{root}), main }, .{ .raw_diagnostics = true, .cwd = .inherit });
+            const ok = if (dead) r.exit_code == 0 else r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, c.why) != null;
+            if (!ok) {
+                std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ dir, if (dead) "accepted" else "refused", c.why, r.exit_code, r.stderr });
+                bad = true;
+            }
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+// Research report 126's fault and the siblings that the audit of research
+// report 127 found: walks that reach one function or one value by many
+// paths. Each program is 24 levels deep; before the fix each check but one
+// did not end (it took 3 to the power of the depth). Each ends in well under
+// a second now (kernel §8):
+//
+// - `closure-dag`: a DAG of closures, three per level, each capturing the
+//   three of the level below (`flow` judges each function once per use);
+// - `dag-writer`: the same, and the leaf writes its parameter;
+// - `record-dag`: a record of three functions per level (`leaves` walks a
+//   value once);
+// - `join-dag`: a value chosen by `if` among three values of the level below
+//   (`leavesOwn` walks a value once for each set of entries);
+// - `answers-dag`: each closure answers the answer of one of three captured
+//   closures;
+// - `climb`: each closure hands its parameter to one of three captured
+//   closures, and the leaves write it, so each judgment reads the whole
+//   chain above it: the walk ends at its step limit, a loud refusal;
+// - `deep-keeper`: the one that ended, wrongly: a list handed down 24
+//   closures to one that keeps it in a `Ref`. Past 16 holders the walk sent
+//   the function to the default without letting what it was handed escape,
+//   so the write was accepted and the `Ref` read the new value.
+test "ownership v3: walks that reach one function or value by many paths end" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { dir: []const u8, name: []const u8, accepted: bool, why: []const u8 = "" };
+    const f6 = "blind7f-faults";
+    const f7 = "bounded-walk-faults";
+    const limit = "the walk took more than 33554432 steps";
+    const cases = [_]Case{
+        .{ .dir = f6, .name = "closure-dag.live", .accepted = false, .why = "List.push xs is refused: later-use" },
+        .{ .dir = f6, .name = "closure-dag.dead", .accepted = true },
+        .{ .dir = f7, .name = "dag-writer.live", .accepted = false, .why = "List.push xs is refused: later-use" },
+        .{ .dir = f7, .name = "dag-writer.dead", .accepted = false, .why = "is refused: supply: the callee hands the function the answer of" },
+        .{ .dir = f7, .name = "record-dag.live", .accepted = false, .why = "List.push xs is refused: later-use" },
+        .{ .dir = f7, .name = "record-dag.dead", .accepted = true },
+        .{ .dir = f7, .name = "join-dag.live", .accepted = false, .why = "List.push x24 is refused: later-use" },
+        .{ .dir = f7, .name = "join-dag.dead", .accepted = true },
+        .{ .dir = f7, .name = "answers-dag.live", .accepted = false, .why = "is refused: unknown" },
+        .{ .dir = f7, .name = "answers-dag.dead", .accepted = false, .why = "is refused: unknown" },
+        .{ .dir = f7, .name = "climb.live", .accepted = false, .why = limit },
+        .{ .dir = f7, .name = "climb.dead", .accepted = false, .why = limit },
+        .{ .dir = f7, .name = "deep-keeper.live", .accepted = false, .why = "List.push xs is refused: escaped" },
+        .{ .dir = f7, .name = "deep-keeper.dead", .accepted = true },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        const r = w.runWith(&.{
+            "check",
+            "--ownership=v3",
+            "--ownership-everywhere",
+            "--no-cache",
+            "--platform=node",
+            try std.fmt.allocPrint(a, "--root=bench/ownership-sweeps/{s}/{s}", .{ c.dir, c.name }),
+            try std.fmt.allocPrint(a, "bench/ownership-sweeps/{s}/{s}/Main.beni", .{ c.dir, c.name }),
+        }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{s}: did not end in 10 s ({s})\n", .{ c.name, @errorName(err) });
+            bad = true;
+            continue;
+        };
+        const ok = if (c.accepted) r.exit_code == 0 else r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, r.exit_code, r.stderr });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+// Research report 128's fault and slow checks, and the siblings that
+// research report 129 found. Each check ends in well under a second
+// (kernel §8, one step budget for each declaration):
+//
+// - `schema-via*`, `via-*`: a function named in a `schema` declaration's
+//   `via` is called by the schema's compiled print worker with a value the
+//   program still holds. No walk read a schema declaration, so a write of
+//   the function's parameter was accepted. A `via` conversion is now a value
+//   in the default location (kernel §6.14): a function in it that writes
+//   its parameter is refused, at the `via`, also from another module, as a
+//   partial application, as a lambda and in a schema that another one
+//   names. `schema-via.dead` is refused too: the default asks nothing of
+//   the code that runs the function, so the rule cannot see that nothing
+//   reads the printed value after (a precision loss). A conversion that
+//   writes a copy is accepted (`via-copy.dead`).
+// - `entry-shift-*`: `update` shifts 800 list fields of the model. The
+//   entry's largest solution took one round per field over every pair of
+//   locations (18.7 s); it reads each fact once now and takes away along a
+//   worklist, and every step counts against the declaration's budget.
+// - `group-rounds-slow`: a recursive group re-walked its member 60 times,
+//   each walk with a fresh step budget (6.5 s). The rounds share one budget
+//   now: past it the check stops with the loud limit. Since research report
+//   130 the module's budget, in proportion to its size, is the one it
+//   passes first.
+// - `constant-method.*` (the give-up audit): a method written as a constant,
+//   `pub eq = keeper`, called by a derived `eq` with its operands. The
+//   constant's contract says what its value holds, and the derived code read
+//   it as code that only reads, so `keeper` kept a list that was then written
+//   in place. A constant method has no fact now (kernel §6.11).
+// - `locals-after-limit` (the review): 200 local functions over a record of
+//   2 040 lists. Past the budget, each round still built and compared
+//   contracts of the record's size; it stops at the budget now.
+test "ownership v3: runtime calls into the program, and one step budget per declaration" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const Case = struct { dir: []const u8, name: []const u8, platform: []const u8 = "node", accepted: bool, why: []const u8 = "" };
+    const g = "blind8g-faults";
+    const r = "runtime-calls-faults";
+    const tea = "platforms/browser-tea";
+    const via = "value <call Schema.conversion> is refused: call: a function that writes its";
+    const limit = "the walk took more than 33554432 steps";
+    const cases = [_]Case{
+        .{ .dir = g, .name = "schema-via.live", .accepted = false, .why = via },
+        .{ .dir = g, .name = "schema-via.dead", .accepted = false, .why = via },
+        .{ .dir = g, .name = "schema-via-tea.live", .platform = tea, .accepted = false, .why = via },
+        .{ .dir = g, .name = "schema-via-tea.dead", .platform = tea, .accepted = true },
+        .{ .dir = g, .name = "entry-shift-slow.dead", .platform = tea, .accepted = true },
+        .{ .dir = g, .name = "entry-shift-control.dead", .platform = tea, .accepted = true },
+        // Each round walks a heavy body, and the declaration's rounds
+        // spend its own budget (research report 138).
+        .{ .dir = g, .name = "group-rounds-slow.dead", .accepted = false, .why = limit },
+        .{ .dir = g, .name = "group-rounds-control.dead", .accepted = true },
+        .{ .dir = r, .name = "via-module.live", .accepted = false, .why = via },
+        .{ .dir = r, .name = "via-partial.live", .accepted = false, .why = via },
+        .{ .dir = r, .name = "via-lambda.live", .accepted = false, .why = via },
+        .{ .dir = r, .name = "via-nested.live", .accepted = false, .why = via },
+        .{ .dir = r, .name = "via-copy.dead", .accepted = true },
+        .{ .dir = r, .name = "constant-method.live", .accepted = false, .why = "List.push xs is refused: escaped" },
+        .{ .dir = r, .name = "constant-method.dead", .accepted = true },
+        .{ .dir = r, .name = "locals-after-limit.dead", .accepted = false, .why = limit },
+    };
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        const dir = try std.fmt.allocPrint(a, "bench/ownership-sweeps/{s}/{s}", .{ c.dir, c.name });
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", try std.fmt.allocPrint(a, "--platform={s}", .{c.platform}), try std.fmt.allocPrint(a, "--root={s}", .{dir}) });
+        try args.append(a, try std.fmt.allocPrint(a, "{s}/Main.beni", .{dir}));
+        if (std.mem.eql(u8, c.name, "via-module.live")) try args.append(a, try std.fmt.allocPrint(a, "{s}/Util.beni", .{dir}));
+        const res = w.runWith(args.items, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{s}: did not end in 10 s ({s})\n", .{ c.name, @errorName(err) });
+            bad = true;
+            continue;
+        };
+        const ok = if (c.accepted) res.exit_code == 0 else res.exit_code == 1 and std.mem.indexOf(u8, res.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, res.exit_code, res.stderr });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+// Research report 130: the budget was per declaration, so declarations
+// that each stayed under it added up without a bound. One module that
+// instantiates a record of 2 040 lists (1 000 since research report 142:
+// each field's slot, and each element's, is a location too, so the record
+// has about 3 000 locations, under the 4 096 of the layout limit), declared
+// in another module, at 30 record types, with a small function and its
+// caller for each: each
+// declaration built and walked layouts of 2 040 locations (about 10 s on an
+// LLVM ReleaseSafe compiler, and over a minute on the gates' one, for 240
+// lines of its own). A module now does at most `Check.moduleBudget` units
+// of work, and each declaration at most what its own instructions earn
+// (kernel §8; research report 138). The location table's work counts
+// against the module alone. The record updates over 3 000 locations passed
+// the module's budget there until research report 145: a projection of one
+// field kept an entry for each location of the record, so the projections of
+// its fields cost the square of its width. A projection is the size of the
+// field's layout now, and the module is accepted, well within the time.
+test "ownership v3: one budget for each module, in proportion to its size" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var shared: std.ArrayList(u8) = .empty;
+    try shared.appendSlice(a, "pub type alias B a =\n");
+    for (0..1000) |i| try shared.appendSlice(a, try std.fmt.allocPrint(a, "    a{d} : List a\n", .{i}));
+    try w.write("Shared.beni", shared.items);
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Io\nimport List\nimport Node exposing (Program)\nimport Shared exposing (B)\n");
+    for (0..30) |n| try main.appendSlice(a, try std.fmt.allocPrint(a,
+        \\
+        \\
+        \\type alias K{d} =
+        \\    {{ k{d} : Int }}
+        \\
+        \\
+        \\g{d} : B K{d} → B K{d}
+        \\g{d} b = {{ b | a{d} = List.push b.a{d} {{ k{d} = {d} }} }}
+        \\
+        \\
+        \\h{d} : B K{d} → B K{d}
+        \\h{d} b = g{d} (g{d} b)
+        \\
+    , .{ n, n, n, n, n, n, n, n, n, n, n, n, n, n, n, n }));
+    try main.appendSlice(a, "\n\nmain : Program\nmain = Io.run λ⊤ → Node.done\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni", "Shared.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 0 and std.mem.indexOf(u8, r.stderr, "limit") == null)) {
+        std.debug.print("wanted it accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+// Research report 130's review: the end of a walk tests each pair of
+// locations of the result for a cell that both hold, and counted the test
+// by the atoms it compared. A result of 4 096 locations that hold no atom
+// cost 8 million pairs and no unit, in each declaration: 1 000 functions
+// `gN n = gN n` of nested pairs of 4 096 lists took well over 10 s on the
+// gates' compiler before they reached the module's budget. Only
+// locations that hold an atom are paired now, and each pair is a unit
+// (kernel §8): the check reaches the loud limit at once.
+test "ownership v3: the pairs of a result's locations count against the budget" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Io\nimport Node exposing (Program)\n\n\ntype alias T0 =\n    List Int\n");
+    for (1..13) |k| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype alias T{d} =\n    T{d} × T{d}\n", .{ k, k - 1, k - 1 }));
+    for (0..1000) |n| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ng{d} : Int → T12\ng{d} n =\n    g{d} n\n", .{ n, n, n }));
+    try main.appendSlice(a, "\n\nmain : Program\nmain = Io.run λ⊤ → Node.done\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "the walks of the module took more than") != null)) {
+        std.debug.print("wanted the module's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 130's third review: the facts that a module publishes
+// of its derived methods walked, for each derived row, every row below it
+// again, so 1 000 types that each hold 32 of the types before them took
+// 7 s of v3 with no other code, and no unit counted it. A row's answer is
+// kept until a contract that it read changes (`Check.Mod.rowInfo`), and
+// an imported fact is found by a binary search.
+test "ownership v3: each derived row is read once" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Io\nimport Node exposing (Program)\n\n\ntype T0\n    = T0 Int\n");
+    for (1..1001) |i| {
+        try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype T{d}\n    = T{d}", .{ i, i }));
+        for (1..33) |j| try main.appendSlice(a, try std.fmt.allocPrint(a, " T{d}", .{if (i > j) i - j else 0}));
+        try main.appendSlice(a, "\n");
+    }
+    try main.appendSlice(a, "\n\nmain : Program\nmain =\n    Io.run λ⊤ → Node.done\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 131: 54 of the ownership roots, every one a program that
+// names a tagged schema, stopped the safe compiler in `checkCovered`: a
+// pattern `Event.Set ev` names the schema's constructor, which the check
+// took for code, and no walk evaluates a pattern's constructor. A schema's
+// constructor is a constructor (the backend emits `{$: tag, a: payload}`,
+// as for a type's): in a pattern a tag test, in a call a value made with
+// no code run (kernel §6.14). This module's schema and another module's,
+// each matched and built.
+test "ownership v3: a tagged schema's constructor is a constructor" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Shapes.beni",
+        \\pub schema Tree tagged "kind" of
+        \\    Leaf as "leaf"
+        \\        value : Int
+        \\    Branch as "branch"
+        \\        children : List Tree
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Io
+        \\import Node exposing (Program)
+        \\import Schema exposing (Value)
+        \\import Shapes exposing (Tree)
+        \\
+        \\
+        \\schema Event tagged "type" of
+        \\    Set as "set"
+        \\        value : Int
+        \\    Scale as "scale"
+        \\        times : Int
+        \\
+        \\
+        \\apply : Value, List Int → List Int
+        \\apply value xs =
+        \\    case Schema.read (Event.schema ⊤) value of
+        \\        Ok (Event.Set ev) →
+        \\            List.push (List.copy xs) ev.value
+        \\
+        \\        Ok (Event.Scale ev) →
+        \\            List.map xs λx → x * ev.times
+        \\
+        \\        Err _ →
+        \\            xs
+        \\
+        \\
+        \\made : Int → Event.Type
+        \\made n =
+        \\    Event.Set { value = n }
+        \\
+        \\
+        \\depth : Tree.Type → Int
+        \\depth t =
+        \\    case t of
+        \\        Tree.Leaf r →
+        \\            r.value
+        \\
+        \\        Tree.Branch r →
+        \\            List.length r.children
+        \\
+        \\
+        \\leaf : Tree.Type
+        \\leaf =
+        \\    Tree.Leaf { value = 1 }
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Io.run λ⊤ → Node.done
+        \\
+    );
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni", "Shapes.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 130 §10 and report 131: `own2`'s adapter made, for each
+// constructor argument it described, a table as long as the module's
+// instructions, so 2 000 nominal types that each hold 32 of the types
+// before them, and one function over the last, took 9 s of v3 on an LLVM
+// compiler against 0.2 s of type check. The table is a sparse map now.
+test "ownership v3: a long chain of nominal types is described in linear time" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import Io\nimport Node exposing (Program)\n\n\ntype T0\n    = T0 Int\n");
+    for (1..2001) |i| {
+        try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype T{d}\n    = T{d}", .{ i, i }));
+        for (1..33) |j| try main.appendSlice(a, try std.fmt.allocPrint(a, " T{d}", .{if (i > j) i - j else 0}));
+        try main.appendSlice(a, "\n");
+    }
+    try main.appendSlice(a, "\n\nf : T2000 → T2000\nf t =\n    t\n\n\nmain : Program\nmain =\n    Io.run λ⊤ → Node.done\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Issue #2121 and report 131: `own2`'s adapter and its family table read an
+// alias again at each place it was named, so a diamond of aliases 64 deep
+// (`A{i} a = A{i-1} (A{i-1} a)`) cost 4⁶⁴ readings and v3 never ended on
+// `check/good/AliasDiamondChain`. Each reading of an alias under one list of
+// arguments is kept now, where a second one would do nothing more.
+test "ownership v3: a diamond of aliases is read in time linear in its depth" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const dir = "tests/corpus/check/good/AliasDiamondChain";
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--root=" ++ dir, dir ++ "/Main.beni", dir ++ "/Chain.beni" }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 130 §9 and report 131: `own2`'s pre-pass collected each
+// declaration's dispatch edges by walking every derived row below its
+// sites again, so 1 500 functions that compare two values of the last of
+// 300 types, each holding 32 of the types before it, cost v3 about 3 s
+// on an LLVM compiler against 0.05 s of type check (a module with no
+// constant: the type check's cycle pass, which walks the same rows, does
+// not run). Each term's edges are found once now (`own2/TopEdges.zig`).
+test "ownership v3: many `==` sites read each derived row once" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "type T0\n    = T0 Int\n");
+    for (1..301) |i| {
+        try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype T{d}\n    = T{d}", .{ i, i }));
+        for (1..33) |j| try main.appendSlice(a, try std.fmt.allocPrint(a, " T{d}", .{if (i > j) i - j else 0}));
+        try main.appendSlice(a, "\n");
+    }
+    for (0..1500) |k| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ng{d} : T300, T300 → Bool\ng{d} x y =\n    x == y\n", .{ k, k }));
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 131's review: a diamond of aliases whose bottom is a
+// family head, inside the family's own constructor. Reading a family's
+// payload hands each head's arguments on (`contexts`), so a kept reading
+// of such an alias was not used there, and each level cost four times the
+// one below: 16 levels did not end in 60 s. A kept reading now hands the
+// same arguments on again, each at its last place.
+test "ownership v3: a diamond of aliases under a family head is read in linear time" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "type Nest a\n    = NNil\n    | NCons (K16 a) (Nest (List a)) (List a)\n\n\ntype alias K0 a =\n    Nest Int\n");
+    for (1..17) |i| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ntype alias K{d} a =\n    K{d} (K{d} a)\n", .{ i, i - 1, i - 1 }));
+    try main.appendSlice(a,
+        \\
+        \\
+        \\pub f : Nest Int, List Int → List Int × Nest Int
+        \\f n xs =
+        \\    case n of
+        \\        NNil →
+        \\            ( List.push xs 1, n )
+        \\
+        \\        NCons k _ ys →
+        \\            ( List.push ys 1, k )
+        \\
+    );
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 131's review: 5 000 mutually recursive types, each
+// holding a list, and 5 000 `==` sites. A type past the layout limit makes
+// the module judge no write, but the walk went on to the module's budget:
+// 6.5 s of v3 against 0.08 s of type check on an LLVM compiler, and 11.6 s
+// before this work. No declaration is walked after a type passes the limit.
+test "ownership v3: a module past the layout limit walks no other declaration" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var main: std.ArrayList(u8) = .empty;
+    const n = 5000;
+    for (0..n) |i| try main.appendSlice(a, try std.fmt.allocPrint(a, "{s}type M{d}\n    = A{d} (List Int) M{d}\n    | B{d} (List M{d})\n", .{ if (i == 0) "" else "\n\n", i, i, (i + 1) % n, i, (i * 13 + 5) % n }));
+    for (0..n) |k| try main.appendSlice(a, try std.fmt.allocPrint(a, "\n\ng{d} : M{d}, M{d} → Bool\ng{d} x y =\n    x == y\n", .{ k, k % n, k % n, k }));
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "a type has more than 4096 locations") != null)) {
+        std.debug.print("wanted the layout limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 129: a `--library` build exports its `pub` functions, and
+// host JavaScript calls them with arrays that it still holds and reads
+// after. An export is a function in the default location (kernel §6.14), so
+// one that writes its parameter is refused; one that writes a copy is not.
+test "ownership v3: a library's exported function is called by the host" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\pub push3 : List Int → List Int
+        \\push3 l = List.push l 3
+        \\
+    );
+    const live = try w.run(&.{ "build", "--no-cache", "--library", "--platform=node", "--ownership=v3", "--ownership-everywhere", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), live.exit_code);
+    try testing.expect(std.mem.indexOf(u8, live.stderr, "is refused: call: a function that writes its") != null);
+    try w.write("Main.beni",
+        \\pub push3 : List Int → List Int
+        \\push3 l = List.push (List.copy l) 3
+        \\
+    );
+    const dead = try w.run(&.{ "build", "--no-cache", "--library", "--platform=node", "--ownership=v3", "--ownership-everywhere", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), dead.exit_code);
+}
+
+// Research report 133, and its fix in report 134: the `dom` lowering keeps
+// a `let` that only its root reads in the root's instance, and evaluates it
+// again only when a path it reads changed (`backend.md` §15.4, *The `let`
+// rule*). A later render reads the value an earlier one made, so a write of
+// it in place is seen by the next render. The lowering says which `let`s it
+// keeps (`Lowering.keeps_let`), and the checker reads each as held by the
+// root (kernel §6.14). A `let` that reads a list of the model is made again
+// on every render, so its twin is accepted.
+//
+// A chain of 400 writes passed its budget and then took 17.8 s (LLVM),
+// more than 120 s self-hosted: `markAtomIn` walked the runs of every
+// version again for each write, with no unit counted, and the walk went on
+// after the budget. Each entry's run is marked once for each flag now, every
+// run walked is counted, and the walk stops at the budget (kernel §8). Since
+// research report 135 an old run of the chain is read in one step, and the
+// chain is accepted.
+/// One group of the cases of the test below: `check` with v3 of each
+/// program of `bench/ownership-sweeps/blind10i-faults/`. One test per program
+/// and its twins: v3 checks the platform's modules in every process (it has
+/// no cache), so each run costs seconds, and sixteen in one test came close
+/// to its 120-second guard under load (#2603).
+const KeptLetCase = struct { name: []const u8, accepted: bool, why: []const u8 = "" };
+
+const kept_let_escaped = "List.push xs is refused: escaped";
+
+fn keptLetCases(cases: []const KeptLetCase) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    // Every case is run, so a run before the fix names each one it gets wrong.
+    var bad = false;
+    for (cases) |c| {
+        const dir = try std.fmt.allocPrint(a, "bench/ownership-sweeps/blind10i-faults/{s}", .{c.name});
+        const platform = std.mem.trim(u8, std.Io.Dir.cwd().readFileAlloc(testing.io, try std.fmt.allocPrint(a, "{s}/PLATFORM", .{dir}), a, .limited(256)) catch "node", " \r\n");
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", try std.fmt.allocPrint(a, "--platform={s}", .{platform}), try std.fmt.allocPrint(a, "--root={s}", .{dir}) });
+        try args.append(a, try std.fmt.allocPrint(a, "{s}/Main.beni", .{dir}));
+        for ([_][]const u8{ "Comp.beni", "Wrap.beni" }) |other| {
+            const path = try std.fmt.allocPrint(a, "{s}/{s}", .{ dir, other });
+            if (std.Io.Dir.cwd().access(testing.io, path, .{})) |_| try args.append(a, path) else |_| {}
+        }
+        const res = w.runWith(args.items, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{s}: did not end in 10 s ({s})\n", .{ c.name, @errorName(err) });
+            bad = true;
+            continue;
+        };
+        const ok = if (c.accepted) res.exit_code == 0 else res.exit_code == 1 and std.mem.indexOf(u8, res.stderr, c.why) != null;
+        if (!ok) {
+            std.debug.print("{s}: wanted {s} ({s}); exit {d}:\n{s}\n", .{ c.name, if (c.accepted) "accepted" else "refused", c.why, res.exit_code, res.stderr });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-kept" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-kept.live", .accepted = false, .why = kept_let_escaped },
+        .{ .name = "view-let-kept.kept", .accepted = false, .why = "List.push xs is refused" },
+        .{ .name = "view-let-kept.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-scalar" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-scalar.live", .accepted = false, .why = kept_let_escaped },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-record" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-record.live", .accepted = false, .why = "List.push r.l is refused: escaped" },
+        .{ .name = "view-let-record.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-nested" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-nested.live", .accepted = false, .why = "is refused: escaped" },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-chain" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-chain.live", .accepted = false, .why = kept_let_escaped },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-helper" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-helper.live", .accepted = false, .why = kept_let_escaped },
+        .{ .name = "view-let-helper.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-comp" {
+    try keptLetCases(&.{
+        .{ .name = "view-let-comp.live", .accepted = false, .why = kept_let_escaped },
+        .{ .name = "view-let-comp.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: view-let-wrap" {
+    try keptLetCases(&.{
+        // Found by the review of report 134: a root that is a component call
+        // alone has no row in the markup section of the dispatch table.
+        .{ .name = "view-let-wrap.live", .accepted = false, .why = kept_let_escaped },
+        .{ .name = "view-let-wrap.dead", .accepted = true },
+    });
+}
+
+test "ownership v3: a let that a markup lowering keeps, and a long chain of writes: chain-of-writes" {
+    try keptLetCases(&.{
+        // 400 writes of one list: refused by the module's budget until research
+        // report 135, which reads an old run of a chain in one step.
+        .{ .name = "chain-of-writes.slow", .accepted = true },
+        .{ .name = "chain-of-writes.control", .accepted = true },
+    });
+}
+
+// Research report 134's review: `compatible` climbs the contexts of two
+// arms to their common case, and that climb was not counted. Writes 200
+// cases deep, beside 10 000 reads in the other arm of the outermost case,
+// cost the depth for each pair of a write and a read and counted 1. The
+// climb counts now (kernel §8), so the walk stops at its budget.
+test "ownership v3: the contexts that a pair of a write and a read climb are counted" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const depth = 200;
+    var main: std.ArrayList(u8) = .empty;
+    try main.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\ngo : Int → Int\ngo n =\n    case n of\n");
+    for (1..depth) |d| try main.print(a, "{[pad]s}{[d]d} →\n{[pad]s}    case n of\n", .{ .pad = try indent(a, 4 * (2 * d)), .d = d });
+    const inner = try indent(a, 4 * (2 * depth + 1));
+    try main.print(a, "{s}{d} →\n", .{ try indent(a, 4 * (2 * depth)), depth });
+    try main.print(a, "{s}l0 = [ n ]\n", .{inner});
+    for (1..61) |k| try main.print(a, "{s}l{d} = List.push l{d} {d}\n", .{ inner, k, k - 1, k });
+    try main.print(a, "{s}0\n", .{inner});
+    var d: usize = depth;
+    while (d >= 1) : (d -= 1) {
+        const arm = try indent(a, 4 * (2 * d - 1) + 4);
+        try main.print(a, "\n{s}_ →\n", .{arm});
+        if (d == 1) {
+            try main.print(a, "{s}    ys = [ n ]\n{s}    List.sum [ List.length ys", .{ arm, arm });
+            for (1..10_000) |_| try main.appendSlice(a, ", List.length ys");
+            try main.appendSlice(a, " ]\n");
+        } else try main.print(a, "{s}    0\n", .{arm});
+    }
+    try main.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (go 1))\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "limit go: the walk") != null)) {
+        std.debug.print("wanted the walk's limit; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 4000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+fn indent(a: std.mem.Allocator, n: usize) ![]const u8 {
+    const s = try a.alloc(u8, n);
+    @memset(s, ' ');
+    return s;
+}
+
+// Research report 135: the work that a unit of the budget stands for. A
+// chain of `case`s over a recursive type, each of which can answer the
+// value of the `case` before it, makes values that share their parts, and
+// `project` copied the shared parts once for each path through them:
+// 2ⁿ for n levels, with the copies of the arms uncounted. A part of a
+// value at a step is projected once now. A chain of writes read each
+// older name of the list at each later read, and the sort of a run of
+// atoms and the copy of a run were not counted. Each shape below took 3
+// to 4 s of an LLVM compiler before its limit, or was refused at 100
+// writes; each now ends well inside 10 s on the gates' compiler, and the
+// accepted ones are accepted.
+test "ownership v3: chains of case reads and of writes end, and a unit tracks time" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const tree = "import List\nimport Node exposing (Program)\nimport String\n\n\ntype Tree\n    = Node (List Int) (Maybe Tree)\n    | Leaf\n\n\n";
+    const read_last = "    case t{d} of\n        Node l _ →\n            List.length (List.push l 1)\n\n        Leaf →\n            0\n";
+    const Shape = enum { keep, fib, record, writes };
+    const Case = struct { shape: Shape, n: usize, limit: bool };
+    const cases = [_]Case{
+        // Each level answers the projection or the level before.
+        .{ .shape = .keep, .n = 100, .limit = false },
+        .{ .shape = .keep, .n = 400, .limit = true },
+        // Each level answers the projection or the level two before.
+        .{ .shape = .fib, .n = 100, .limit = false },
+        .{ .shape = .fib, .n = 400, .limit = true },
+        // The tree in a record beside a list.
+        .{ .shape = .record, .n = 100, .limit = false },
+        .{ .shape = .record, .n = 400, .limit = true },
+        // A chain of writes of one list.
+        .{ .shape = .writes, .n = 400, .limit = false },
+        .{ .shape = .writes, .n = 5000, .limit = true },
+    };
+    var bad = false;
+    for (cases) |c| {
+        var src: std.ArrayList(u8) = .empty;
+        switch (c.shape) {
+            .keep => {
+                try src.appendSlice(a, tree);
+                try src.appendSlice(a, "go : Tree → Int\ngo t0 =\n");
+                for (1..c.n + 1) |k| try src.print(a, "    t{d} =\n        case t{d} of\n            Node _ (Just t) →\n                t\n\n            _ →\n                t{d}\n\n", .{ k, k - 1, k - 1 });
+                try src.print(a, read_last, .{c.n});
+                try src.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (go Leaf))\n");
+            },
+            .fib => {
+                try src.appendSlice(a, tree);
+                try src.appendSlice(a, "go : Tree, Tree → Int\ngo t0 t1 =\n");
+                for (2..c.n + 1) |k| try src.print(a, "    t{d} =\n        case t{d} of\n            Node _ (Just t) →\n                t\n\n            _ →\n                t{d}\n\n", .{ k, k - 1, k - 2 });
+                try src.print(a, read_last, .{c.n});
+                try src.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (go Leaf Leaf))\n");
+            },
+            .record => {
+                try src.appendSlice(a, tree);
+                try src.appendSlice(a, "type alias R =\n    { t : Tree, xs : List Int }\n\n\ngo : R → Int\ngo r0 =\n");
+                for (1..c.n + 1) |k| try src.print(a, "    r{d} =\n        case r{d}.t of\n            Node l (Just t) →\n                {{ t = t, xs = l }}\n\n            _ →\n                r{d}\n\n", .{ k, k - 1, k - 1 });
+                try src.print(a, "    List.length (List.push r{d}.xs 1)\n", .{c.n});
+                try src.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (go { t = Leaf, xs = [] }))\n");
+            },
+            .writes => {
+                try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\ngo : Int → Int\ngo n =\n    l0 = [ n ]\n");
+                for (1..c.n + 1) |k| try src.print(a, "    l{d} = List.push l{d} {d}\n", .{ k, k - 1, k });
+                try src.print(a, "    List.length l{d}\n\n\nmain : Program\nmain = Node.print (String.fromInt (go 1))\n", .{c.n});
+            },
+        }
+        try w.write("Main.beni", src.items);
+        const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{s} {d}: the check did not end in 10 s ({s})\n", .{ @tagName(c.shape), c.n, @errorName(err) });
+            bad = true;
+            continue;
+        };
+        const ok = if (c.limit) r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "limit go: the walk") != null else r.exit_code == 0;
+        if (!ok) {
+            std.debug.print("{s} {d}: wanted {s}; exit {d}:\n{s}\n", .{ @tagName(c.shape), c.n, if (c.limit) "the walk's limit" else "accepted", r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+// The review of research report 135: the module's budget is 16 384 units
+// for each token, so a module of a few hundred lines that holds a large
+// literal earned a budget of seconds that a few declarations then spent
+// (360 lines, 3.2 s of an LLVM compiler to the module's limit). No module
+// does more than `Check.module_cap` units now (kernel §8). Eighteen chains
+// of 400 writes, each accepted alone, do more than it together, and the
+// module's tokens would allow more than that. (Eight did until research
+// report 145: a write that names a chain of old names is indexed, so each
+// chain costs half its units.)
+test "ownership v3: no module does more than the most for any module" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n");
+    for (0..18) |d| {
+        try src.print(a, "\n\ng{d} : Int → Int\ng{d} n =\n    l0 = [ n ]\n", .{ d, d });
+        for (1..401) |k| try src.print(a, "    l{d} = List.push l{d} {d}\n", .{ k, k - 1, k });
+        try src.appendSlice(a, "    List.length l400\n");
+    }
+    try src.appendSlice(a, "\n\nmain : Program\nmain = Node.print (String.fromInt (g0 1))\n");
+    try w.write("Main.beni", src.items);
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (!(r.exit_code == 1 and std.mem.indexOf(u8, r.stderr, "took more than 134217728 units of work") != null)) {
+        std.debug.print("wanted the limit of every module; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 136: a module earned 16 384 units for each token of its
+// source, so a literal earned far more than its walk costs, and the
+// functions beside it spent it. Six modules, each with one literal of 3 000
+// tuples of numbers, negated numbers and strings on one line and 30
+// functions `f p = p` over nested pairs of 4 096 lists, each reached the
+// most for any module: 19.7 s at `--jobs=1` on the gates' compiler. A
+// literal now earns about what its walk costs, and each declaration spends
+// only what its own instructions earn (kernel §8): the functions cost what
+// their layouts earn, about linear in them since research report 138, and
+// the program is accepted, with no limit.
+test "ownership v3: a literal earns what its walk costs, not what its tokens would" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni" });
+    var main: std.ArrayList(u8) = .empty;
+    for (0..6) |k| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "import List\n\n\ntype alias P0 =\n    List Int\n");
+        for (1..13) |d| try src.print(a, "\n\ntype alias P{d} =\n    P{d} × P{d}\n", .{ d, d - 1, d - 1 });
+        try src.print(a, "\n\npub xs{d} : List (Int × Int × String)\nxs{d} =\n    [ ( 0, -0, \"s\" )", .{ k, k });
+        for (1..3000) |i| try src.print(a, ", ( {d}, -{d}, \"s\" )", .{ i, i });
+        try src.appendSlice(a, " ]\n");
+        for (0..30) |f| try src.print(a, "\n\nf{d} : P12 → P12\nf{d} p =\n    p\n", .{ f, f });
+        const name = try std.fmt.allocPrint(a, "M{d}.beni", .{k});
+        try w.write(name, src.items);
+        try args.append(a, name);
+        try main.print(a, "import M{d}\n", .{k});
+    }
+    try main.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\nmain : Program\nmain = Node.print (String.fromInt (List.length M0.xs0))\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(args.items, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 3000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// The reviews of research report 136: a list whose rows are literal lists
+// but one, a name, was no literal, so it earned nothing for the pairs of
+// its rows' cells that the walk tests, and 1 400 rows passed the module's
+// budget; and so did 8 groups of 250 rows, each headed by the name. A
+// construction earns the pairs of the literal cells in it now, at any
+// depth, whether or not it is a literal itself (kernel §8).
+test "ownership v3: a table of literal rows beside a name is accepted" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    for ([_][2]usize{ .{ 1, 1400 }, .{ 8, 250 } }) |shape| {
+        const groups = shape[0];
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "import List\nimport Node exposing (Program)\nimport String\n\n\nfirst : List Int\nfirst =\n    [ 0, 0 ]\n\n\n");
+        try src.appendSlice(a, if (groups == 1) "table : List (List Int)\ntable =\n" else "table : List (List (List Int))\ntable =\n");
+        // One group: `[ first, … ]`; more: `[ [ first, … ], [ first, … ] ]`.
+        const pad = if (groups == 1) "    " else "      ";
+        for (0..groups) |g| {
+            try src.appendSlice(a, if (groups == 1) "    [ first\n" else if (g == 0) "    [ [ first\n" else "    , [ first\n");
+            for (0..shape[1]) |i| try src.print(a, "{s}, [ {d}, {d} ]\n", .{ pad, i, i + 1 });
+            try src.print(a, "{s}]\n", .{pad});
+        }
+        if (groups != 1) try src.appendSlice(a, "    ]\n");
+        try src.appendSlice(a, "\n\nmain : Program\nmain =\n    Node.print (String.fromInt (List.length table))\n");
+        try w.write("Main.beni", src.items);
+        const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("{d} groups: the check did not end in 10 s ({s})\n", .{ groups, @errorName(err) });
+            return err;
+        };
+        if (r.exit_code != 0) {
+            std.debug.print("{d} groups: wanted the table accepted; exit {d}:\n{s}\n", .{ groups, r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+            return error.TestUnexpectedVerdict;
+        }
+    }
+}
+
+// Research report 138: the duplicate test of a value tested each pair of its
+// locations, so `f p = p` over nested pairs of 4 096 lists did 8.4 million
+// pairs for 4 instructions, and a list of 8 such values tested each pair of
+// its parts' cells. The test groups the cells by their root and entry now,
+// about linear in them (`Frame.runsShare`), with the same answers: 20 such
+// functions and 5 such lists are accepted, with no limit.
+test "ownership v3: the duplicate test of a value is linear in its cells" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var src: std.ArrayList(u8) = .empty;
+    try src.appendSlice(a, "import List\n\n\ntype alias P0 =\n    List Int\n");
+    for (1..13) |d| try src.print(a, "\n\ntype alias P{d} =\n    P{d} × P{d}\n", .{ d, d - 1, d - 1 });
+    for (0..20) |f| try src.print(a, "\n\npub f{d} : P12 → P12\nf{d} p =\n    p\n", .{ f, f });
+    for (0..5) |g| try src.print(a, "\n\npub g{d} : P11 → List P11\ng{d} p =\n    [ p, p, p, p, p, p, p, p ]\n", .{ g, g });
+    try w.write("A.beni", src.items);
+    try w.write("Main.beni", "import A\nimport Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.print \"ok\"\n");
+    const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni", "A.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the module accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// Research report 138: a local function's contract from an earlier round of
+// its declaration's group started the rounds of the next as a finished
+// contract, so the cells of its own recursive call had new names in each
+// round, and `chunks` (from `tests/corpus/run/TailModConsBranches`) never
+// settled: 66 walks and the limit. That contract is a draft while the rounds
+// run (`Frame.solveCodes`), and the group settles.
+test "ownership v3: a group whose local function calls itself settles" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import List
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\chunks : List Int, Int → List (List Int)
+        \\chunks xs n =
+        \\    case xs of
+        \\        [] →
+        \\            []
+        \\
+        \\        _ →
+        \\            first k ys =
+        \\                if k ≤ 0 then
+        \\                    []
+        \\                else
+        \\                    case ys of
+        \\                        [] →
+        \\                            []
+        \\
+        \\                        [ y, …rest ] →
+        \\                            [ y, …first (k - 1) rest ]
+        \\            [ first n xs, …chunks (List.drop xs n) n ]
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (List.length (chunks [ 1, 2, 3, 4, 5 ] 2)))
+        \\
+    );
+    const d = w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the dump did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (std.mem.indexOf(u8, d.stdout, "did not settle") != null or std.mem.indexOf(u8, d.stdout, "summary chunks:") == null) {
+        std.debug.print("wanted chunks settled, with a contract:\n{s}\n", .{d.stdout[0..@min(d.stdout.len, 2000)]});
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// A group that has not settled after 64 rounds is a limit of that group
+// only (kernel §3.3 item 9): no member has a contract, and the module goes
+// on. A declaration past its budget is another limit: it stops its module,
+// which walks no other declaration and publishes no contract (kernel §8).
+// So the bound of 64 keeps the limit of a slow group small. PR #2739 took
+// the bound away; a function that hands 300 lists on, one place round, then
+// worked until its budget ended, and every other verdict and contract of its
+// module went with it (the review of that PR, #2513). The two programs
+// hold that the rest of the module is judged: a write of another
+// declaration of the module, and the writes of an app through two other
+// functions of a module that it imports.
+test "ownership v3: a group that does not settle is a limit of the group, not of its module" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const n = 300;
+    var r: std.ArrayList(u8) = .empty;
+    try r.appendSlice(a, "r : ");
+    for (0..n) |k| try r.appendSlice(a, if (k == 0) "List Int" else " × List Int");
+    try r.appendSlice(a, ", Int → List Int\nr ( ");
+    for (0..n) |k| try r.print(a, "{s}a{d}", .{ if (k == 0) "" else ", ", k });
+    try r.print(a, " ) k = if k == 0 then a0 else r ( a{d}", .{n - 1});
+    for (0..n - 1) |k| try r.print(a, ", a{d}", .{k});
+    try r.appendSlice(a, " ) (k - 1)\n");
+
+    // One module: `other` is no member of the group.
+    try w.write("Main.beni", try std.fmt.allocPrint(a,
+        \\import Node
+        \\
+        \\
+        \\{s}
+        \\
+        \\other : Int → Int
+        \\other k =
+        \\    xs = [ 1, 2 ]
+        \\    ys = List.push xs k
+        \\    List.length ys
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (other 5))
+        \\
+    , .{r.items}));
+    const one = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    for ([_][]const u8{ "limit r: the group did not settle", "List.push xs: accepted fresh" }) |line| if (std.mem.indexOf(u8, one.stdout, line) == null) {
+        std.debug.print("one module: wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, one.exit_code, one.stdout[0..@min(one.stdout.len, 3000)], one.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+
+    // Two modules: the app calls `mk` and `add` of `Lib`, and never `r`.
+    try w.write("Lib.beni", try std.fmt.allocPrint(a,
+        \\pub {s}
+        \\
+        \\pub mk : Int → List Int
+        \\mk k = [ k, k + 1 ]
+        \\
+        \\
+        \\pub add : List Int, Int → List Int
+        \\add xs k = List.push xs k
+        \\
+    , .{r.items}));
+    try w.write("Main.beni",
+        \\import Lib
+        \\import Node
+        \\
+        \\
+        \\go : Int → Int
+        \\go k =
+        \\    l = List.push (Lib.mk k) 9
+        \\    m = Lib.add [ 1, 2 ] k
+        \\    List.length l + List.length m
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt (go 3))
+        \\
+    );
+    const two = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "--root=.", "." }, .{ .raw_diagnostics = true });
+    for ([_][]const u8{ "limit r: the group did not settle", "List.push xs: accepted param", "List.push <call Lib.mk>: accepted call", "call Lib.add <literal>: accepted fresh" }) |line| if (std.mem.indexOf(u8, two.stdout, line) == null) {
+        std.debug.print("two modules: wanted `{s}`; exit {d}:\n{s}{s}\n", .{ line, two.exit_code, two.stdout[0..@min(two.stdout.len, 3000)], two.stderr });
+        return error.TestUnexpectedVerdict;
+    };
+}
+
+// Research reports 136 and 138: a module's budget was pooled, so what one
+// declaration earned another could spend. Each declaration spends only what
+// its own instructions earn now (kernel §8), and a function that holds a
+// list of 45 references and answers nested pairs of 4 096 lists costs about
+// what its layouts earn: two modules of 30 such functions are accepted,
+// with no limit. On `a982e4641d` each module reached its budget.
+test "ownership v3: a declaration spends what its own instructions earn" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    var args: std.ArrayList([]const u8) = .empty;
+    try args.appendSlice(a, &.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "--jobs=1", "Main.beni" });
+    var main: std.ArrayList(u8) = .empty;
+    for (0..2) |k| {
+        var src: std.ArrayList(u8) = .empty;
+        try src.appendSlice(a, "import List\n\n\ntype alias P0 =\n    List Int\n");
+        for (1..13) |d| try src.print(a, "\n\ntype alias P{d} =\n    P{d} × P{d}\n", .{ d, d - 1, d - 1 });
+        for (0..30) |f| {
+            try src.print(a, "\n\npub f{d} : P12, Int → P12\nf{d} p k =\n    xs = [ k", .{ f, f });
+            for (1..45) |_| try src.appendSlice(a, ", k");
+            try src.appendSlice(a, " ]\n    p\n");
+        }
+        const name = try std.fmt.allocPrint(a, "M{d}.beni", .{k});
+        try w.write(name, src.items);
+        try args.append(a, name);
+        try main.print(a, "import M{d}\n", .{k});
+    }
+    try main.appendSlice(a, "import Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.print \"ok\"\n");
+    try w.write("Main.beni", main.items);
+    const r = w.runWith(args.items, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+        return err;
+    };
+    if (r.exit_code != 0) {
+        std.debug.print("wanted the program accepted; exit {d}:\n{s}\n", .{ r.exit_code, r.stderr[0..@min(r.stderr.len, 3000)] });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+// The review of research report 135: a module past its budget published
+// the contracts of the declarations walked before the one that passed it,
+// so whether an importer's write was accepted depended on the order of the
+// module's declarations. The module publishes no contract now (kernel §8).
+// The heavy declaration is a literal list nested 200 deep, whose location
+// table passes the module's budget (research report 138).
+test "ownership v3: a module past its budget publishes no contract, in any order" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const a = w.arena.allocator();
+    const types = "import List\n";
+    const len = "\n\npub len : List Int → Int\nlen l =\n    List.length l\n";
+    var heavy: std.ArrayList(u8) = .empty;
+    try heavy.appendSlice(a, "\n\nheavy : ");
+    for (0..200) |_| try heavy.appendSlice(a, "List (");
+    try heavy.appendSlice(a, "Int");
+    for (0..200) |_| try heavy.appendSlice(a, ")");
+    try heavy.appendSlice(a, "\nheavy =\n    ");
+    for (0..200) |_| try heavy.appendSlice(a, "[ ");
+    try heavy.appendSlice(a, "0");
+    for (0..200) |_| try heavy.appendSlice(a, " ]");
+    try heavy.appendSlice(a, "\n");
+    try w.write("Main.beni", "import A\nimport List\nimport Node exposing (Program)\nimport String\n\n\ngo : Int → Int\ngo n =\n    l = [ n ]\n    k = A.len l\n    List.length (List.push l k)\n\n\nmain : Program\nmain = Node.print (String.fromInt (go 1))\n");
+    var bad = false;
+    for ([_]bool{ true, false }) |len_first| {
+        const src = if (len_first) try std.mem.concat(a, u8, &.{ types, len, heavy.items }) else try std.mem.concat(a, u8, &.{ types, heavy.items, len });
+        try w.write("A.beni", src);
+        const r = w.runWith(&.{ "check", "--ownership=v3", "--ownership-everywhere", "--no-cache", "--platform=node", "Main.beni", "A.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("the check did not end in 10 s ({s})\n", .{@errorName(err)});
+            return err;
+        };
+        const limit = std.mem.indexOf(u8, r.stderr, "limit heavy: the walks of the module took more than") != null;
+        const refused = std.mem.indexOf(u8, r.stderr, "List.push l is refused") != null;
+        if (!(r.exit_code == 1 and limit and refused)) {
+            std.debug.print("len {s}: wanted A's limit and the push refused; exit {d}:\n{s}\n", .{ if (len_first) "first" else "last", r.exit_code, r.stderr[0..@min(r.stderr.len, 2000)] });
+            bad = true;
+        }
+        // The dump prints the contracts the module publishes: none of a walk.
+        const d = w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--platform=node", "A.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+            std.debug.print("the dump did not end in 10 s ({s})\n", .{@errorName(err)});
+            return err;
+        };
+        if (std.mem.indexOf(u8, d.stdout, "took more than") == null or std.mem.indexOf(u8, d.stdout, "summary len") != null) {
+            std.debug.print("len {s}: the dump prints a contract that the module does not publish:\n{s}\n", .{ if (len_first) "first" else "last", d.stdout[0..@min(d.stdout.len, 2000)] });
+            bad = true;
+        }
+    }
+    if (bad) return error.TestUnexpectedVerdict;
+}
+
+// #2599 (`bench/ownership-sweeps/nested-arms.mjs`): `go` makes its own cell
+// and nests a two-armed `if` or `case` `depth` deep, the rest of the nesting
+// in each arm; each first arm pushes onto the cell's list in place, each
+// second stores a new list. After each level the cell's latest version is the
+// join of the arms' latest (kernel §13 item 6), so the joins nest. Each
+// reading of the cell made them again, uncounted: depth 8 held 4.4 GB, and
+// depth 9 ran out of memory before any limit. With `live`, a loan taken
+// before the nesting is read after it.
+fn nestedArms(a: std.mem.Allocator, depth: u32, case: bool, live: bool) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a,
+        \\import Io
+        \\import List
+        \\import Log
+        \\import Node exposing (Program)
+        \\import Ref exposing (Ref)
+        \\import String
+        \\
+        \\
+        \\ints : List Int → String
+        \\ints xs = String.join (List.map xs String.fromInt) ","
+        \\
+        \\
+        \\flag : Int → Bool
+        \\flag n = Int.mod n 3 == 0
+        \\
+        \\
+        \\pick : Int → Int
+        \\pick n = Int.mod n 3
+        \\
+        \\
+        \\go : ⊤ → String
+        \\go ⊤ =
+        \\    c = Ref.make [ 0 ]
+        \\
+    );
+    if (live) try out.appendSlice(a, "    old = Ref.get c\n");
+    try nestedLevel(a, &out, depth, case, 0, 4);
+    try out.appendSlice(a, if (live) "    ints old ++ \";\" ++ ints (Ref.get c)\n" else "    ints (Ref.get c)\n");
+    try out.appendSlice(a, "\n\nmain : Program\nmain = Io.run λ⊤ → Node.print (go ⊤)\n");
+    return out.items;
+}
+
+fn nestedLevel(a: std.mem.Allocator, out: *std.ArrayList(u8), depth: u32, case: bool, i: u32, ind: usize) !void {
+    if (i == depth) {
+        try out.appendNTimes(a, ' ', ind);
+        try out.appendSlice(a, "Log.info \"end\"\n");
+        return;
+    }
+    const at = if (case) ind + 8 else ind + 4;
+    try out.appendNTimes(a, ' ', ind);
+    if (case) try out.print(a, "case pick {d} of\n", .{i}) else try out.print(a, "if flag {d} then\n", .{i});
+    if (case) {
+        try out.appendNTimes(a, ' ', ind + 4);
+        try out.appendSlice(a, "0 →\n");
+    }
+    try out.appendNTimes(a, ' ', at);
+    try out.print(a, "Ref.update c λl → List.push l {d}\n", .{i});
+    try nestedLevel(a, out, depth, case, i + 1, at);
+    try out.appendNTimes(a, ' ', if (case) ind + 4 else ind);
+    try out.appendSlice(a, if (case) "_ →\n" else "else\n");
+    try out.appendNTimes(a, ' ', at);
+    try out.print(a, "Ref.set c [ {d} ]\n", .{i});
+    try nestedLevel(a, out, depth, case, i + 1, at);
+}
+
+/// The totals of v3's dump of `nestedArms(depth, case, live)`, which must
+/// end in 10 s and hold `want`.
+fn expectNestedArms(depth: u32, case: bool, live: bool, want: []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try nestedArms(w.arena.allocator(), depth, case, live));
+    const r = w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 10_000 }) catch |err| {
+        std.debug.print("depth {d}: the dump did not end in 10 s ({s})\n", .{ depth, @errorName(err) });
+        return err;
+    };
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, want) == null) {
+        std.debug.print("depth {d} (case {}, live {}): wanted {s}; exit {d}:\n{s}{s}\n", .{ depth, case, live, want, r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
+    }
+}
+
+test "ownership v3: nested arms 8 deep that write a cell the frame made are judged, each push accepted" {
+    try expectNestedArms(8, false, false, "total 510: accepted 510 ");
+    try expectNestedArms(8, true, false, "total 510: accepted 510 ");
+}
+
+test "ownership v3: nested arms 9 deep are judged, and a loan read after them refuses each push of its list" {
+    try expectNestedArms(9, false, false, "total 1022: accepted 1022 ");
+    // The pushes on the way through the first arms write the loaned list.
+    try expectNestedArms(9, true, true, "rejected 9\ncause later-use 9\n");
+}
+
+test "ownership v3: nested `if` arms 10 deep end in a limit" {
+    try expectNestedArms(10, false, false, "limits 1\n");
+}
+
+test "ownership v3: nested `case` arms 10 deep end in a limit" {
+    try expectNestedArms(10, true, false, "limits 1\n");
+}
+
+test "ownership v3: a limit is a pending demand in the totals of the dump" {
+    // Before #2567 the total said `pending 0, rejected 0` beside `limits 1`,
+    // which reads as a program that a build accepts; the build stops on it.
+    try expectNestedArms(10, false, false, "total 2047: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 2046\nlimits 1\n");
+}
+
+/// A loop over a `case` of `n` constructors with two lists each (#2567):
+/// `step` moves the lists to the next constructor and swaps them, `loop`
+/// applies it `k` times. The contract of `loop` needs as many rounds as the
+/// cycle of the 2n list positions is long (n where n is even), and each
+/// round's call writes all 2n of them.
+fn constructorLoop(a: std.mem.Allocator, n: u32) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(a, "import Node\n\n\ntype T\n");
+    for (0..n) |i| try out.print(a, "    {s} C{d} (List Int) (List Int)\n", .{ if (i == 0) "=" else "|", i });
+    try out.appendSlice(a, "\n\nstep : T → T\nstep t =\n    case t of\n");
+    for (0..n) |i| try out.print(a, "        C{d} a b →\n            C{d} (List.push b {d}) (List.push a {d})\n\n", .{ i, (i + 1) % n, i, i });
+    try out.appendSlice(a,
+        \\
+        \\loop : T, Int → T
+        \\loop t k = if k ≤ 0 then t else loop (step t) (k - 1)
+        \\
+        \\
+        \\size : T → Int
+        \\size t =
+        \\    case t of
+        \\
+    );
+    for (0..n) |i| try out.print(a, "        C{d} a b →\n            List.length a + List.length b\n\n", .{i});
+    try out.appendSlice(a, "\nmain : Node.Program\nmain = Node.print (String.fromInt (size (loop (C0 [] []) 5)))\n");
+    return out.items;
+}
+
+test "ownership v3: a loop over a case of 14 constructors is judged, each push accepted" {
+    // Each write of the recursive call read every other location of its
+    // argument again: 28 x 28 reads in each of 14 rounds, and the walk of
+    // `loop` passed its budget (#2567). A call now reads each location once
+    // for all of its writes (kernel §8), and the walks take about half of
+    // the budget (871 018 of 1 658 496 units when this was written).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", try constructorLoop(w.arena.allocator(), 14));
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership=v3", "--ownership-everywhere", "--ownership-totals", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true, .timeout_ms = 20_000 });
+    if (r.exit_code != 0 or std.mem.indexOf(u8, r.stdout, "total 112: accepted 112 ") == null or std.mem.indexOf(u8, r.stdout, "limits") != null) {
+        std.debug.print("wanted `total 112: accepted 112` and no limit; exit {d}:\n{s}{s}\n", .{ r.exit_code, r.stdout, r.stderr });
+        return error.TestUnexpectedVerdict;
     }
 }

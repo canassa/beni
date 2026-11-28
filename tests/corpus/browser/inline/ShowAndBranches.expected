@@ -136,7 +136,7 @@
     <!---->
     <label>
       "Ada!"
-      <input id="by-identity" .value="typed">
+      <input id="by-identity" .value="">
     </label>
     <div>
       <input id="left" .value="typed">

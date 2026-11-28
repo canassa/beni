@@ -28,7 +28,7 @@ const Ids = @import("Ids.zig");
 const Facts = @import("Facts.zig");
 const Bir = @import("../bir/Bir.zig");
 const Dispatch = @import("../check/Dispatch.zig");
-const Edges = @import("../check/Edges.zig");
+const TopEdges = @import("TopEdges.zig");
 const Scc = @import("../check/Scc.zig");
 const InternPool = @import("../InternPool.zig");
 const Interface = @import("../resolve/Interface.zig");
@@ -96,27 +96,36 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Facts.Pr
     defer ops.deinit(gpa);
     const tags = bir.insts.items(.tag);
     const datas = bir.insts.items(.data);
-    var leg_edges: std.ArrayList(Edges.Edge) = .empty;
-    defer leg_edges.deinit(gpa);
+    // The dispatch leg's `top` edges, each term's once (`TopEdges`).
+    var walker: ?TopEdges.Walker = if (in.dispatch) |dt| try TopEdges.Walker.init(gpa, dt, @intCast(n)) else null;
+    defer if (walker) |*w| w.deinit();
+    const cross_check = std.debug.runtime_safety and in.dispatch != null and in.dispatch.?.terms.len <= TopEdges.cross_check_terms;
     for (bir.decls, 0..) |d, di| {
         starts[di] = @intCast(edges.items.len);
         if (!d.kind.isValue() or d.body == .none) continue;
         try frames(gpa, bir, d, enclosing_frame, &ops);
         // The SCC edges: `check/Edges.zig`'s three legs — `refs`, the `top`
         // instructions, every dispatch site's callee and evidence terms and
-        // the bodies of the derived rows they name, each term once. Without
-        // a dispatch table (a test, or before the checker) the `top`
-        // instructions alone.
-        if (in.dispatch) |dt| {
-            leg_edges.clearRetainingCapacity();
-            try Edges.declEdges(&leg_edges, gpa, bir, dt, @intCast(di));
-            for (leg_edges.items) |e| switch (e) {
-                .top => |target| if (target < n) {
-                    if (target == di) self_edge[di] = true;
-                    try edges.append(gpa, target);
-                },
-                else => {},
+        // the bodies of the derived rows they name, each term once — in its
+        // order. The third leg's are `TopEdges`', each target at its first
+        // place: a repeated edge does nothing in Tarjan, and `Edges` walked
+        // the rows below each site again for each declaration (research
+        // report 131). Without a dispatch table (a test, or before the
+        // checker) the `top` instructions alone.
+        if (walker) |*w| {
+            const from = edges.items.len;
+            for (bir.refs[d.refs_start..d.refs_end]) |ref| if (ref.kind == .top_value) try edges.append(gpa, ref.a);
+            for (tags[d.inst_start.int()..d.inst_end.int()], datas[d.inst_start.int()..d.inst_end.int()]) |tag, data| if (tag == .top) try edges.append(gpa, data.lhs);
+            try w.declTops(bir, @intCast(di), &edges);
+            // Only the module's declarations are nodes.
+            var k = from;
+            for (edges.items[from..]) |target| if (target < n) {
+                if (target == di) self_edge[di] = true;
+                edges.items[k] = target;
+                k += 1;
             };
+            edges.shrinkRetainingCapacity(k);
+            if (cross_check) try TopEdges.crossCheck(gpa, bir, in.dispatch.?, @intCast(di), edges.items[from..]);
         }
         var i = d.inst_start.int();
         while (i < d.inst_end.int()) : (i += 1) {

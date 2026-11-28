@@ -1,0 +1,3 @@
+# The live twin of CellEntryHosts: init, update and view start a fiber that reads a cell, and the runtime runs them on the fiber that calls into it, which can be masked: refused at the entry; the `where` method at its binding (ownership-v3-kernel.md §13 item 12, *A defect*, (d), *The ways in, from the code*, item 12; #2695).
+119:13 list_still_used value
+128:8 list_still_used value

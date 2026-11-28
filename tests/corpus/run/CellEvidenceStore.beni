@@ -1,0 +1,27 @@
+-- `Ref.set` handed as evidence (`where a.set`): the generic code calls it
+-- where no walk applies it, so a function that stores into a cell it is
+-- handed is refused where it is handed, as one that writes or keeps is
+-- (`ownership-v3-kernel.md` §6 rule 11, §13). Before, the store renewed
+-- nothing, and the update in place wrote `ys`, which the program reads.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+put : a, b → ⊤
+    where a.set : a, b → ⊤
+put x y = x.set y
+
+
+main : Program
+main =
+    r = Ref.make [ 1 ]
+    ys = [ 5 ]
+    put r ys
+    Ref.update r λzs → List.push zs 2
+    Node.print (ints ys)

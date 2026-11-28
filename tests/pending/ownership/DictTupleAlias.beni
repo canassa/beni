@@ -15,11 +15,11 @@ grow p = ( List.push p.0 9, p.1 )
 pub shared : ⊤ → Dict Int (List Int × Int)
 shared ⊤ =
     xs = [ 1 ]
-    d = Dict.insert (Dict.insert Dict.empty 1 ( xs, 0 )) 2 ( xs, 0 )
+    d = Dict.insert (Dict.insert (Dict.empty ⊤) 1 ( xs, 0 )) 2 ( xs, 0 )
     Dict.update d 1 λm → Maybe.map m grow
 
 
 pub fresh : ⊤ → Dict Int (List Int × Int)
 fresh ⊤ =
-    d = Dict.insert (Dict.insert Dict.empty 1 ( [ 1 ], 0 )) 2 ( [ 2 ], 0 )
+    d = Dict.insert (Dict.insert (Dict.empty ⊤) 1 ( [ 1 ], 0 )) 2 ( [ 2 ], 0 )
     Dict.update d 1 λm → Maybe.map m grow

@@ -1,0 +1,28 @@
+-- A callee writes a field of one parameter and answers a function that
+-- reads the other, and the caller hands it one record at both places
+-- (kernel §5 test 2, §11). The answered function holds the other operand:
+-- in place it would read the written field, "5 5", where the copying
+-- program prints "5 0". v3 refuses the call.
+import Node exposing (Program)
+
+
+type alias P =
+    a : Int
+    b : Int
+
+
+g : P, P → P × (⊤ → Int)
+g u v = ( { u | a = u.a + 5 }, λ⊤ → v.a )
+
+
+f : Int → P × (⊤ → Int)
+f k =
+    q = { a = k, b = 0 }
+    g q q
+
+
+main : Program
+main =
+    case f 0 of
+        ( u, h ) →
+            Node.print "${String.fromInt u.a} ${String.fromInt (h ⊤)}"

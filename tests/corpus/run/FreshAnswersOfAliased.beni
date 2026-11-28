@@ -1,0 +1,27 @@
+-- A callback that answers a list it makes, over a list that holds one list at
+-- two places: each run answers a new list, so the answers hold no cell of the
+-- argument, and the elements of the result are apart though the argument's
+-- are not. Each answer is pushed in place (kernel §4.4, *the answer of a
+-- function*; research report 143).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+shows : List (List Int) → String
+shows ls = String.join (List.map ls show) ";"
+
+
+pushAll : List (List Int), Int → List (List Int)
+pushAll ls n = List.map ls λl → List.push l n
+
+
+main : Program
+main =
+    a = [ 1 ]
+    made = pushAll (List.map [ a, a ] λ_ → [ 9 ]) 2
+    Node.print "${shows made} ${show a}"

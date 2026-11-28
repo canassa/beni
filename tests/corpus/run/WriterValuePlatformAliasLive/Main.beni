@@ -1,0 +1,59 @@
+-- The live twin of `WriterValuePlatformAlias`: each written dictionary or
+-- list is read through its old name after the write. v3 refuses each call
+-- through the platform's alias of the writer (`ownership-v3-kernel.md` §12
+-- item 5). With v3's later-read test broken, each is accepted, and the
+-- oracle routes it: the sanitised build traps and the in-place build prints
+-- other lines.
+import Dict exposing (Dict)
+import Node exposing (Program)
+import Probe
+
+
+apply : (Dict Int Int, Int, Int → Dict Int Int), Dict Int Int → Dict Int Int
+apply f d = f d 3 30
+
+
+applyL : (List Int, Int → List Int), List Int → List Int
+applyL f xs = f xs 3
+
+
+base : ⊤ → Dict Int Int
+base ⊤ = Dict.fromList [ ( 1, 10 ), ( 2, 20 ) ]
+
+
+render : Dict Int Int → String
+render d =
+    String.join (List.map (Dict.toList d) λ( k, v ) → "${String.fromInt k}=${String.fromInt v}") ","
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    a0 = base ⊤
+    a = Probe.ins a0 3 30
+    b0 = base ⊤
+    b = apply Probe.ins b0
+    c0 = base ⊤
+    c = Probe.upd c0 1 λ_ → Just 7
+    d0 = [ 1, 2 ]
+    d = Probe.push d0 3
+    f0 = [ 1, 2 ]
+    f = applyL Probe.push f0
+    [ render a
+    , render a0
+    , render b
+    , render b0
+    , render c
+    , render c0
+    , ints d
+    , ints d0
+    , ints f
+    , ints f0
+    ]
+
+
+main : Program
+main = Node.printLines (go ⊤)

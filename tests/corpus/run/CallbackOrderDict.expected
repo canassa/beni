@@ -15,8 +15,8 @@ Dict.partition: 4
 Dict.partition: 5
 merge.left: 1
 merge.both: 2
-merge.right: 3
 merge.left: 4
+merge.right: 3
 merge.right: 5
 Set.map: 1
 Set.map: 2

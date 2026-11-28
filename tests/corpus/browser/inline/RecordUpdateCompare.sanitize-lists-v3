@@ -1,0 +1,1 @@
+v3 reads none of the fields an update names of the old record (ownership-v3-kernel.md §11 item 3): the second update writes both fields of the record the first wrote, and reads neither.

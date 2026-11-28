@@ -1,0 +1,32 @@
+-- A cast handed to `Maybe.map` as a function value: `Pun.conv` reads the
+-- `Int` in the `Maybe` as a list. A parameter of a type with no location
+-- holds `outside`, the cells a cast put there having escaped where it put
+-- them, so the answer holds `outside` too (ownership-v3-kernel.md §3.4).
+-- Before, the parameter held nothing, and in place the push of `ys` pushed
+-- onto `xs`, which is read after it.
+import Node exposing (Program)
+import Pun
+
+
+un : Maybe Int → Maybe b
+un t = Maybe.map t Pun.conv
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    i : Maybe Int
+    i = Pun.conv (Just xs)
+    ys =
+        case un i of
+            Just y →
+                y
+
+            Nothing →
+                []
+    zs = List.push ys 9
+    "${String.fromInt (List.length zs)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print (go 1)

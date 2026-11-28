@@ -1,0 +1,2 @@
+# The answered handle is also in another cell: its contents are not followed, and the update is refused (ownership-v3-kernel.md §13, item 4).
+35:5 list_still_used call

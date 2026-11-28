@@ -5559,6 +5559,12 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
                 defer a.ctx.in_row = inner_depth;
                 if (is_for) a.ctx.in_row -= 1;
                 try a.recordEdge(f, fm.token, try a.mkFresh(entry_deps));
+                // A `Show` keyed by identity: what its value's identity reads
+                // alone, the `Just`'s payload, as the edge's selector. A key
+                // whose writes conflict with it may make the payload another
+                // object (§1.3), so its body is a new one (write-sets.md,
+                // amended 2026-11-27, *a `Show` keyed by identity*).
+                if (is_show and fm.mode == .literal_true) try a.recordEdgeSelector(f, fm.token, item);
             }
             d.* = try a.depsUnion(d.*, try a.deps(r));
             // A `Show`'s body is its other arm (*a `Show`'s arms*).
@@ -5691,6 +5697,22 @@ fn recordEdge(a: *Writes, f: *Frame, token: u32, t: u32) Error!void {
     defer bounds.deinit(a.gpa);
     try a.anchorsBound(t, &reads, &bounds);
     for (reads.items, bounds.items) |r, bound| try a.addBound(&edge.reads, &edge.bound, r, bound);
+}
+
+/// The selector of the edge `recordEdge` recorded at `token` on this call
+/// path: the anchored reads of `t` alone (`Hole.selector`), apart from the
+/// edge's own reads.
+fn recordEdgeSelector(a: *Writes, f: *Frame, token: u32, t: u32) Error!void {
+    if (a.ctx.mode != .view or !a.isOwn(f.m)) return;
+    const at = a.vedge_index.get(.{ .module = f.m, .token = token, .path = a.ctx.call_path }) orelse return;
+    const edge = &a.vedges.items[at];
+    edge.sel = .branch;
+    var reads: std.ArrayList(u32) = .empty;
+    defer reads.deinit(a.gpa);
+    var bounds: std.ArrayList(u8) = .empty;
+    defer bounds.deinit(a.gpa);
+    try a.anchorsBound(t, &reads, &bounds);
+    for (reads.items, bounds.items) |r, bound| try a.addBound(&edge.sel_reads, &edge.sel_bound, r, bound);
 }
 
 fn recordArgument(a: *Writes, f: *Frame, token: u32, t: u32) Error!void {

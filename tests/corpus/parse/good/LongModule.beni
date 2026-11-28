@@ -79,12 +79,12 @@ pub type Msg
 
 pub init : Model
 init =
-    { cards = Dict.empty
+    { cards = Dict.empty ⊤
     , nextId = 1
     , editing = NotEditing
     , drag = Nothing
     , filter = ""
-    , collapsed = Set.empty
+    , collapsed = Set.empty ⊤
     , newCardTitle = ""
     , errors = []
     }

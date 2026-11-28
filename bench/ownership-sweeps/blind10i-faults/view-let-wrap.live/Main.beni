@@ -1,0 +1,38 @@
+-- The page of view-let-wrap.live (Wrap.beni).
+import Browser
+import Html exposing (Html)
+import Wrap
+
+
+type Msg
+    = Add
+    | Bump
+
+
+type alias Model =
+    k : Int
+    j : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | k = model.k + 1 }
+
+        Bump →
+            { model | j = model.j + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="bump" onClick={Bump}>bump</button>
+        <p id="ys">{Wrap.wrap model.k}</p>
+        <p id="j">{String.fromInt model.j}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { k = 0, j = 1 }, update = update, view = view }

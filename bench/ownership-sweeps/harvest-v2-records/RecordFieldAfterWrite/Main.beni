@@ -1,0 +1,72 @@
+-- ownership: the record at a parameter's field, read again after its
+-- update (`ownership-v2.md` §2.7, *the kind `read`*; §2.8, *a hold that
+-- is not the written record*; #2443). `c = acc.cur` is updated. A `let`
+-- that binds `acc.cur` afterwards binds the old record whole: refused
+-- (`boundAfter`). A read of the written field through the parameter's
+-- path is a hoist (`writtenAfter`), and a read of an untouched field
+-- that way is nothing (`untouchedAfter`). A record literal that holds
+-- the record at a field and in a list of another field is a holder of
+-- its own: refused (`localRecord`).
+import Node exposing (Program)
+
+
+type alias D =
+    tag : String
+    count : Int
+
+
+type alias Acc =
+    cur : D
+    hist : List D
+    twin : D
+
+
+pub boundAfter : Int, Acc → D × D
+boundAfter n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    d = acc.cur
+    ( r, d )
+
+
+pub writtenAfter : Int, Acc → D × Int
+writtenAfter n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    ( r, acc.cur.count )
+
+
+pub untouchedAfter : Int, Acc → D × String
+untouchedAfter n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    ( r, acc.cur.tag )
+
+
+pub localRecord : Int, D → D × List D
+localRecord n d =
+    p = { cur = d, hist = [ d ], twin = d }
+    c = p.cur
+    r = { c | count = c.count + n }
+    ( r, p.hist )
+
+
+mk : ⊤ → Acc
+mk ⊤ = { cur = { tag = "c", count = 1 }, hist = [], twin = { tag = "w", count = 2 } }
+
+
+sd : D → String
+sd x = x.tag ++ String.fromInt x.count
+
+
+run : ⊤ → List String
+run ⊤ =
+    ( r1, d1 ) = boundAfter 10 (mk ⊤)
+    ( r2, c2 ) = writtenAfter 10 (mk ⊤)
+    ( r3, t3 ) = untouchedAfter 10 (mk ⊤)
+    ( r4, h4 ) = localRecord 10 { tag = "p", count = 3 }
+    [ sd r1, sd d1, sd r2, String.fromInt c2, sd r3, t3, sd r4, String.join (List.map h4 sd) ";" ]
+
+
+main : Program
+main = Node.printLines (run ⊤)

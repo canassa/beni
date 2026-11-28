@@ -1,0 +1,178 @@
+-- The live twins of CellRunsOn: each function's update writes the cell in
+-- place where code that runs on after a throw elsewhere reads it. A page
+-- survives a defect: a fiber parked inside a mask runs on to the end of the
+-- mask, and a throw under `Task.withScheduler` stops that scheduler alone.
+-- On Node no throw happens here; each write in place is refused
+-- (ownership-v3-kernel.md §13 item 12, *A defect*, (d); #2613).
+
+import Duration
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+masked : (⊤ → a) → a
+masked f = Task.uninterruptible f
+
+
+hosting : ⊤ → String
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update r λl → List.push l 5
+    Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+-- A fiber parked inside `Task.uninterruptible` reads the cell.
+maskedReader : ⊤ → String
+maskedReader ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.uninterruptible λ⊤ →
+            Task.sleep (Duration.millis 5)
+            ints (Ref.get r)
+    Task.yieldNow ⊤
+    Ref.update r λl → List.push l 5
+    Task.join t
+
+
+-- A fiber parked inside `Task.uninterruptible` writes and reads the cell.
+maskedWriter : ⊤ → String
+maskedWriter ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.uninterruptible λ⊤ →
+            Task.sleep (Duration.millis 5)
+            Ref.update r λl → List.push l 7
+            ints (Ref.get r)
+    Task.yieldNow ⊤
+    Ref.update r λl → List.push l 5
+    Task.join t
+
+
+-- The same through `masked f = Task.uninterruptible f`.
+maskedHelper : ⊤ → String
+maskedHelper ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        masked λ⊤ →
+            Task.sleep (Duration.millis 5)
+            ints (Ref.get r)
+    Task.yieldNow ⊤
+    Ref.update r λl → List.push l 5
+    Task.join t
+
+
+-- The same inside `Task.uninterruptibleMask`.
+maskMask : ⊤ → String
+maskMask ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.uninterruptibleMask λ_ →
+            Task.sleep (Duration.millis 5)
+            ints (Ref.get r)
+    Task.yieldNow ⊤
+    Ref.update r λl → List.push l 5
+    Task.join t
+
+
+-- A fiber writes the cell under `Task.withScheduler`, whose defect stops only that scheduler.
+spawnSched : ⊤ → String
+spawnSched ⊤ =
+    r = Ref.make [ 1, 2 ]
+    sc = Task.scheduler λ⊤ → ⊤
+    t = Task.spawn λ⊤ →
+        Task.withScheduler sc λ⊤ →
+            Task.yieldNow ⊤
+            Ref.update r λl → List.push l 5
+    Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+-- The frame parks inside `Task.uninterruptible` while a writer fiber runs.
+selfMask : ⊤ → String
+selfMask ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update r λl → List.push l 5
+    s = Task.uninterruptible λ⊤ →
+        Task.sleep (Duration.millis 5)
+        ints (Ref.get r)
+    Task.join t
+    s
+
+
+-- The frame parks inside a mask and reads the cell after it.
+afterMask : ⊤ → String
+afterMask ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update r λl → List.push l 5
+    Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+-- A caller masks a function in which a writer fiber runs.
+callerMask : ⊤ → String
+callerMask ⊤ = Task.uninterruptible λ⊤ → hosting ⊤
+
+
+-- The same through `masked`.
+callerMaskHelper : ⊤ → String
+callerMaskHelper ⊤ = masked λ⊤ → hosting ⊤
+
+
+-- The frame writes the cell under `Task.withScheduler` while a detached fiber reads it.
+schedDetached : ⊤ → String
+schedDetached ⊤ =
+    r = Ref.make [ 1, 2 ]
+    sc = Task.scheduler λ⊤ → ⊤
+    t = Task.spawnDetached λ⊤ →
+        Task.sleep (Duration.millis 5)
+        ints (Ref.get r)
+    Task.withScheduler sc λ⊤ →
+        Task.yieldNow ⊤
+        Ref.update r λl → List.push l 5
+    Task.join t
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ fiber schedDetached
+        , fiber maskedReader
+        , fiber maskedWriter
+        , fiber maskedHelper
+        , fiber maskMask
+        , fiber spawnSched
+        , fiber selfMask
+        , fiber afterMask
+        , fiber callerMask
+        , fiber callerMaskHelper
+        ]
+
+
+-- Each shape runs in a fiber of its own: in one frame, a call of a
+-- function that started a reader or a writer, and then one that can mask,
+-- is refused (#2653).
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t

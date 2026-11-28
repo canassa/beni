@@ -1,0 +1,1 @@
+v3 reads a field path of a record that a lambda names before it is bound just after the item that binds it (ownership-v3-kernel.md §6 rule 3, *A field path a closure captures*): the record is written in place after that, and each call reads the old value.

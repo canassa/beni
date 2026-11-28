@@ -1,0 +1,1 @@
+Every kept `let` that is written reads a list of the model, so the dom root makes it again on each render (backend.md §15.4); v3 lets the pushes run in place, and the page shows the copying answer.

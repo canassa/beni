@@ -1,0 +1,6 @@
+# Each old value is read after its write, through the dictionary that holds it: refused (ownership-v3-kernel.md §12, item 7).
+35:9 list_still_used call
+35:9 list_still_used call
+42:9 list_still_used call
+42:9 list_still_used call
+50:10 list_still_used List.push

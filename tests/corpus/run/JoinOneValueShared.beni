@@ -1,0 +1,49 @@
+-- The live twin of `JoinOneValue`: `accA` answers its tree at two places of
+-- one value of its join (`Node a [] a`), so the answer holds each list twice
+-- and `incAll`'s writes of it are refused (`ownership-v3-kernel.md` §4.4,
+-- *One value of a join at a time*).
+import List
+import Node exposing (Program)
+import String
+
+
+type Tree
+    = Node Tree (List Int) Tree
+    | Leaf
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+accA : Int, Tree → Tree
+accA n a =
+    if n == 0 then
+        Node a [] a
+    else
+        Node (accA (n - 1) a) [] Leaf
+
+
+twiceAtBase : Int, Tree → Tree
+twiceAtBase n t = incAll (accA n t)
+
+
+show : Tree → String
+show t =
+    case t of
+        Node l xs r →
+            sep = ","
+            "(${show l} ${String.join (List.map xs String.fromInt) sep} ${show r})"
+
+        Leaf →
+            "."
+
+
+main : Program
+main = Node.print (show (twiceAtBase 1 (Node Leaf [ 7 ] Leaf)))

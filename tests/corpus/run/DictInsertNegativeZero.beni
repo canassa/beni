@@ -1,0 +1,22 @@
+-- `Dict.insert` of a key that is there takes the new value, even one that
+-- `===` calls the same: `-0` over `0` keeps the sign (`1 / -0` is
+-- `-Infinity`). It kept `0` when the writer skipped a store of an
+-- "equal" value (the second review of research report 160).
+import Dict exposing (Dict)
+import Node exposing (Program)
+
+
+go : ⊤ → List String
+go ⊤ =
+    z = negate 0.0
+    d = Dict.fromList [ ( 1, 0.0 ) ]
+    d1 = Dict.insert d 1 z
+    ee = Dict.insert (Dict.fromList [ ( 1, 5.0 ) ]) 1 z
+    [ String.fromFloat (1 / Maybe.withDefault (Dict.get d1 1) 9)
+    , String.fromFloat (1 / Maybe.withDefault (Dict.get ee 1) 9)
+    , String.fromFloat (1 / z)
+    ]
+
+
+main : Program
+main = Node.printLines (go ⊤)

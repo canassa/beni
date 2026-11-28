@@ -1,0 +1,6 @@
+# A closure writes a field of a record it captured where in place is not safe: a callee that runs another reader after it, runs it twice, answers the record another closure writes, or keeps it (ownership-v3-kernel.md §11 item 11). A read after a direct call is read before it (§11 item 10), so `late` is accepted.
+45:11 record_still_used call
+51:11 list_still_used value
+57:16 record_still_used call
+57:16 record_still_used call
+63:10 list_still_used value

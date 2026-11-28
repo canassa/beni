@@ -37,17 +37,17 @@ right = Dict.fromList [ ( "b", 20 ), ( "c", 30 ) ]
 main : Program
 main =
     Node.printLines
-        [ "[" ++ pairs Dict.empty ++ "]"
+        [ "[" ++ pairs (Dict.empty ⊤) ++ "]"
         , pairs (Dict.singleton "Tom" 42)
-        , flag (Dict.isEmpty Dict.empty)
+        , flag (Dict.isEmpty (Dict.empty ⊤))
         , flag (Dict.isEmpty (Dict.singleton "Tom" 42))
         , flag (Dict.member left "a")
         , flag (Dict.member left "z")
-        , flag (Dict.member Dict.empty "a")
+        , flag (Dict.member (Dict.empty ⊤) "a")
         , pairs (Dict.insert left "a" 99)
         , String.fromInt (Dict.size (Dict.insert left "a" 99))
         , pairs (Dict.remove left "z")
-        , String.fromInt (Dict.size (Dict.remove Dict.empty "z"))
+        , String.fromInt (Dict.size (Dict.remove (Dict.empty ⊤) "z"))
         , pairs (Dict.update left "a" λ_ → Just 7)
         , pairs (Dict.update left "a" λ_ → Nothing)
         , pairs (Dict.update left "z" λ_ → Just 7)
@@ -55,9 +55,9 @@ main =
         , pairs (Dict.update left "a" λv → v)
         , pairs (Dict.union left right)
         , pairs (Dict.union right left)
-        , pairs (Dict.union left Dict.empty)
+        , pairs (Dict.union left (Dict.empty ⊤))
         , pairs (Dict.intersect left right)
-        , "[" ++ pairs (Dict.intersect left Dict.empty) ++ "]"
+        , "[" ++ pairs (Dict.intersect left (Dict.empty ⊤)) ++ "]"
         , pairs (Dict.diff left right)
         , pairs (Dict.diff right left)
         , "[" ++ pairs (Dict.diff left left) ++ "]"

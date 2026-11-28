@@ -1,0 +1,2 @@
+# v3 refuses the update: `kOf`'s constructor pattern reads the slot `k`, and `kOf r0` reads it after the write (ownership-v3-kernel.md §11.4).
+21:10 record_still_used update

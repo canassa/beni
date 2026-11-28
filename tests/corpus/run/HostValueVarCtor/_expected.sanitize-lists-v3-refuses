@@ -1,0 +1,2 @@
+# v3 refuses the push: the argument's type holds no cell at `a`, and the caller reads a list at `b`, which only a cast puts there (ownership-v3-kernel.md §3.4).
+30:10 list_still_used List.push

@@ -210,6 +210,9 @@ pub fn filePath(buffer: *[name_len]u8, kind: Kind, key: Key.Key) []const u8 {
 /// must be byte-identical to one with no cache — and the return says whether
 /// anything was written, for the counter.
 pub fn store(d: *const Dir, key: Key.Key, bytes: []const u8) bool {
+    // An entry that `load` refuses for its size is not written: each build
+    // would write it again and none would read it (the review of #2549).
+    if (bytes.len > max_entry_bytes) return false;
     return d.write(.entry, key, bytes);
 }
 

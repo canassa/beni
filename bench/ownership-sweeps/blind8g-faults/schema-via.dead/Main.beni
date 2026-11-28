@@ -1,0 +1,21 @@
+-- The twin of `schema-via.live`: nothing reads `v` after the print, so the
+-- write in `back` is safe (research report 128 §4.1).
+import Io
+import Node exposing (Program)
+import Schema
+
+
+back : List Int → Result (List Schema.Issue) (List Int)
+back l = Ok (List.push l 3)
+
+
+schema Box =
+    items : List Int via (Schema.conversion Ok back)
+
+
+main : Program
+main = Io.run λ⊤ →
+    v = { items = [ 1, 2 ] }
+    _ = Box.print v
+    Debug.log "printed" ⊤
+    Node.done

@@ -1,0 +1,34 @@
+-- A function `Maybe a → b` that casts the value inside the `Maybe` to its
+-- result's type variable, read by its caller as `List Int × Int`: the
+-- argument's part at the parameter's type variable is a pair of lists, the
+-- caller reads a list and a number, and the number is the list. Where the
+-- argument's own type at that place hides a cell from the caller's
+-- reading, the cells escape at the call (ownership-v3-kernel.md §3.4).
+import Node exposing (Program)
+import Pun
+
+
+fm : Maybe a → b
+fm m =
+    case m of
+        Just j →
+            Pun.conv j
+
+        Nothing →
+            Pun.conv 0
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    p : List Int × Int
+    p = fm (Just ( x0, x0 ))
+    ( _, h ) = p
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

@@ -1,0 +1,13 @@
+# A closure or local function stores into a cell it captured on some ways only (no else, a case arm, &&, a ? before the store, the first of two storing arms, a local function, a helper over its parameter's cell, record and Dict contents, a store then an update, a writer fiber beside a reader that parks): each later update in place writes what the old holder reads, and is refused (ownership-v3-kernel.md §13 items 3, 6 and 11).
+53:5 list_still_used call
+69:5 list_still_used call
+79:5 list_still_used call
+93:5 list_still_used call
+112:5 list_still_used call
+123:5 list_still_used call
+132:5 list_still_used call
+142:5 list_still_used call
+142:5 record_still_used call
+150:5 list_still_used call
+163:9 list_still_used value
+163:9 list_still_used value

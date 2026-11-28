@@ -1,0 +1,66 @@
+-- The parts of a list pattern are apart where the list holds each record
+-- once (`ownership-v3-kernel.md` §4.4, *The parts of a list pattern are
+-- apart*): a walk `[ b, …rest ]` writes each element in place and hands the
+-- rest on, `[ a, b, …rest ]` writes `a` and reads `b`, and `[ …init, last ]`
+-- writes `last` and reads `init`. `b` and `rest` read one summary location of
+-- the list, so v3 refused each write (`disjoint`, `later-use`) until a part
+-- carried its position in the match.
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+    xs : List Int
+
+
+mk : Int → R
+mk n = { x = n, xs = [ n ] }
+
+
+show : R → String
+show r = "${String.fromInt r.x}/${String.fromInt (List.length r.xs)}"
+
+
+showAll : List R → String
+showAll rs = String.join (List.map rs show) ","
+
+
+bump : R → R
+bump r = { r | x = r.x + 10, xs = List.push r.xs r.x }
+
+
+loop : List R, List R → List R
+loop bs acc =
+    case bs of
+        [ b, …rest ] →
+            loop rest (List.push acc (bump b))
+
+        [] →
+            acc
+
+
+firstTwo : List R → String
+firstTwo list =
+    case list of
+        [ a, b, …rest ] →
+            "${show (bump a)} ${show b} ${showAll rest}"
+
+        _ →
+            "short"
+
+
+lastOne : List R → String
+lastOne list =
+    case list of
+        [ …init, last ] →
+            "${show { last | x = 0 }} ${showAll init}"
+
+        [] →
+            "empty"
+
+
+main : Program
+main =
+    Node.print
+        "${showAll (loop [ mk 1, mk 2, mk 3 ] [])} ${firstTwo [ mk 4, mk 5, mk 6 ]} ${lastOne [ mk 7, mk 8, mk 9 ]}"

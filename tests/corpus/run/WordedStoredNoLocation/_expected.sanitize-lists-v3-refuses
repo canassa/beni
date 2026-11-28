@@ -1,0 +1,2 @@
+# v3 refuses the push: `stash`'s word `stored` puts `x0` among the elements of a `⊤`, which has none, so it escapes at the call (ownership-v3-kernel.md §6 rule 10).
+16:22 list_still_used List.push

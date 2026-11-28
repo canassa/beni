@@ -1,0 +1,19 @@
+-- A function of another module named in a `schema` declaration's `via`:
+-- the print worker calls it with `v.items`, which `main` reads after
+-- (research report 129 §2).
+import Io
+import Node exposing (Program)
+import Schema
+import Util
+
+
+schema Box =
+    items : List Int via (Schema.conversion Ok Util.back)
+
+
+main : Program
+main = Io.run λ⊤ →
+    v = { items = [ 1, 2 ] }
+    _ = Box.print v
+    Debug.log (String.fromInt (List.length v.items)) ⊤
+    Node.done

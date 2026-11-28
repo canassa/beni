@@ -1,0 +1,20 @@
+-- The twin of `via-module.live` that writes a copy: accepted.
+import Io
+import Node exposing (Program)
+import Schema
+
+
+back : List Int → Result (List Schema.Issue) (List Int)
+back l = Ok (List.push (List.copy l) 3)
+
+
+schema Box =
+    items : List Int via (Schema.conversion Ok back)
+
+
+main : Program
+main = Io.run λ⊤ →
+    v = { items = [ 1, 2 ] }
+    _ = Box.print v
+    Debug.log (String.fromInt (List.length v.items)) ⊤
+    Node.done

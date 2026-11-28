@@ -1,0 +1,6 @@
+# Each write's old name is read after it, through a platform's alias of the writer: v3 refuses every one (ownership-v3-kernel.md §12 item 5).
+36:9 list_still_used Dict.insert
+38:9 list_still_used call
+40:9 list_still_used call
+42:9 list_still_used List.push
+44:9 list_still_used call

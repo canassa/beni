@@ -1,0 +1,72 @@
+-- A part of a call's answer reads the answer's entries below it: a write of
+-- one part of a pair is no write of the other, so a read of the other after
+-- it is no later read (ownership-v3-kernel.md §4.1, #2583). The answer is
+-- a function's (`sel`, `swap`), a cell's (`Ref.get`, `Ref.modify`) or a
+-- nested pair. Each push edits its list in place.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+sel : List Int × List Int → List Int × List Int
+sel p = ( p.0, p.1 )
+
+
+swap : List Int × List Int → List Int × List Int
+swap p = ( p.1, p.0 )
+
+
+selected : List Int × List Int → String
+selected p =
+    case sel p of
+        ( a, b ) →
+            "selected ${ints (List.push a 8)} ${ints b}"
+
+
+swapped : List Int × List Int → String
+swapped p =
+    case swap p of
+        ( _, b ) →
+            "swapped ${ints (List.push b 8)} ${ints p.1}"
+
+
+taken : ⊤ → String
+taken ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    case Ref.modify r λo → ( o, ( [], [] ) ) of
+        ( a, b ) →
+            "taken ${ints (List.push a 8)} ${ints b}"
+
+
+got : Ref (List Int × List Int) → String
+got r =
+    case Ref.get r of
+        ( a, b ) →
+            "got ${ints (List.push a 8)} ${ints b}"
+
+
+deep : (List Int × List Int) × List Int → (List Int × List Int) × List Int
+deep p = ( ( p.0.1, p.0.0 ), p.1 )
+
+
+nested : (List Int × List Int) × List Int → String
+nested p =
+    case deep p of
+        ( ( a, b ), c ) →
+            "nested ${ints (List.push a 8)} ${ints b} ${ints c} ${ints p.0.0}"
+
+
+main : Program
+main =
+    Node.printLines
+        [ selected ( [ 1 ], [ 2 ] )
+        , swapped ( [ 1 ], [ 2 ] )
+        , taken ⊤
+        , got (Ref.make ( [ 1 ], [ 2 ] ))
+        , nested ( ( [ 1 ], [ 2 ] ), [ 3 ] )
+        ]

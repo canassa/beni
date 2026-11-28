@@ -1,0 +1,58 @@
+-- A handler read at the event is a call made there only in a root of a
+-- function that its module names as a program's `view` alone
+-- (`ownership-v3-kernel.md` §6 rule 12, *A handler read at the event*).
+-- `KeptHandlerSameField`'s page, with `view` named again in `framed`: a
+-- lowering can write a root it is handed that way inside a row or a
+-- helper's call, which keeps the closure made at the render. So the pick
+-- button's handler is kept, and `update`'s write of `label` is refused.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Pick String
+    | Rename
+
+
+type alias Model =
+    id : Int
+    label : String
+    picked : Int
+    n : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick label →
+            { model | picked = String.length label }
+
+        Rename →
+            { model | label = "row ${String.fromInt model.n}", n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="pick" onClick={λ_ → Pick model.label}>pick</button>
+        <button id="rename" onClick={Rename}>rename</button>
+        <p id="label">{model.label}</p>
+        <p id="picked">{model.picked}</p>
+    </main>
+
+
+framed : Model → Html Msg
+framed model = <section>{view model}</section>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { id = 4, label = "row 0", picked = 0, n = 1 }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

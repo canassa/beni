@@ -17,8 +17,8 @@ grow m = Maybe.map m λp → ( List.push p.0 9, p.1 )
 pub shared : ⊤ → Dict Int (List Int × Int)
 shared ⊤ =
     xs = [ 1 ]
-    Dict.update (put (put Dict.empty 1 xs) 2 xs) 1 grow
+    Dict.update (put (put (Dict.empty ⊤) 1 xs) 2 xs) 1 grow
 
 
 pub fresh : ⊤ → Dict Int (List Int × Int)
-fresh ⊤ = Dict.update (put (put Dict.empty 1 [ 1 ]) 2 [ 2 ]) 1 grow
+fresh ⊤ = Dict.update (put (put (Dict.empty ⊤) 1 [ 1 ]) 2 [ 2 ]) 1 grow

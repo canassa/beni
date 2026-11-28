@@ -57,6 +57,41 @@ pub keepAll : borrowed List a → copyof List a
 keepAll xs = List.copy xs
 ```
 
+The ownership checker v3 reads one more word, `position`. It goes in front
+of one parameter after the first, a value, and says that the parameter names
+one position of the list in the first parameter. The element that
+`elementof` gives is the element at that position. A `stored` value next to
+a `written returned` first parameter replaces the element at that position:
+`set : written returned List a, borrowed position Int, stored a → List a`.
+At another place it causes `misplaced_ownership_word`.
+
+```beni refused=misplaced_ownership_word
+pub pick : borrowed List a, borrowed position Int → Int
+pick xs i = i
+```
+
+The ownership checker v3 also reads `hollow`. It goes in front of a result
+that is `fresh exclusive`, once, and says that the new container holds no
+value: no cell is at a type variable of the result. At another place it
+causes `misplaced_ownership_word`.
+
+```text
+pub foreign pure empty : ⊤ → fresh exclusive hollow Dict k v
+```
+
+The ownership checker v3 checks a declaration that has words and a beni
+body that calls no JavaScript. It compares the words with what it finds in
+the body. A word that says less than the body does causes
+`false_ownership_word` at the declaration's name, under `--ownership=v3`.
+For example, `shallow` on a parameter whose values the body reads, `borrowed`
+on a parameter that the body writes or keeps, or `fresh` on a result that is
+a parameter. A word that says more than the body does is permitted.
+
+```text
+pub peek : borrowed shallow Dict Int (List Int) → Int
+peek d = List.length (Maybe.withDefault (Dict.get d 1) [])
+```
+
 
 ## Raise the ownership summary size
 
@@ -91,4 +126,4 @@ pub small : List Int
 small = [ 1 ]
 ```
 
-Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4.
+Source: `docs/design/ownership-checker.md` §31.8; `docs/design/language.md` §5.4, §9, §10; `docs/design/ownership-v2.md` §2.13.5, §2.13.6, §4.4; `docs/design/ownership-v3-kernel.md` §6 rule 10, §7, §12 item 8.

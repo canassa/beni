@@ -1,0 +1,32 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <p>"2,0"</p>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <p>"2,1"</p>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <p>"2,2,1"</p>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="bump">"bump"</button>
+    <p>"2,2,2"</p>
+  </main>
+</body>

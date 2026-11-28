@@ -1,0 +1,25 @@
+-- A live twin of `CallbackRunOnceInPlace` (the first review of #2657):
+-- `hold` runs its function once, but the function captures one list under
+-- two names, so the list is at two places of its answer, and a push of each
+-- element in place would push twice onto it. The function's own walk reads
+-- the two captures as apart; its caller compares them, and v3 refuses the
+-- push (`ownership-v3-kernel.md` §12 item 8, `Fn.single`).
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+hold : (⊤ → List (List Int)) → List (List Int)
+hold f = f ⊤
+
+
+main : Program
+main =
+    xs = [ 1, 2 ]
+    ys = xs
+    rows = List.map (hold λ⊤ → [ xs, ys ]) λl → List.push l 9
+    Node.printLines [ show (List.concat rows) ]

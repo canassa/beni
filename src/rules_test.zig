@@ -71,6 +71,8 @@ const allowlist = [_]Allowed{
     .{ .path = "bir/Lower.zig", .needle = "set: U32Set", .why = "a record's field names, only past 16 fields" },
     .{ .path = "u32_set.zig", .needle = "var set: U32Set = .{};", .why = "the set's own test" },
     .{ .path = "check/Edges.zig", .needle = "var seen: U32Set", .why = "the evidence terms one edge walk reaches, a few of the session's" },
+    .{ .path = "own2/Groups.zig", .needle = "var done: std.AutoHashMapUnmanaged(u32, u32) = .empty;", .why = "the instructions of one type term read: terms nest as aliases expand, each with its own table, and a column as long as the module, made for each, cost a chain of types its arguments times its size (research report 131)" },
+    .{ .path = "own2/Family.zig", .needle = "var done: std.AutoHashMapUnmanaged(u32, u32) = .empty;", .why = "the instructions of one type term scanned: terms nest as aliases expand, each with its own table, and a column as long as the module, made for each, cost a chain of types its arguments times its size (research report 131)" },
     .{ .path = "check/Report.zig", .needle = "error_regions: U32Set", .why = "the error path: the instructions already reported" },
     .{ .path = "js/Lower.zig", .needle = "calls: U32Set", .why = "the calls one derived body makes" },
     .{ .path = "js/Lower.zig", .needle = "requests: U32Set", .why = "the derived rows one module requests" },

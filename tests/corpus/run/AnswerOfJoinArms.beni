@@ -1,0 +1,38 @@
+-- The dead twin of `AnswerOfJoinArmsLive`: the answer that holds the list
+-- is read before the push, and nothing reads it after, so the push edits
+-- the list in place (ownership-v3-kernel.md §6 rules 2 and 7).
+import List
+import Node exposing (Program)
+import String
+
+
+type V
+    = Ok
+    | Bad (List Int)
+
+
+handOne : (List Int → V), List Int, List Int → V × List Int
+handOne g xs ys = ( g xs, ys )
+
+
+vshow : V → String
+vshow v =
+    case v of
+        Ok →
+            "ok"
+
+        Bad l →
+            String.join (List.map l String.fromInt) ","
+
+
+keepsArg : Bool → String
+keepsArg b =
+    xs = [ 1 ]
+    ( v, ys ) = handOne (if b then λ_ → Ok else λl → Bad l) xs [ 2 ]
+    s = "${vshow v} ${String.fromInt (List.length ys)}"
+    zs = List.push xs 9
+    "${s} ${String.fromInt (List.length zs)}"
+
+
+main : Program
+main = Node.printLines [ keepsArg False, keepsArg True ]

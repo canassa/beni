@@ -1,0 +1,1 @@
+The checker v1's limit of 32 rounds (ownership-checker.md §16.7) on an in-place chain; browser-inline is judged by v3 (boundary.md §5.2, `"ownership"`), which has no such limit, so v1 judges this fixture.

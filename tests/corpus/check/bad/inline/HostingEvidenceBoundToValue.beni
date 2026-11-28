@@ -1,0 +1,113 @@
+-- Evidence that is a method bound to a value (`pub go = hostGo`), whose
+-- function hosts a writer fiber of a cell it made, is handed to a function
+-- that runs it masked. Code with no contract can host a writer: each
+-- fallback of `edgeEffect` says so (ownership-v3-kernel.md §13 item 12, *A
+-- defect*, (d); code reader CR14's U3), so the call is refused as hosting
+-- evidence, beside the refusals of the evidence with no contract and of the
+-- hosting function at the value's definition. Before, only those two refused
+-- it.
+import Cmd exposing (Cmd)
+import Duration
+import Html exposing (Html)
+import List
+import Log
+import Ref exposing (Ref)
+import String
+import Sub
+import Task exposing (Scheduler)
+import Tea
+
+
+type Msg
+    = Done
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+deep : Int → Int
+deep n = if n < 0 then 0 else 1 + deep (n + 1)
+
+
+masked : (⊤ → ⊤) → ⊤
+masked f = Task.uninterruptible f
+
+
+under : Scheduler, (⊤ → ⊤) → ⊤
+under s f = Task.withScheduler s f
+
+
+bump : Ref (List Int) → ⊤
+bump h = Ref.update h λl →
+    l2 = List.push l 5
+    n = deep 0
+    if n > 0 then l2 else l2
+
+
+detachedThenThrow : ⊤ → ⊤
+detachedThenThrow ⊤ =
+    q = Ref.make [ 1, 2 ]
+    _ = Task.spawnDetached λ⊤ →
+        Task.sleep (Duration.millis 5)
+        Log.info (ints (Ref.get q))
+    Ref.update q λl →
+        l2 = List.push l 5
+        n = deep 0
+        if n > 0 then l2 else l2
+
+
+hosting : ⊤ → ⊤
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    _ = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        bump r
+    Task.sleep (Duration.millis 5)
+    Log.info (ints (Ref.get r))
+
+
+pub type H
+    = H
+
+
+hostGo : H → ⊤
+hostGo h =
+    case h of
+        H →
+            hosting ⊤
+
+
+pub go : H → ⊤
+go = hostGo
+
+
+maskRun : a → ⊤
+    where a.go : a → ⊤
+maskRun x = Task.uninterruptible λ⊤ → x.go
+
+
+work : (Msg → ⊤) → ⊤
+work send =
+    _ = Task.spawn λ⊤ → maskRun H
+    Task.sleep (Duration.millis 50)
+    send Done
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ = ( 0, Cmd.perform work )
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg model =
+    case msg of
+        Done →
+            ( model + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view model = <p>{model}</p>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }

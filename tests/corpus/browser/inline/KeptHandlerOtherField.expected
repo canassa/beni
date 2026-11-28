@@ -1,0 +1,45 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <button id="pick">"pick"</button>
+      <button id="rename">"rename"</button>
+      <p id="label">"row 0"</p>
+      <p id="picked">"0"</p>
+    </main>
+  </div>
+</body>
+-- click #rename
+<body>
+  <div id="root">
+    <main>
+      <button id="pick">"pick"</button>
+      <button id="rename">"rename"</button>
+      <p id="label">"row 1"</p>
+      <p id="picked">"0"</p>
+    </main>
+  </div>
+</body>
+-- click #pick
+<body>
+  <div id="root">
+    <main>
+      <button id="pick">"pick"</button>
+      <button id="rename">"rename"</button>
+      <p id="label">"row 1"</p>
+      <p id="picked">"4"</p>
+    </main>
+  </div>
+</body>
+-- click #rename
+<body>
+  <div id="root">
+    <main>
+      <button id="pick">"pick"</button>
+      <button id="rename">"rename"</button>
+      <p id="label">"row 2"</p>
+      <p id="picked">"4"</p>
+    </main>
+  </div>
+</body>

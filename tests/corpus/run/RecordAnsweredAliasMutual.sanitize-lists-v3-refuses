@@ -1,0 +1,2 @@
+# v3 refuses the call: the callee answers another operand that holds the record it writes, so in place the answer is the written object.
+24:9 record_still_used call

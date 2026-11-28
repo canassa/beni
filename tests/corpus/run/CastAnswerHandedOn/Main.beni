@@ -1,0 +1,20 @@
+-- The answer of one function argument, read at another's parameter type and
+-- handed to it: `feedA h g = g (Js.to (Js.from (h ⊤)))`. The first function
+-- answers `[ x0 ]`, the second reads it as `List Int` and casts the element
+-- back. Every cell that answer can hold escapes at the call now
+-- (ownership-v3-kernel.md §3.4; research report 151's review).
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    z : List Int
+    z = Pun.feedA (λ⊤ → [ x0 ]) λy → Pun.conv (Maybe.withDefault (List.head y) 0)
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

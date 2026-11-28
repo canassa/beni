@@ -1,0 +1,18 @@
+--! A test platform: a value read at another type of the same JavaScript shape.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| A `Js.Value` read as a list of numbers.
+pub ints : Js.Value → List Int
+ints v = Js.to v
+
+
+--| The value as a `Js.Value`.
+pub value : a → Js.Value
+value x = Js.from x

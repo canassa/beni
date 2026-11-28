@@ -1,0 +1,53 @@
+-- A body moves the cell's own old contents to another location of the
+-- cell (two parts of a pair swapped, the second part copied to the first),
+-- parks, and puts them back (#2600). Its caller has no writer fiber of the
+-- cell, so the mark the park puts on the handle refuses nothing: the
+-- caller writes the first part in place after the call, and a loan of the
+-- second part it took before keeps its value. Its live twin is
+-- CellParkedMovedLive.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showP : List Int × List Int → String
+showP ( x, y ) = ints x ++ " " ++ ints y
+
+
+swapPark : Ref (List Int × List Int) → ⊤
+swapPark r =
+    Ref.update r λ( x, y ) → ( y, x )
+    Task.yieldNow ⊤
+    Ref.update r λ( x, y ) → ( y, x )
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    ( _, bb ) = Ref.get r
+    swapPark r
+    Ref.update r λ( x, y ) → ( List.push x 9, y )
+    ints bb ++ " " ++ showP (Ref.get r)
+
+
+copied : ⊤ → String
+copied ⊤ =
+    r = Ref.make ( [ 1 ], [ 2 ] )
+    ( _, bb ) = Ref.get r
+    List.foldl [ ⊤ ] ⊤ λu acc →
+        Ref.update r λ( x, y ) → ( y, y )
+        Io.sleep 1
+        Ref.update r λ( x, y ) → ( [ 1 ], y )
+    Ref.update r λ( x, y ) → ( List.push x 7, y )
+    ints bb ++ " " ++ showP (Ref.get r)
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ direct ⊤, copied ⊤ ]

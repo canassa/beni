@@ -1,0 +1,26 @@
+--! The second module of CellTypeDispatchSwitch: a generic whose
+--! return-type dispatch runs a method of the caller's type.
+
+import Duration
+import List
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+pub madeM : Int → String × a
+    where a.make : Int → a
+madeM n =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λk → List.push (List.copy k) 5
+    l = Ref.get r
+    x = a.make n
+    s = ints l
+    Task.join t
+    ( s, x )

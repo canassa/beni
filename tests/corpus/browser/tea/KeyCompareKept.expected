@@ -1,0 +1,12 @@
+-- load
+<body>
+  <button id="go">"0"</button>
+</body>
+-- click #go
+<body>
+  <button id="go">"1"</button>
+</body>
+-- click #go
+<body>
+  <button id="go">"2"</button>
+</body>

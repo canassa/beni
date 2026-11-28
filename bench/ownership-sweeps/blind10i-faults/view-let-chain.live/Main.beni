@@ -1,0 +1,70 @@
+-- Research report 134, a sibling of view-let-kept.live: two pushes in a chain onto the kept `let`. v3
+-- must refuse the first.
+import Browser
+import Comp
+import Html exposing (Html)
+import List
+
+
+type Msg
+    = Add
+    | Bump
+
+
+type alias Model =
+    k : Int
+    j : Int
+    items : List Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | k = model.k + 1 }
+
+        Bump →
+            { model | j = model.j + 1 }
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+first : List Int × Int → List Int
+first p =
+    case p of
+        ( l, _ ) →
+            l
+
+
+pushShow : List Int, Int → String
+pushShow xs k = show (List.push xs k)
+
+
+fresh : Int → List Int
+fresh k = [ 1, k ]
+
+
+-- A helper and a component whose own root has a let that it writes.
+card : Int → Html Msg
+card k =
+    xs = [ 1, 2 ]
+    ys = List.push xs k
+    <b>{show ys}</b>
+
+
+view : Model → Html Msg
+view model =
+    xs = [ 1 ]
+    ys0 = List.push xs model.k
+    ys = List.push ys0 model.k
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="bump" onClick={Bump}>bump</button>
+        <p id="ys">{show ys}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { k = 0, j = 1, items = [ 5 ] }, update = update, view = view }

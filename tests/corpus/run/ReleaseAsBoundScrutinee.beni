@@ -1,0 +1,183 @@
+-- `backend.md` §9, *Reading off*, G8, and §7: a pattern that binds a name to
+-- the subject itself — `p as w`, a variable arm after a tested one, `as` one
+-- level down — while the arm reads only the parts, or nothing.
+--
+-- Lowering binds such a name to the very node of the subject that the
+-- decision tree's tests and the other patterns' reads also hold. The
+-- specialiser's dead-binding rule wrote that node over with `undefined`
+-- when the name was unread, so every other reader of the subject read
+-- `undefined`: the release build threw where the development build printed
+-- (#2547). Each function below is one such shape; the release pass must print
+-- what the development pass prints. Beside `ReleaseUnreadAs*` (#2512), this
+-- holds the variable arm with no `as`, `as` one level down in a pair, `as`
+-- over `…rest`, and #2547's shape, whose `t` dies only once `fstOf` is
+-- written in.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+    l : List Int
+
+
+type T
+    = A (List Int) Int
+    | B
+
+
+mk : Int → R
+mk k = { x = k, l = [ k ] }
+
+
+fstOf : a × b → a
+fstOf ( a, _ ) = a
+
+
+-- #2547: `fstOf` drops the answer's second part, so once the two are one
+-- function nothing reads `t`.
+tupAs : R, R → R × R
+tupAs u w =
+    case ( u, w ) of
+        ( a, b ) as t →
+            ( { a | x = b.x + 1 }, t.1 )
+
+
+listAs : List Int → List Int
+listAs v =
+    case v of
+        ([ a, …_ ] as w) →
+            [ a ]
+
+        [] →
+            []
+
+
+listRest : List Int → List Int
+listRest v =
+    case v of
+        ([ a, …rest ] as w) →
+            [ a, …rest ]
+
+        [] →
+            []
+
+
+listVar : List Int → List Int
+listVar v =
+    case v of
+        [] →
+            []
+
+        w →
+            [ 1 ]
+
+
+pairInner : List Int × Int → List Int × Int
+pairInner v =
+    case v of
+        ( (a as l), b ) →
+            ( a, b )
+
+
+pairTested : List Int × Int → List Int × Int
+pairTested v =
+    case v of
+        ( [], b ) →
+            ( [], b )
+
+        ( a, _ ) as t →
+            ( a, 0 )
+
+
+pairVar : List Int × Int → List Int × Int
+pairVar v =
+    case v of
+        ( [], b ) →
+            ( [], b )
+
+        t →
+            ( [ 1 ], 0 )
+
+
+recordAs : R → R
+recordAs v =
+    case v of
+        { x, l } as r →
+            { x = x + 1, l = l }
+
+
+ctorAs : T → T
+ctorAs v =
+    case v of
+        (A l k) as w →
+            A l k
+
+        B →
+            B
+
+
+ctorVar : T → T
+ctorVar v =
+    case v of
+        B →
+            B
+
+        w →
+            B
+
+
+-- Unused as a whole: the `case` stands only for its tests.
+deadCase : Int → String
+deadCase n =
+    l0 = [ n, 4 ]
+    h =
+        case l0 of
+            ([ _, …_ ] as w) →
+                w
+
+            [] →
+                []
+    String.fromInt (List.length l0)
+
+
+showList : List Int → String
+showList xs = "[" ++ String.join (List.map xs String.fromInt) "," ++ "]"
+
+
+showPair : List Int × Int → String
+showPair p = showList p.0 ++ "/" ++ String.fromInt p.1
+
+
+showT : T → String
+showT t =
+    case t of
+        A l k →
+            "A " ++ showList l ++ " " ++ String.fromInt k
+
+        B →
+            "B"
+
+
+go : Int → String
+go n =
+    r = fstOf (tupAs (mk n) (mk 5))
+    lines =
+        [ "tupAs " ++ String.fromInt r.x
+        , "listAs " ++ showList (listAs [ n, 4 ])
+        , "listRest " ++ showList (listRest [ n, 4, 5 ])
+        , "listVar " ++ showList (listVar [ n ])
+        , "pairInner " ++ showPair (pairInner ( [ n ], n ))
+        , "pairTested " ++ showPair (pairTested ( [ n ], n ))
+        , "pairVar " ++ showPair (pairVar ( [ n ], n ))
+        , "recordAs " ++ String.fromInt (recordAs (mk n)).x
+        , "ctorAs " ++ showT (ctorAs (A [ n ] n))
+        , "ctorVar " ++ showT (ctorVar (A [ n ] n))
+        , "deadCase " ++ deadCase n
+        ]
+    String.join lines "\n"
+
+
+main : Program
+main = Node.print (go 0 ++ "\n" ++ go (List.length (List.range 1 3)))

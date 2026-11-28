@@ -1,0 +1,39 @@
+-- A read of a written field through an older name, after the update
+-- (`ownership-v3-kernel.md` §11, *A read of a written field, read first*):
+-- the lowering reads `p.x` before the update's stores, so v3 writes the
+-- record in place and the later read still sees the old value. In a later
+-- argument of the same call, in a later `let`, and after a second update.
+import Node exposing (Program)
+import String
+
+
+type alias P =
+    x : Int
+    y : Int
+
+
+pair : P, Int → Int
+pair q old = q.x * 100 + old
+
+
+inArgument : P, Int → Int
+inArgument p n = pair { p | x = n } p.x
+
+
+inLet : P, Int → Int
+inLet p n =
+    q = { p | x = n }
+    q.x * 100 + p.x
+
+
+twice : P → Int
+twice p =
+    q = { p | x = 7 }
+    r = { q | x = 8, y = q.y + 1 }
+    r.x * 1000 + r.y * 100 + p.x
+
+
+main : Program
+main =
+    Node.print
+        "${String.fromInt (inArgument { x = 1, y = 2 } 5)} ${String.fromInt (inLet { x = 3, y = 4 } 6)} ${String.fromInt (twice { x = 9, y = 1 })}"

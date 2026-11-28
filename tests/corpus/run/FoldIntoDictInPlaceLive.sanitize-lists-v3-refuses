@@ -1,0 +1,5 @@
+# A fold whose callback puts one list at two keys, a list of the accumulator read after the write, and a captured list at two keys: each write is refused (ownership-v3-kernel.md §3.4, *a walked body's own type variables*).
+19:13 list_still_used value
+21:14 list_still_used call
+28:13 list_still_used call
+37:14 list_still_used call

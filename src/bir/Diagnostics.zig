@@ -113,6 +113,15 @@ pub const Item = struct {
         /// contradicts it; a result selector without its parameters' words.
         own_stored_callback,
         own_selector,
+        /// v3's `position` (`ownership-v3-kernel.md` §6 rule 10): not on one
+        /// parameter of a value beside a container that the words read.
+        own_position_word,
+        /// v3's `shallow` (`ownership-v3-kernel.md` §12): not on one
+        /// parameter that is a value read by the words.
+        own_shallow_word,
+        /// v3's `hollow` (`ownership-v3-kernel.md` §12 item 8): not on a
+        /// result that is `fresh`.
+        own_hollow_word,
         /// `invalid_ownership_summary_size` (ownership-v2.md §4.4): why.
         attr_unknown,
         attr_module_late,
@@ -303,7 +312,9 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\`sequence foreign type Builder a`. `cell` stands before an opaque type, or a
                 \\`foreign type`, with one parameter: `pub opaque cell type Ref a = Ref Js.Value`.
                 \\`sender` stands before an alias of a function of one argument that returns
-                \\`⊤`: `pub sender type alias Send msg = msg → ⊤`.
+                \\`⊤`: `pub sender type alias Send msg = msg → ⊤`. `keyed` stands before the
+                \\`foreign type` of a type with two parameters, a key and a value:
+                \\`pub equatable keyed foreign type Dict k v`.
             , .{text}),
             .own_stored_callback => try w.print(
                 \\`{s}` describes a callback whose answer is stored, and a word it needs is
@@ -332,6 +343,31 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\says that the result is the first parameter put in front of the second, so
                 \\there are exactly two parameters: `cons : stored a, returned List a →
                 \\prepended List a`.
+            , .{text}),
+            .own_shallow_word => try w.print(
+                \\`{s}` says that the operation reads a parameter's storage and none of
+                \\the values it holds, and it cannot stand here.
+                \\
+                \\It stands in front of a parameter, a value and not a function, that the
+                \\words read (`borrowed`, or `written`), once in front of it: `size :
+                \\borrowed shallow Dict k v → Int`.
+            , .{text}),
+            .own_hollow_word => try w.print(
+                \\`{s}` says that the result holds no value of a type variable, and it cannot
+                \\stand here.
+                \\
+                \\It stands in front of the result, once, beside `fresh`: `empty : ⊤ → fresh
+                \\exclusive hollow Dict k v`.
+            , .{text}),
+            .own_position_word => try w.print(
+                \\`{s}` says that a parameter names one position of the first parameter, and
+                \\it cannot stand here.
+                \\
+                \\It stands in front of one parameter after the first, a value and not a
+                \\function, once in a signature. The first parameter is a list that the words
+                \\read: the result is `elementof` it, as in `at : borrowed List a, borrowed
+                \\position Int → elementof a`, or it is `written returned`, as in `set : written
+                \\returned List a, borrowed position Int, stored a → List a`.
             , .{text}),
             .own_failure => try w.writeAll(
                 \\`failure` marks the failure constructor of a type with two constructors, and it

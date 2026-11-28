@@ -1,0 +1,1 @@
+Each call names its writer in another form than a direct call (method-style, a local alias, a writer handed on as a value, a sortBy whose callback parks) and v3 accepts it: the oracle routes each one (ownership-v3-kernel.md §12, Lowering).

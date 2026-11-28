@@ -1,0 +1,1 @@
+{ "platform": true, "name": "falsewords", "platforms": ["node"], "reexports": ["Node"] }

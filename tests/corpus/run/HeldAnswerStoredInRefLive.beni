@@ -1,0 +1,32 @@
+-- A function held in a list answers a new list that it also keeps in a cell: its
+-- answer is no cell of the caller, so the write of it is refused (ownership-v3-kernel.md
+-- §6 rule 2, *A function held in a value*). Were it accepted, the cell would show the push.
+import Node exposing (Program)
+import Ref
+import String
+
+
+callAll : List (⊤ → List Int) → List Int
+callAll fs =
+    case fs of
+        [ f, …_ ] →
+            f ⊤
+
+        [] →
+            []
+
+
+run : ⊤ → List Int
+run ⊤ =
+    cell = Ref.make [ 0 ]
+    g =
+        λ⊤ →
+            ys = [ 1, 2 ]
+            Ref.set cell ys
+            ys
+    zs = List.push (callAll [ g ]) 3
+    [ List.length zs, List.length (Ref.get cell) ]
+
+
+main : Program
+main = Node.printLines (List.map (run ⊤) String.fromInt)

@@ -1,0 +1,1 @@
+v3 reads the label a tagger captures where the tagger is made (ownership-v3-kernel.md §6 rule 3, *A field path a closure captures*): `update` writes the label in place, and each tick carries the label of the moment it fired.

@@ -1,0 +1,37 @@
+-- A cell that a function makes, hands to a function it captured, and
+-- answers is one cell: its name in the contract is the run of the function
+-- that made it (`ownership-v3-kernel.md` §4.2, `Frame.resolve`). Before, the
+-- cell read through the captured function had another name than the cell
+-- answered, `viaMap`'s contract said they were two, and the push of the
+-- answer was accepted while the top-level cell held it.
+import List
+import Maybe
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+holder : Ref (List Int)
+holder = Ref.make []
+
+
+viaMap : (List Int → ⊤) → List Int
+viaMap f =
+    Maybe.withDefault
+        (Maybe.map (Just ⊤) λ_ →
+            n = [ 7 ]
+            f n
+            n
+        )
+        []
+
+
+main : Program
+main =
+    t = viaMap λx → Ref.set holder x
+    u = List.push t 2
+    Node.print "${ints u} ${ints (Ref.get holder)}"

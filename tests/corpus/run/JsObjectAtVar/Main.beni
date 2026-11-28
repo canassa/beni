@@ -1,0 +1,25 @@
+-- `boxR x = Js.to (Js.object [ ( "q", Js.from x ), ( "p", Js.array [] ) ])` read at the
+-- argument's own record type: the record is at the `Int` field `q`
+-- (ownership-v3-kernel.md §3.4, *What a value was made from*).
+import Node exposing (Program)
+import Pun
+
+
+type alias R =
+    p : List Int
+    q : Int
+
+
+go : Int → String
+go n =
+    r0 = { p = [ n ], q = n }
+    h : R
+    h = Pun.boxR r0
+    back : R
+    back = Pun.conv h.q
+    s = { r0 | q = 50 }
+    "${String.fromInt s.q} ${String.fromInt back.q}"
+
+
+main : Program
+main = Node.print (go 1)

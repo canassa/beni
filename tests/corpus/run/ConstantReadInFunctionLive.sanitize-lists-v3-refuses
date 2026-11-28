@@ -1,0 +1,2 @@
+# The one reader of seed is a function, which runs at each call, so the append is refused (ownership-v3-kernel.md §7, *A constant read once*).
+15:19 list_still_used ++

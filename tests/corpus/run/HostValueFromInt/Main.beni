@@ -1,0 +1,22 @@
+-- A platform function of `Int → List Int` that answers its parameter read
+-- as a list: the `Value` of a number holds no cell the walk can name, and
+-- the list read out of it is a location the value's own reading does not
+-- have, so the answer is `unknown`, never a new list
+-- (ownership-v3-kernel.md §3.4). `toInt` read the list as a number, so the
+-- list escaped there. Before, `fromInt`'s contract said that its answer is
+-- a list nobody else holds, and in place the push of `ys` pushed onto `xs`,
+-- which is read after it.
+import Cast
+import Node exposing (Program)
+
+
+go : Int → String
+go n =
+    xs = [ n, 2 ]
+    ys = Cast.fromInt (Cast.toInt xs)
+    zs = List.push ys 9
+    "${String.fromInt (List.length zs)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print (go 1)

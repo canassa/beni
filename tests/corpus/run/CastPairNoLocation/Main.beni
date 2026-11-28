@@ -1,0 +1,23 @@
+-- A cast of `( x, x )` to `List Int × Int`: the reading has a location for
+-- the first part and none for the second, which is `x` too. The second
+-- part's cells escape at the cast (ownership-v3-kernel.md §3.4). Before, the
+-- cast's map put them "at every location of the reading", the first part,
+-- and the second part, read out as an `Int`, held nothing: the push of
+-- `x0` was accepted, and in place it changed what `z` reads.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    p = Pun.twice x0
+    ( _, h ) = p
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

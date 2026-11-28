@@ -1,0 +1,174 @@
+-- A return-type dispatch `a.make n` whose binding sleeps is a call where
+-- another fiber can run (ownership-v3-kernel.md §13 item 12, *A switch
+-- point*; #2697). The fiber that runs while the method sleeps writes a copy
+-- of the cell's contents, so the list taken out of the cell before the
+-- dispatch is the one read after it: in a generic that makes the cell, is
+-- handed it, stores a list of its own there, is of another module, is
+-- reached through a second generic, or dispatches in a `List.map` closure.
+-- Accepted, and run in place. Its live twin is CellTypeDispatchSwitchLive.
+import Duration
+import Hoster
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+pub type Box
+    = Box Int
+
+
+pub make : Int → Box
+make n =
+    Task.sleep (Duration.millis 5)
+    Box n
+
+
+unbox : Box → Int
+unbox b =
+    case b of
+        Box n →
+            n
+
+
+show : String × Box → String
+show p =
+    ( s, b ) = p
+    s ++ " " ++ String.fromInt (unbox b)
+
+
+made : Int → String × a
+    where a.make : Int → a
+made n =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λk → List.push (List.copy k) 5
+    l = Ref.get r
+    x = a.make n
+    s = ints l
+    Task.join t
+    ( s, x )
+
+
+peek : Ref (List Int), Int → String × a
+    where a.make : Int → a
+peek r n =
+    l = Ref.get r
+    x = a.make n
+    ( ints l, x )
+
+
+stash : Ref (List Int), Int → String × a
+    where a.make : Int → a
+stash r n =
+    mine = [ 7, 8 ]
+    Ref.set r mine
+    x = a.make n
+    ( ints mine, x )
+
+
+viaPeek : Ref (List Int), Int → String × a
+    where a.make : Int → a
+viaPeek r n = peek r n
+
+
+inLambda : Int → String × a
+    where a.make : Int → a
+inLambda n =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λk → List.push (List.copy k) 5
+    ps = List.map [ n ] λk →
+        l = Ref.get r
+        x = a.make k
+        ( ints l, x )
+    Task.join t
+    case ps of
+        [ p ] →
+            p
+
+        _ →
+            ( "none", a.make 0 )
+
+
+madeTop : ⊤ → String
+madeTop ⊤ =
+    p : String × Box
+    p = made 3
+    show p
+
+
+peekTop : ⊤ → String
+peekTop ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λk → List.push (List.copy k) 5
+    p : String × Box
+    p = peek r 3
+    Task.join t
+    show p
+
+
+stashTop : ⊤ → String
+stashTop ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λk → List.push (List.copy k) 5
+    p : String × Box
+    p = stash r 3
+    Task.join t
+    show p
+
+
+moduleTop : ⊤ → String
+moduleTop ⊤ =
+    p : String × Box
+    p = Hoster.madeM 3
+    show p
+
+
+viaTop : ⊤ → String
+viaTop ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λk → List.push (List.copy k) 5
+    p : String × Box
+    p = viaPeek r 3
+    Task.join t
+    show p
+
+
+lambdaTop : ⊤ → String
+lambdaTop ⊤ =
+    p : String × Box
+    p = inLambda 3
+    show p
+
+
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ fiber madeTop
+        , fiber peekTop
+        , fiber stashTop
+        , fiber moduleTop
+        , fiber viaTop
+        , fiber lambdaTop
+        ]

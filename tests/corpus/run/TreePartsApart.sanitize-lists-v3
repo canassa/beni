@@ -1,0 +1,1 @@
+A tree's two children are two positions of one constructor pattern, so rootKids writes the root's record in place while its children are read (ownership-v3-kernel.md §4.4, *The parts of a constructor pattern are apart*).

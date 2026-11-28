@@ -1,0 +1,13 @@
+--! A test platform: a list read through a type of no cell and back.
+
+import Js
+
+
+--| The list itself, read as a number.
+pub toInt : List Int → Int
+toInt x = Js.to (Js.from x)
+
+
+--| The number itself, read as a list.
+pub fromInt : Int → List Int
+fromInt n = Js.to (Js.from n)

@@ -1,0 +1,2 @@
+# v3 refuses the update: the slot below the callee's one location is held by no slot of the argument at that path; its record of the field `a` is another object (ownership-v3-kernel.md §3.4).
+19:18 record_still_used update

@@ -1,0 +1,24 @@
+-- load
+<body>
+  <button>
+    "0"
+    <span>"6"</span>
+    <span>"6"</span>
+  </button>
+</body>
+-- click button
+<body>
+  <button>
+    "1"
+    <span>"6"</span>
+    <span>"6"</span>
+  </button>
+</body>
+-- click button
+<body>
+  <button>
+    "2"
+    <span>"6"</span>
+    <span>"6"</span>
+  </button>
+</body>

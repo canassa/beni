@@ -1,0 +1,152 @@
+-- The live twins of CellStoredThenSwitch (#2592): a helper stores a value
+-- into its parameter's cell, parks, and writes the stored value in place,
+-- while a reader fiber that holds the cell takes it during the park and
+-- reads it after: the helper called directly, through a second helper,
+-- and through a helper whose own parameter the frame hands; and a helper
+-- that reads the value it stored after writing it in place; a callback that
+-- captured the cell and copies what the helper stored, run between the
+-- store and the write (handed to the helper, or a closure the writing
+-- closure calls); and the helper handed as a value to a function that calls
+-- it while a reader fiber holds the cell; and a helper that stores a list
+-- its caller still holds and parks, while a writer fiber of the cell pushes
+-- onto it. Each read sees
+-- the new value where a copy would keep the old one, so each is refused.
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+storePark : Ref (List Int) → ⊤
+storePark r =
+    Ref.set r [ 4 ]
+    Task.yieldNow ⊤
+    Ref.update r λl → List.push l 5
+
+
+viaHelper : Ref (List Int) → ⊤
+viaHelper r = storePark r
+
+
+heldStored : Ref (List Int) → String
+heldStored r =
+    x = [ 4 ]
+    Ref.set r x
+    Task.yieldNow ⊤
+    Ref.update r λl → List.push l 5
+    ints x
+
+
+reader : Ref (List Int) → Task.Fiber String
+reader r = Task.spawn λ⊤ →
+    x = Ref.get r
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    ints x
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make [ 1 ]
+    a = reader r
+    storePark r
+    Task.join a
+
+
+twoDeep : ⊤ → String
+twoDeep ⊤ =
+    r = Ref.make [ 1 ]
+    a = reader r
+    viaHelper r
+    Task.join a
+
+
+handed : Ref (List Int) → String
+handed r =
+    a = reader r
+    viaHelper r
+    Task.join a
+
+
+held : ⊤ → String
+held ⊤ =
+    r = Ref.make [ 1 ]
+    heldStored r
+
+
+withCb : Ref (List Int), (⊤ → ⊤) → ⊤
+withCb r g =
+    Ref.set r [ 4 ]
+    g ⊤
+    Ref.update r λl → List.push l 5
+
+
+applyTo : Ref (List Int), (Ref (List Int) → ⊤) → ⊤
+applyTo h g = g h
+
+
+callback : ⊤ → String
+callback ⊤ =
+    r = Ref.make [ 1 ]
+    out = Ref.make [ 0 ]
+    withCb r λ⊤ → Ref.set out (Ref.get r)
+    ints (Ref.get out)
+
+
+twoClosures : ⊤ → String
+twoClosures ⊤ =
+    r = Ref.make [ 1 ]
+    out = Ref.make [ 0 ]
+    peek = λ⊤ → Ref.set out (Ref.get r)
+    go =
+        λ⊤ →
+            Ref.set r [ 4 ]
+            peek ⊤
+            Ref.update r λl → List.push l 5
+    go ⊤
+    ints (Ref.get out)
+
+
+asValue : ⊤ → String
+asValue ⊤ =
+    r = Ref.make [ 1 ]
+    a = reader r
+    applyTo r storePark
+    Task.join a
+
+
+storeSwitch : Ref (List Int), List Int → ⊤
+storeSwitch h x =
+    Ref.set h x
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+
+
+handedStored : ⊤ → String
+handedStored ⊤ =
+    r = Ref.make [ 1 ]
+    x = [ 4 ]
+    w = Task.spawn λ⊤ → Ref.update r λl → List.push l 7
+    storeSwitch r x
+    s = ints x
+    Task.join w
+    "${s}/${ints (Ref.get r)}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ direct ⊤
+        , twoDeep ⊤
+        , handed (Ref.make [ 1 ])
+        , held ⊤
+        , callback ⊤
+        , twoClosures ⊤
+        , asValue ⊤
+        ]

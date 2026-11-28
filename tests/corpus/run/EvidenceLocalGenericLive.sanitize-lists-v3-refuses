@@ -1,0 +1,17 @@
+# A method that writes its parameter, handed as evidence through a generalised local, an operator over a user eq or compare, or return-type dispatch: refused where it is handed (ownership-v3-kernel.md §6 rule 11).
+128:10 list_still_used value
+136:10 list_still_used value
+144:10 list_still_used value
+153:10 list_still_used value
+161:29 list_still_used value
+169:17 list_still_used value
+178:10 list_still_used value
+186:9 list_still_used value
+194:10 list_still_used value
+203:5 list_still_used value
+211:9 list_still_used value
+219:9 list_still_used value
+227:9 list_still_used value
+235:9 list_still_used value
+243:9 list_still_used value
+252:9 list_still_used value

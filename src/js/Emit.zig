@@ -450,6 +450,10 @@ const derived_runtime_compact = @embedFile("derived_runtime.min.mjs");
 /// when a module written imports it.
 pub const sanitize_runtime_path = core_dir ++ "_sanitize.mjs";
 const sanitize_runtime_source = @embedFile("sanitize_runtime.mjs");
+/// The same path under `--lists-in-place`: the in-place oracle
+/// (`src/js/inplace_runtime.mjs`, research report 140), whose exports are the
+/// sanitiser's, so the lowering is one.
+const inplace_runtime_source = @embedFile("inplace_runtime.mjs");
 
 /// Output directory of the platform package, its siblings and its runtime.
 /// Reserved for `core_dir`'s reason: `Platform.Node` is a legal module name.
@@ -498,6 +502,10 @@ pub const Options = struct {
     /// `--sanitize-lists`, the hidden test-only flag (`src/Cli.zig`,
     /// `Lower.Input.sanitize_lists`, `ownership-v2.md` §7.3).
     sanitize_lists: bool = false,
+    /// `--lists-in-place`, the hidden test-only flag (`src/Cli.zig`): each
+    /// accepted list write edits its base's own array. It is lowered as
+    /// `sanitize_lists` is, with the in-place runtime in its file.
+    lists_in_place: bool = false,
     /// `--schema-shapes`: shapes for every validator run with one (true),
     /// or for none (false), whatever the count; null, the count decides.
     schema_shapes: ?bool = null,
@@ -742,7 +750,7 @@ pub fn run(
     {
         const hs = e.session.checked.hoists;
         const clean = try e.scratch.alloc(bool, hs.len);
-        for (clean, hs) |*c, h| c.* = h.clean and e.session.enforce_ownership;
+        for (clean, hs, 0..) |*c, h, i| c.* = (h.clean and e.session.enforce_ownership) or e.recordsInPlaceV3(i);
         e.clean_modules = clean;
     }
     // Whether v2 checked every module of the program whole: then every
@@ -4239,7 +4247,7 @@ const Emitter = struct {
         // (`ownership-checker.md` §31.10), for a lowering that holds a root's
         // slice (`browser-inline.md` §8.4, amended 2026-10-22).
         const in_place = try a.alloc(bool, n);
-        for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
+        for (in_place, 0..) |*x, i| x.* = arm_fields and !e.options.sanitize_records and ((i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership) or e.recordsInPlaceV3(i));
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .graph = e.graph(),
@@ -4264,6 +4272,18 @@ const Emitter = struct {
         e.writes_calls = try w.runCalls();
         e.writes_effects = effects;
         e.writes_birs = birs;
+    }
+
+    /// Whether module `i`'s record updates are all written in place by the
+    /// checker v3's verdicts (`Check.records_in_place`): a build of a chain
+    /// v3 judges, with no oracle (`Lower.Input.records_v3_plain`), of a
+    /// module whose every update v3 accepted. v1's clean table is the same
+    /// fact for a build v1 judges (§31.10).
+    fn recordsInPlaceV3(e: *const Emitter, i: usize) bool {
+        const s = e.session;
+        if (!s.ownership_v3_platform or !s.enforce_ownership) return false;
+        if (e.options.sanitize_lists or e.options.lists_in_place or e.options.sanitize_records) return false;
+        return i < s.checked.records_in_place.len and s.checked.records_in_place[i];
     }
 
     /// `browser-inline.md` §7: the pieces program sites lift — every
@@ -6911,7 +6931,7 @@ const Emitter = struct {
                 slot.sibling = try e.siblingSpecifier(source_path);
                 slot.worker_descriptors = try e.descriptorsFor(m);
                 slot.derived_runtime = try relativeSpecifier(e.scratch, paths[i], derived_runtime_path);
-                if (e.options.sanitize_lists) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
+                if (e.options.sanitize_lists or e.options.lists_in_place) slot.sanitize_runtime = try relativeSpecifier(e.scratch, paths[i], sanitize_runtime_path);
                 if (maps) |root| try e.planMap(slot, root, paths[i], e.graph().moduleFile(m));
                 // With no runtime file the module supplies every export, and
                 // nothing is imported from the file's specifier.
@@ -7021,7 +7041,7 @@ const Emitter = struct {
             // keep, so a build that is one file before it is one after.
             var one_scope = false;
             if (!e.options.library and lowered_clean) if (entry) |at| {
-                one_scope = try e.planHoist(slots, todo.items, paths, at, uses_runtime) != null;
+                one_scope = try e.planHoist(slots, todo.items, paths, at, uses_runtime, uses_sanitizer) != null;
                 try e.specialise(slots, todo.items, at, one_scope);
             };
             // A library is a whole program too, but for its surface: what
@@ -7038,7 +7058,7 @@ const Emitter = struct {
             // is written as one file, and its names are numbered in that
             // file's order. Anything else is the multi-file layout.
             if (!e.options.library and lowered_clean) if (entry) |at| {
-                hoist = try e.planHoist(slots, todo.items, paths, at, uses_runtime);
+                hoist = try e.planHoist(slots, todo.items, paths, at, uses_runtime, uses_sanitizer);
             };
             if (one_scope and hoist == null) @panic("a build that is one file before specialisation is one after it");
             if (hoist) |*h| {
@@ -7112,9 +7132,8 @@ const Emitter = struct {
         if (hoist) |*h| {
             if (!e.hasErrors()) try e.linkHoisted(slots, h);
         } else if (uses_runtime) try e.emitDerivedRuntime();
-        // `--sanitize-lists` is refused with `--release` (`Cli`), so its
-        // build is never one hoisted file.
-        if (uses_sanitizer) try e.produce(sanitize_runtime_path, sanitize_runtime_source, sanitize_runtime_path);
+        // A hoisted build has the in-place runtime in its one file (`planHoist`).
+        if (uses_sanitizer and hoist == null) try e.produce(sanitize_runtime_path, if (e.options.lists_in_place) inplace_runtime_source else sanitize_runtime_source, sanitize_runtime_path);
     }
 
     /// One module's way from `Bir` to bytes. Written by the one worker that
@@ -7450,8 +7469,9 @@ const Emitter = struct {
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
             // A guarded module must be lowered for this entry, not from the unknown-realm pack.
+            // Under the sanitiser a module's `Js.same` is its trap, which no pack row holds.
             const realm_sensitive = JsIntrinsic.entryWindow(e.options.platform.entry_host, e.options.library) != null and JsIntrinsic.hasEntryWindow(e.graph(), e.session.resolution.interfaces, e.bir(m), &e.session.interner);
-            if (!realm_sensitive and read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+            if (!realm_sensitive and !e.options.sanitize_lists and read_rows and event_constructors.items.len == 0 and e.worker_wire_direct_module != m and e.workerHostModule() != m and (e.workerHostClient()) != m and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
                 const key = EmitPack.key(e.session.keys.of(m), .{});
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
@@ -7477,7 +7497,7 @@ const Emitter = struct {
                 .birs = e.reach.birs,
                 .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
-                .token_tags = if (e.options.sanitize_lists) e.session.artifacts.spans(file).tags else &.{},
+                .token_tags = if (e.options.sanitize_lists or e.options.lists_in_place) e.session.artifacts.spans(file).tags else &.{},
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
@@ -7511,7 +7531,13 @@ const Emitter = struct {
                 .development = !e.options.release,
                 .test_hooks = e.options.test_hooks,
                 .sanitize_records = e.options.sanitize_records,
-                .sanitize_lists = e.options.sanitize_lists,
+                .sanitize_lists = e.options.sanitize_lists or e.options.lists_in_place,
+                .identity_trap = e.options.sanitize_lists,
+                .records_v3 = e.session.options.ownership_v3 and (e.options.sanitize_lists or e.options.lists_in_place or (e.session.ownership_v3_platform and e.session.enforce_ownership)),
+                .records_v3_plain = e.session.ownership_v3_platform and e.session.enforce_ownership and !e.options.sanitize_lists and !e.options.lists_in_place,
+                .records_clean_v3 = e.recordsInPlaceV3(m.int()),
+                .v3_record_calls = if (e.session.ownership_v3_platform and e.session.enforce_ownership and !e.options.sanitize_lists and !e.options.lists_in_place and m.int() < e.session.checked.record_calls.len) e.session.checked.record_calls[m.int()] else &.{},
+                .v3_reads = if (e.session.options.ownership_v3 and e.session.enforce_ownership and m.int() < e.session.checked.hoist_reads.len) e.session.checked.hoist_reads[m.int()] else &.{},
                 .sanitize_runtime = slot.sanitize_runtime,
                 .clean_modules = e.clean_modules,
                 .boundary = if (e.boundary) |*b| b else null,
@@ -8586,7 +8612,7 @@ const Emitter = struct {
     /// build is one scope-hoisted file. Null keeps the multi-file layout:
     /// a file that cannot be read exactly, or one that must keep a module
     /// of its own and might do something when it is evaluated.
-    fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool) !?Hoist {
+    fn planHoist(e: *Emitter, slots: []ModuleSlot, todo: []const u32, paths: []const []const u8, entry: Entry, uses_runtime: bool, uses_sanitizer: bool) !?Hoist {
         // Worker bindings are inside the bootstrap try block; none may
         // be exported by the module-level footer after its finally.
         if (e.worker_runtime != null and
@@ -8641,6 +8667,17 @@ const Emitter = struct {
             derived_index = @intCast(files.items.len);
             try files.append(scratch, .{ .out = derived_runtime_path, .origin = derived_runtime_path, .bytes = derived_runtime_compact, .mapped = false });
         }
+        // `--lists-in-place --release` (hidden, test-only): the in-place
+        // runtime joins the one file as any hand-written file does, so the
+        // oracle's build is the layout a plain release build has, and the
+        // optimiser works across its modules in one scope (research report
+        // 141). `--sanitize-lists` is refused with `--release` (`Cli`).
+        var sanitize_index: ?u32 = null;
+        if (uses_sanitizer) {
+            std.debug.assert(e.options.lists_in_place);
+            sanitize_index = @intCast(files.items.len);
+            try files.append(scratch, .{ .out = sanitize_runtime_path, .origin = sanitize_runtime_path, .bytes = inplace_runtime_source, .mapped = false });
+        }
 
         var module_at: std.StringHashMapUnmanaged(u32) = .empty;
         for (todo) |i| try module_at.put(scratch, paths[i], i);
@@ -8678,6 +8715,8 @@ const Emitter = struct {
                     derived_index
                 else if (slot.markup != null and std.mem.eql(u8, source, slot.markup.?.runtime))
                     markup_index
+                else if (slot.sanitize_runtime.len != 0 and std.mem.eql(u8, source, slot.sanitize_runtime))
+                    sanitize_index
                 else
                     null;
                 if (target) |x| {

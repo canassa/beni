@@ -21,8 +21,10 @@ import Task
 pub foreign type Host msg
 
 
---| A synchronous send into a running program.
-pub type alias Send msg =
+--| A synchronous send into a running program. The word `sender` is the
+--| ownership row: a message is given up to the runtime, so each list in it
+--| must be the sender's own.
+pub sender type alias Send msg =
     msg → ⊤
 
 
@@ -45,11 +47,19 @@ send h msg = Js.to (Js.call h "send" [ msg ])
 
 
 --| A command's or subscription's key, whatever its type: its type's
---| identity, its type's `compare`, and the value (`boundary.md` §9.8.3).
---| Two keys are the same when they are of one type and that type's
---| `compare` calls them equal — however each was built or stored. A key's
---| type must have `compare`, which is what keeps functions out of keys.
+--| identity and the value (`boundary.md` §9.8.3). Two keys are the same
+--| when they are of one type and that type's `compare` calls them equal —
+--| however each was built or stored. A key's type must have `compare`,
+--| which is what keeps functions out of keys.
 pub foreign type Key
+
+
+-- The comparer of every key type `key` has made a key of, by the type's
+-- identity: `key` is its only writer, and `compare` reads a comparer from
+-- here, never from a key, so it runs only a type's own `compare`
+-- (`boundary.md` §9.8.3, amended 2026-11-17).
+comparers : V
+comparers = Js.construct (Js.global "Map") []
 
 
 --| Any value as a key. Its type's identity is the compiler's, handed on by
@@ -57,17 +67,27 @@ pub foreign type Key
 pub key : k → Key
     where k.compare : k, k → Order
 key k =
-    -- `{ t, c, v }`: the identity of the key's type
-    -- (`static-dispatch-spike.md` §8.6), the type's own `compare`, and the
-    -- value (`boundary.md` §9.8.3). The three keys are plain properties no
+    -- `{ t, v }`: the identity of the key's type
+    -- (`static-dispatch-spike.md` §8.6), stored with its comparer, and the
+    -- value (`boundary.md` §9.8.3). The two keys are plain properties no
     -- beni record spells, so they pin no field name (`backend.md` §9).
     Js.to
         (Js.object
-            [ ( "t", Js.fingerprint k EQ ), ( "c", Js.from (comparer k) ), ( "v", Js.from k ) ]
+            [ ( "t", Js.from (register (Js.fingerprint k EQ) (comparer k)) ), ( "v", Js.from k ) ]
         )
 
 
--- The type's `compare` as a value, for the key to carry. The parameter is
+-- Store `c` as the comparer of the type whose identity is `t`, and answer
+-- `t`. Storing it again is idempotent and seen only through `compare`, so
+-- the body is `Js.pure`. It is handed the comparer, not the key, so the
+-- key's value stays in the key alone.
+register : name, (k, k → Order) → name
+register t c = Js.pure λ⊤ →
+    _ = Js.call comparers "set" [ Js.from t, Js.from c ]
+    t
+
+
+-- The type's `compare` as a value, for `comparers`. The parameter is
 -- read for its type alone: a method is named through a call of it.
 comparer : k → (k, k → Order)
     where k.compare : k, k → Order
@@ -75,14 +95,21 @@ comparer _ = λa b → a.compare b
 
 
 --| The order of two keys: by their types' identities, then, for two keys
---| of one type, by that type's `compare`. Two keys of one identity are of
---| one type, so either's `compare` orders both. Keys of two types are
---| ordered by their identities' text with JavaScript's `<` (`Js.lt`): the
---| identities are ASCII, where it agrees with `String.compare`, which a
+--| of one type, by that type's `compare`, read from `comparers` by the
+--| identity: two keys of one identity are of one type. Keys of two types
+--| are ordered by their identities' text with JavaScript's `<` (`Js.lt`):
+--| the identities are ASCII, where it agrees with `String.compare`, which a
 --| page that compares no other string then never ships. Reading the
 --| key's fields and calling its `compare` run no effect, so the body is
 --| `Js.pure`, as the sibling was `foreign pure`.
-pub compare : Key, Key → Order
+--|
+--| The words are a trusted row (`ownership-v3-kernel.md` §6 rule 10, *A
+--| platform's trusted row*): the body runs a comparer the checker cannot
+--| follow, but every comparer in `comparers` is a key type's own
+--| `compare`, judged as evidence where `key` is called: it writes and
+--| keeps nothing it is handed. An identity with no comparer stops the
+--| program with a defect.
+pub compare : borrowed Key, borrowed Key → Order
 compare a b = Js.pure λ⊤ →
     if Js.same a b then
         EQ
@@ -90,10 +117,11 @@ compare a b = Js.pure λ⊤ →
         ta = Js.get (Js.from a) "t"
         tb = Js.get (Js.from b) "t"
         if Js.same ta tb then
-            Js.to
-                (Js.apply (Js.get (Js.from a) "c")
-                    [ Js.get (Js.from a) "v", Js.get (Js.from b) "v" ]
-                )
+            c = Js.call comparers "get" [ ta ]
+            if Js.isUndefined c then
+                defect "Hosted.compare: no comparer"
+            else
+                Js.to (Js.apply c [ Js.get (Js.from a) "v", Js.get (Js.from b) "v" ])
         else if Js.lt ta tb then
             LT
         else

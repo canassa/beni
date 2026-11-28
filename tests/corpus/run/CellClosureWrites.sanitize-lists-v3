@@ -1,0 +1,1 @@
+A closure writes the contents of a cell it captured, and each holder that runs it judges the write where it runs; no holder reads the old contents, so each write is accepted and runs in place (ownership-v3-kernel.md §13 item 11). Its live twin is CellClosureWritesLive.

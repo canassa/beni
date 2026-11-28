@@ -1,0 +1,151 @@
+-- load
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <label>
+      "Ada"
+      <!---->
+      ""
+      <input id="shown" .value="">
+    </label>
+  </main>
+</body>
+-- input #shown "typed"
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <label>
+      "Ada"
+      <!---->
+      ""
+      <input id="shown" .value="typed">
+    </label>
+  </main>
+</body>
+-- click #age
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <label>
+      "Ada"
+      <!---->
+      ""
+      <input id="shown" .value="">
+    </label>
+  </main>
+</body>
+-- input #shown "kept"
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <label>
+      "Ada"
+      <!---->
+      ""
+      <input id="shown" .value="kept">
+    </label>
+  </main>
+</body>
+-- click #note
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <label>
+      "Ada"
+      <!---->
+      "!"
+      <input id="shown" .value="kept">
+    </label>
+  </main>
+</body>
+-- click #same
+(the DOM did not change)
+-- click #rewrap
+(the DOM did not change)
+-- click #clear
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <p>
+      "none"
+      <input id="nobody" .value="">
+    </p>
+  </main>
+</body>
+-- input #nobody "fallback"
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <p>
+      "none"
+      <input id="nobody" .value="fallback">
+    </p>
+  </main>
+</body>
+-- click #note
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <p>
+      "none!"
+      <input id="nobody" .value="fallback">
+    </p>
+  </main>
+</body>
+-- click #back
+<body>
+  <main>
+    <button id="age">"age"</button>
+    <button id="note">"note"</button>
+    <button id="same">"same"</button>
+    <button id="rewrap">"rewrap"</button>
+    <button id="clear">"clear"</button>
+    <button id="back">"back"</button>
+    <label>
+      "Ada"
+      <!---->
+      "none!"
+      <input id="shown" .value="">
+    </label>
+  </main>
+</body>

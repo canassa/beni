@@ -1,0 +1,17 @@
+--! A test platform: a value given another type through `Js`.
+
+import Js
+
+
+--| The value itself, as a list: `Js.to` of a value whose own type is a type
+--| variable, so the answer's elements are below the variable's one location.
+pub asList : a → List b
+asList x = Js.to (Js.from x)
+
+
+--| The same through a local that the type check generalises (`∀c. c`), read
+--| at the answer's type.
+pub viaLocal : a → List b
+viaLocal x =
+    got = Js.to (Js.from x)
+    got

@@ -1,0 +1,83 @@
+-- A `Show` keyed by identity over a record on `browser-inline`
+-- (docs/design/browser-inline.md §8.2, amended 2026-11-27, *A `Show` keyed
+-- by identity*): the runtime keeps no record to compare, so the body is a
+-- new one exactly when a message's write set may make the shown record
+-- another object, whether or not `update` wrote that record in place. Its
+-- input is not controlled, so typed text shows whether its node survived. A
+-- write of a field the body does not read (`age`) makes a new body; a write
+-- of a model field the body reads beside the record (`note`) keeps it and
+-- writes its hole; a message that writes nothing of the record keeps it
+-- (`Same`). The write set cannot tell that `Maybe.map` with `λu → u` gives
+-- back the very same record (`Rewrap`), so that body is a new one where
+-- `browser/tea/ShowIdentityWrites`, the same source on `browser-tea`, keeps
+-- it: the one listed difference, with the empty comment `browser-tea` keeps
+-- after the `Show`. The fallback, shown while there is no user, is kept
+-- across a write of what it reads. The build that copies every record and
+-- the one that writes it in place print the same page.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Age
+    | Note
+    | Same
+    | Rewrap
+    | Clear
+    | Back
+
+
+type alias User =
+    name : String
+    age : Int
+
+
+type alias Model =
+    user : Maybe User
+    note : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Age →
+            { model | user = Maybe.map model.user λu → { u | age = u.age + 1 } }
+
+        Note →
+            { model | note = model.note ++ "!" }
+
+        Same →
+            model
+
+        Rewrap →
+            { model | user = Maybe.map model.user λu → u }
+
+        Clear →
+            { model | user = Nothing, note = "none" }
+
+        Back →
+            { model | user = Just { name = "Ada", age = 36 } }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="age" onClick={Age}>age</button>
+        <button id="note" onClick={Note}>note</button>
+        <button id="same" onClick={Same}>same</button>
+        <button id="rewrap" onClick={Rewrap}>rewrap</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="back" onClick={Back}>back</button>
+        <Show when={model.user} keyed fallback={<p>{model.note}<input id="nobody" /></p>}>
+            {λu → <label>{u.name}{model.note}<input id="shown" /></label>}
+        </Show>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { user = Just { name = "Ada", age = 36 }, note = "" }
+        , update = update
+        , view = view
+        }

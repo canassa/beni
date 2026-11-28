@@ -1,0 +1,9 @@
+# The live twins of CellStoredThenSwitch (#2592): a helper stores, parks and writes the stored value in place while a reader fiber holding the cell takes it during the park (directly, through a second helper, through a helper handed the frame's parameter, and handed as a value), a helper that reads what it stored after writing it in place, and a callback that captured the cell and copies what the helper stored between its store and its write.; and a helper that stores a list its caller still holds and parks while a writer fiber of the cell pushes onto it. Each is refused.
+42:5 list_still_used call
+58:5 list_still_used value
+66:5 list_still_used value
+73:5 list_still_used value
+98:5 list_still_used value
+112:5 list_still_used value
+120:5 list_still_used value
+135:9 list_still_used value

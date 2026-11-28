@@ -1,0 +1,38 @@
+-- A fold into a dictionary of lists: the fold hands its accumulator on
+-- whole, at its type variable, so the dictionary it answers holds each list
+-- at its own place, and the write after the fold is in place
+-- (ownership-v3-kernel.md §3.4, *a walked body's own type variables*).
+import Dict exposing (Dict)
+import Node exposing (Program)
+
+
+want : Int, (Int → Int), Dict Int (Int × List (Int → Int)) → Dict Int (Int × List (Int → Int))
+want k t d = Dict.update d k λcurrent →
+    ( first, taps ) = Maybe.withDefault current ( 1, [] )
+    Just ( first, List.append taps [ t ] )
+
+
+initial : Int → Dict Int (Int × List (Int → Int))
+initial k = Dict.insert (Dict.empty ⊤) k ( 1, [] )
+
+
+counts : Dict Int (Int × List (Int → Int)) → List String
+counts d = List.map (Dict.values d) λ( _, taps ) →
+    String.fromInt (List.sum (List.map taps λt → t 10))
+
+
+main : Program
+main =
+    steps = [ ( 0, λx → x + 1 ), ( 1, λx → x + 2 ), ( 0, λx → x * 3 ) ]
+    right = List.foldr steps (initial 0) λ( key, t ) d → want key t d
+    left =
+        Dict.foldl (Dict.fromList (List.indexedMap steps λi s → ( i, s ))) (initial 1) λ_ ( key, t ) d →
+            want key t d
+    back =
+        Dict.foldr (Dict.fromList (List.indexedMap steps λi s → ( i, s ))) (initial 2) λ_ ( key, t ) d →
+            want key t d
+    Node.printLines
+        [ …counts (want 0 (λx → x) right)
+        , …counts (want 1 (λx → x - 1) left)
+        , …counts (want 2 (λx → x) back)
+        ]

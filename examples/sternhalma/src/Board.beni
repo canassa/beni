@@ -49,7 +49,7 @@ init ⊤ =
         , coord = c
         , occupant = Nothing
         }
-    coordToIndex = List.foldl indexed Dict.empty λcell dict →
+    coordToIndex = List.foldl indexed (Dict.empty ⊤) λcell dict →
         Dict.insert dict (coordKey cell.coord) cell.index
     { cells = indexed
     , coordToIndex = coordToIndex

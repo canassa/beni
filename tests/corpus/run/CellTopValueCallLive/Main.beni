@@ -1,0 +1,203 @@
+-- The live twin of CellTopValueCall: each fiber forks one in which a writer
+-- writes a cell in place, then calls a top-level function value whose body
+-- computes a function that masks the fiber or lends it: an `if`, a `case`, a
+-- block, a pipe, a call's answer, `Maybe.withDefault`, inside a tuple, a
+-- `List.map` callback, a helper, a value of another module and its helper, a
+-- lend. The call runs code the walk does not know, which can leave the fiber
+-- masked or lent while the writer's fiber, its child, runs on after a throw:
+-- refused at each call (ownership-v3-kernel.md §13 item 12, *A defect*, (d),
+-- *The ways in*, row 8; #2696). On Node no throw happens here.
+import Duration
+import Hoster
+import Io
+import List
+import Maybe
+import Node exposing (Program)
+import Ref
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+hosting : ⊤ → String
+hosting ⊤ =
+    r = Ref.make [ 1, 2 ]
+    t = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        Ref.update r λl → List.push l 5
+    Task.sleep (Duration.millis 5)
+    s = ints (Ref.get r)
+    Task.join t
+    s
+
+
+masker : ⊤ → ⊤
+masker ⊤ = Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 1)
+
+
+lender : ⊤ → ⊤
+lender ⊤ = Task.withScheduler (Task.scheduler λ⊤ → ⊤) λ⊤ → Task.sleep (Duration.millis 1)
+
+
+noop : ⊤ → ⊤
+noop ⊤ = ⊤
+
+
+wrap : (⊤ → ⊤) → (⊤ → ⊤)
+wrap g = λ⊤ → g ⊤
+
+
+keep : (⊤ → ⊤) → (⊤ → ⊤)
+keep g = g
+
+
+laterIf : ⊤ → ⊤
+laterIf = if True then masker else noop
+
+
+laterCase : ⊤ → ⊤
+laterCase =
+    case 1 of
+        1 →
+            masker
+
+        _ →
+            noop
+
+
+laterBlock : ⊤ → ⊤
+laterBlock =
+    n = 1
+    if n == 1 then masker else noop
+
+
+laterPipe : ⊤ → ⊤
+laterPipe = masker ▷ keep
+
+
+laterCall : ⊤ → ⊤
+laterCall = wrap masker
+
+
+laterDefault : ⊤ → ⊤
+laterDefault = Maybe.withDefault (Just masker) noop
+
+
+laterLend : ⊤ → ⊤
+laterLend = if True then lender else noop
+
+
+viaFn : ⊤ → ⊤
+viaFn ⊤ = laterIf ⊤
+
+
+topIf : ⊤ → String
+topIf ⊤ =
+    _ = Task.spawn hosting
+    laterIf ⊤
+    "topIf"
+
+
+topCase : ⊤ → String
+topCase ⊤ =
+    _ = Task.spawn hosting
+    laterCase ⊤
+    "topCase"
+
+
+topBlock : ⊤ → String
+topBlock ⊤ =
+    _ = Task.spawn hosting
+    laterBlock ⊤
+    "topBlock"
+
+
+topPipe : ⊤ → String
+topPipe ⊤ =
+    _ = Task.spawn hosting
+    laterPipe ⊤
+    "topPipe"
+
+
+topCall : ⊤ → String
+topCall ⊤ =
+    _ = Task.spawn hosting
+    laterCall ⊤
+    "topCall"
+
+
+topDefault : ⊤ → String
+topDefault ⊤ =
+    _ = Task.spawn hosting
+    laterDefault ⊤
+    "topDefault"
+
+
+topTuple : ⊤ → String
+topTuple ⊤ =
+    _ = Task.spawn hosting
+    ( _, n ) = ( laterIf ⊤, 1 )
+    _ = n
+    "topTuple"
+
+
+topMap : ⊤ → String
+topMap ⊤ =
+    _ = Task.spawn hosting
+    _ = List.map [ 1 ] λ_ → laterIf ⊤
+    "topMap"
+
+
+topHelper : ⊤ → String
+topHelper ⊤ =
+    _ = Task.spawn hosting
+    viaFn ⊤
+    "topHelper"
+
+
+topModule : ⊤ → String
+topModule ⊤ =
+    _ = Task.spawn hosting
+    Hoster.laterM ⊤
+    "topModule"
+
+
+topModuleHelper : ⊤ → String
+topModuleHelper ⊤ =
+    _ = Task.spawn hosting
+    Hoster.viaM ⊤
+    "topModuleHelper"
+
+
+topLend : ⊤ → String
+topLend ⊤ =
+    _ = Task.spawn hosting
+    laterLend ⊤
+    "topLend"
+
+
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ fiber topIf
+        , fiber topCase
+        , fiber topBlock
+        , fiber topPipe
+        , fiber topCall
+        , fiber topDefault
+        , fiber topTuple
+        , fiber topMap
+        , fiber topHelper
+        , fiber topModule
+        , fiber topModuleHelper
+        , fiber topLend
+        ]

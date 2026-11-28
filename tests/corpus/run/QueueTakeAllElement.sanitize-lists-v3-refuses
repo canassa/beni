@@ -1,0 +1,2 @@
+# v3 refuses the update: the element `takeAll` answers is the record the program reads after it (ownership-v3-kernel.md §3.4).
+25:17 record_still_used update

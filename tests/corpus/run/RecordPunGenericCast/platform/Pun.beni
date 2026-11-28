@@ -1,0 +1,15 @@
+--! A test platform: a value read at another type of the same JavaScript
+--! shape. A tuple and a record of fields `a` and `b` are one object
+--! (`backend.md` §4), and so are a constructor and a record of its fields.
+
+import Js
+
+
+--| The value itself, at any type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| The value itself at any type, beside a number.
+pub convPair : a → b × Int
+convPair v = ( Js.to (Js.from v), 1 )

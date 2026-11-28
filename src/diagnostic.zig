@@ -540,6 +540,12 @@ pub const Code = enum {
     /// `<script>` (`boundary.md` §9.4.7, `backend.md` §15.3). The
     /// lowering's, at the markup. Appended 2026-11-07 (#2208).
     trusted_types_sink,
+    /// A worded declaration of core or a platform whose body reaches no
+    /// JavaScript, and whose words claim less than the ownership checker
+    /// v3 finds in its body (`ownership-v3-kernel.md` §6 rule 10). The
+    /// checker's, at the declaration's name, in the package that declares
+    /// it. Appended 2026-11-19 (#2573).
+    false_ownership_word,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -646,6 +652,7 @@ pub fn title(code: Code) []const u8 {
         .worker_message_not_serializable => "WORKER MESSAGE NOT SERIALIZABLE",
         .worker_realm_violation => "WORKER REALM VIOLATION",
         .trusted_types_sink => "TRUSTED TYPES SINK",
+        .false_ownership_word => "OWNERSHIP WORD NOT TRUE",
         .module_worker_import_scripts => "IMPORTSCRIPTS IN A MODULE WORKER",
         .invalid_native_binding => "INVALID NATIVE BINDING",
         .obsolete_host_promise => "OBSOLETE HOST PROMISE",

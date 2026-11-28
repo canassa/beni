@@ -1,0 +1,29 @@
+-- The same cast as `GenericCastInPair`, handed as a function value to a
+-- holder of `a → List Int × Int`: where the function meets the holder, its
+-- wide answer location, read by the holder at a type that is not wide,
+-- lets what it holds escape (ownership-v3-kernel.md §3.4).
+import Node exposing (Program)
+import Pun
+
+
+g : a → b
+g x = Pun.conv ( x, x )
+
+
+apply : (a → List Int × Int), a → List Int × Int
+apply f x = f x
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    p = apply g x0
+    ( _, h ) = p
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

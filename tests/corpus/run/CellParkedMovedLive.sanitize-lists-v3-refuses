@@ -1,0 +1,4 @@
+# The live twins of CellParkedMoved (#2600): a body swaps the two parts of a pair, or copies the second to the first, and parks, while a writer fiber its caller spawned writes the first part in place: a loan of the second part the caller reads after changes. The body is a helper, a closure List.map runs, or a List.foldl callback. Each writer is refused.
+36:9 list_still_used value
+46:9 list_still_used value
+59:9 list_still_used value

@@ -1,0 +1,30 @@
+-- A constructor read as a record of its fields, handed to a function that
+-- updates it: the constructor's object has no slot in its own layout, so
+-- the slot `setA` writes is a cell no claim names, and v3 refuses the call
+-- (ownership-v3-kernel.md §3.4). The write was of the list alone, which
+-- nothing read after it, and in place `w`'s number read 5.
+import Node exposing (Program)
+import Pun
+
+
+type W
+    = W Int (List Int)
+
+
+setA : { a : Int, b : List Int } → { a : Int, b : List Int }
+setA r = { r | a = 5 }
+
+
+go : Int → String
+go n =
+    w = W n [ 1 ]
+    p : { a : Int, b : List Int }
+    p = Pun.conv w
+    p2 = setA p
+    case w of
+        W m _ →
+            "${String.fromInt p2.a} ${String.fromInt m}"
+
+
+main : Program
+main = Node.print (go 0)

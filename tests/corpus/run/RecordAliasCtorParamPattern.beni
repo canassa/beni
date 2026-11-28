@@ -1,0 +1,26 @@
+-- A parameter matched by a record alias's constructor reads the slot of
+-- each field it binds (ownership-v3-kernel.md §11.4): `kOf`'s contract
+-- reads `k`, so the caller's `{ r0 | k = 5 }` is refused, since `kOf r0`
+-- reads the old record after it. The contract read no slot before, and in
+-- place `kOf r0` answered 5.
+import Node exposing (Program)
+
+
+type alias KQ =
+    k : Int
+    q : List Int
+
+
+kOf : KQ → Int
+kOf (KQ k _) = k
+
+
+go : Int → String
+go n =
+    r0 = { k = n, q = [ 1 ] }
+    r1 = { r0 | k = 5 }
+    "${String.fromInt r1.k} ${String.fromInt (kOf r0)}"
+
+
+main : Program
+main = Node.print (go 0)

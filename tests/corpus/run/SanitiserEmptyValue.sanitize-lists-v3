@@ -1,0 +1,1 @@
+Dict.empty holds no value at any location of its contract, its deep level read through a type variable included, so bumped writes the list it takes out of it in place (ownership-v3-kernel.md §3.1).

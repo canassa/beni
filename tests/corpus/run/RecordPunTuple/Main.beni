@@ -1,0 +1,20 @@
+-- A tuple read as a record of the same JavaScript shape: `p.a` is a step
+-- that the tuple's construction does not have, so the part is `unknown`
+-- over the tuple, never `none` (ownership-v3-kernel.md §3.4), and v3
+-- refuses the push. As `none`, the push was accepted, and in place it
+-- pushed onto `xs`, which is read after it.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    p : { a : List Int, b : List Int }
+    p = Pun.conv ( xs, xs )
+    w = List.push p.a 9
+    "${String.fromInt (List.length w)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print (go 0)

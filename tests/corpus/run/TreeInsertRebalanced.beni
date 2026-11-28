@@ -1,0 +1,108 @@
+-- A record taken out of a red-black tree that `insert` built, and written in
+-- place (`ownership-v3-kernel.md` §4.4, *Two readings through a later root*).
+-- `balance` answers the tree that the recursive `insert` answered at two
+-- levels of its own answer, in its arms, and the cells of that tree were
+-- first read through the tree parameter: a root that holds each cell once
+-- tells its two levels apart only where an atom records it as the last root
+-- read through. Before, `insert`'s deep level was `twice`, and the push was
+-- refused.
+import List
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    n : Int
+    xs : List Int
+
+
+type NColor
+    = Red
+    | Black
+
+
+type Tree
+    = Node NColor Int R Tree Tree
+    | Leaf
+
+
+insert : Tree, Int, R → Tree
+insert tree key value =
+    case tree of
+        Leaf →
+            Node Red key value Leaf Leaf
+
+        Node nColor nKey nValue nLeft nRight →
+            if key < nKey then
+                balance nColor nKey nValue (insert nLeft key value) nRight
+            else if key == nKey then
+                Node nColor nKey value nLeft nRight
+            else
+                balance nColor nKey nValue nLeft (insert nRight key value)
+
+
+balance : NColor, Int, R, Tree, Tree → Tree
+balance color key value left right =
+    case right of
+        Node Red rK rV rLeft rRight →
+            case left of
+                Node Red lK lV lLeft lRight →
+                    Node
+                        Red
+                        key
+                        value
+                        (Node Black lK lV lLeft lRight)
+                        (Node Black rK rV rLeft rRight)
+
+                _ →
+                    Node color rK rV (Node Red key value left rLeft) rRight
+
+        _ →
+            case left of
+                Node Red lK lV (Node Red llK llV llLeft llRight) lRight →
+                    Node
+                        Red
+                        lK
+                        lV
+                        (Node Black llK llV llLeft llRight)
+                        (Node Black key value lRight right)
+
+                _ →
+                    Node color key value left right
+
+
+get : Tree, Int → Maybe R
+get tree k =
+    case tree of
+        Leaf →
+            Nothing
+
+        Node _ nk v l r →
+            if k < nk then
+                get l k
+            else if k == nk then
+                Just v
+            else
+                get r k
+
+
+pushAt : Tree, Int → List Int
+pushAt tree k =
+    case get tree k of
+        Just v →
+            List.push v.xs 9
+
+        Nothing →
+            []
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    t =
+        insert (insert (insert Leaf 1 { n = 1, xs = [ 1 ] }) 2 { n = 2, xs = [ 2 ] }) 3
+            { n = 3, xs = [ 3 ] }
+    Node.print (show (pushAt t 2))

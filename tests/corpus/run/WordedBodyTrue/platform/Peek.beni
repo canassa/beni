@@ -1,0 +1,61 @@
+--! A test platform: worded rows with beni bodies that reach no JavaScript, whose words are true of their bodies.
+
+import Dict exposing (Dict)
+import Help
+import Js
+import Ref exposing (Ref)
+
+
+--| `shallow`: the body reads the dictionary's storage alone.
+pub sizeBody : borrowed shallow Dict Int (List Int) → Int
+sizeBody d = Dict.size d
+
+
+--| `returned`: the body answers its parameter.
+pub same : returned List Int → List Int
+same l = l
+
+
+--| `fresh`: the body answers a new list, a copy of its parameter.
+pub copied : borrowed List Int → fresh List Int
+copied l = List.copy l
+
+
+--| `escaped`: the body keeps the function in a cell.
+pub keepFn : escaped (⊤ → Int) → Ref (⊤ → Int)
+keepFn f = Ref.make f
+
+
+--| `shallow`, beside a call of `round`, a body over JavaScript that sees no
+--| cell of `d`.
+pub sizeRound : borrowed shallow Dict Int (List Int) → Int
+sizeRound d = if round 1.5 == 2 then Dict.size d else 0
+
+
+--| `fresh`: a copy, beside text that JavaScript makes from numbers.
+pub copiedText : borrowed List Int → fresh List Int
+copiedText l =
+    if String.length (String.fromInt (7 // 2) ++ Debug.toString (toFloat 1)) > 0 then
+        List.copy l
+    else
+        []
+
+
+--| `shallow`, beside an identity compare of two new lists.
+pub sizeSame : borrowed shallow Dict Int (List Int) → Int
+sizeSame d = if Js.same [ 1 ] [ 1 ] then 0 else Dict.size d
+
+
+--| `shallow`, an alias of a function of another module that reads the
+--| dictionary's storage alone.
+pub aliasSize : borrowed shallow Dict Int (List Int) → Int
+aliasSize = Help.size
+
+
+--| `fresh`, an alias of a function that answers a record of a copy.
+pub aliasWrap : borrowed List Int → fresh { items : List Int }
+aliasWrap = wrapCopy
+
+
+wrapCopy : List Int → { items : List Int }
+wrapCopy l = { items = List.copy l }

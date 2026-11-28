@@ -1,0 +1,98 @@
+-- Conduit's shape: `update` hands a page's `update` its part of the model and
+-- wraps the answer with `updateWith`, whose message function goes to
+-- `Cmd.map`, where its answer escapes. The page's message type has more
+-- locations than one query of an answer keeps in work, and each location of
+-- the answer is now asked on its own, so the page's errors stay the model's
+-- own and `++` extends them in place (kernel §6 rule 2, *the answer of a
+-- function whose answer escapes*).
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Page =
+    errors : List String
+
+
+type PageMsg
+    = Fail
+    | M1 (List String)
+    | M2 (List String)
+    | M3 (List String)
+    | M4 (List String)
+    | M5 (List String)
+    | M6 (List String)
+    | M7 (List String)
+    | M8 (List String)
+    | M9 (List String)
+    | M10 (List String)
+    | M11 (List String)
+    | M12 (List String)
+    | M13 (List String)
+    | M14 (List String)
+    | M15 (List String)
+    | M16 (List String)
+    | M17 (List String)
+    | M18 (List String)
+    | M19 (List String)
+    | M20 (List String)
+    | M21 (List String)
+    | M22 (List String)
+    | M23 (List String)
+    | M24 (List String)
+    | M25 (List String)
+    | M26 (List String)
+    | M27 (List String)
+    | M28 (List String)
+    | M29 (List String)
+    | M30 (List String)
+
+
+pageUpdate : PageMsg, Page → Page × Cmd.Cmd PageMsg
+pageUpdate msg page =
+    case msg of
+        Fail →
+            ( { page | errors = page.errors ++ [ "failed" ] }, Cmd.none )
+
+        _ →
+            ( page, Cmd.none )
+
+
+type Model
+    = Article Page
+
+
+type Msg
+    = GotPage PageMsg
+
+
+updateWith : (sub → Model), (subMsg → Msg), sub × Cmd.Cmd subMsg → Model × Cmd.Cmd Msg
+updateWith toModel toMsg ( sub, subCmd ) = ( toModel sub, Cmd.map subCmd ⊤ toMsg )
+
+
+update : Msg, Model → Model × Cmd.Cmd Msg
+update msg model =
+    case ( msg, model ) of
+        ( GotPage sub, Article page ) →
+            updateWith Article GotPage (pageUpdate sub page)
+
+
+view : Model → Html Msg
+view model =
+    case model of
+        Article page →
+            <main>
+                <button id="fail" onClick={GotPage Fail}>fail</button>
+                <p id="errors">{String.join page.errors ","}</p>
+            </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( Article { errors = [ "first" ] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

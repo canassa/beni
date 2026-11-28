@@ -1,0 +1,2 @@
+# The lambda writes the elements of the list it is handed, which holds one list twice: refused at the call (ownership-v3-kernel.md §5, test 1).
+27:11 list_still_used call

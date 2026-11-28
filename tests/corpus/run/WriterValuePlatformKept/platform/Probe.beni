@@ -1,0 +1,8 @@
+--! A platform layer whose value is a writer of core that a call answers.
+
+idL : (List Int, Int → List Int) → (List Int, Int → List Int)
+idL f = f
+
+
+pub push : (List Int, Int → List Int)
+push = idL List.push

@@ -1,0 +1,32 @@
+-- The second module of CellStartedPairLive: a helper that runs the two
+-- functions it is handed, one that starts a fiber that runs two, a function
+-- that masks, and a type whose method masks.
+import Duration
+import Task
+
+
+pub twoCalls : (⊤ → ⊤), (Int → ⊤) → ⊤
+twoCalls f g =
+    f ⊤
+    g 1
+
+
+pub go2 : (⊤ → ⊤), (Int → ⊤) → ⊤
+go2 h k =
+    t = Task.spawn λ⊤ → twoCalls h k
+    Task.join t
+
+
+pub masker : Int → ⊤
+masker _ = Task.uninterruptible λ⊤ → Task.sleep (Duration.millis 1)
+
+
+pub type Mk
+    = Mk
+
+
+pub run : Mk → ⊤
+run m =
+    case m of
+        Mk →
+            masker 1

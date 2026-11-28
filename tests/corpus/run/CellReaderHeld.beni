@@ -1,0 +1,113 @@
+-- A fiber that only reads a cell (a reader, ownership-v3-kernel.md §13
+-- item 12) is still pending where the frame that spawned it returns: what
+-- it reads there escapes, and the caller writes a copy of it, accepted.
+-- Its live twin, CellReaderHeldLive, writes in place, refused (#2604).
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias H =
+    h : Ref (List Int)
+    f : Task.Fiber Int
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+handle : ⊤ → Ref (List Int) × Task.Fiber Int
+handle ⊤ =
+    r = Ref.make [ 1 ]
+    a = Task.spawn λ⊤ → List.length (Ref.get r)
+    ( r, a )
+
+
+answered : ⊤ → String
+answered ⊤ =
+    ( r, a ) = handle ⊤
+    ys = List.push (List.copy (Ref.get r)) 9
+    "${String.fromInt (Task.join a)} ${ints ys}"
+
+
+lent : ⊤ → List Int × Task.Fiber Int
+lent ⊤ =
+    r = Ref.make [ 1 ]
+    a = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        List.length (Ref.get r)
+    ( Ref.get r, a )
+
+
+loan : ⊤ → String
+loan ⊤ =
+    ( l, a ) = lent ⊤
+    ys = List.push (List.copy l) 9
+    "${String.fromInt (Task.join a)} ${ints ys}"
+
+
+into : Ref (List Int) → Task.Fiber Int
+into out =
+    r = Ref.make [ 1 ]
+    a = Task.spawn λ⊤ → List.length (Ref.get r)
+    Ref.set out (Ref.get r)
+    a
+
+
+stored : ⊤ → String
+stored ⊤ =
+    out = Ref.make [ 0 ]
+    a = into out
+    Ref.update out λl → List.push (List.copy l) 9
+    "${String.fromInt (Task.join a)} ${ints (Ref.get out)}"
+
+
+boxed : ⊤ → H
+boxed ⊤ =
+    r = Ref.make [ 1 ]
+    a = Task.spawn λ⊤ → List.length (Ref.get r)
+    { h = r, f = a }
+
+
+record : ⊤ → String
+record ⊤ =
+    x = boxed ⊤
+    a = x.f
+    ys = List.push (List.copy (Ref.get x.h)) 9
+    "${String.fromInt (Task.join a)} ${ints ys}"
+
+
+over : List Int → Task.Fiber Int
+over xs =
+    r = Ref.make xs
+    Task.spawn λ⊤ → List.length (Ref.get r)
+
+
+param : ⊤ → String
+param ⊤ =
+    xs = [ 1 ]
+    a = over xs
+    ys = List.push (List.copy xs) 9
+    "${String.fromInt (Task.join a)} ${ints ys}"
+
+
+both : ⊤ → Ref (List Int) × Task.Fiber Int
+both ⊤ =
+    r = Ref.make [ 1 ]
+    r2 = Ref.make [ 5 ]
+    a = Task.spawn λ⊤ → List.length (Ref.get r) + List.length (Ref.get r2)
+    ( r2, a )
+
+
+second : ⊤ → String
+second ⊤ =
+    ( r, a ) = both ⊤
+    ys = List.push (List.copy (Ref.get r)) 9
+    "${String.fromInt (Task.join a)} ${ints ys}"
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ answered ⊤, loan ⊤, stored ⊤, record ⊤, param ⊤, second ⊤ ]

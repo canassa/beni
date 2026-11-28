@@ -1,0 +1,46 @@
+-- A helper's argument that is pure and total is evaluated again where the
+-- event fires (browser-inline.md §8.2), and `Dict.insert` is total: the hole
+-- is not evaluated once, so the insert in place is refused under
+-- --ownership=v3 (ownership-v3-kernel.md §6 rule 12, *A hole evaluated once*).
+import Browser
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Got Int
+
+
+update : Msg, Int → Int
+update msg _ =
+    case msg of
+        Got n →
+            n
+
+
+helper : Dict String Int → Html Msg
+helper dd =
+    <div>
+        <p>{Dict.size dd}</p>
+        <button id="go" onClick={Got (Dict.size dd)}>go</button>
+    </div>
+
+
+choices : Dict String Int → Html Msg
+choices d = <section>{helper (Dict.insert d (String.fromInt (Dict.size d)) 1)}</section>
+
+
+view : Int → Html Msg
+view last =
+    <main>
+        {choices (Dict.fromList [ ( "a", 0 ) ])}
+        <p id="last">{last}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → 0, update = update, view = view })
+        "root"

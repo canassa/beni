@@ -1,0 +1,53 @@
+-- The live twin of `PatternPartsApart`: a list that holds one record twice
+-- (`ownership-v3-kernel.md` §4.4, *The parts of a list pattern are apart*).
+-- `local` matches `[ a, …rest ]` over a literal whose `[*]` is `twice`, so
+-- its parts carry no position and the update of `a`, which `rest`'s first
+-- record is, is refused. `firstOf` matches a parameter, whose parts are
+-- apart by the apart-arguments rule, so the update is refused at the call
+-- that hands it a list with one record twice (`element`).
+import Node exposing (Program)
+import String
+
+
+type alias R =
+    x : Int
+    xs : List Int
+
+
+mk : Int → R
+mk n = { x = n, xs = [ n ] }
+
+
+show : R → String
+show r = "${String.fromInt r.x}/${String.fromInt (List.length r.xs)}"
+
+
+showAll : List R → String
+showAll rs = String.join (List.map rs show) ","
+
+
+local : Int → String
+local n =
+    r = mk n
+    case [ r, r, mk (n + 1) ] of
+        [ a, …rest ] →
+            "${show { a | x = 99 }} ${showAll rest}"
+
+        [] →
+            "empty"
+
+
+firstOf : List R → String
+firstOf list =
+    case list of
+        [ a, …rest ] →
+            "${show { a | x = 99 }} ${showAll rest}"
+
+        [] →
+            "empty"
+
+
+main : Program
+main =
+    r = mk 5
+    Node.print "${local 1} ${firstOf [ r, r ]}"

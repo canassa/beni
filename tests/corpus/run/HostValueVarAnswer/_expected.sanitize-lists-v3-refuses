@@ -1,0 +1,2 @@
+# v3 refuses the push: `unhide` answers a value of no cell at a type variable that the caller reads as a list, a location the value's own reading does not have (ownership-v3-kernel.md §3.4).
+23:10 list_still_used List.push

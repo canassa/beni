@@ -1,0 +1,1 @@
+A dead `case` whose pattern binds the list itself, beside a read and a push of that list: built in place under --ownership=v3 and as a release (ReleaseAsListInPlace's comment; research report 152).

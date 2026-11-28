@@ -1,0 +1,29 @@
+-- An early return (`?`) of a value of no location still leaves the function
+-- there, with its parameter's cell as it was: the renewal a body publishes
+-- holds the old contents too (`ownership-v3-kernel.md` §13, item 3). Before,
+-- the early return was not recorded, `h`'s contract said its cell holds `ys`,
+-- and the update in place wrote the contents that `old` still reads.
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+h : Ref (List Int), List Int → Result String Int
+h r ys =
+    _ = (Err "e")?
+    Ref.set r ys
+    Ok 1
+
+
+main : Program
+main =
+    r = Ref.make [ 1 ]
+    old = Ref.get r
+    _ = h r [ 5 ]
+    Ref.update r λzs → List.push zs 2
+    Node.print (ints old)

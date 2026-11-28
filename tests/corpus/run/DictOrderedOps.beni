@@ -1,0 +1,52 @@
+-- The ordered storage edits, read back through `get` as well as `keys`, so
+-- an index that disagrees with the entries shows (`language.md` §6.8,
+-- *Ordered dictionaries and sets*; `backend.md` §4, *Ordered dictionaries*).
+-- `insertAt` clamps its index to `0..size`, and a NaN index (an `Int` can be
+-- one) clamps to 0; it moves an existing key. `swap` of a missing or equal key
+-- changes nothing. `sortBy` is stable and calls back once per entry, in
+-- order. `remove` reindexes the entries after the removed one. `Set` has
+-- the same three operations.
+import Dict exposing (Dict)
+import Node exposing (Program)
+import Set
+
+
+abc : ⊤ → Dict String Int
+abc ⊤ = Dict.fromList [ ( "a", 1 ), ( "b", 2 ), ( "c", 3 ) ]
+
+
+show : Dict String Int → String
+show d =
+    found = List.map (Dict.keys d) λk → "${k}=${Maybe.withDefault (Dict.get d k) 0}"
+    String.join found ","
+
+
+main : Program
+main =
+    nan = round (0.0 / 0.0)
+    sorted = Dict.sortBy (Dict.fromList [ ( "x", 2 ), ( "y", 1 ), ( "z", 2 ), ( "w", 1 ) ]) λk v →
+        Debug.log k v
+    Node.printLines
+        [ show (Dict.insertAt (abc ⊤) 1 "z" 0)
+        , show (Dict.insertAt (abc ⊤) (0 - 5) "z" 0)
+        , show (Dict.insertAt (abc ⊤) 99 "z" 0)
+        , show (Dict.insertAt (abc ⊤) nan "z" 0)
+        , show (Dict.insertAt (abc ⊤) 0 "c" 9)
+        , show (Dict.insertAt (abc ⊤) nan "c" 9)
+        , show (Dict.remove (Dict.insertAt (abc ⊤) nan "z" 0) "z")
+        , show (Dict.swap (abc ⊤) "a" "c")
+        , show (Dict.swap (abc ⊤) "a" "q")
+        , show (Dict.swap (abc ⊤) "b" "b")
+        , show (Dict.remove (abc ⊤) "a")
+        , show sorted
+        , String.join
+            (Set.toList (Set.insertAt (Set.fromList [ 1, 2, 3 ]) 0 3) ▷ List.map String.fromInt)
+            ","
+        , String.join
+            (Set.toList (Set.swap (Set.fromList [ 1, 2, 3 ]) 1 3) ▷ List.map String.fromInt)
+            ","
+        , String.join
+            (Set.toList (Set.sortBy (Set.fromList [ 3, 1, 2 ]) λn → n) ▷ List.map String.fromInt)
+            ","
+        , if Set.member (Set.insertAt (Set.fromList [ 1, 2 ]) nan 3) 3 then "member" else "lost"
+        ]

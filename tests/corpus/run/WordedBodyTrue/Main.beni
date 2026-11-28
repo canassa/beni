@@ -1,0 +1,54 @@
+-- The true twin of `WordedBodyFalse`: platform rows with ownership words and
+-- beni bodies that reach no JavaScript, each word true of its body, so each
+-- row stays and the program's writes are accepted in place where the words
+-- allow (ownership-v3-kernel.md §6 rule 10, *A worded body is checked
+-- against its walk*; research report 162). A list taken out of the
+-- dictionary is pushed in place before `sizeBody`, which reads the storage
+-- alone; a copy and a list a cell keeps are pushed in place too. Rows that
+-- call JavaScript which sees no cell of their parameters, and aliases, are
+-- checked the same way, and their true words stay (research report 164).
+import Dict exposing (Dict)
+import Node exposing (Program)
+import Peek
+import Ref
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+go : ⊤ → List String
+go ⊤ =
+    d0 = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+    xs = Maybe.withDefault (Dict.get d0 1) []
+    ys = List.push xs 5
+    n = Peek.sizeBody d0
+    a = [ 7 ]
+    b = List.push (Peek.copied a) 8
+    c = List.push (Peek.same [ 9 ]) 10
+    r = Peek.keepFn λ⊤ → 11
+    e0 = Dict.fromList [ ( 1, [ 1 ] ), ( 2, [ 2 ] ) ]
+    es = List.push (Maybe.withDefault (Dict.get e0 1) []) 6
+    m1 = Peek.sizeRound e0
+    m2 = Peek.sizeSame e0
+    m3 = Peek.aliasSize e0
+    f = [ 3 ]
+    g = List.push (Peek.copiedText f) 4
+    h = (Peek.aliasWrap f).items
+    [ ints ys
+    , String.fromInt n
+    , ints a
+    , ints b
+    , ints c
+    , String.fromInt ((Ref.get r) ⊤)
+    , ints es
+    , String.fromInt (m1 + m2 + m3)
+    , ints f
+    , ints g
+    , ints h
+    ]
+
+
+main : Program
+main = Node.printLines (go ⊤)

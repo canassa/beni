@@ -1,0 +1,166 @@
+-- The live twins of CellContentsAtTheirPlace (#2594, #2580): each part of
+-- a cell's contents is at its own place, and each is still written where
+-- it is: a loan of the outer list read after a helper pushes onto it, a
+-- loan of an element read after a helper writes it, the inner list read
+-- by its own name after the elements are written, the outer list by its
+-- own name after a push, a `Dict` read after a helper removes from it, a
+-- cache's old `Dict` read after a closure inserts, and a second cell that
+-- holds the first one's contents read after the first one's elements are
+-- written; and a closure run twice whose first run pushes a second copy of
+-- an element, by one arm, and whose second run writes the element in place,
+-- by the other arm, and the same where each run pushes one captured list.
+-- Each read sees the old value, so each write is refused.
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showN : List (List Int) → String
+showN ls = String.join (List.map ls ints) "|"
+
+
+firstOr : List a, a → a
+firstOr xs d =
+    case xs of
+        [ x, …_ ] →
+            x
+
+        [] →
+            d
+
+
+bumpL : Ref (List (List Int)) → ⊤
+bumpL r = Ref.update r λv → List.push v [ 30 ]
+
+
+bumpIn : Ref (List (List Int)) → ⊤
+bumpIn r = Ref.update r λv → List.update v 0 λl → List.push l 9
+
+
+touchD : Ref (Dict Int (List Int)), Int → Int
+touchD c key =
+    Ref.update c λd → Dict.remove d key
+    Dict.size (Ref.get c)
+
+
+outerLoan : ⊤ → String
+outerLoan ⊤ =
+    r = Ref.make [ [ 1 ] ]
+    old = Ref.get r
+    bumpL r
+    showN old
+
+
+innerLoan : ⊤ → String
+innerLoan ⊤ =
+    r = Ref.make [ [ 1 ] ]
+    el = firstOr (Ref.get r) []
+    bumpIn r
+    ints el
+
+
+innerByName : ⊤ → String
+innerByName ⊤ =
+    xs = [ 1 ]
+    r = Ref.make [ xs ]
+    bumpIn r
+    ints xs
+
+
+outerByName : ⊤ → String
+outerByName ⊤ =
+    ys = [ [ 1 ] ]
+    r = Ref.make ys
+    bumpL r
+    showN ys
+
+
+dictLoan : ⊤ → String
+dictLoan ⊤ =
+    cd = Ref.make (Dict.fromList [ ( 1, [ 38 ] ), ( 2, [ 39 ] ) ])
+    d0 = Ref.get cd
+    _ = touchD cd 1
+    String.fromInt (Dict.size d0)
+
+
+cacheLoan : ⊤ → String
+cacheLoan ⊤ =
+    c = Ref.make (Dict.fromList [ ( 0, [ 0 ] ) ])
+    d0 = Ref.get c
+    put = λk → Ref.update c λd → Dict.insert d k [ k ]
+    put 3
+    String.fromInt (Dict.size d0)
+
+
+shared : ⊤ → String
+shared ⊤ =
+    r1 = Ref.make [ [ 1 ] ]
+    r2 = Ref.make [ [ 2 ] ]
+    Ref.set r2 (Ref.get r1)
+    bumpIn r1
+    showN (Ref.get r2)
+
+
+twiceF : (Int → ⊤) → ⊤
+twiceF fn =
+    fn 0
+    fn 1
+
+
+twiceArms : ⊤ → String
+twiceArms ⊤ =
+    cl = Ref.make [ [ 1 ] ]
+    twiceF λi →
+        if i == 0 then
+            Ref.update cl λv → List.push v (Maybe.withDefault (List.head v) [])
+        else
+            Ref.update cl λv → List.update v 0 λl → List.push l 9
+    showN (Ref.get cl)
+
+
+twiceArmsDict : ⊤ → String
+twiceArmsDict ⊤ =
+    cd = Ref.make (Dict.fromList [ ( 0, [ 1 ] ) ])
+    _ = List.map [ 0, 1 ] λi →
+        if i == 0 then
+            Ref.update cd λd → Dict.insert d 1 (Maybe.withDefault (Dict.get d 0) [])
+        else
+            Ref.update cd λd → Dict.update d 0 λm → Maybe.map m λl → List.push l 9
+    String.join
+        (List.map (Dict.toList (Ref.get cd)) λ( k, v ) → "${String.fromInt k}=${ints v}")
+        " "
+
+
+twiceCaptured : ⊤ → String
+twiceCaptured ⊤ =
+    snap = [ 0 ]
+    hist = Ref.make [ [ 5 ] ]
+    _ = List.map [ 0, 1, 2 ] λi →
+        if i < 2 then
+            Ref.update hist λh → List.push h snap
+        else
+            Ref.update hist λh → List.update h 1 λl → List.push l 9
+    showN (Ref.get hist)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ outerLoan ⊤
+        , innerLoan ⊤
+        , innerByName ⊤
+        , outerByName ⊤
+        , dictLoan ⊤
+        , cacheLoan ⊤
+        , shared ⊤
+        , twiceArms ⊤
+        , twiceArmsDict ⊤
+        , twiceCaptured ⊤
+        ]

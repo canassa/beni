@@ -1,0 +1,12 @@
+--! A test platform: rows whose JavaScript puts one value at two places of a new list.
+
+--| JavaScript `(a) => [a, a]`.
+pub foreign pure dupW : stored a → fresh List a
+
+
+--| JavaScript `(a, b) => [a, b, a]`.
+pub foreign pure tripW : stored a, stored a → fresh List a
+
+
+--| JavaScript `(n) => { const r = { x: n, xs: [n] }; return [r, r]; }`.
+pub foreign pure mkW : unused Int → fresh List { x : Int, xs : List Int }

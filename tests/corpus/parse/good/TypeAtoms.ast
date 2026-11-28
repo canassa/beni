@@ -16,7 +16,9 @@
       (type_con Int)
       (type_con String)))
   (definition c
-    (ident Dict.empty))
+    (apply
+      (ident Dict.empty)
+      (unit)))
   (annotation d
     (type_unit))
   (definition d

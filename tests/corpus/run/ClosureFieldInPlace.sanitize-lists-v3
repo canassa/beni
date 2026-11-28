@@ -1,0 +1,1 @@
+The update and the push are accepted under v3 and run in place: the closure mk answers holds only the m.key its run reads (ownership-v3-kernel.md §6 rule 3, *Every holder of a closure observes it only through its runs*).

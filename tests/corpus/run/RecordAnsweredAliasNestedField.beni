@@ -1,0 +1,44 @@
+-- A callee writes a field of the record nested in its first parameter and
+-- answers its second, and the caller hands it a record and that record's
+-- nested field (kernel §5 test 2, §11). `Record.copy` copies one level, so
+-- the copy's `p` is still the record handed second. In place the answer
+-- would see the write: "5 5", where the copying program prints "5 0".
+-- v3 refuses both calls.
+import Node exposing (Program)
+
+
+type alias P =
+    a : Int
+    b : Int
+
+
+type alias R =
+    x : Int
+    p : P
+
+
+g : R, P → R × P
+g u v = ( { u | p = { (u.p) | a = u.p.a + 5 } }, v )
+
+
+direct : Int → R × P
+direct k =
+    r = { x = k, p = { a = k, b = 0 } }
+    g r r.p
+
+
+copied : Int → R × P
+copied k =
+    r = { x = k, p = { a = k, b = 0 } }
+    g (Record.copy r) r.p
+
+
+show : R × P → String
+show t =
+    case t of
+        ( u, v ) →
+            "${String.fromInt u.p.a} ${String.fromInt v.a}"
+
+
+main : Program
+main = Node.printLines [ show (direct 0), show (copied 0) ]

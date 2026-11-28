@@ -1,0 +1,8 @@
+--! A test platform: rows whose JavaScript puts one new record at two places of a new value.
+
+--| JavaScript `(n) => { const r = { x: n }; return { a: r, b: r }; }`.
+pub foreign pure mkTup : unused Int → fresh { x : Int } × { x : Int }
+
+
+--| JavaScript `(n) => { const r = { x: n }; return { a: r, items: [r] }; }`.
+pub foreign pure mkMixed : unused Int → fresh { a : { x : Int }, items : List { x : Int } }

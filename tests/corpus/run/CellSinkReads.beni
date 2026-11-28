@@ -1,0 +1,61 @@
+-- A sink that `Log.setSink` was handed reads a cell. Any code that logs
+-- runs it, at any point (ownership-v3-kernel.md §13 item 12, *A defect*), so
+-- it shares the handle, and the function `Ref.update` or `Ref.modify`
+-- runs, which logs before the store-back, writes a copy of the contents:
+-- accepted. Its live twin, CellSinkReadsLive, writes in place, refused
+-- (#2604, #2605).
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+say : ⊤ → ⊤
+say ⊤ = Log.info "mid"
+
+
+go : ⊤ → String
+go ⊤ =
+    r = Ref.make [ 1, 2 ]
+    Log.setSink λent → Debug.log "sink ${ints (Ref.get r)}" ⊤
+    Ref.update r λl →
+        l2 = List.push (List.copy l) 5
+        Log.info "mid"
+        l2
+    ints (Ref.get r)
+
+
+modify : ⊤ → String
+modify ⊤ =
+    r = Ref.make [ 1, 2 ]
+    Log.setSink λent → Debug.log "sink ${ints (Ref.get r)}" ⊤
+    n = Ref.modify r λl →
+        l2 = List.push (List.copy l) 6
+        Log.info "mid"
+        ( List.length l2, l2 )
+    "${String.fromInt n} ${ints (Ref.get r)}"
+
+
+closure : ⊤ → String
+closure ⊤ =
+    r = Ref.make [ 1, 2 ]
+    Log.setSink λent → Debug.log "sink ${ints (Ref.get r)}" ⊤
+    bump =
+        λ⊤ →
+            Ref.update r λl →
+                l2 = List.push (List.copy l) 7
+                say ⊤
+                l2
+    bump ⊤
+    ints (Ref.get r)
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ go ⊤, modify ⊤, closure ⊤ ]

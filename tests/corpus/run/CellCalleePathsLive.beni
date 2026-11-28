@@ -1,0 +1,147 @@
+-- The live twins of CellCalleePaths: a path that keeps `present` and puts
+-- it in `future` too; a value taken out of the cell before a call whose
+-- other path writes it; a list one path moves, written while a value taken
+-- before is read after; the keeping path in an arm of the caller; a list
+-- taken out of `future` after one call's path moved it there, which another
+-- call's path writes. Each read sees the old value: each write is refused.
+import List
+import Maybe
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+type alias Hist =
+    present : List Int
+    future : List (List Int)
+
+
+type Cmd
+    = Add Int
+    | Undo
+    | Keep
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+showH : Hist → String
+showH h =
+    fut = String.join (List.map h.future ints) "|"
+    "${ints h.present} / ${fut}"
+
+
+apply : Ref Hist, Cmd → ⊤
+apply r c =
+    case c of
+        Add k →
+            Ref.update r λh → { h | present = List.push h.present k }
+        Undo →
+            Ref.update r λh → { present = [ 0 ], future = List.push h.future h.present }
+        Keep →
+            Ref.update r λh → { h | future = List.push h.future h.present }
+
+
+type Step
+    = Move
+    | Bump
+
+
+step : Ref Hist, Step → ⊤
+step r s =
+    case s of
+        Move →
+            Ref.update r λh → { present = [ 0 ], future = List.push h.future h.present }
+        Bump →
+            Ref.update r λh → { h | future = List.map h.future λl → List.push l 9 }
+
+
+kept : Int → String
+kept seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    apply r Keep
+    apply r (Add 1)
+    showH (Ref.get r)
+
+
+loanAfter : Int → String
+loanAfter seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    old = (Ref.get r).present
+    apply r (Add 1)
+    ints old
+
+
+movedWritten : Int → String
+movedWritten seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    old = (Ref.get r).present
+    apply r Undo
+    Ref.update r λh → { h | future = List.map h.future λl → List.push l 9 }
+    ints old
+
+
+keptInArm : Int → String
+keptInArm seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    if seed > 1 then
+        apply r Keep
+    else
+        ⊤
+    apply r (Add 1)
+    showH (Ref.get r)
+
+
+takenThenBumped : Int → String
+takenThenBumped seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    step r Move
+    x = Maybe.withDefault (List.last (Ref.get r).future) []
+    step r Bump
+    ints x
+
+
+takenThenChained : Int → String
+takenThenChained seed =
+    r = Ref.make { present = [ seed ], future = [] }
+    step r Move
+    x = Maybe.withDefault (List.last (Ref.get r).future) []
+    step r Move
+    step r Bump
+    ints x
+
+
+step3 : Ref (List Int × List Int), Int → ⊤
+step3 r k =
+    case k of
+        0 →
+            Ref.update r λv → ( List.push v.0 1, v.1 )
+
+        1 →
+            Ref.update r λv → ( [ 0 ], v.0 )
+
+        _ →
+            ⊤
+
+
+twoPathsLoan : Int → String
+twoPathsLoan seed =
+    r = Ref.make ( [ seed ], [ 0 ] )
+    step3 r 2
+    y = (Ref.get r).0
+    step3 r 0
+    ints y
+
+
+main : Program
+main =
+    Node.printLines
+        [ kept 1
+        , loanAfter 2
+        , movedWritten 3
+        , keptInArm 4
+        , takenThenBumped 5
+        , takenThenChained 6
+        , twoPathsLoan 7
+        ]

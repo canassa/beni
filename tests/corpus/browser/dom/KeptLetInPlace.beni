@@ -1,0 +1,42 @@
+-- The `dom` lowering keeps a `let` that only its root reads (backend.md
+-- §15.4, *The `let` rule*): `xs` reads no path, so the root makes it at the
+-- first render and keeps it in the instance. `ys` reads `model.k`, so each
+-- render pushes onto the one kept array. A push in place would show
+-- `1,2,0,1` after a click. The lowering says it keeps `xs`
+-- (`Lowering.keeps_let`), so `--ownership=v3` refuses the push
+-- (ownership-v3-kernel.md §6.14).
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    k : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | k = model.k + 1 }
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+view : Model → Html Msg
+view model =
+    xs = [ 1, 2 ]
+    ys = List.push xs model.k
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <p>{show ys}</p>
+    </main>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → { k = 0 }, update = update, view = view }

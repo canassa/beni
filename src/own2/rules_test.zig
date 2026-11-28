@@ -99,6 +99,8 @@ const layers = [_]Entry{
     .{ .file = "Forest.zig", .layer = 3, .max_lines = 380 },
     // Conditions, split from `Contract` (#1714).
     .{ .file = "Conds.zig", .layer = 3, .max_lines = 200 },
+    // The pre-pass's dispatch edges, each term's once (research report 131).
+    .{ .file = "TopEdges.zig", .layer = 3, .max_lines = 540 },
     // The answers occurrence (§2.11.3).
     .{ .file = "AnsOcc.zig", .layer = 4, .max_lines = 35 },
     .{ .file = "Contract.zig", .layer = 4, .max_lines = 800 },
@@ -334,6 +336,8 @@ const layers = [_]Entry{
     .{ .file = "HandedWrites.zig", .layer = 12, .max_lines = 175 },
     // Nested codes' captures, split from `Groups` (#2028).
     .{ .file = "CodeCaps.zig", .layer = 12, .max_lines = 90 },
+    // A worded row of a keyed collection, split from `Groups` (ownership-v3-kernel.md §12).
+    .{ .file = "Keyed.zig", .layer = 12, .max_lines = 25 },
     // A parameter annotated with a type variable, split from `Groups` (#2028).
     .{ .file = "TypeVarParam.zig", .layer = 12, .max_lines = 95 },
     // A group's codes solved on their own and its local cycles, split from `Groups` (§2.12, #2035).
@@ -345,7 +349,9 @@ const layers = [_]Entry{
     // Evidence terms as function values (#1708).
     // Which types share one place graph (§2.1, *A family*).
     .{ .file = "Family.zig", .layer = 12, .max_lines = 260 },
-    .{ .file = "Groups.zig", .layer = 13, .max_lines = 1900 },
+    // 2 000 since research report 131: each reading of an alias kept (`applied`).
+    // 2 010 since research report 145: the adapter counts its work, and reads a leaf with no stack.
+    .{ .file = "Groups.zig", .layer = 13, .max_lines = 2010 },
     // A refused loan's text, split from `Message` (#1991).
     .{ .file = "LoanNote.zig", .layer = 13, .max_lines = 35 },
     // How a block names what is local to a module, split from `Block` (#1991).
@@ -438,6 +444,10 @@ const not_slots = [_]struct { file: []const u8, needle: []const u8 }{
     // A call and its marked selection, compared as stored: an equal run is the same condition, and a
     // miss only instantiates it again (#2418).
     .{ .file = "CondOnce.zig", .needle = "sliceAsBytes(key)" },
+    // An alias's arguments, parameter indices of a head and no slot: a kept reading is hashed and
+    // compared by them (research report 131).
+    .{ .file = "Family.zig", .needle = "std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(args))" },
+    .{ .file = "Family.zig", .needle = "std.mem.eql(u32, t.memo_args.items[kept.args[0]..kept.args[1]], args)" },
 };
 /// Files that read a tree's kid by a step word; `Trees.rowKid` or the reason it is not
 /// needed is in each (§2.1, *One rule per reader*). `Forest.at`'s nothing is no reading:
@@ -890,7 +900,7 @@ test "the layering table has each file once and every layer below the next" {
         for (layers[i + 1 ..]) |b| try testing.expect(!std.mem.eql(u8, a.file, b.file));
         if (i > 0) try testing.expect(layers[i - 1].layer <= a.layer);
     }
-    try testing.expectEqual(@as(usize, 169), layers.len);
+    try testing.expectEqual(@as(usize, 171), layers.len);
     try testing.expectEqual(@as(usize, 21), causes.len);
 }
 

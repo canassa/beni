@@ -1,0 +1,8 @@
+# The live twins of CellWrittenInTwoIfs: a loan taken before two `if`s that write the cell, between them, after the second of three, or in an arm of an `if` and picked by another, read after a later write; a list two `if`s pick and a third writes. Each read sees the old value, so each write is refused; the writes before the loan is taken are accepted, but for the first of three, which is refused: of a value held through three arms the checker keeps the innermost and the outermost (§6 rule 7, amended 2026-11-22).
+21:9 list_still_used call
+23:9 list_still_used call
+34:9 list_still_used call
+44:9 list_still_used call
+47:9 list_still_used call
+57:9 list_still_used call
+66:23 list_still_used List.set

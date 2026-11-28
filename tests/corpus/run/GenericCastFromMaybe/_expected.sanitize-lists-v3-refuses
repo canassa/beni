@@ -1,0 +1,2 @@
+# v3 refuses the push: `fm` answers the pair inside its `Maybe` at its result's type variable, which the caller reads as `List Int × Int`; the number hides a list, so the pair escapes at the call (ownership-v3-kernel.md §3.4).
+29:22 list_still_used List.push

@@ -1,0 +1,12 @@
+--! A project's own platform layer: a key with a comparer the program gives.
+
+import Hosted exposing (Key)
+import Js
+
+
+--| A key of `v`'s type ordered by `f`.
+pub byKey : (a, a → Order), a → Key
+    where a.compare : a, a → Order
+byKey f v =
+    t = Js.get (Js.from (Hosted.key v)) "t"
+    Js.to (Js.object [ ( "t", t ), ( "c", Js.from f ), ( "v", Js.from v ) ])

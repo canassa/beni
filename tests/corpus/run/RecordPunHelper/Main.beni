@@ -1,0 +1,26 @@
+-- A tuple of numbers read as a record, handed to a function that updates
+-- it: the slot that `setA` writes is a slot that the tuple's own layout
+-- has no location for, so no cell of the frame names the object, and v3
+-- refuses the call (ownership-v3-kernel.md §3.4). The tuple held no cell,
+-- the write was a write of nothing, and in place `t` read 5.
+import Node exposing (Program)
+import Pun
+
+
+setA : { a : Int, b : Int } → { a : Int, b : Int }
+setA r = { r | a = 5 }
+
+
+go : Int → String
+go n =
+    t = ( n, 1 )
+    p : { a : Int, b : Int }
+    p = Pun.conv t
+    p2 = setA p
+    case t of
+        ( m, _ ) →
+            "${String.fromInt p2.a} ${String.fromInt m}"
+
+
+main : Program
+main = Node.print (go 0)

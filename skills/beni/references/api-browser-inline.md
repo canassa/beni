@@ -88,6 +88,7 @@ module Inline
   value passes : V → ⊤  -- impure
   value prop : V, V, V → ⊤  -- impure
   value region : V, V, V → V  -- impure
+  value renew : V → ⊤  -- impure
   value root : V → V  -- impure
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value routeUrl : String, String → Url  -- impure

@@ -1408,6 +1408,38 @@ test "updating every field of a wide record is linear in its width" {
     try s.finish("record updates of a wide record", verdict);
 }
 
+// Research report 145: a literal of n number fields and one update that
+// writes all n cost the v3 ownership check n²: the budget read the
+// instance of the record type that the type check made for each reference,
+// whole, and every later read of a field projected the record by a scan of
+// its parts and compared its slot with every slot written. Each is a
+// lookup now (ownership-v3-kernel.md §8). Calibration (ReleaseFast, the
+// `ownership3_module` event of the file): before, 184.5 / 810.8 ms at
+// 1 500 / 3 000 fields, a ratio of 4.4; after, 3.2 / 6.3 ms, 2.0. The type
+// check of the same file takes 4.3 s at 3 000 and is not timed here.
+// n = 1 500, and the 3 000 of the fault within 200 ms.
+test "the v3 ownership check of an update of every field of a wide record is linear in its width" {
+    var s = try Perf.init(.alone);
+    defer s.deinit();
+    try s.w.write("W.beni", try wholeUpdate(s.arena(), 1_500));
+    try s.w.write("W2.beni", try wholeUpdate(s.arena(), 3_000));
+    const own: []const []const u8 = &.{ "--ownership=v3", "--ownership-everywhere" };
+    try s.finish("v3 on an update of every field", try s.eventRatio("W.beni", "W2.beni", 1_500, "ownership3_module", own));
+    try s.finish("v3 on an update of 3 000 fields", try s.eventBound(&.{ "check", "--no-cache", "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", "--ownership=v3", "--ownership-everywhere", "W2.beni" }, "W2.beni", "ownership3_module", 200));
+}
+
+/// A literal of `count` number fields and one update that writes each
+/// field with the next one's value (the blind round's fault).
+fn wholeUpdate(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "go : Int → Int\ngo n =\n    r0 = { f0 = 0");
+    for (1..count) |i| try out.print(arena, ", f{d} = {d}", .{ i, i });
+    try out.appendSlice(arena, " }\n    r1 = { r0 | f0 = r0.f1");
+    for (1..count) |i| try out.print(arena, ", f{d} = r0.f{d}", .{ i, (i + 1) % count });
+    try out.print(arena, " }}\n    r1.f0 + r1.f{d}\n", .{count - 1});
+    return out.toOwnedSlice(arena);
+}
+
 /// `type alias Wide` of `count` `Int` fields, and one function updating
 /// each of them: `[ { m | f0 = 0 }, { m | f1 = 1 }, … ]`.
 fn wideUpdates(arena: std.mem.Allocator, count: usize) ![]const u8 {

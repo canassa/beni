@@ -1,0 +1,20 @@
+-- A platform row that puts the answer of its function parameter in the
+-- result (`once returned (⊤ → a) → Int`), where the result has no
+-- location: the answer escapes, and with it what the function captured
+-- (ownership-v3-kernel.md §6 rule 10). Before, it went nowhere.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    h = Pun.run λ⊤ → x0
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

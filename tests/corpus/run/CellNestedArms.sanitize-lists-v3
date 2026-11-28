@@ -1,0 +1,1 @@
+Each push is accepted and runs in place: nothing reads an old list of the cell after a write, through 2⁶ ways of nested arms whose versions join at each level (ownership-v3-kernel.md §8, §13 item 6; #2599). The deeper shapes and their live twins are in check_test.zig.

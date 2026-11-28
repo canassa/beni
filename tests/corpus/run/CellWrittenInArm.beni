@@ -1,0 +1,96 @@
+-- A cell written in place in one arm of an `if` or a `case`, or in both,
+-- is read after it (#2594); so is a list written in one arm and read through
+-- a call that answers it. The arms are never one run, so what the join holds
+-- from the arm that did not write is no holder of the write: each write is
+-- accepted and runs in place (ownership-v3-kernel.md §6 rule 7, amended).
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+idl : List Int → List Int
+idl l = l
+
+
+oneArm : Int → String
+oneArm x =
+    cl = Ref.make [ 1 ]
+    if x > 0 then
+        Ref.update cl λl → List.push l 7
+    ints (Ref.get cl)
+
+
+bothArms : Int → String
+bothArms x =
+    cl = Ref.make [ 1 ]
+    if x > 0 then
+        Ref.update cl λl → List.push l 7
+    else
+        Ref.update cl λl → List.set l 0 8
+    "${ints (Ref.get cl)}/${String.fromInt (List.length (Ref.get cl))}"
+
+
+caseArms : Int → String
+caseArms x =
+    cl = Ref.make [ 1, 2 ]
+    case x of
+        0 →
+            Ref.update cl λl → List.push l 0
+        1 →
+            Ref.set cl [ 9 ]
+        _ →
+            ⊤
+    ints (Ref.get cl)
+
+
+valueIf : Int → String
+valueIf x =
+    cl = Ref.make [ 1 ]
+    n =
+        if x > 0 then
+            Ref.update cl λl → List.push l 7
+            1
+        else
+            2
+    "${String.fromInt n}:${ints (Ref.get cl)}"
+
+
+dictArm : Int → String
+dictArm x =
+    cd = Ref.make (Dict.fromList [ ( 1, [ 1 ] ) ])
+    if x > 0 then
+        Ref.update cd λd → Dict.insert d 2 [ 2 ]
+    String.fromInt (Dict.size (Ref.get cd))
+
+
+listArm : Int → String
+listArm x =
+    xs = [ 1 ]
+    ys = if x > 0 then List.set xs 0 7 else xs
+    ints (idl ys)
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ oneArm 1
+        , oneArm 0
+        , bothArms 1
+        , bothArms 0
+        , caseArms 0
+        , caseArms 1
+        , caseArms 2
+        , valueIf 1
+        , valueIf 0
+        , dictArm 1
+        , dictArm 0
+        , listArm 1
+        , listArm 0
+        ]

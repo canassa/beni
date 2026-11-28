@@ -1,0 +1,31 @@
+--! A project's own platform layer: a key type whose `compare` keeps the
+--! list it is handed, made a key here, where the program does not judge it.
+
+import Hosted
+import Js
+
+
+--| A box of a list.
+pub type Box
+    = Box (List Int)
+
+
+cell : Js.Ref (List Int)
+cell = Js.ref [ 0 ]
+
+
+--| The order of two boxes; it keeps the first box's list.
+pub compare : Box, Box → Order
+compare (Box a) (Box b) =
+    _ = Js.write cell a
+    if List.length a > List.length b then GT else LT
+
+
+--| What `compare` kept.
+pub stashed : ⊤ → List Int
+stashed ⊤ = Js.read cell
+
+
+--| A key of a box.
+pub key : List Int → Hosted.Key
+key xs = Hosted.key (Box xs)

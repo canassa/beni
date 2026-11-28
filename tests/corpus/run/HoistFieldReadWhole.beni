@@ -1,0 +1,24 @@
+-- The live twin of `HoistFieldRead`: after the update the old name is read
+-- whole, which no temporary stands for, so v3 refuses the update
+-- (`ownership-v3-kernel.md` §11, *A read of a written field, read first*).
+import Node exposing (Program)
+import String
+
+
+type alias P =
+    x : Int
+    y : Int
+
+
+sum : P → Int
+sum p = p.x + p.y
+
+
+inLet : P, Int → Int
+inLet p n =
+    q = { p | x = n }
+    q.x * 100 + sum p
+
+
+main : Program
+main = Node.print (String.fromInt (inLet { x = 3, y = 4 } 6))

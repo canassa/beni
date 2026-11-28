@@ -1852,7 +1852,7 @@ fn parseProduct(p: *Parse) Allocator.Error!Index {
     // a type — `unknown → a` still names a variable. What it may stand on,
     // and in which package, is lowering's to decide.
     if (p.in_signature and p.peek() == .lower_ident and canStartTypeAtom(p.peekAt(1)) and p.peekAt(1) != .invalid and
-        Ast.OwnWord.inSignature(p.tokenText(p.tok_i)) != null)
+        (Ast.OwnWord.inSignature(p.tokenText(p.tok_i)) != null or Ast.OwnWord3.inSignature(p.tokenText(p.tok_i)) != null))
     {
         if (try p.enter()) |placeholder| return placeholder;
         defer p.leave();

@@ -1,0 +1,21 @@
+--! A test platform: a `Js.Value` that is a list in one arm.
+
+import Js
+
+
+--| A new list of `x`, or `null`, read at another type.
+pub enc : Bool, a → b
+enc c x = Js.to (if c then Js.from [ x ] else Js.null)
+
+
+--| A `Maybe` as a new list of its value, or `null`, read at another type.
+pub encMaybe : Maybe a → b
+encMaybe m =
+    v =
+        case m of
+            Just x →
+                Js.from [ x ]
+
+            Nothing →
+                Js.null
+    Js.to v

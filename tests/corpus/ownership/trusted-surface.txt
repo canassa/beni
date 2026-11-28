@@ -19,9 +19,10 @@ core       Debug.log             ownership/JsPure.beni           2:returned>-+re
 core       Debug.toString        ownership/JsPure.beni           -
 core       Js.from               ownership/core/JsWords.beni     1:returned>-+res:->fresh
 core       Js.to                 ownership/core/JsWords.beni     1:returned>-+res:->fresh
+# same reads both operands: in place, a list kept from before a write is === to the written one
+core       Js.same               ownership/core/JsWords.beni     1:borrowed>unused|2:borrowed>unused
 # unused is the bottom of the order: no word claims less
 core       Js.entryWindow        browser/managed/Network/Main.beni - Http.get
-core       Js.same               ownership/core/JsWords.beni     -
 core       Js.isNull             ownership/core/JsWords.beni     -
 core       Js.isUndefined        ownership/core/JsWords.beni     -
 core       Js.isNullish          ownership/core/JsWords.beni     -
@@ -79,3 +80,11 @@ browser-inline Tea.application    ownership/EntryUrlTaggers.beni   1:entry>-
 # document delegates to element with the same protocol; no further ownership promise.
 browser-inline Tea.document       browser/inline/DocumentTitle.beni     -
 page       Page.sandbox           browser/Counter.beni             1:entry>-
+# Dict's rows that v1 reads (ownership-v3-kernel.md §12): a new dictionary, and reads that borrow. v1 judges
+# no write of a dictionary (the writers' words are v2's and v3's), so no flip of these changes a v1 verdict.
+core       Dict.empty            ownership/core/DictWords.beni   -
+core       Dict.size             ownership/core/DictWords.beni   -
+core       Dict.has              ownership/core/DictWords.beni   -        Dict.member
+core       Dict.keyIndex         ownership/core/DictWords.beni   -        Dict.keyAt
+core       Dict.isIndex          ownership/core/DictWords.beni   -        Dict.keyAt
+core       Dict.keySame          ownership/core/DictWords.beni   -        Dict.eq

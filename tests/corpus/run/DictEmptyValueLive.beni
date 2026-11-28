@@ -1,0 +1,35 @@
+-- The live twin of `SanitiserEmptyValue` under v3: a dictionary the top level
+-- built holds its values at every location its contract names, `outside`
+-- (`ownership-v3-kernel.md` §3.1), so `bumped`'s write of a list it took out
+-- of `seeded` is refused, and the program reads `seeded` after.
+import Dict exposing (Dict)
+import List
+import Node exposing (Program)
+import String
+
+
+seeded : Dict Int (List Int)
+seeded = Dict.fromList [ ( 3, [ 7 ] ) ]
+
+
+bumped : Dict Int (List Int), Int → List Int
+bumped d k =
+    case Dict.get d k of
+        Just xs →
+            List.push xs 1
+
+        Nothing →
+            []
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+main : Program
+main =
+    Node.printLines
+        [ show (bumped seeded 3)
+        , show (bumped (Dict.empty ⊤) 3)
+        , show (Maybe.withDefault (Dict.get seeded 3) [])
+        ]

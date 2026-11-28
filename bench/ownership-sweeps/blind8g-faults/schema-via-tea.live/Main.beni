@@ -1,0 +1,52 @@
+-- `schema-via.live` in an application: `update` prints the model to save
+-- it, and the view reads the list that the conversion wrote in place
+-- (research report 128 §4.1).
+import Html exposing (Html)
+import Schema
+import Tea
+
+
+back : List Int → Result (List Schema.Issue) (List Int)
+back l = Ok (List.push l 0)
+
+
+pub schema Saved =
+    items : List Int via (Schema.conversion Ok back)
+
+
+type alias Model =
+    items : List Int
+    saved : String
+
+
+type Msg
+    = Bump
+    | Save
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | items = List.map model.items λi → i + 1 }
+
+        Save →
+            case Saved.print { items = model.items } of
+                Ok s →
+                    { model | saved = s }
+                Err _ →
+                    model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="bump" onClick={Bump}>bump</button>
+        <button id="save" onClick={Save}>save</button>
+        <p id="items">{String.join (List.map model.items String.fromInt) " "}</p>
+        <p id="saved">{model.saved}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { items = [ 1 ], saved = "" }, update = update, view = view }

@@ -11,7 +11,7 @@ import String
 
 
 firsts : List a, (a → String) → Set.Set String × List String
-firsts items key = List.foldl items ( Set.empty, [] ) λitem acc →
+firsts items key = List.foldl items ( Set.empty ⊤, [] ) λitem acc →
     k = key item
     if Set.member acc.0 k then
         acc

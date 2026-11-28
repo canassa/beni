@@ -1,0 +1,33 @@
+-- The definitions of a description are a list that `describe` gives a type
+-- through `Js.to` from a `Js.Value`, whose layout has no element step: each
+-- of its locations is read through the wide entry above it
+-- (ownership-v3-kernel.md §3.4). The definition written here is the one the
+-- program reads after the write: in place, `def.name` would print `changed`.
+import Node
+import Schema exposing (Codec)
+
+
+type Tree a
+    = Leaf
+    | Node (Tree a) a (Tree a)
+
+
+codecOf : List a → Codec a
+    where a.codec : ⊤ → Codec a
+codecOf _ = a.codec ⊤
+
+
+trees : List (Tree Int)
+trees = []
+
+
+main : Node.Program
+main =
+    d = Schema.describe (codecOf trees)
+    case d.definitions of
+        [ def, …_ ] →
+            w = { def | name = "changed" }
+            Node.print "${w.name} ${def.name}"
+
+        [] →
+            Node.print "none"

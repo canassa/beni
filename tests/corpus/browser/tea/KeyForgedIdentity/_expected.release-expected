@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <p id="n">"0"</p>
+    <button id="inc">"inc"</button>
+    <button id="boom">"boom"</button>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <p id="n">"1"</p>
+    <button id="inc">"inc"</button>
+    <button id="boom">"boom"</button>
+  </main>
+</body>
+-- throws click #boom
+(threw: Error: Hosted.compare: no comparer)
+(the DOM did not change)
+-- click #inc
+(the DOM did not change)

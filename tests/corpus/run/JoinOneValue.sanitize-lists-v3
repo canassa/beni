@@ -1,0 +1,1 @@
+wrapN answers its tree at the root in one arm and below in the other, one value of the join at a time, so incAll writes the lists of its answer in place (ownership-v3-kernel.md §4.4, *One value of a join at a time*).

@@ -1,0 +1,2 @@
+# v3 refuses the update: the constructor's answer has slots it made, and `a.k` reads the written slot after it (ownership-v3-kernel.md §11.2).
+18:10 record_still_used update

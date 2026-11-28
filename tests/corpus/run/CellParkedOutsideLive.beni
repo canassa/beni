@@ -1,0 +1,120 @@
+-- The live twins of CellParkedOutside (#2600): a body stores in its cell a
+-- value of outside the frame (a top-level list, a top-level record, a list
+-- inside a top-level constructor), parks, and stores a new value; a writer
+-- fiber its caller spawned writes the contents in place while the body is
+-- parked, and so writes the top-level value, which the caller reads after.
+-- The body is a helper over the cell, a closure `List.map` runs, a closure
+-- `Task.scope` runs, or a helper whose park is a `Deferred.wait`. A copy
+-- keeps the top-level value as it was, so each writer is refused.
+import Deferred exposing (Deferred)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+type alias R =
+    items : List Int
+    n : Int
+
+
+type Box
+    = Box (List Int)
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+unbox : Box → List Int
+unbox b =
+    case b of
+        Box l →
+            l
+
+
+big : List Int
+big = [ 100 ]
+
+
+topR : R
+topR = { items = [ 100 ], n = 0 }
+
+
+boxed : Box
+boxed = Box [ 100 ]
+
+
+storeTop : Ref (List Int) → ⊤
+storeTop r =
+    Ref.set r big
+    Task.yieldNow ⊤
+    Ref.set r [ 0 ]
+
+
+direct : ⊤ → String
+direct ⊤ =
+    r = Ref.make [ 0 ]
+    a = Task.spawn λ⊤ → Ref.update r λl → List.push l 1
+    storeTop r
+    Task.join a
+    ints big ++ " " ++ ints (Ref.get r)
+
+
+mapped : ⊤ → String
+mapped ⊤ =
+    r = Ref.make [ 0 ]
+    a = Task.spawn λ⊤ → Ref.update r λl → List.push l 2
+    _ = List.map [ ⊤ ] λ⊤ →
+        Ref.set r big
+        Task.yieldNow ⊤
+        Ref.set r [ 0 ]
+    Task.join a
+    ints big ++ " " ++ ints (Ref.get r)
+
+
+record : ⊤ → String
+record ⊤ =
+    r = Ref.make { items = [ 0 ], n = 0 }
+    a = Task.spawn λ⊤ → Ref.update r λv → { v | n = v.n + 1 }
+    Task.scope λs →
+        Ref.set r topR
+        Io.sleep 1
+        Ref.set r { items = [ 0 ], n = 0 }
+    Task.join a
+    String.fromInt topR.n ++ " " ++ String.fromInt (Ref.get r).n
+
+
+storeBoxed : Ref (List Int), Deferred ⊤ → ⊤
+storeBoxed r d =
+    Ref.set r (unbox boxed)
+    Deferred.wait d
+    Ref.set r [ 0 ]
+
+
+ctor : ⊤ → String
+ctor ⊤ =
+    r = Ref.make [ 0 ]
+    d = Deferred.make ⊤
+    a = Task.spawn λ⊤ →
+        Ref.update r λl → List.push l 3
+        _ = Deferred.complete d ⊤
+        ⊤
+    storeBoxed r d
+    Task.join a
+    ints (unbox boxed) ++ " " ++ ints (Ref.get r)
+
+
+main : Program
+main = Io.run λ⊤ → Node.printLines [ fiber direct, fiber mapped, fiber record, fiber ctor ]
+
+
+-- Each shape runs in a fiber of its own: in one frame, a call of a
+-- function that started a reader or a writer, and then one that can mask,
+-- is refused (#2653).
+fiber : (⊤ → String) → String
+fiber g =
+    t = Task.spawn g
+    Task.join t

@@ -1,0 +1,232 @@
+-- A writer stores a new value into a cell, parks, then writes that value in
+-- place, while another fiber takes a loan of the cell during the park
+-- (`ownership-v3-kernel.md` §13 item 12): a spawned closure that parks with
+-- `Task.yieldNow`, `Io.sleep` or `Deferred.wait`; a helper over its
+-- parameter's cell, spawned, and the same helper called by the frame and by
+-- a fiber; an update that answers a new list, `Ref.modify`, `List.copy`;
+-- record and `Dict` contents; a loan read by `List.length` alone; a loan a
+-- function answers; and a closure that stores and parks before a helper
+-- writes. The loan holds the stored value, so each write in place is
+-- refused. Before, the writer was judged as one unit at the frame's switch
+-- points, and a value it stored was a cell of its own run: nothing judged
+-- the loan taken between its store and its write.
+import Deferred
+import Dict exposing (Dict)
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+setPark : Ref (List Int) → ⊤
+setPark g =
+    Ref.set g [ 9 ]
+    Task.yieldNow ⊤
+    Ref.update g λl → List.push l 7
+
+
+setGet : Ref (List Int) → List Int
+setGet g =
+    Ref.set g [ 6 ]
+    Task.yieldNow ⊤
+    Ref.update g λl → List.push l 102
+    Ref.get g
+
+
+push7 : Ref (List Int) → ⊤
+push7 g = Ref.update g λl → List.push l 7
+
+
+yielded : ⊤ → String
+yielded ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ →
+        Ref.set b [ 9 ]
+        Task.yieldNow ⊤
+        Ref.update b λl → List.push l 7
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    ints r
+
+
+slept : ⊤ → String
+slept ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ →
+        Ref.set b [ 9 ]
+        Io.sleep 20
+        Ref.update b λl → List.push l 7
+    Io.sleep 5
+    r = Ref.get b
+    Task.join w
+    ints r
+
+
+waited : ⊤ → String
+waited ⊤ =
+    b = Ref.make [ 2 ]
+    d = Deferred.make ⊤
+    w = Task.spawn λ⊤ →
+        Ref.set b [ 9 ]
+        Deferred.wait d
+        Ref.update b λl → List.push l 7
+    Task.yieldNow ⊤
+    r = Ref.get b
+    _ = Deferred.complete d ⊤
+    Task.join w
+    ints r
+
+
+helper : ⊤ → String
+helper ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ → setPark b
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    ints r
+
+
+both : ⊤ → String
+both ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ → String.fromInt (List.length (setGet b))
+    r = setGet b
+    rw = Task.join w
+    "${ints r} ${rw}"
+
+
+answered : ⊤ → String
+answered ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ →
+        Ref.update b λ_ → [ 9 ]
+        Task.yieldNow ⊤
+        Ref.update b λl → List.push l 7
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    ints r
+
+
+modified : ⊤ → String
+modified ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ →
+        _ = Ref.modify b λ_ → ( 0, [ 9 ] )
+        Task.yieldNow ⊤
+        Ref.update b λl → List.push l 7
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    ints r
+
+
+copied : ⊤ → String
+copied ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ →
+        Ref.update b λl → List.copy l
+        Task.yieldNow ⊤
+        Ref.update b λl → List.push l 7
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    ints r
+
+
+record : ⊤ → String
+record ⊤ =
+    b = Ref.make { items = [ 2 ], n = 0 }
+    w = Task.spawn λ⊤ →
+        Ref.set b { items = [ 9 ], n = 0 }
+        Task.yieldNow ⊤
+        Ref.update b λk → { k | n = k.n + 1, items = List.push k.items 7 }
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    "${ints r.items} ${String.fromInt r.n}"
+
+
+dict : ⊤ → String
+dict ⊤ =
+    b = Ref.make (Dict.fromList [ ( 1, 1 ) ])
+    w = Task.spawn λ⊤ →
+        Ref.set b (Dict.fromList [ ( 2, 2 ) ])
+        Task.yieldNow ⊤
+        Ref.update b λd → Dict.insert d 3 3
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    ints (Dict.keys r)
+
+
+counted : ⊤ → String
+counted ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ →
+        Ref.set b [ 9 ]
+        Task.yieldNow ⊤
+        Ref.update b λl → List.push l 7
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    String.fromInt (List.length r)
+
+
+made : ⊤ → List Int
+made ⊤ =
+    b = Ref.make [ 2 ]
+    _ = Task.spawn λ⊤ →
+        Ref.set b [ 9 ]
+        Task.yieldNow ⊤
+        Ref.update b λl → List.push l 7
+    Task.yieldNow ⊤
+    Ref.get b
+
+
+returned : ⊤ → String
+returned ⊤ =
+    r = made ⊤
+    Task.yieldNow ⊤
+    Task.yieldNow ⊤
+    ints r
+
+
+viaHelper : ⊤ → String
+viaHelper ⊤ =
+    b = Ref.make [ 2 ]
+    w = Task.spawn λ⊤ →
+        Ref.set b [ 9 ]
+        Task.yieldNow ⊤
+        push7 b
+    Task.yieldNow ⊤
+    r = Ref.get b
+    Task.join w
+    ints r
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ yielded ⊤
+        , slept ⊤
+        , waited ⊤
+        , helper ⊤
+        , both ⊤
+        , answered ⊤
+        , modified ⊤
+        , copied ⊤
+        , record ⊤
+        , dict ⊤
+        , counted ⊤
+        , returned ⊤
+        , viaHelper ⊤
+        ]

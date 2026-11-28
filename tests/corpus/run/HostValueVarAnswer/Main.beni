@@ -1,0 +1,28 @@
+-- A function of `Int → b` that answers its parameter through `Js.to`: a
+-- value of no cell read at a type variable, which its caller reads as a
+-- list. The value's own reading names none of the list, so the answer is
+-- `unknown`, never "holds nothing" (ownership-v3-kernel.md §3.4). The
+-- list read as an `Int` escaped where it was read so. Before, `unhide`'s
+-- contract said that its answer holds nothing, and in place the push of
+-- `ys` pushed onto `xs`, which is read after it.
+import Node exposing (Program)
+import Pun
+
+
+unhide : Int → b
+unhide t = Pun.conv t
+
+
+go : Int → String
+go n =
+    xs = [ n ]
+    i : Int
+    i = Pun.conv xs
+    ys : List Int
+    ys = unhide i
+    zs = List.push ys 9
+    "${String.fromInt (List.length zs)} ${String.fromInt (List.length xs)}"
+
+
+main : Program
+main = Node.print (go 1)

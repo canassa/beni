@@ -1,0 +1,92 @@
+-- A cell written in place in two `if`s in a row, in one arm or both, then
+-- read after them (blind round BM); four in a row that write it in place in
+-- the first and the last. What the second `if`'s other arm keeps of the
+-- first `if`'s value is held on a run through both arms: it is no holder
+-- where the second `if`'s write runs, so each write is accepted and runs
+-- in place (ownership-v3-kernel.md §6 rule 7, amended 2026-11-22).
+import Io
+import List
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+twoIfs : Int → String
+twoIfs n =
+    c = Ref.make [ 3, 4 ]
+    if n > 7 then
+        Ref.update c λl → List.set l 0 18
+    if n > 2 then
+        Ref.update c λl → List.swap l 0 1
+    ints (Ref.get c)
+
+
+bothArms : Int → String
+bothArms n =
+    c = Ref.make [ 3, 4 ]
+    if n > 7 then
+        Ref.update c λl → List.set l 0 18
+    else
+        Ref.update c λl → List.set l 1 19
+    if n > 2 then
+        Ref.update c λl → List.swap l 0 1
+    else
+        Ref.update c λl → List.push l 5
+    ints (Ref.get c)
+
+
+fourIfs : Int → String
+fourIfs n =
+    c = Ref.make [ 3, 4 ]
+    if n > 7 then
+        Ref.update c λl → List.set l 0 18
+    if n > 8 then
+        Ref.set c [ 0 ]
+    if n > 2 then
+        Ref.set c [ 7, 8 ]
+    if n > 1 then
+        Ref.update c λl → List.push l 1
+    ints (Ref.get c)
+
+
+nested : Int → String
+nested n =
+    c = Ref.make [ 3, 4 ]
+    if n > 7 then
+        if n > 9 then
+            Ref.update c λl → List.set l 0 18
+    if n > 2 then
+        Ref.update c λl → List.swap l 0 1
+    ints (Ref.get c)
+
+
+plain : Int → String
+plain n =
+    xs = [ 3, 4 ]
+    a = if n > 7 then List.set xs 0 1 else xs
+    b = if n > 2 then List.set a 1 2 else a
+    ints b
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ twoIfs 3
+        , twoIfs 9
+        , twoIfs 0
+        , bothArms 3
+        , bothArms 9
+        , bothArms 0
+        , fourIfs 3
+        , fourIfs 9
+        , fourIfs 0
+        , nested 10
+        , nested 3
+        , plain 9
+        , plain 3
+        , plain 0
+        ]

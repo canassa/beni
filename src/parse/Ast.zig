@@ -707,18 +707,48 @@ pub const OwnWord = enum(u5) {
     }
 };
 
+/// The ownership words only the ownership checker v3 reads
+/// (`ownership-v3-kernel.md` §6 rule 10, *A position*): `Ast.OwnWord` is
+/// `enum(u5)` and full, and v1 and v2 must read every signature as before,
+/// so lowering keeps these in a column of their own (`Bir.Decl.own3_start`),
+/// beside the signature's other words, which stay where they were.
+pub const OwnWord3 = enum(u5) {
+    /// The parameter names one position of the list that parameter 0 is.
+    position,
+    /// The operation reads the parameter's storage and no value it holds:
+    /// a length, a key, the index, or the values' references moved, never
+    /// their contents (`ownership-v3-kernel.md` §12, research report 161).
+    shallow,
+    /// The result holds no value of a type variable: an empty dictionary,
+    /// a builder's holes, the answer of a call that never answers
+    /// (`ownership-v3-kernel.md` §12 item 8). Beside `fresh`.
+    hollow,
+
+    pub fn inSignature(text: []const u8) ?OwnWord3 {
+        return std.meta.stringToEnum(OwnWord3, text);
+    }
+
+    pub fn bit(w: OwnWord3) u32 {
+        return @as(u32, 1) << @backingInt(w);
+    }
+};
+
 /// The ownership words in front of a type declaration (ownership-v2.md
 /// §2.13.5, §2.13.6), contextual and core's and the platforms' alone:
 /// `sequence` before `foreign type` (storage of kind list, one `[*]` child
 /// of the parameter), `cell` before `type` after `pub opaque`, or before
 /// `foreign type` (a stable handle, one barrier `◆` child), `sender`
-/// before `type alias` (the temporary alias form of `Send`'s protocol).
+/// before `type alias` (the temporary alias form of `Send`'s protocol),
+/// `keyed` before a two-parameter `foreign type` (storage of kind list whose
+/// one `[*]` child is the second parameter, the value: a keyed collection
+/// whose keys hold no cell, `ownership-v3-kernel.md` §12).
 /// `failure` stands before a constructor instead: the token before a
 /// `constructor` node's name.
 pub const OwnTypeWord = enum(u8) {
     sequence,
     cell,
     sender,
+    keyed,
 
     pub fn fromText(text: []const u8) ?OwnTypeWord {
         return std.meta.stringToEnum(OwnTypeWord, text);

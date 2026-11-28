@@ -1,0 +1,59 @@
+-- A tree's two children read one deep level of its layout, and the parts of
+-- a constructor pattern are apart where the tree holds each cell once
+-- (`ownership-v3-kernel.md` §4.4, *The parts of a constructor pattern are
+-- apart*): `rootKids` writes the root's record of the tree `bumpAll` made
+-- while its children are read after, which v3 refused (`later-use`) until
+-- each part carried its position. The run prints what the copying run
+-- prints.
+import List
+import Node exposing (Program)
+import String
+
+
+type Tree a
+    = Node (Tree a) a (Tree a)
+    | Leaf
+
+
+type alias R =
+    n : Int
+    xs : List Int
+
+
+bumpAll : Tree R → Tree R
+bumpAll t =
+    case t of
+        Node l v r →
+            Node (bumpAll l) { v | n = v.n + 1, xs = List.push v.xs v.n } (bumpAll r)
+
+        Leaf →
+            Leaf
+
+
+rootKids : Tree R → Tree R
+rootKids t =
+    case bumpAll t of
+        Node l v r →
+            Node l { v | xs = List.push v.xs 0 } r
+
+        Leaf →
+            Leaf
+
+
+mk : Int → R
+mk k = { n = k, xs = [ k ] }
+
+
+show : Tree R → String
+show t =
+    case t of
+        Node l v r →
+            sep = ","
+            "(${show l} ${String.fromInt v.n}:${String.join (List.map v.xs String.fromInt) sep} ${show r})"
+
+        Leaf →
+            "."
+
+
+main : Program
+main = Node.print (show (rootKids (Node (Node Leaf (mk 1) Leaf) (mk 2) (Node Leaf (mk 3) Leaf))))

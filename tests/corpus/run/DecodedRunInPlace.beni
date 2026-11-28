@@ -1,0 +1,65 @@
+-- A decoding run's answer is what its worker built (ownership-v3-kernel.md
+-- §6 rule 14, *What a decoding run answers*): `Json.decode` of a derived
+-- codec, `Schema.read` and `Schema.parse` of `S.schema ⊤` with no `via`
+-- each answer new lists, so v3 accepts their pushes in place. The text is
+-- decoded twice: the second run's lists are not the first run's, which the
+-- pushes before it wrote.
+import Json
+import List
+import Node exposing (Program)
+import Schema exposing (Value)
+import String
+
+
+type alias Box =
+    xs : List Int
+    rows : List { n : Int, tags : List Int }
+
+
+schema Pair =
+    left : List Int
+    raw : Value
+
+
+text : String
+text = "{\"xs\":[1,2],\"rows\":[{\"n\":1,\"tags\":[5]}]}"
+
+
+grown : ⊤ → String
+grown ⊤ =
+    case Json.decode text of
+        Ok box →
+            row =
+                case box.rows of
+                    [ r, …_ ] →
+                        List.push r.tags 6
+
+                    [] →
+                        []
+            show (List.push box.xs 3) ++ "|" ++ show row
+
+        Err _ →
+            "bad"
+
+
+paired : ⊤ → String
+paired ⊤ =
+    case Schema.parse (Pair.schema ⊤) "{\"left\":[7],\"raw\":[8]}" of
+        Ok p →
+            case Schema.read (Pair.schema ⊤) p.raw of
+                Ok _ →
+                    "bad"
+
+                Err _ →
+                    show (List.push p.left 9)
+
+        Err _ →
+            "bad"
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main = Node.printLines [ grown ⊤, grown ⊤, paired ⊤ ]

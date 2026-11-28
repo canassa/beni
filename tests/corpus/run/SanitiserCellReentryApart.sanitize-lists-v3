@@ -1,0 +1,1 @@
+Built again under --ownership=v3 and the list stale-read sanitiser: each callback writes the contents of the cell it captured, and the function that runs it holds a value taken out of another cell; the write is judged where the callback runs, and accepted (ownership-v3-kernel.md §13 item 11). The sanitised run prints the golden.

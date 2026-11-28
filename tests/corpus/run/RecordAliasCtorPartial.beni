@@ -1,0 +1,23 @@
+-- A record alias's constructor used as a function makes a new record's
+-- object, as its literal does: the slots of its answer are cells it made
+-- (ownership-v3-kernel.md §11.2). `f n` builds the record, and the update
+-- writes the slot `k` that `a.k` reads after it, so v3 refuses it. With no
+-- source the slots of the answer held no cell, and in place `a.k` read 5.
+import Node exposing (Program)
+
+
+type alias P =
+    k : Int
+    u : List Int
+
+
+go : Int → String
+go n =
+    f = P _ [ 1 ]
+    a = f n
+    a2 = { a | k = 5 }
+    "${String.fromInt a2.k} ${String.fromInt a.k}"
+
+
+main : Program
+main = Node.print (go 0)

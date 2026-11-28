@@ -1,0 +1,17 @@
+-- ownership (core): the rows of `Dict` that the ownership checker v1 reads
+-- (`ownership-v3-kernel.md` §12). `Dict.empty` is a new dictionary, and
+-- `Dict.size`, `Dict.member` (`has`), `Dict.keyAt` (`isIndex`, `keyIndex`)
+-- and `Dict.eq` (`keySame`) borrow theirs: each list below is
+-- pushed while the dictionary that was read holds no list, so each push is
+-- accepted. The rows that write a dictionary carry words only v2 and v3
+-- read, so v1 judges no write of one.
+import Dict exposing (Dict)
+
+
+reads : Dict Int Int, List Int → List Int
+reads d xs =
+    n = Dict.size d
+    m = if Dict.member d 1 then 1 else 0
+    k = Maybe.withDefault (Dict.keyAt d 0) 0
+    q = if Dict.eq d (Dict.empty ⊤) then 1 else 0
+    List.push xs (n + m + k + q)

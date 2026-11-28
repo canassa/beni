@@ -1,0 +1,2 @@
+# `stored` beside a `written returned` `Int` states no position: the elements of the row's new list are `twice`, so the parts of a list pattern over it are not apart, and the write is refused (ownership-v3-kernel.md §4.4, §6 rule 10).
+38:20 list_still_used call

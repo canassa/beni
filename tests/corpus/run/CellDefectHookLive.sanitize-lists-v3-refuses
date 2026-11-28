@@ -1,0 +1,4 @@
+# The live twins of CellDefectHook: a function that a defect runs reads the cell, which the frame then writes in place; a defect can run it between the write of the function `Ref.update` runs and the store-back, so each write is refused (#2605).
+36:5 list_still_used call
+44:5 list_still_used call
+52:5 list_still_used call

@@ -1,0 +1,27 @@
+# A closure writes the contents of a cell it captured while another holder reads the old contents (a loan read after a direct call, after a handed call, the callee's own loan, a loan beside the closure, a captured loan, a store the maker cannot trust, an update of the same cell, a list, a closure that holds a loan, the frame's function parameter, a spawned fiber, a list the closure stores and answers, a closure run again while its holder keeps what an earlier run handed it): refused (ownership-v3-kernel.md §13 item 11); and the call of `spawned` in `main`, after `ownParam apply`, which runs within it a function `ownParam` hands `apply`, code the walk does not know there that can lend the fiber (§13 item 12, *A defect*, (d), #2622).
+60:5 list_still_used call
+68:5 list_still_used call
+75:5 list_still_used value
+81:5 list_still_used call
+92:5 list_still_used call
+101:5 list_still_used call
+109:5 list_still_used value
+109:5 list_still_used call
+119:12 list_still_used value
+133:5 list_still_used value
+140:7 list_still_used value
+148:9 list_still_used call
+148:9 list_still_used call
+148:9 list_still_used call
+148:9 list_still_used call
+148:9 list_still_used call
+149:5 list_still_used call
+149:5 list_still_used call
+150:5 list_still_used call
+150:5 list_still_used call
+161:5 list_still_used call
+184:10 list_still_used value
+193:5 list_still_used value
+202:5 list_still_used value
+210:10 list_still_used value
+233:19 list_still_used value

@@ -1,0 +1,12 @@
+--! A test platform: a value read at another type of the same JavaScript shape.
+
+import Js
+
+
+--| The value itself, read at another type.
+pub conv : a → b
+conv v = Js.to (Js.from v)
+
+
+--| JavaScript `(xs, i) => xs[i]`: an element taken out, as an `Int`.
+pub foreign pure takeAt : borrowed List a, borrowed Int → taken Int

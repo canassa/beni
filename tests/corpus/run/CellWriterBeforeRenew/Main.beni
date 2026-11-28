@@ -1,0 +1,219 @@
+-- A writer or a reader that can run inside a call runs there on every version
+-- of its cell that the frame's loans can see (ownership-v3-kernel.md §13 item
+-- 12, *A run of a writer*, amended for #2698). Each fiber here pushes onto a
+-- copy, so every program is accepted and runs in place. Its live twin is
+-- CellWriterBeforeRenewLive, where each push is onto the cell's own list.
+import Duration
+import Io
+import List
+import Log
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Second
+import String
+import Task
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+forkSet : Ref (List Int), (⊤ → ⊤) → ⊤
+forkSet r w =
+    _ = Task.spawn w
+    Task.sleep (Duration.millis 5)
+    Ref.set r [ 9 ]
+
+
+forkUpdate : Ref (List Int), (⊤ → ⊤) → ⊤
+forkUpdate r w =
+    _ = Task.spawn w
+    Task.sleep (Duration.millis 5)
+    Ref.update r λ_ → [ 9 ]
+
+
+forkModify : Ref (List Int), (⊤ → ⊤) → Int
+forkModify r w =
+    _ = Task.spawn w
+    Task.sleep (Duration.millis 5)
+    Ref.modify r λ_ → ( 0, [ 9 ] )
+
+
+forkRecord : Ref { n : Int, xs : List Int }, (⊤ → ⊤) → ⊤
+forkRecord r w =
+    _ = Task.spawn w
+    Task.sleep (Duration.millis 5)
+    Ref.set r { n = 0, xs = [ 9 ] }
+
+
+pub type Box
+    = Box Int
+
+
+pub forkSetM : Box, Ref (List Int), (⊤ → ⊤) → ⊤
+forkSetM _ r w = forkSet r w
+
+
+outer : Ref (List Int), (⊤ → ⊤) → ⊤
+outer r w = forkSet r w
+
+
+runSleep : (⊤ → ⊤) → ⊤
+runSleep s =
+    s ⊤
+    Task.sleep (Duration.millis 5)
+
+
+set : ⊤ → String
+set ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    forkSet r λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    ints l
+
+
+update : ⊤ → String
+update ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    forkUpdate r λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    ints l
+
+
+modify : ⊤ → String
+modify ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    _ = forkModify r λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    ints l
+
+
+record : ⊤ → String
+record ⊤ =
+    r = Ref.make { n = 1, xs = [ 1, 2 ] }
+    l = (Ref.get r).xs
+    forkRecord r λ⊤ → Ref.update r λo → { o | xs = List.push (List.copy o.xs) 5 }
+    ints l
+
+
+method : ⊤ → String
+method ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    (Box 0).forkSetM r λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    ints l
+
+
+wrapper : ⊤ → String
+wrapper ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    outer r λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    ints l
+
+
+local : ⊤ → String
+local ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    w = λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    forkSet r w
+    Task.sleep (Duration.millis 5)
+    ints l
+
+
+module : ⊤ → String
+module ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = Ref.get r
+    Second.forkSet r λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    ints l
+
+
+pushed : ⊤ → String
+pushed ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = List.push (List.copy (Ref.get r)) 3
+    forkSet r λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    ints l
+
+
+reader : ⊤ → String
+reader ⊤ =
+    r = Ref.make [ 1, 2 ]
+    l = List.push (List.copy (Ref.get r)) 3
+    forkSet r λ⊤ → Log.info (ints (Ref.get r))
+    ints l
+
+
+preSet : ⊤ → String
+preSet ⊤ =
+    r = Ref.make [ 0 ]
+    xs = [ 1, 2 ]
+    _ = Task.spawn λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    runSleep λ⊤ → Ref.set r xs
+    ints xs
+
+
+preUpdate : ⊤ → String
+preUpdate ⊤ =
+    r = Ref.make [ 0 ]
+    xs = [ 1, 2 ]
+    _ = Task.spawn λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    runSleep λ⊤ → Ref.update r λ_ → xs
+    ints xs
+
+
+preModule : ⊤ → String
+preModule ⊤ =
+    r = Ref.make [ 0 ]
+    xs = [ 1, 2 ]
+    _ = Task.spawn λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    Second.runSleep λ⊤ → Ref.set r xs
+    ints xs
+
+
+paramHelper : Ref (List Int), List Int → String
+paramHelper r xs =
+    runSleep λ⊤ → Ref.set r xs
+    ints xs
+
+
+param : ⊤ → String
+param ⊤ =
+    r = Ref.make [ 0 ]
+    _ = Task.spawn λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    paramHelper r [ 1, 2 ]
+
+
+capture : ⊤ → String
+capture ⊤ =
+    r = Ref.make [ 0 ]
+    _ = Task.spawn λ⊤ → Ref.update r λk → List.push (List.copy k) 5
+    xs = [ 1, 2 ]
+    h =
+        λ⊤ →
+            runSleep λ⊤ → Ref.set r xs
+            ints xs
+    h ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ set ⊤
+        , update ⊤
+        , modify ⊤
+        , record ⊤
+        , method ⊤
+        , wrapper ⊤
+        , local ⊤
+        , module ⊤
+        , pushed ⊤
+        , reader ⊤
+        , preSet ⊤
+        , preUpdate ⊤
+        , preModule ⊤
+        , param ⊤
+        , capture ⊤
+        ]

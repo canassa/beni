@@ -1,0 +1,39 @@
+-- Another module's view, whose handlers its module reads where their event
+-- fires, is called by static dispatch (`r.show 0`, a method of the type its
+-- module declares) in a keyed `For` row. A method call names it through a
+-- dispatch term, with no reference of its own, and is checked as a call is
+-- (ownership-v3-kernel.md §6 rule 12, *A handler read at the event*, fact 1
+-- (b); the reviewer of #2712): the call is refused. `ViewOfAnotherModuleInRow`
+-- calls the view by name.
+import Html exposing (Html)
+import List
+import Page exposing (Item, Msg)
+import Tea
+
+
+type alias Model =
+    xs : List Int
+    got : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Page.Got n →
+            { model | got = n }
+
+        Page.Bump →
+            { model | got = model.got + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <For each={[ Item model.xs ]} keyed={λ_ → 0}>{λr → <li>{r.show 0}</li>}</For>
+        <button id="b" onClick={Page.Bump}>b</button>
+        <p id="g">{model.got}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { xs = [ 1 ], got = 0 }, update = update, view = view }

@@ -1,0 +1,11 @@
+import Html exposing (Html)
+import List
+
+
+pub type Msg
+    = Got Int
+    | Bump
+
+
+pub item : List Int → Html Msg
+item xs = <div><button class="it" onClick={λ_ → Got (List.length xs)}>i</button></div>

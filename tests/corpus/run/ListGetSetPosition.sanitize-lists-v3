@@ -1,0 +1,1 @@
+Each `List.set` puts the copy of the element its `List.get` read at the same index of the same list, so the copy's `coord` record is at one place and `move` writes it in place (ownership-v3-kernel.md §6 rule 10, *A position*).

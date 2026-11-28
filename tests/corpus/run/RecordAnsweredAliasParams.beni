@@ -1,0 +1,26 @@
+-- A callee writes a field of one parameter and answers the other, and the
+-- caller hands it one record at both places (kernel §5 test 2, §11). The
+-- answered parameter is another operand of the write: in place the answer
+-- is the written object, so `v.a` would print 5, where the copying program
+-- prints 0. v3 refuses the call, as it refuses the same shape for a list.
+import Node exposing (Program)
+
+
+type alias P =
+    a : Int
+    b : Int
+
+
+g : P, P → P × P
+g u v = ( { u | a = u.a + 5 }, v )
+
+
+f : P → P × P
+f q = g q q
+
+
+main : Program
+main =
+    case f { a = 0, b = 0 } of
+        ( u, v ) →
+            Node.print "${String.fromInt u.a} ${String.fromInt v.a}"

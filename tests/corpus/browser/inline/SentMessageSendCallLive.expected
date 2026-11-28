@@ -1,0 +1,20 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="again">"again"</button>
+    <p id="n">"0"</p>
+  </main>
+</body>
+-- click #start
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="again">"again"</button>
+    <p id="n">"32"</p>
+  </main>
+</body>
+-- click #again
+(the DOM did not change)
+-- click #again
+(the DOM did not change)

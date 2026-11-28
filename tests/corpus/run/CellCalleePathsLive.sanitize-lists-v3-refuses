@@ -1,0 +1,10 @@
+# The live twins of CellCalleePaths: a path that keeps `present` and puts it in `future` too; a value taken out of the cell before a call whose other path writes it; a list one path moves, written while a value taken before is read after; the keeping path in an arm of the caller; a list taken out of `future` after one path moved it there, which another call's path writes, once and after a second move; a list two of a helper's paths leave in place, taken out of the cell and read after its third path writes it. Each read sees the old value, so each write is refused.
+64:5 list_still_used call
+72:5 list_still_used call
+80:5 list_still_used call
+81:5 list_still_used call
+92:5 list_still_used call
+101:5 list_still_used call
+110:5 list_still_used call
+111:5 list_still_used call
+133:5 list_still_used call

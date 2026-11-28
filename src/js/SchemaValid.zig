@@ -521,7 +521,7 @@ fn consumer(
 }
 
 /// The declaration a `schema` member instruction names, `S.schema`.
-fn schemaRoot(provenance: []const Interface.Provenance, interfaces: []const Interface, bir: *const Bir, module: Graph.Index, inst: Inst.Index) ?SchemaGraph.Ref {
+pub fn schemaRoot(provenance: []const Interface.Provenance, interfaces: []const Interface, bir: *const Bir, module: Graph.Index, inst: Inst.Index) ?SchemaGraph.Ref {
     const d = bir.instData(inst);
     switch (bir.instTag(inst)) {
         .schema_member_top => {

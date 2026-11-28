@@ -1,0 +1,27 @@
+-- A function whose result is a type variable, read by its caller at
+-- `Int`: its contract says that the result holds its first parameter, and
+-- the caller's instance has no location for it. The answer is the list
+-- itself, so it escapes at the call (ownership-v3-kernel.md §3.4). Before,
+-- an answer of a type of no location was `outside` and the list went
+-- nowhere.
+import Node exposing (Program)
+import Pun
+
+
+g : a, Int → b
+g x _ = Pun.conv x
+
+
+go : Int → String
+go n =
+    x0 = [ n ]
+    h : Int
+    h = g x0 1
+    z : List Int
+    z = Pun.conv h
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length z)}"
+
+
+main : Program
+main = Node.print (go 1)

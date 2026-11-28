@@ -1,0 +1,2 @@
+# v3 refuses the push: `cast` answers `x0`, and `apply` reads its answer at `Int`, so it escapes where `cast` meets `apply` (ownership-v3-kernel.md §3.4).
+25:22 list_still_used List.push

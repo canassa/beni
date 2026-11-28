@@ -1,0 +1,11 @@
+# Each write's old name is read after it, whatever form names the writer: v3 refuses every one (ownership-v3-kernel.md §12, Lowering).
+44:11 list_still_used call
+46:11 list_still_used call
+48:9 list_still_used call
+50:9 list_still_used call
+52:9 list_still_used call
+54:11 list_still_used call
+56:9 list_still_used call
+58:9 list_still_used call
+60:9 list_still_used call
+62:9 list_still_used call

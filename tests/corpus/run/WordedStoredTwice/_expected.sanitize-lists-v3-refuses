@@ -1,0 +1,4 @@
+# A row builds no run: the elements of each row's new list are `twice`, so the parts of a list pattern over it are not apart, and the writes are refused (ownership-v3-kernel.md §4.4, §6 rule 10).
+55:31 list_still_used List.push
+64:9 list_still_used call
+65:9 list_still_used call

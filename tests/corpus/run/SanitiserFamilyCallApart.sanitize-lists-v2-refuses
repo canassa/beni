@@ -1,0 +1,2 @@
+# core/Dict's rows are the ownership checker v3's (ownership-v3-kernel.md §12): v2 reads them as a `foreign` with no word, so the list escaped into the dictionary
+20:34 list_may_be_shared List.push

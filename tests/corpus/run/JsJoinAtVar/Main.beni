@@ -1,0 +1,24 @@
+-- Walked platform code, no row: `pick` reads a `Js.Value` at a type
+-- variable, and the value is an `if` whose arm is another `if`'s answer. A
+-- cell of an arm of the first `if` is then found through an arm of the
+-- second, on a run through both. The safe build's check that every cell of
+-- such a value escaped reads its cells again, and counts no work; it built
+-- the meeting of the two arms, a context of the frame that a later step
+-- reads by index, and panicked (ownership-v3-kernel.md §9, the row of
+-- `Frame.quiet`). The argument escapes, so v3 refuses the push (§3.4).
+import Node exposing (Program)
+import Pun
+
+
+go : Bool → String
+go c =
+    x0 = [ 1 ]
+    y0 = [ 2 ]
+    h : List (List Int)
+    h = Pun.pick c (not c) x0 y0
+    x = List.length (List.push x0 9)
+    "${String.fromInt x} ${String.fromInt (List.length h)}"
+
+
+main : Program
+main = Node.print (go True)

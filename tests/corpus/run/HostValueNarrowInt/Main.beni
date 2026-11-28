@@ -1,0 +1,26 @@
+-- A list read as an `Int` through `Js.to`, in a helper: the reading has no
+-- location for the list's array, so the array escapes at the cast, never
+-- "holds nothing" (ownership-v3-kernel.md §3.4, *A value read at a type with
+-- fewer places*), and `hide`'s contract says so. Before, the contract said
+-- that `hide` keeps nothing, the push of `xs` was accepted, and in place it
+-- pushed onto the array that `ys`, the `Int` read back as a list, still is.
+import Node exposing (Program)
+import Pun
+
+
+hide : List Int → Int
+hide l = Pun.conv l
+
+
+go : Int → String
+go n =
+    xs = [ n, 2 ]
+    i = hide xs
+    zs = List.push xs 9
+    ys : List Int
+    ys = Pun.conv i
+    "${String.fromInt (List.length zs)} ${String.fromInt (List.length ys)}"
+
+
+main : Program
+main = Node.print (go 1)

@@ -1,0 +1,39 @@
+-- The live twin of `DecodedRunInPlace`: a `via` whose function answers a
+-- top-level list puts that list in the run's answer, so the run is not one
+-- whose worker built what it answers (ownership-v3-kernel.md §6 rule 14,
+-- *What a decoding run answers*), and v3 refuses the push. In place, the
+-- push would change `shared`, which the last line prints.
+import List
+import Node exposing (Program)
+import Schema exposing (Conversion)
+import String
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+keep : Conversion (List Int) (List Int)
+keep = Schema.conversion (λ_ → Ok shared) λxs → Ok xs
+
+
+schema Box =
+    xs : List Int via keep
+
+
+grown : ⊤ → String
+grown ⊤ =
+    case Schema.parse (Box.schema ⊤) "{\"xs\":[7]}" of
+        Ok b →
+            show (List.push b.xs 3)
+
+        Err _ →
+            "bad"
+
+
+show : List Int → String
+show xs = String.join (List.map xs String.fromInt) ","
+
+
+main : Program
+main = Node.printLines [ grown ⊤, show shared ]

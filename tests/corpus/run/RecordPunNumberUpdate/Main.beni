@@ -1,0 +1,18 @@
+-- A number read as a record through `Js.to`, then updated: the value holds
+-- no cell, and a record always holds its object (ownership-v3-kernel.md
+-- §11.2), so the update writes an object no cell names, and has no claim
+-- (§3.4). Before, the update of a value of no cell made no demand at all.
+import Node exposing (Program)
+import Pun
+
+
+go : Int → String
+go n =
+    r : { a : Int }
+    r = Pun.conv n
+    r2 = { r | a = 5 }
+    "${String.fromInt r2.a}"
+
+
+main : Program
+main = Node.print (go 1)

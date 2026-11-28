@@ -70,7 +70,9 @@
   (definition pairs
     (pat_wild)
     (pat_wild)
-    (ident Dict.empty))
+    (apply
+      (ident Dict.empty)
+      (unit)))
   (annotation fields
     (type_fn
       (type_record

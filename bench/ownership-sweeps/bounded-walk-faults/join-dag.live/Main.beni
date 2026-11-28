@@ -1,0 +1,46 @@
+-- A sibling of fault 1 of research report 126 among values: each level is
+-- one of three values of the level below, chosen by `if`, 24 levels. The
+-- walk of a value's cells (`leavesOwn`) went down each arm of each `if`:
+-- three to the power of the depth. The live twin reads `x0` after the write.
+import List
+import Node exposing (Program)
+import String
+
+
+show : List Int → String
+show l = String.join (List.map l String.fromInt) ","
+
+
+go : Int → String
+go n =
+    x0 = [ n, 2 ]
+    x1 = if n > 1 then x0 else if n > 2 then x0 else x0
+    x2 = if n > 2 then x1 else if n > 3 then x1 else x1
+    x3 = if n > 3 then x2 else if n > 4 then x2 else x2
+    x4 = if n > 4 then x3 else if n > 5 then x3 else x3
+    x5 = if n > 5 then x4 else if n > 6 then x4 else x4
+    x6 = if n > 6 then x5 else if n > 7 then x5 else x5
+    x7 = if n > 7 then x6 else if n > 8 then x6 else x6
+    x8 = if n > 8 then x7 else if n > 9 then x7 else x7
+    x9 = if n > 9 then x8 else if n > 10 then x8 else x8
+    x10 = if n > 10 then x9 else if n > 11 then x9 else x9
+    x11 = if n > 11 then x10 else if n > 12 then x10 else x10
+    x12 = if n > 12 then x11 else if n > 13 then x11 else x11
+    x13 = if n > 13 then x12 else if n > 14 then x12 else x12
+    x14 = if n > 14 then x13 else if n > 15 then x13 else x13
+    x15 = if n > 15 then x14 else if n > 16 then x14 else x14
+    x16 = if n > 16 then x15 else if n > 17 then x15 else x15
+    x17 = if n > 17 then x16 else if n > 18 then x16 else x16
+    x18 = if n > 18 then x17 else if n > 19 then x17 else x17
+    x19 = if n > 19 then x18 else if n > 20 then x18 else x18
+    x20 = if n > 20 then x19 else if n > 21 then x19 else x19
+    x21 = if n > 21 then x20 else if n > 22 then x20 else x20
+    x22 = if n > 22 then x21 else if n > 23 then x21 else x21
+    x23 = if n > 23 then x22 else if n > 24 then x22 else x22
+    x24 = if n > 24 then x23 else if n > 25 then x23 else x23
+    ys = List.push x24 3
+    show ys ++ show x0
+
+
+main : Program
+main = Node.print (go 1)

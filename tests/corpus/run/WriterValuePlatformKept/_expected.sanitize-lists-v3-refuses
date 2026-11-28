@@ -1,0 +1,2 @@
+# The platform's value holds a writer where no rule follows it: v3 refuses it in the platform (ownership-v3-kernel.md §12 item 5).
+8:8 list_still_used value
