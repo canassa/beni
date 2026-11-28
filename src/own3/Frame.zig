@@ -11889,7 +11889,9 @@ fn applyAt(f: *Frame, inst: u32, callee: u32, code: Code, vals: []const Val, arg
         f.other_on = false;
         f.other_memo.clearRetainingCapacity();
         f.other_buf.clearRetainingCapacity();
-        f.apart.clear();
+        // A call with no index put nothing in it: only a call that has one
+        // pays to clear it, so the small calls after a wide call do not.
+        if (f.apart.on) f.apart.clear();
     }
     // What it reads.
     for (0..c.arity) |j| try f.readBy(args[j], inst, c.layouts[j], c.flags[c.off[j]..c.off[j + 1]]);
